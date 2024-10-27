@@ -1,0 +1,27 @@
+{
+  "name": "@efflore/cause-effect",
+  "version": "0.9.0",
+  "description": "Cause & Effect - fine-grained state management with signals.",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "scripts": {
+    "build": "bun build index.ts --outdir ./ --minify && bunx tsc",
+    "test": "bun test"
+  },
+  "module": "index.ts",
+  "type": "module",
+  "author": "Esther Brunner",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@efflore/flow-sure": "^0.9.4"
+  }
+}
