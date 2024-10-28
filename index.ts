@@ -12,10 +12,14 @@ import { type Cleanup, type Enqueue, type Scheduler, scheduler } from './lib/sch
 
 /* === Types === */
 
+type StateValue<T> = T | undefined
+	| (() => T) | (() => Promise<T>)
+	| ((old: T | undefined) => T | undefined)
+
 type State<T> = {
 	readonly [Symbol.toStringTag]: string
 	get(): T | undefined
-	set(value: T | ((old: T) => T)): void
+	set(value: StateValue<T>): void
 	get targets(): Array<() => void>
 }
 
@@ -168,7 +172,7 @@ const effect = (fn: EffectCallback) => {
 }
 
 export {
-	type State, type Computed, type Signal, type EffectCallback,
+	type StateValue, type State, type Computed, type Signal, type EffectCallback,
 	type Maybe, type Result, type AsyncResult, type Cases,
 	type Enqueue, type Cleanup, type Scheduler,
 	TYPE_STATE, TYPE_COMPUTED,

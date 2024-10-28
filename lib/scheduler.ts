@@ -4,7 +4,7 @@ import { log, LOG_ERROR } from './log'
 /* === Types === */
 
 type ElementFunction = (element: Element) => () => void
-type Enqueue = (element: Element, prop: string, fn: ElementFunction) => void
+type Enqueue = (element: Element | null, prop: string, fn: ElementFunction) => void
 // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
 type Cleanup = (key: unknown, fn: Function) => void
 
@@ -48,7 +48,7 @@ const scheduler = (): Scheduler => {
 		requestId = requestAnimationFrame(flush)
 	}
 
-	const getEffectMap = (key: Element) => {
+	const getEffectMap = (key: Element | null) => {
 		if (!effectQueue.has(key)) effectQueue.set(key, new Map())
 		return effectQueue.get(key)
 	}
@@ -64,7 +64,7 @@ const scheduler = (): Scheduler => {
 
 	queueMicrotask(flush) // initial flush when the call stack is empty
 	return {
-		enqueue: (element: Element, prop: string, fn: ElementFunction) => addToQueue(getEffectMap(element))(prop, fn),
+		enqueue: (element: Element | null, prop: string, fn: ElementFunction) => addToQueue(getEffectMap(element))(prop, fn),
 		cleanup: addToQueue(cleanupQueue)
 	}
 }

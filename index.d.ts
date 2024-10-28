@@ -1,10 +1,11 @@
 import { DEV_MODE, LOG_DEBUG, LOG_ERROR, LOG_INFO, LOG_WARN, elementName, log, valueString } from './lib/log';
 import { type Maybe, type Result, type AsyncResult, type Cases, isFunction, isDefined, isDefinedObject, isObjectOfType, isOk, isNil, isErr, isMaybe, isResult, Ok, Nil, Err, ensure, attempt, gather, flow } from '@efflore/flow-sure';
 import { type Cleanup, type Enqueue, type Scheduler, scheduler } from './lib/scheduler';
+type StateValue<T> = T | undefined | (() => T) | (() => Promise<T>) | ((old: T | undefined) => T | undefined);
 type State<T> = {
     readonly [Symbol.toStringTag]: string;
     get(): T | undefined;
-    set(value: T | ((old: T) => T)): void;
+    set(value: StateValue<T>): void;
     get targets(): Array<() => void>;
 };
 type Computed<T> = {
@@ -49,4 +50,4 @@ declare const computed: <T>(fn: () => T | undefined, memo?: boolean) => Computed
  * @param {EffectCallback} fn - callback function to be executed when a state changes
  */
 declare const effect: (fn: EffectCallback) => void;
-export { type State, type Computed, type Signal, type EffectCallback, type Maybe, type Result, type AsyncResult, type Cases, type Enqueue, type Cleanup, type Scheduler, TYPE_STATE, TYPE_COMPUTED, DEV_MODE, LOG_DEBUG, LOG_INFO, LOG_WARN, LOG_ERROR, isState, isComputed, isSignal, state, computed, effect, isDefined, isDefinedObject, isObjectOfType, isFunction, isOk, isNil, isErr, isMaybe, isResult, Ok, Nil, Err, ensure, attempt, gather, flow, log, elementName, valueString, scheduler, };
+export { type StateValue, type State, type Computed, type Signal, type EffectCallback, type Maybe, type Result, type AsyncResult, type Cases, type Enqueue, type Cleanup, type Scheduler, TYPE_STATE, TYPE_COMPUTED, DEV_MODE, LOG_DEBUG, LOG_INFO, LOG_WARN, LOG_ERROR, isState, isComputed, isSignal, state, computed, effect, isDefined, isDefinedObject, isObjectOfType, isFunction, isOk, isNil, isErr, isMaybe, isResult, Ok, Nil, Err, ensure, attempt, gather, flow, log, elementName, valueString, scheduler, };

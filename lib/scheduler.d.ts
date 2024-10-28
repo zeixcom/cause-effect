@@ -1,5 +1,5 @@
 type ElementFunction = (element: Element) => () => void;
-type Enqueue = (element: Element, prop: string, fn: ElementFunction) => void;
+type Enqueue = (element: Element | null, prop: string, fn: ElementFunction) => void;
 type Cleanup = (key: unknown, fn: Function) => void;
 type Scheduler = {
     enqueue: Enqueue;

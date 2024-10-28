@@ -1,10 +1,11 @@
 import { describe, test, expect } from 'bun:test'
-import { state, computed, effect } from '../index'
+import { state, computed, effect, ensure, isFunction, attempt, StateValue } from '../index'
 
 /* === Utility Functions === */
 
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-const paint = () => new Promise(requestAnimationFrame);
+const paint = () => new Promise(resolve => setTimeout(resolve, 1))
+// () => new Promise(requestAnimationFrame);
 
 /* === Tests === */
 
@@ -70,7 +71,7 @@ describe('State', function () {
 
 	  test('should increment value with .set(v => ++v)', function () {
 		const cause = state(0);
-		cause.set(v => ++v);
+		cause.set(v => typeof v === 'number' ? ++v : 0);
 		expect(cause.get()).toBe(1);
 	  });
 
@@ -96,7 +97,7 @@ describe('State', function () {
 
 	  test('should upper case value with .set(v => v.toUpperCase())', function () {
 		const cause = state('foo');
-		cause.set(v => v.toUpperCase());
+		cause.set(v => v ? v.toUpperCase() : '');
 		expect(cause.get()).toBe("FOO");
 	  });
 
@@ -113,24 +114,34 @@ describe('State', function () {
 	  test('should be result of function', function () {
 		const x = 42;
 		const cause = state(() => x * 2);
-		expect(cause.get().call()).toBe(84);
+		expect(
+			ensure(cause.get())
+				.filter(isFunction)
+				.map((f: () => number) => f())
+				.get()
+		).toBe(84);
 	  });
 
 	  test('should be result of async function after promise is resolved', async function () {
 		const x = 42;
-		const cause = state(() => {
+		const cause = state<StateValue<number>>(() => {
 			new Promise(resolve => setTimeout(() => resolve(cause.set(x * 2)), 100));
-			return;
+			return 0;
 		  });
-		expect(cause.get()).toBeUndefined();
+		expect(cause.get()).toBe(0);
 		await wait(100);
-		expect(cause.get()).toBe(84);
+		expect(
+			ensure(cause.get())
+				.filter(isFunction)
+				.map((f: () => number) => f())
+				.get()
+		).toBe(84);
 	  });
 
 	  test('should set error state in async function after promise is rejected', async function () {
-		const error = state();
+		const error = state('');
 		const cause = state(() => {
-			new Promise((_, reject) => setTimeout(() => reject('error occurred')), 100).catch(reason => error.set(reason));
+			new Promise((_, reject) => setTimeout(() => reject('error occurred'), 100)).catch(reason => error.set(reason));
 			return;
 		  });
 		expect(cause.get()).toBeUndefined();
@@ -140,29 +151,49 @@ describe('State', function () {
 
 	  test('should be result of function dependent on another signal', function () {
 		const x = state(42);
-		const cause = state(() => x.get() * 2);
-		expect(cause.get().call()).toBe(84);
+		const cause = state(() => ensure(x.get()).map((y: number) => y * 2).get());
+		expect(
+			ensure(cause.get())
+				.filter(isFunction)
+				.map((f: () => number) => f())
+				.get()
+		).toBe(84);
 	  });
 
 	  test('should be result of function dependent on a signal changed after declaration', function () {
 		const x = state(42);
-		const cause = state(() => x.get() * 2);
+		const cause = state(() => ensure(x.get()).map((y: number) => y * 2).get());
 		x.set(24);
-		expect(cause.get().call()).toBe(48);
+		expect(
+			ensure(cause.get())
+				.filter(isFunction)
+				.map((f: () => number) => f())
+				.get()
+		).toBe(48);
 	  });
 
 	  test('should set new value with .set(() => x / 2)', function () {
 		const x = 42;
 		const cause = state(() => x * 2);
 		cause.set(() => x / 2);
-		expect(cause.get().call()).toBe(21);
+		expect(
+			ensure(cause.get())
+				.filter(isFunction)
+				.map((f: () => number) => f())
+				.get()
+		).toBe(21);
 	  });
 
-	  test('should upper case value with v => v.toUpperCase()', function () {
+	  test('should upper case string with () => x.toUpperCase()', function () {
 		const x = 'foo';
 		const cause = state(() => x + 'bar');
-		cause.set(v => () => v().toUpperCase());
-		expect(cause.get().call()).toBe('FOOBAR');
+		cause.set(() => x.toUpperCase());
+		expect(
+			ensure(cause.get())
+				.filter(isFunction)
+				.map((f: () => string) => f())
+				.get()
+		).toBe('FOO');
 	  });
 
 	});
@@ -214,21 +245,22 @@ describe('State', function () {
 	  });
 
 	  test('should set new value with .set({ c: true })', function () {
-		const cause = state({ a: 'a', b: 1 });
+		const cause = state<StateValue<Record<string, any>>>({ a: 'a', b: 1 });
 		cause.set({ c: true });
 		expect(cause.get()).toEqual({ c: true });
 	  });
 
 	  test('should reflect current value of object after modification', function () {
 		const obj = { a: 'a', b: 1 };
-		const cause = state(obj);
+		const cause = state<StateValue<Record<string, any>>>(obj);
+		// @ts-expect-error
 		obj.c = true; // don't do this! the result will be correct, but we can't trigger effects
 		expect(cause.get()).toEqual({ a: 'a', b: 1, c: true });
 	  });
 
 	  test('should set new value with .set({...obj, c: true})', function () {
 		const obj = { a: 'a', b: 1 };
-		const cause = state(obj);
+		const cause = state<StateValue<Record<string, any>>>(obj);
 		cause.set({...obj, c: true}); // use destructuring instead!
 		expect(cause.get()).toEqual({ a: 'a', b: 1, c: true });
 	  });
@@ -246,31 +278,33 @@ describe('State', function () {
 
 	test('should compute function dependent on a signal', function() {
 	  const cause = state(42);
-	  const derived = computed(() => 1 + cause.get());
+	  const derived = computed(() => ensure(cause.get()).map((x: number) => x + 1).get());
 	  expect(derived.get()).toBe(43);
 	});
 
 	test('should compute function dependent on an updated signal', function() {
 	  const cause = state(42);
-	  const derived = computed(() => 1 + cause.get());
+	  const derived = computed(() => ensure(cause.get()).map((x: number) => x + 1).get());
 	  cause.set(24);
 	  expect(derived.get()).toBe(25);
 	});
 
 	test('should compute function dependent on an async signal', async function() {
 		const status = state('unset');
-		const cause = state(() => {
+		const cause = state<StateValue<number>>(() => {
 			new Promise(resolve => {
 				status.set('pending');
 				setTimeout(() => resolve(cause.set(42)), 100);
 			}).then(() => status.set('success'));
-			return undefined;
+			return 0;
 		});
 		const derived = computed(() => {
 			const value = cause.get();
-			return typeof value === 'function' ? value.call() : value + 1;
+			return isFunction(value)
+				? value.call(null)
+				: ensure(value).map((x: number) => x + 1).get();
 		});
-		expect(derived.get()).toBeUndefined();
+		expect(derived.get()).toBe(0);
 		expect(status.get()).toBe('pending');
 		await wait(100);
 		expect(derived.get()).toBe(43);
@@ -279,7 +313,7 @@ describe('State', function () {
 
 	test('should handle errors from an async signal gracefully', async function() {
 		const status = state('unset');
-		const error = state();
+		const error = state('');
 		const cause = state(() => {
 			new Promise((_, reject) => {
 				status.set('pending');
@@ -292,7 +326,7 @@ describe('State', function () {
 		});
 		const derived = computed(() => {
 			const value = cause.get();
-			return typeof value === 'function' ? value.call() : value + 1;
+			return isFunction(value) ? value() : ensure(value).map((x: number) => x + 1).get();
 		});
 		expect(derived.get()).toBeUndefined();
 		expect(status.get()).toBe('pending');
@@ -303,17 +337,17 @@ describe('State', function () {
 
 	test('should compute function dependent on a chain of computed states dependent on a signal', function() {
 	  const cause = state(42);
-	  const derived1 = computed(() => 1 + cause.get());
-	  const derived2 = computed(() => derived1.get() * 2);
-	  const derived3 = computed(() => derived2.get() + 1);
+	  const derived1 = computed(() => ensure(cause.get()).map((x: number) => x + 1).get());
+	  const derived2 = computed(() => ensure(derived1.get()).map((x: number) => x * 2).get());
+	  const derived3 = computed(() => ensure(derived2.get()).map((x: number) => x + 1).get());
 	  expect(derived3.get()).toBe(87);
 	});
 
 	test('should compute function dependent on a chain of computed states dependent on an updated signal', function() {
 	  const cause = state(42);
-	  const derived1 = computed(() => 1 + cause.get());
-	  const derived2 = computed(() => derived1.get() * 2);
-	  const derived3 = computed(() => derived2.get() + 1);
+	  const derived1 = computed(() => ensure(cause.get()).map((x: number) => x + 1).get());
+	  const derived2 = computed(() => ensure(derived1.get()).map((x: number) => x * 2).get());
+	  const derived3 = computed(() => ensure(derived2.get()).map((x: number) => x + 1).get());
 	  cause.set(24);
 	  expect(derived3.get()).toBe(51);
 	});
@@ -321,8 +355,8 @@ describe('State', function () {
 	test('should drop X->B->X updates', function () {
 	  let count = 0;
 	  const x = state(2);
-	  const a = computed(() => x.get() - 1);
-	  const b = computed(() => x.get() + a.get());
+	  const a = computed(() => ensure(x.get()).map((x: number) => x - 1).get());
+	  const b = computed(() => ensure(x.get()).map((x: number) => x + (a.get() as number)).get());
 	  const c = computed(() => {
 		count++;
 		return 'c: ' + b.get();
@@ -388,7 +422,7 @@ describe('State', function () {
 	test('should block if result remains unchanged', function() {
 		let count = 0;
 		const x = state(42);
-		const a = computed(() => x.get() % 2);
+		const a = computed(() => ensure(x.get()).map((x: number) => x % 2).get());
 		const b = computed(() => a.get() ? 'odd' : 'even', true);
 		const c = computed(() => {
 			count++;
@@ -420,7 +454,7 @@ describe('State', function () {
 		try {
 			expect(a.get()).toBe(1);
 		} catch (error) {
-			fail(`Error during reactive computation: ${error.message}`);
+			expect(error.message).toBe(`Error during reactive computation: ${error.message}`);
 		} finally {
 			expect(c.get()).toBe('c: success');
 			expect(count).toBe(1);
@@ -485,8 +519,8 @@ describe('Batch', function () {
 	  let result = 0;
 	  let count = 0;
 	  effect(enqueue => {
-		result = cause.get();
-		enqueue(document.documentElement, 'count', () => () => count++);
+		result = cause.get() || 0;
+		enqueue(null, 'count', () => () => count++);
 	  });
 	  (() => {
 		for (let i = 1; i <= 10; i++) {
