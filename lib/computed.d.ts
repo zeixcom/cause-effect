@@ -1,4 +1,4 @@
-type ComputedValue<T> = T | undefined | Error;
+type ComputedValue<T> = T | Error;
 /**
  * Create a derived state from existing states
  *
@@ -17,6 +17,6 @@ export declare class Computed<T> {
     private constructor();
     static of<T>(fn: () => ComputedValue<T> | Promise<ComputedValue<T>>, memo?: boolean): Computed<T>;
     static isComputed: <T_1>(value: unknown) => value is Computed<T_1>;
-    get(): T | undefined | void;
+    get(): T | void;
 }
 export {};

@@ -13,14 +13,14 @@ const busy = () => {
 
 const framework = {
 	name: "Cause & Effect",
-	signal: <T>(initialValue: T | undefined) => {
+	signal: <T>(initialValue: T) => {
 		const s = State.of<T>(initialValue);
 		return {
-		write: (v: T | undefined) => s.set(v),
+		write: (v: T) => s.set(v),
 		read: () => s.get(),
 		};
 	},
-	computed: <T>(fn: () => T | void) => {
+	computed: <T>(fn: () => T) => {
 		const c = Computed.of(fn, true);
 		return { read: () => c.get() };
 	},
@@ -202,7 +202,7 @@ describe('Kairo tests', function () {
 			);
 		}
 		let sum = framework.computed(() => {
-			return current.map((x) => x.read()).reduce((a, b) => a + b, 0);
+			return current.map(x => x.read()).reduce((a, b) => a + b, 0);
 		});
 		let callCounter = new Counter();
 		framework.effect(() => {

@@ -1,5 +1,4 @@
-type StateValue<T> = T | undefined;
-type StateUpdater<T> = (old: StateValue<T>) => StateValue<T>;
+type StateUpdater<T> = (old: T) => T;
 /**
  * Define a reactive state
  *
@@ -14,25 +13,25 @@ export declare class State<T> {
      * Create a new state signal
      *
      * @static method of State<T>
-     * @param {StateValue<T>} value - initial value of the state
+     * @param {T} value - initial value of the state
      * @returns {State<T>} - new state signal
      */
-    static of<T>(value: StateValue<T>): State<T>;
+    static of<T>(value: T): State<T>;
     static isState: (value: unknown) => value is State<unknown>;
     /**
      * Get the current value of the state
      *
      * @method of State<T>
-     * @returns {T | undefined} - current value of the state
+     * @returns {T} - current value of the state
      */
-    get(): T | undefined;
+    get(): T;
     /**
      * Set a new value of the state
      *
      * @method of State<T>
-     * @param {StateValue<T> | StateUpdater<T>} value
+     * @param {T | StateUpdater<T>} value
      * @returns {void}
      */
-    set(value: StateValue<T> | StateUpdater<T>): void;
+    set(value: T | StateUpdater<T>): void;
 }
 export {};

@@ -5,9 +5,9 @@ import { State, Computed, effect } from '../index'
 
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 const paint = () => new Promise(resolve => setTimeout(resolve, 1))
-const increment = (n: number | undefined | void) => (n ?? 0) + 1;
-const decrement = (n: number | undefined | void) => (n ?? 0) - 1;
-const double = (n: number | undefined | void) => (n ?? 0) * 2;
+const increment = (n: number | void) => (n ?? 0) + 1;
+const decrement = (n: number | void) => (n ?? 0) - 1;
+const double = (n: number | void) => (n ?? 0) * 2;
 
 /* === Tests === */
 
@@ -15,7 +15,7 @@ describe('State', function () {
 
 	describe('Empty cause', function () {
 
-		test('should be undefined by default', function () {
+		test('should be undefined', function () {
 			const cause = State.of(undefined);
 			expect(cause.get()).toBeUndefined();
 		});
@@ -73,7 +73,7 @@ describe('State', function () {
 
 		test('should increment value with .set(v => ++v)', function () {
 			const cause = State.of(0);
-			cause.set(v => typeof v === 'number' ? ++v : 0);
+			cause.set(v => ++v);
 			expect(cause.get()).toBe(1);
 		});
 
@@ -249,7 +249,7 @@ describe('Computed', function () {
 		let count = 0;
 		const x = State.of(2);
 		const a = Computed.of(() => decrement(x.get()));
-		const b = Computed.of(() => (x.get() ?? 0) + (a.get() ?? 0));
+		const b = Computed.of(() => x.get() + (a.get() ?? 0));
 		const c = Computed.of(() => {
 			count++;
 			return 'c: ' + b.get();
@@ -315,7 +315,7 @@ describe('Computed', function () {
 	test('should block if result remains unchanged', function() {
 		let count = 0;
 		const x = State.of(42);
-		const a = Computed.of(() => (x.get() ?? 0) % 2);
+		const a = Computed.of(() => x.get() % 2);
 		const b = Computed.of(() => a.get() ? 'odd' : 'even', true);
 		const c = Computed.of(() => {
 			count++;

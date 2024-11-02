@@ -1,6 +1,6 @@
 # Cause & Effect
 
-Version 0.9.0
+Version 0.9.1
 
 **Cause & Effect** is a lightweight library for reactive state management with signals.
 
@@ -24,7 +24,7 @@ yarn add @efflore/cause-effect
 
 ### Single State Signal
 
-`State.of()` creates a new state signal. To access the current value of the signal use the `.get()` method. To update the value of the signal use the `.set()` method with a new value or an updater function of the form `(v: T | undefined) => T | undefined`.
+`State.of()` creates a new state signal. To access the current value of the signal use the `.get()` method. To update the value of the signal use the `.set()` method with a new value or an updater function of the form `(v: T) => T`.
 
 ```js
 import { State, effect } from '@efflore/cause-effect'
@@ -33,7 +33,7 @@ const count = State.of(42)
 effect(() => console.log(count.get())) // logs '42'
 count.set(24) // logs '24'
 document.querySelector('button.increment')
-    .addEventListener('click', () => count.set(v => (v ?? 0) + 1))
+    .addEventListener('click', () => count.set(v => ++v))
 // Click on button logs '25', '26', and so on
 ```
 
@@ -45,11 +45,11 @@ document.querySelector('button.increment')
 import { State, Computed, effect } from '@efflore/cause-effect'
 
 const count = State.of(42)
-const isOdd = Computed.of(() => (count.get() ?? 0) % 2)
+const isOdd = Computed.of(() => count.get() % 2)
 effect(() => console.log(isOdd.get())) // logs 'false'
 count.set(24) // logs nothing because 24 is also an even number
 document.querySelector('button.increment')
-    .addEventListener('click', () => count.set(v => (v ?? 0) + 1))
+    .addEventListener('click', () => count.set(v => ++v))
 // Click on button logs 'true', 'false', and so on
 ```
 
@@ -82,6 +82,6 @@ effect(() => {
 })
 // Updates h1 and p of the entry as soon as fetched data for entry becomes available
 document.querySelector('button.next')
-    .addEventListener('click', () => entryId.set(v => (v ?? 0) + 1))
+    .addEventListener('click', () => entryId.set(v => ++v))
 // Click on button updates h1 and p of the entry as soon as fetched data for the next entry is loaded
 ```

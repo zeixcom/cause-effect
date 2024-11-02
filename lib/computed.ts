@@ -3,7 +3,7 @@ import { isAsyncFunction, isError, isPromise } from "./util"
 
 /* === Types === */
 
-type ComputedValue<T> = T | undefined | Error
+type ComputedValue<T> = T | Error
 
 /* === Class Computed === */
 
@@ -16,7 +16,7 @@ type ComputedValue<T> = T | undefined | Error
  */
 export class Computed<T> {
     private sinks: Set<() => void> = new Set()
-    private value: T | undefined = undefined
+    private value: T | undefined
 	private error: Error | null = null
     private stale = true
     private memo: boolean = false
@@ -40,7 +40,7 @@ export class Computed<T> {
 	static isComputed = <T>(value: unknown): value is Computed<T> =>
 		value instanceof Computed
 
-    get(): T | undefined | void {
+    get(): T | void {
         autotrack(this.sinks);
         if (!this.memo || this.stale) reactive(
 			() => {
