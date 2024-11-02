@@ -10,8 +10,14 @@
   "peerDependencies": {
     "typescript": "^5.6.3"
   },
-  "description": "Cause & Effect - fine-grained state management with signals.",
+  "description": "Cause & Effect - reactive state management with signals.",
   "license": "MIT",
+  "keywords": [
+    "Cause & Effect",
+    "Reactivity",
+    "Signals",
+    "Effects"
+  ],
   "publishConfig": {
     "access": "public"
   },
