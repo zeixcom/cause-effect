@@ -1,5 +1,4 @@
-import { type Enqueue } from "./scheduler";
-type EffectCallback = (enqueue: Enqueue) => void | (() => void);
+type EffectCallback = () => void | (() => void);
 /**
  * Define what happens when a reactive state changes
  *

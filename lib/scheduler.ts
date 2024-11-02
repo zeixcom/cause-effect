@@ -1,4 +1,3 @@
-import { Result, Err } from '@efflore/flow-sure'
 import { log, LOG_ERROR } from './log'
 
 /* === Types === */
@@ -26,9 +25,13 @@ const scheduler = (): Scheduler => {
 	const cleanupQueue = new Map()
 	let requestId: number | null
 
-	const run = (fn: () => void, msg: string) => Result.from(fn).match({
-		Err: error => Err.of(log(error, msg, LOG_ERROR))
-	})
+	const run = (fn: () => void, msg: string) => {
+		try {
+			fn()
+		} catch (error) {
+			log(error, msg, LOG_ERROR)
+        }
+	}
 
 	const flush = () => {
 		requestId = null

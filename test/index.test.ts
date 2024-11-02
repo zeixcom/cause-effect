@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { State, Computed, effect, Maybe } from '../index'
+import { State, Computed, effect } from '../index'
 
 /* === Utility Functions === */
 

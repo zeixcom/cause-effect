@@ -1,18 +1,17 @@
 
-import { Maybe } from "@efflore/flow-sure"
 import { isFunction } from "./util"
-import { scheduler, type Enqueue } from "./scheduler"
+// import { scheduler, type Enqueue } from "./scheduler"
 import { reactive } from "./signal"
 
 /* === Types === */
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-type EffectCallback = (enqueue: Enqueue) => void | (() => void)
+type EffectCallback = () => void | (() => void)
 
 /* === Internals === */
 
 // Hold schuduler instance
-const { enqueue, cleanup } = scheduler()
+// const { enqueue, cleanup } = scheduler()
 
 /* === Exported Function === */
 
@@ -23,11 +22,17 @@ const { enqueue, cleanup } = scheduler()
  * @param {EffectCallback} fn - callback function to be executed when a state changes
  */
 export const effect = (fn: EffectCallback) => {
-   const run = () => reactive(
-	   () => Maybe.of(fn(enqueue))
-		   .guard(isFunction)
-		   .map((cleanupFn: () => void) => cleanup(fn, cleanupFn)),
-	   run
-   )
-   run()
+	const run = () => reactive(
+		() => {
+			try {
+				const cleanupFn = fn() // execute effect
+				if (cleanupFn && isFunction(cleanupFn))
+					setTimeout(() => cleanupFn(), 0) // run cleanup after current tick
+			} catch (error) {
+				console.error(error)
+			}
+		}, 
+		run
+	)
+	run()
 }

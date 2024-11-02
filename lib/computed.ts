@@ -1,4 +1,3 @@
-import { Result } from "@efflore/flow-sure"
 import { autorun, autotrack, reactive } from "./signal"
 import { isAsyncFunction, isError, isPromise } from "./util"
 
@@ -45,6 +44,14 @@ export class Computed<T> {
         autotrack(this.sinks);
         if (!this.memo || this.stale) {
             reactive(() => {
+				const compute = (): ComputedValue<T> | Promise<ComputedValue<T>> => {
+					try {
+						return this.fn()
+					} catch (e) {
+						return isError(e) ? e
+							: new Error(`Error during reactive computation: ${e}`)
+					}
+				}
 				const handleMaybe = (v: T | undefined) => {
 					this.stale = value !== null
                     this.value = v
@@ -58,10 +65,10 @@ export class Computed<T> {
 					isError(value)
 						? handleErr(value)
 						: handleMaybe(value)
-				const value = Result.unwrap(Result.from(this.fn))
+				const value = compute()
 				isPromise(value)
 					? value
-						.then(v => update(Result.unwrap(v)))
+						.then(v => update(v))
 						.catch(handleErr)
 					: update(value)
 			},
