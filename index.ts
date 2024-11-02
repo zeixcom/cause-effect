@@ -1,6 +1,8 @@
+/**
+ * @name Cause & Effect
+ * @version 0.9.0
+ * @author Esther Brunner
+ */
 export { State } from './lib/state'
 export { Computed } from './lib/computed'
-// export * as Signal from './lib/signal'
 export { effect } from './lib/effect'
-// export * from './lib/scheduler'
-// export * from './lib/log'

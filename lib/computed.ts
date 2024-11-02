@@ -42,8 +42,8 @@ export class Computed<T> {
 
     get(): T | undefined | void {
         autotrack(this.sinks);
-        if (!this.memo || this.stale) {
-            reactive(() => {
+        if (!this.memo || this.stale) reactive(
+			() => {
 				const compute = (): ComputedValue<T> | Promise<ComputedValue<T>> => {
 					try {
 						return this.fn()
@@ -53,14 +53,14 @@ export class Computed<T> {
 					}
 				}
 				const handleMaybe = (v: T | undefined) => {
-					this.stale = value !== null
-                    this.value = v
-                    this.error = null
+					this.stale = value == null
+					this.value = v
+					this.error = null
 				}
 				const handleErr = (e: Error) => {
-                    this.stale = true
-                    this.error = e
-                }
+					this.stale = true
+					this.error = e
+				}
 				const update = (value: ComputedValue<T>) =>
 					isError(value)
 						? handleErr(value)
@@ -75,8 +75,8 @@ export class Computed<T> {
 			() => {
 				this.stale = true
 				if (this.memo) autorun(this.sinks)
-			})
-        }
+			}
+		)
 		if (this.error) throw this.error
         return this.value
     }
