@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { state, computed, effect } from '../index';
+import { State, Computed, effect } from '../index';
 import { makeGraph, runGraph, Counter } from "./util/dependency-graph";
 
 /* === Utility Functions === */
@@ -13,18 +13,18 @@ const busy = () => {
 
 const framework = {
 	name: "Cause & Effect",
-	signal: initialValue => {
-		const s = state(initialValue);
+	signal: <T>(initialValue: T | undefined) => {
+		const s = State.of<T>(initialValue);
 		return {
-		write: v => s.set(v),
+		write: (v: T | undefined) => s.set(v),
 		read: () => s.get(),
 		};
 	},
-	computed: fn => {
-		const c = computed(fn, true);
+	computed: <T>(fn: () => T | void) => {
+		const c = Computed.of(fn, true);
 		return { read: () => c.get() };
 	},
-	effect: fn => effect(fn),
+	effect: (fn: () => void) => effect(fn),
 	withBatch: fn => fn(),
 	withBuild: fn => fn(),
 };
@@ -52,7 +52,7 @@ describe('Basic test', function () {
 
 	test(`${name} | simple dependency executes`, () => {
 		const s = framework.signal(2);
-		const c = framework.computed(() => s.read() * 2);
+		const c = framework.computed(() => s.read()! * 2);
 
 		expect(c.read()).toBe(4);
 	});
@@ -103,9 +103,9 @@ describe('Kairo tests', function () {
 		const head = framework.signal(0);
 		const computed1 = framework.computed(() => head.read());
 		const computed2 = framework.computed(() => (computed1.read(), 0));
-		const computed3 = framework.computed(() => (busy(), computed2.read() + 1)); // heavy computation
-		const computed4 = framework.computed(() => computed3.read() + 2);
-		const computed5 = framework.computed(() => computed4.read() + 3);
+		const computed3 = framework.computed(() => (busy(), computed2.read()! + 1)); // heavy computation
+		const computed4 = framework.computed(() => computed3.read()! + 2);
+		const computed5 = framework.computed(() => computed4.read()! + 3);
 		framework.effect(() => {
 			computed5.read();
 			busy(); // heavy side effect
@@ -131,10 +131,10 @@ describe('Kairo tests', function () {
 		const callCounter = new Counter();
 		for (let i = 0; i < 50; i++) {
 			let current = framework.computed(() => {
-				return head.read() + i;
+				return head.read()! + i;
 			});
 			let current2 = framework.computed(() => {
-				return current.read() + 1;
+				return current.read()! + 1;
 			});
 			framework.effect(() => {
 				current2.read();
@@ -198,9 +198,7 @@ describe('Kairo tests', function () {
 		let current = [];
 		for (let i = 0; i < width; i++) {
 			current.push(
-				framework.computed(() => {
-					return head.read() + 1;
-				})
+				framework.computed(() => head.read() + 1)
 			);
 		}
 		let sum = framework.computed(() => {

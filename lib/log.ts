@@ -1,5 +1,3 @@
-import { isDefined, isDefinedObject } from '@efflore/flow-sure'
-
 /* === Types === */
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error'
@@ -65,8 +63,8 @@ const elementName = (el: Element): string =>
  */
 const valueString = (value: unknown): string =>
 	isString(value) ? `"${value}"`
-		: isDefinedObject(value) ? JSON.stringify(value)
-		: isDefined(value) ? String(value)
+		: typeof value === 'object' ? JSON.stringify(value)
+		: value != null ? String(value)
 		: 'undefined'
 
 /**

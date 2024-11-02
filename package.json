@@ -19,9 +19,9 @@
     "@types/bun": "latest"
   },
   "peerDependencies": {
-    "typescript": "^5.0.0"
+    "typescript": "^5.6.3"
   },
   "dependencies": {
-    "@efflore/flow-sure": "^0.9.4"
+    "@efflore/flow-sure": "^0.9.7"
   }
 }
