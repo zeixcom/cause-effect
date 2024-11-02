@@ -33,7 +33,7 @@ const count = State.of(42)
 effect(() => console.log(count.get())) // logs '42'
 count.set(24) // logs '24'
 document.querySelector('button.increment')
-	.addEventListener('click', () => count.set(v => (v ?? 0) + 1))
+    .addEventListener('click', () => count.set(v => (v ?? 0) + 1))
 // Click on button logs '25', '26', and so on
 ```
 
@@ -49,7 +49,7 @@ const isOdd = Computed.of(() => (count.get() ?? 0) % 2)
 effect(() => console.log(isOdd.get())) // logs 'false'
 count.set(24) // logs nothing because 24 is also an even number
 document.querySelector('button.increment')
-	.addEventListener('click', () => count.set(v => (v ?? 0) + 1))
+    .addEventListener('click', () => count.set(v => (v ?? 0) + 1))
 // Click on button logs 'true', 'false', and so on
 ```
 
@@ -62,26 +62,26 @@ import { State, Computed, effect } from '@efflore/cause-effect'
 
 const entryId = State.of(42)
 const entryData = Computed.of(async () => {
-	const id = entryId.get()
-	if (null == id) return new ReferenceError('No entry ID provided')
-	const response = await fetch(`/api/entry/${id}`)
-	if (!response.ok) return new Error(`Failed to fetch data: ${response.statusText}`)
-	return response.json()
+    const id = entryId.get()
+    if (null == id) return new ReferenceError('No entry ID provided')
+    const response = await fetch(`/api/entry/${id}`)
+    if (!response.ok) return new Error(`Failed to fetch data: ${response.statusText}`)
+    return response.json()
 })
 effect(() => {
-	let data
-	try {
-		data = entryData.get()
-	} catch (error) {
-		console.error(error.message) // logs the error message if an error ocurred
-		return
-	}
-	if (null == data) return // doesn't do anything while we are still waiting for the data
-	document.querySelector('.entry h2').textContent = data.title
-	document.querySelector('.entry p').textContent = data.description
+    let data
+    try {
+        data = entryData.get()
+    } catch (error) {
+        console.error(error.message) // logs the error message if an error ocurred
+        return
+    }
+    if (null == data) return // doesn't do anything while we are still waiting for the data
+    document.querySelector('.entry h2').textContent = data.title
+    document.querySelector('.entry p').textContent = data.description
 })
 // Updates h1 and p of the entry as soon as fetched data for entry becomes available
 document.querySelector('button.next')
-	.addEventListener('click', () => entryId.set(v => (v ?? 0) + 1))
-// Click on button update h1 and p of the entry as soon as fetched data for the next entry is loaded
+    .addEventListener('click', () => entryId.set(v => (v ?? 0) + 1))
+// Click on button updates h1 and p of the entry as soon as fetched data for the next entry is loaded
 ```
