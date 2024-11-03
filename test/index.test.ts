@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { State, Computed, effect } from '../index'
+import { State, Computed, effect, batch } from '../index'
 
 /* === Utility Functions === */
 
@@ -174,6 +174,17 @@ describe('State', function () {
 
 	});
 
+	describe('Map method', function () {
+
+		test('should return a computed signal', function() {
+            const cause = State.of(42);
+            const double = cause.map(v => v * 2);
+			expect(Computed.isComputed(double)).toBe(true);
+            expect(double.get()).toBe(84);
+        });
+
+	});
+
 });
 
 describe('Computed', function () {
@@ -184,14 +195,13 @@ describe('Computed', function () {
 	});
 
 	test('should compute function dependent on a signal', function() {
-		const cause = State.of(42);
-		const derived = Computed.of(() => increment(cause.get()));
+		const derived = State.of(42).map(v => ++v);
 		expect(derived.get()).toBe(43);
 	});
 
 	test('should compute function dependent on an updated signal', function() {
 		const cause = State.of(42);
-		const derived = Computed.of(() => increment(cause.get()));
+		const derived = cause.map(v => ++v);
 		cause.set(24);
 		expect(derived.get()).toBe(25);
 	});
@@ -203,7 +213,7 @@ describe('Computed', function () {
 			status.set('success');
 			return 42;
 		});
-		const derived = Computed.of(() => increment(promised.get()));
+		const derived = promised.map(increment);
 		expect(derived.get()).toBe(1);
 		expect(status.get()).toBe('pending');
 		await wait(100);
@@ -220,7 +230,7 @@ describe('Computed', function () {
 			error.set('error occurred');
 			return 0
 		});
-		const derived = Computed.of(() => increment(promised.get()));
+		const derived = promised.map(increment);
 		expect(derived.get()).toBe(1);
 		expect(status.get()).toBe('pending');
 		await wait(100);
@@ -229,26 +239,26 @@ describe('Computed', function () {
 	});
 
 	test('should compute function dependent on a chain of computed states dependent on a signal', function() {
-		const cause = State.of(42);
-		const derived1 = Computed.of(() => increment(cause.get()));
-		const derived2 = Computed.of(() => double(derived1.get()));
-		const derived3 = Computed.of(() => increment(derived2.get()));
-		expect(derived3.get()).toBe(87);
+		const derived = State.of(42)
+			.map(v => ++v)
+			.map(v => v * 2)
+			.map(v => ++v);
+		expect(derived.get()).toBe(87);
 	});
 
 	test('should compute function dependent on a chain of computed states dependent on an updated signal', function() {
 		const cause = State.of(42);
-		const derived1 = Computed.of(() => increment(cause.get()));
-		const derived2 = Computed.of(() => double(derived1.get()));
-		const derived3 = Computed.of(() => increment(derived2.get()));
+		const derived = cause.map(v => ++v)
+			.map(v => v * 2)
+			.map(v => ++v);
 		cause.set(24);
-		expect(derived3.get()).toBe(51);
+		expect(derived.get()).toBe(51);
 	});
 
 	test('should drop X->B->X updates', function () {
 		let count = 0;
 		const x = State.of(2);
-		const a = Computed.of(() => decrement(x.get()));
+		const a = x.map(decrement);
 		const b = Computed.of(() => x.get() + (a.get() ?? 0));
 		const c = Computed.of(() => {
 			count++;
@@ -264,8 +274,8 @@ describe('Computed', function () {
 	test('should only update every signal once (diamond graph)', function() {
 		let count = 0;
 		const x = State.of('a');
-		const a = Computed.of(() => x.get());
-		const b = Computed.of(() => x.get());
+		const a = x.map(v => v);
+		const b = x.map(v => v);
 		const c = Computed.of(() => {
 			count++;
 			return a.get() + ' ' + b.get();
@@ -280,8 +290,8 @@ describe('Computed', function () {
 	test('should only update every signal once (diamond graph + tail)', function() {
 		let count = 0;
 		const x = State.of('a');
-		const a = Computed.of(() => x.get());
-		const b = Computed.of(() => x.get());
+		const a = x.map(v => v);
+		const b = x.map(v => v);
 		const c = Computed.of(() => a.get() + ' ' + b.get());
 		const d = Computed.of(() => {
 			count++;
@@ -315,7 +325,7 @@ describe('Computed', function () {
 	test('should block if result remains unchanged', function() {
 		let count = 0;
 		const x = State.of(42);
-		const a = Computed.of(() => x.get() % 2);
+		const a = x.map(v => v % 2);
 		const b = Computed.of(() => a.get() ? 'odd' : 'even', true);
 		const c = Computed.of(() => {
 			count++;
@@ -335,7 +345,7 @@ describe('Computed', function () {
 			if (x.get() === 1) throw new Error('Calculation error');
 			return 1;
 		}, true);
-		const b = Computed.of(() => a.get() ? 'success' : 'pending');
+		const b = a.map(v => v ? 'success' : 'pending');
 		const c = Computed.of(() => {
 			count++;
 			return `c: ${b.get()}`;
@@ -378,51 +388,82 @@ describe('Effect', function () {
 	}); */
 
 	test('should be triggered after a state change', function() {
-	  const cause = State.of('foo');
-	  let effectDidRun = false;
-	  effect(() => {
-		cause.get();
-		effectDidRun = true;
-		return;
-	  });
-	  cause.set('bar');
-	  expect(effectDidRun).toBe(true);
+		const cause = State.of('foo');
+		let effectDidRun = false;
+		effect(() => {
+			cause.get();
+			effectDidRun = true;
+		});
+		cause.set('bar');
+		expect(effectDidRun).toBe(true);
 	});
 
 	test('should be triggered repeatedly after repeated state change', async function() {
-	  const cause = State.of(0);
-	  let count = 0;
-	  effect(() => {
-		cause.get();
-		count++;
-	  });
-	  for (let i = 0; i < 10; i++) {
-		cause.set(i);
-		await paint();
-		expect(count).toBe(i + 1); // + initial effect execution
-	  }
+		const cause = State.of(0);
+		let count = 0;
+		effect(() => {
+			cause.get();
+			count++;
+		});
+		for (let i = 0; i < 10; i++) {
+			cause.set(i);
+			expect(count).toBe(i + 1); // + 1 for the initial state change
+		}
+	});
+
+	test('should update multiple times after multiple state changes', function() {
+		const a = State.of(3);
+		const b = State.of(4);
+		let count = 0;
+		const sum = Computed.of(() => {
+			count++;
+			return a.get() + b.get()
+		});
+		expect(sum.get()).toBe(7);
+		a.set(6);
+		expect(sum.get()).toBe(10);
+		b.set(8);
+		expect(sum.get()).toBe(14);
+		expect(count).toBe(3);
 	});
 
 });
 
-/* describe('Batch', function () {
+describe('Batch', function () {
 
-	test('should be triggered only once after repeated state change', async function() {
+	test('should be triggered only once after repeated state change', function() {
 		const cause = State.of(0);
 		let result = 0;
 		let count = 0;
-		effect(enqueue => {
-			result = cause.get() || 0;
-			// enqueue(null, 'count', () => () => count++);
-		});
-		(() => {
+		batch(() => {
 			for (let i = 1; i <= 10; i++) {
 				cause.set(i);
 			}
-		})();
-		await paint();
+		});
+		effect(() => {
+			result = cause.get();
+			count++;
+		});
 		expect(result).toBe(10);
-		// expect(count).toBe(1);
+		expect(count).toBe(1);
 	});
 
-}); */
+	test('should be triggered only once multiple signals set', function() {
+		const a = State.of(3);
+		const b = State.of(4);
+		const sum = Computed.of(() => a.get() + b.get());
+		let result = 0;
+		let count = 0;
+		batch(() => {
+			a.set(6);
+            b.set(8);
+		});
+		effect(() => {
+            result = sum.get();
+			count++;
+        });
+		expect(sum.get()).toBe(14);
+		expect(count).toBe(1);
+	});
+
+});

@@ -1,13 +1,13 @@
 # Cause & Effect
 
-Version 0.9.1
+Version 0.9.2
 
 **Cause & Effect** is a lightweight library for reactive state management with signals.
 
 ## Key Features
 
-* **State Signals**: Define states that auto-track their dependencies and auto-notify them when the value changes. The set method
-* **Computed Signals**: Derive computed signals from sync or async functions. Like state signals they auto-track their dependencies and auto-notify them when the computed value changes. With optional memoization, which is by default off for sync functions and on for async functions.
+* **State Signals**: Define states that auto-subscribe their dependencies and auto-notify them when the value changes. The set method
+* **Computed Signals**: Derive computed signals from sync or async functions. Like state signals they auto-subscribe their dependencies and auto-notify them when the computed value changes. With optional memoization, which is by default off for sync functions and on for async functions.
 * **Effects**: Trigger any effects when state or computed signals change.
 
 ## Installation
@@ -53,18 +53,32 @@ document.querySelector('button.increment')
 // Click on button logs 'true', 'false', and so on
 ```
 
+If you want to derive a computed signal from a single other signal you can use the `.map()` method on either `State` or `Computed`. This does the same as the snippet above:
+
+```js
+import { State, effect } from '@efflore/cause-effect'
+
+const count = State.of(42)
+const isOdd = count.map(v => v % 2)
+effect(() => console.log(isOdd.get())) // logs 'false'
+count.set(24) // logs nothing because 24 is also an even number
+document.querySelector('button.increment')
+    .addEventListener('click', () => count.set(v => ++v))
+// Click on button logs 'true', 'false', and so on
+```
+
 ### Async Computed Signal
 
 Async computed signals are as straight forward as their sync counterparts. Just create the computed signal with an async function.
+
+**Caution**: To create an async computed signals you can't use the `.map()` method. And you need to be aware that it will return `undefined` until the Promise is resolved.
 
 ```js
 import { State, Computed, effect } from '@efflore/cause-effect'
 
 const entryId = State.of(42)
 const entryData = Computed.of(async () => {
-    const id = entryId.get()
-    if (null == id) return new ReferenceError('No entry ID provided')
-    const response = await fetch(`/api/entry/${id}`)
+    const response = await fetch(`/api/entry/${entryId.get()}`)
     if (!response.ok) return new Error(`Failed to fetch data: ${response.statusText}`)
     return response.json()
 })
@@ -84,4 +98,23 @@ effect(() => {
 document.querySelector('button.next')
     .addEventListener('click', () => entryId.set(v => ++v))
 // Click on button updates h1 and p of the entry as soon as fetched data for the next entry is loaded
+```
+
+### Effects and Batching
+
+Effects run synchronously as soon as the signal updates. If you set multiple signals you can batch them together to ensure they are executed at the same time.
+
+```js
+import { State, Computed, effect, batch } from '@efflore/cause-effect'
+
+const a = State.of(3)
+const b = State.of(4)
+const sum = Computed.of(() => a.get() + b.get())
+effect(() => console.log(sum.get())) // logs '7'
+document.querySelector('button.double-all')
+    .addEventListener('click', () => batch(() => {
+		a.set(v => v * 2)
+		b.set(v => v * 2)
+	}))
+// Click on button logs '14' only once (instead of first '10' and then '14' without batch)
 ```

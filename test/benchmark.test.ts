@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { State, Computed, effect } from '../index';
+import { State, Computed, effect, batch } from '../index';
 import { makeGraph, runGraph, Counter } from "./util/dependency-graph";
 
 /* === Utility Functions === */
@@ -25,8 +25,8 @@ const framework = {
 		return { read: () => c.get() };
 	},
 	effect: (fn: () => void) => effect(fn),
-	withBatch: fn => fn(),
-	withBuild: fn => fn(),
+	withBatch: (fn: () => void) => batch(fn),
+	withBuild: (fn: () => void) => fn(),
 };
 const testPullCounts = true;
 
@@ -127,7 +127,7 @@ describe('Kairo tests', function () {
 
 	test(`${name} | broad propagation`, () => {
 		const head = framework.signal(0);
-		let last = head;
+		let last = head as { read: () => number };
 		const callCounter = new Counter();
 		for (let i = 0; i < 50; i++) {
 			let current = framework.computed(() => {
@@ -162,7 +162,7 @@ describe('Kairo tests', function () {
 	test(`${name} | deep propagation`, () => {
 		let len = 50;
 		const head = framework.signal(0);
-		let current = head;
+		let current = head as { read: () => number };
 		for (let i = 0; i < len; i++) {
 			let c = current;
 			current = framework.computed(() => {
@@ -195,7 +195,7 @@ describe('Kairo tests', function () {
 	test(`${name} | diamond`, function () {
 		let width = 5;
 		const head = framework.signal(0);
-		let current = [];
+		let current: { read(): number }[] = [];
 		for (let i = 0; i < width; i++) {
 			current.push(
 				framework.computed(() => head.read() + 1)
@@ -292,8 +292,8 @@ describe('Kairo tests', function () {
 	test(`${name} | triangle`, function () {
 		let width = 10;
 		let head = framework.signal(0);
-		let current = head;
-		let list = [];
+		let current = head as { read: () => number };
+		let list: { read: () => number }[] = [];
 		for (let i = 0; i < width; i++) {
 			let c = current;
 			list.push(current);
@@ -311,6 +311,12 @@ describe('Kairo tests', function () {
 		});
 
 		return () => {
+			const count = (number: Number) => {
+				return new Array(number)
+					.fill(0)
+					.map((_, i) => i + 1)
+					.reduce((x, y) => x + y, 0);
+			}
 			const constant = count(width);
 			framework.withBatch(() => {
 				head.write(1);
@@ -367,15 +373,15 @@ describe('$mol_wire tests', function () {
 	const name = framework.name;
 
 	test(`${name} | $mol_wire benchmark`, function() {
-		const fib = (n) => {
+		const fib = (n: number) => {
 			if (n < 2) return 1;
 			return fib(n - 1) + fib(n - 2);
 		};
-		const hard = (n) => {
+		const hard = (n: number, log: string) => {
 			return n + fib(16);
 		};
 		const numbers = Array.from({ length: 5 }, (_, i) => i);
-		let res = [];
+		let res: (() => any)[] = [];
 		const iter = framework.withBuild(() => {
 			const A = framework.signal(0);
 			const B = framework.signal(0);
@@ -391,13 +397,13 @@ describe('$mol_wire tests', function () {
 				() => C.read() + (C.read() || E.read() % 2) + D.read()[4].x + F.read()
 			);
 			framework.effect(() => res.push(hard(G.read(), "H")));
-			framework.effect(() => res.push(G.read()), "I");
+			framework.effect(() => res.push(G.read())); // I
 			framework.effect(() => res.push(hard(F.read(), "J")));
 			framework.effect(() => res[0] = hard(G.read(), "H"));
-			framework.effect(() => res[1] = G.read(), "I");
+			framework.effect(() => res[1] = G.read()); // I
 			framework.effect(() => res[2] = hard(F.read(), "J"));
 
-			return (i) => {
+			return (i: number) => {
 				res.length = 0;
 				framework.withBatch(() => {
 					B.write(1);
@@ -415,87 +421,87 @@ describe('$mol_wire tests', function () {
 });
 
 /* describe('CellX tests', function () {
-const name = framework.name;
+	const name = framework.name;
 
-test(`${name} | CellX benchmark`, function() {
-	const expected = {
-	1000: [
-		[-3, -6, -2, 2],
-		[-2, -4, 2, 3],
-	],
-	2500: [
-		[-3, -6, -2, 2],
-		[-2, -4, 2, 3],
-	],
-	5000: [
-		[2, 4, -1, -6],
-		[-2, 1, -4, -4],
-	]
-	};
-	const results = {};
+	test(`${name} | CellX benchmark`, function() {
+		const expected = {
+		1000: [
+			[-3, -6, -2, 2],
+			[-2, -4, 2, 3],
+		],
+		2500: [
+			[-3, -6, -2, 2],
+			[-2, -4, 2, 3],
+		],
+		5000: [
+			[2, 4, -1, -6],
+			[-2, 1, -4, -4],
+		]
+		};
+		const results = {};
 
-	const cellx = (framework, layers) => {
-	const start = {
-		prop1: framework.signal(1),
-		prop2: framework.signal(2),
-		prop3: framework.signal(3),
-		prop4: framework.signal(4),
-	};
-	let layer = start;
+		const cellx = (framework, layers) => {
+		const start = {
+			prop1: framework.signal(1),
+			prop2: framework.signal(2),
+			prop3: framework.signal(3),
+			prop4: framework.signal(4),
+		};
+		let layer = start;
 
-	for (let i = layers; i > 0; i--) {
-		const m = layer;
-		const s = {
-		prop1: framework.computed(() => m.prop2.read()),
-		prop2: framework.computed(() => m.prop1.read() - m.prop3.read()),
-		prop3: framework.computed(() => m.prop2.read() + m.prop4.read()),
-		prop4: framework.computed(() => m.prop3.read()),
+		for (let i = layers; i > 0; i--) {
+			const m = layer;
+			const s = {
+			prop1: framework.computed(() => m.prop2.read()),
+			prop2: framework.computed(() => m.prop1.read() - m.prop3.read()),
+			prop3: framework.computed(() => m.prop2.read() + m.prop4.read()),
+			prop4: framework.computed(() => m.prop3.read()),
+			};
+
+			framework.effect(() => s.prop1.read());
+			framework.effect(() => s.prop2.read());
+			framework.effect(() => s.prop3.read());
+			framework.effect(() => s.prop4.read());
+
+			s.prop1.read();
+			s.prop2.read();
+			s.prop3.read();
+			s.prop4.read();
+
+			layer = s;
+		}
+
+		const end = layer;
+
+		const before = [
+			end.prop1.read(),
+			end.prop2.read(),
+			end.prop3.read(),
+			end.prop4.read(),
+		];
+
+		framework.withBatch(() => {
+			start.prop1.write(4);
+			start.prop2.write(3);
+			start.prop3.write(2);
+			start.prop4.write(1);
+		});
+
+		const after = [
+			end.prop1.read(),
+			end.prop2.read(),
+			end.prop3.read(),
+			end.prop4.read(),
+		];
+
+		return [before, after];
 		};
 
-		framework.effect(() => s.prop1.read());
-		framework.effect(() => s.prop2.read());
-		framework.effect(() => s.prop3.read());
-		framework.effect(() => s.prop4.read());
-
-		s.prop1.read();
-		s.prop2.read();
-		s.prop3.read();
-		s.prop4.read();
-
-		layer = s;
-	}
-
-	const end = layer;
-
-	const before = [
-		end.prop1.read(),
-		end.prop2.read(),
-		end.prop3.read(),
-		end.prop4.read(),
-	];
-
-	framework.withBatch(() => {
-		start.prop1.write(4);
-		start.prop2.write(3);
-		start.prop3.write(2);
-		start.prop4.write(1);
+		for (const layers in expected) {
+		const [before, after] = cellx(framework, layers);
+		const [expectedBefore, expectedAfter] = expected[layers];
+		expect(before.toString()).toBe(expectedBefore.toString());
+		expect(after.toString()).toBe(expectedAfter.toString());
+		}
 	});
-
-	const after = [
-		end.prop1.read(),
-		end.prop2.read(),
-		end.prop3.read(),
-		end.prop4.read(),
-	];
-
-	return [before, after];
-	};
-
-	for (const layers in expected) {
-	const [before, after] = cellx(framework, layers);
-	const [expectedBefore, expectedAfter] = expected[layers];
-	assert.equal(before.toString(), expectedBefore.toString(), `Expected first layer ${expectedBefore}, found first layer ${before}`);
-	assert.equal(after.toString(), expectedAfter.toString(), `Expected first layer ${expectedAfter}, found first layer ${after}`);
-	}
-});
 }); */

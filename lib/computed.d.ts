@@ -1,4 +1,6 @@
-type ComputedValue<T> = T | Error;
+export interface Computed<T> {
+    map: <U>(fn: (value: T) => U) => Computed<U>;
+}
 /**
  * Create a derived state from existing states
  *
@@ -8,15 +10,13 @@ type ComputedValue<T> = T | Error;
  */
 export declare class Computed<T> {
     private fn;
-    private sinks;
+    private watchers;
     private value;
     private error;
     private stale;
     private memo;
-    private async;
     private constructor();
-    static of<T>(fn: () => ComputedValue<T> | Promise<ComputedValue<T>>, memo?: boolean): Computed<T>;
+    static of: <T_1>(fn: () => T_1 | Promise<T_1>, memo?: boolean) => Computed<T_1>;
     static isComputed: <T_1>(value: unknown) => value is Computed<T_1>;
-    get(): T | void;
+    get(): T;
 }
-export {};

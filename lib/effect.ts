@@ -1,7 +1,7 @@
 
 import { isFunction } from "./util"
 // import { scheduler, type Enqueue } from "./scheduler"
-import { reactive } from "./signal"
+import { watch } from "./signal"
 
 /* === Types === */
 
@@ -22,12 +22,12 @@ type EffectCallback = () => void | (() => void)
  * @param {EffectCallback} fn - callback function to be executed when a state changes
  */
 export const effect = (fn: EffectCallback) => {
-	const run = () => reactive(
+	const run = () => watch(
 		() => {
 			try {
 				const cleanupFn = fn() // execute effect
 				if (cleanupFn && isFunction(cleanupFn))
-					setTimeout(() => cleanupFn(), 0) // run cleanup after current tick
+					setTimeout(cleanupFn) // run cleanup after current tick
 			} catch (error) {
 				console.error(error)
 			}

@@ -1,4 +1,8 @@
-type StateUpdater<T> = (old: T) => T;
+import type { Computed } from "./computed";
+export interface State<T> {
+    map: <U>(fn: (value: T) => U) => Computed<U>;
+}
+export type StateUpdater<T> = (old: T) => T;
 /**
  * Define a reactive state
  *
@@ -7,7 +11,7 @@ type StateUpdater<T> = (old: T) => T;
  */
 export declare class State<T> {
     private value;
-    private sinks;
+    private watchers;
     private constructor();
     /**
      * Create a new state signal
@@ -34,4 +38,3 @@ export declare class State<T> {
      */
     set(value: T | StateUpdater<T>): void;
 }
-export {};

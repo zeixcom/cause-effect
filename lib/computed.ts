@@ -1,9 +1,11 @@
-import { autorun, autotrack, reactive } from "./signal"
+import { subscribe, notify, watch, map } from "./signal"
 import { isAsyncFunction, isError, isPromise } from "./util"
 
 /* === Types === */
 
-type ComputedValue<T> = T | Error
+export interface Computed<T> {
+	map: <U>(fn: (value: T) => U) => Computed<U>
+}
 
 /* === Class Computed === */
 
@@ -15,69 +17,59 @@ type ComputedValue<T> = T | Error
  * @returns {Computed<T>} result of derived state
  */
 export class Computed<T> {
-    private sinks: Set<() => void> = new Set()
-    private value: T | undefined
+    private watchers: Set<() => void> = new Set()
+    private value!: T
 	private error: Error | null = null
     private stale = true
     private memo: boolean = false
-	private async: boolean = false
 
-    private constructor(
-		private fn: () => ComputedValue<T> | Promise<ComputedValue<T>>,
-		memo?: boolean
-	) {
-        this.async = isAsyncFunction(fn)
-        this.memo = memo ?? this.async
+    private constructor(private fn: () => T | Promise<T>, memo?: boolean) {
+        this.memo = memo ?? isAsyncFunction(fn)
     }
 
-    static of<T>(
-		fn: () => ComputedValue<T> | Promise<ComputedValue<T>>,
-		memo?: boolean
-	): Computed<T> {
-        return new Computed(fn, memo);
-    }
+    static of = <T>(fn: () => T | Promise<T>, memo?: boolean): Computed<T> =>
+        new Computed(fn, memo)
 
 	static isComputed = <T>(value: unknown): value is Computed<T> =>
 		value instanceof Computed
 
-    get(): T | void {
-        autotrack(this.sinks);
-        if (!this.memo || this.stale) reactive(
+    get(): T {
+		const compute = (): T | Error | Promise<T> => {
+			try {
+				return this.fn()
+			} catch (e) {
+				return isError(e) ? e
+					: new Error(`Error during reactive computation: ${e}`)
+			}
+		}
+		const handleOk = (v: T) => {
+			this.stale = false
+			this.value = v
+			this.error = null
+		}
+		const handleErr = (e: Error) => {
+			this.stale = true
+			this.error = e
+		}
+		const update = (v: T | Error) =>
+			isError(v) ? handleErr(v) : handleOk(v)
+
+        subscribe(this.watchers);
+        if (!this.memo || this.stale) watch(
 			() => {
-				const compute = (): ComputedValue<T> | Promise<ComputedValue<T>> => {
-					try {
-						return this.fn()
-					} catch (e) {
-						return isError(e) ? e
-							: new Error(`Error during reactive computation: ${e}`)
-					}
-				}
-				const handleMaybe = (v: T | undefined) => {
-					this.stale = value == null
-					this.value = v
-					this.error = null
-				}
-				const handleErr = (e: Error) => {
-					this.stale = true
-					this.error = e
-				}
-				const update = (value: ComputedValue<T>) =>
-					isError(value)
-						? handleErr(value)
-						: handleMaybe(value)
 				const value = compute()
 				isPromise(value)
-					? value
-						.then(v => update(v))
-						.catch(handleErr)
+					? value.then(update).catch(handleErr)
 					: update(value)
 			},
 			() => {
 				this.stale = true
-				if (this.memo) autorun(this.sinks)
+				if (this.memo) notify(this.watchers)
 			}
 		)
 		if (this.error) throw this.error
         return this.value
     }
 }
+
+Computed.prototype.map = map

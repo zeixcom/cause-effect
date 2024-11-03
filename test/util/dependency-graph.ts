@@ -66,10 +66,10 @@ function makeDependentRows(
   staticFraction,
   nSources,
   framework
-) {
+): { read: number }[][] {
   let prevRow = sources;
   const random = pseudoRandom();
-  const rows = [];
+  const rows: {read: number}[][] = [];
   for (let l = 0; l < numRows; l++) {
     const row = makeRow(
       prevRow,
@@ -95,7 +95,7 @@ function makeRow(
   random
 ) {
   return sources.map((_, myDex) => {
-    const mySources = [];
+    const mySources: { read(): number }[] = [];
     for (let sourceDex = 0; sourceDex < nSources; sourceDex++) {
       mySources.push(sources[(myDex + sourceDex) % sources.length]);
     }

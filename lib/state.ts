@@ -1,9 +1,14 @@
 import { isFunction } from "./util";
-import { autorun, autotrack } from "./signal";
+import { subscribe, notify, map } from "./signal";
+import type { Computed } from "./computed";
 
 /* === Types === */
 
-type StateUpdater<T> = (old: T) => T
+export interface State<T> {
+	map: <U>(fn: (value: T) => U) => Computed<U>
+}
+
+export type StateUpdater<T> = (old: T) => T
 
 /* === Class State === */
 
@@ -14,7 +19,7 @@ type StateUpdater<T> = (old: T) => T
  * @class State
  */
 export class State<T> {
-	private sinks: Set<() => void> = new Set()
+	private watchers: Set<() => void> = new Set()
 
 	private constructor(private value: T) {}
 
@@ -39,7 +44,7 @@ export class State<T> {
 	 * @returns {T} - current value of the state
 	 */
 	get(): T {
-		autotrack(this.sinks)
+		subscribe(this.watchers)
 		return this.value
 	}
 
@@ -52,9 +57,10 @@ export class State<T> {
 	 */
 	set(value: T | StateUpdater<T>): void {
 		const newValue = isFunction(value) ? value(this.value) : value
-		if (!Object.is(this.value, newValue)) {
-			this.value = newValue
-			autorun(this.sinks)
-		}
+		if (Object.is(this.value, newValue)) return
+		this.value = newValue
+		notify(this.watchers)
 	}
 }
+
+State.prototype.map = map
