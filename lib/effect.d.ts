@@ -1,4 +1,4 @@
-type EffectCallback = () => void | (() => void);
+export type EffectCallback = () => void | (() => void);
 /**
  * Define what happens when a reactive state changes
  *
@@ -6,4 +6,3 @@ type EffectCallback = () => void | (() => void);
  * @param {EffectCallback} fn - callback function to be executed when a state changes
  */
 export declare const effect: (fn: EffectCallback) => void;
-export {};

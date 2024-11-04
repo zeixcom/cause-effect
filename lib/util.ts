@@ -1,17 +1,16 @@
 /* === Utility Functions === */
 
-const isFunction = (value: unknown): value is (...args: any[]) => any =>
+const isFunction = /*#__PURE__*/ (value: unknown): value is (...args: any[]) => any =>
     typeof value === 'function'
 
-const isAsyncFunction = (value: unknown): value is (...args: any[]) => Promise<any> | PromiseLike<any> =>
+const isAsyncFunction = /*#__PURE__*/ (value: unknown): value is (...args: any[]) => Promise<any> | PromiseLike<any> =>
 	isFunction(value) && /^async\s+/.test(value.toString())
 
-const isInstanceOf = <T>(type: new (...args: any[]) => T) =>
+const isInstanceOf = /*#__PURE__*/ <T>(type: new (...args: any[]) => T) =>
 	(value: unknown): value is T =>
 		value instanceof type
 
-const isError = isInstanceOf(Error)
+const isError = /*#__PURE__*/ isInstanceOf(Error)
+const isPromise = /*#__PURE__*/ isInstanceOf(Promise)
 
-const isPromise = isInstanceOf(Promise)
-
-export { isFunction, isAsyncFunction, isError, isPromise }
+export { isFunction, isAsyncFunction, isInstanceOf, isError, isPromise }

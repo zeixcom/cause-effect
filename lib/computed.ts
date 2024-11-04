@@ -1,13 +1,19 @@
-import { subscribe, notify, watch, map } from "./signal"
+import { type Watchers, type Notifier, subscribe, notify, watch } from "./signal"
 import { isAsyncFunction, isError, isPromise } from "./util"
 
 /* === Types === */
 
-export interface Computed<T> {
-	map: <U>(fn: (value: T) => U) => Computed<U>
+export type Computed<T> = {
+    [Symbol.toStringTag]: "Computed"
+    get: () => T
+    map: <U>(fn: (value: T) => U) => Computed<U>
 }
 
-/* === Class Computed === */
+/* === Constants === */
+
+const TYPE_COMPUTED = 'Computed'
+
+/* === Namespace Computed === */
 
 /**
  * Create a derived state from existing states
@@ -16,60 +22,59 @@ export interface Computed<T> {
  * @param {() => T} fn - compute function to derive state
  * @returns {Computed<T>} result of derived state
  */
-export class Computed<T> {
-    private watchers: Set<() => void> = new Set()
-    private value!: T
-	private error: Error | null = null
-    private stale = true
-    private memo: boolean = false
+export const Computed = {
 
-    private constructor(private fn: () => T | Promise<T>, memo?: boolean) {
-        this.memo = memo ?? isAsyncFunction(fn)
-    }
-
-    static of = <T>(fn: () => T | Promise<T>, memo?: boolean): Computed<T> =>
-        new Computed(fn, memo)
-
-	static isComputed = <T>(value: unknown): value is Computed<T> =>
-		value instanceof Computed
-
-    get(): T {
-		const compute = (): T | Error | Promise<T> => {
-			try {
-				return this.fn()
-			} catch (e) {
-				return isError(e) ? e
-					: new Error(`Error during reactive computation: ${e}`)
-			}
-		}
-		const handleOk = (v: T) => {
-			this.stale = false
-			this.value = v
-			this.error = null
+    of: /*#__PURE__*/ <T>(fn: () => T | Promise<T>, memo?: boolean): Computed<T> => {
+        memo = memo ?? isAsyncFunction(fn)
+        const watchers: Watchers = new Set()
+        let value: T
+        let error: Error | null = null
+        let stale = true
+        const mark: Notifier = () => {
+            stale = true
+            if (memo) notify(watchers)
+        }
+        const compute = (): T | Promise<T> | Error => {
+            try {
+                return fn()
+            } catch (e) {
+                return isError(e) ? e
+                    : new Error(`Error during reactive computation: ${e}`)
+            }
+        }
+        const handleOk = (v: T) => {
+			stale = false
+			value = v
+			error = null
 		}
 		const handleErr = (e: Error) => {
-			this.stale = true
-			this.error = e
+			stale = true
+			error = e
 		}
 		const update = (v: T | Error) =>
 			isError(v) ? handleErr(v) : handleOk(v)
 
-        subscribe(this.watchers);
-        if (!this.memo || this.stale) watch(
-			() => {
-				const value = compute()
-				isPromise(value)
-					? value.then(update).catch(handleErr)
-					: update(value)
-			},
-			() => {
-				this.stale = true
-				if (this.memo) notify(this.watchers)
-			}
-		)
-		if (this.error) throw this.error
-        return this.value
-    }
-}
+        const computed: Computed<T> = {
+            [Symbol.toStringTag]: TYPE_COMPUTED,
+            get: () => {
+                subscribe(watchers)
+                if (!memo || stale) watch(() => {
+                    const result = compute()
+                    isPromise(result)
+                        ? result.then(update).catch(handleErr)
+                        : update(result)
+                }, mark)
+                if (isError(error)) throw error
+                return value
+            },
+            map: <U>(fn: (value: T) => U): Computed<U> =>
+                Computed.of(() => fn(computed.get())),
+        }
+        return computed
+    },
 
-Computed.prototype.map = map
+    isComputed: /*#__PURE__*/ <T>(value: unknown): value is Computed<T> =>
+        !!value && typeof value === 'object'
+            && (value as { [key in typeof Symbol.toStringTag]: string })[Symbol.toStringTag] === TYPE_COMPUTED,
+
+}

@@ -1,6 +1,6 @@
 # Cause & Effect
 
-Version 0.9.2
+Version 0.9.3
 
 **Cause & Effect** is a lightweight library for reactive state management with signals.
 
@@ -71,7 +71,7 @@ document.querySelector('button.increment')
 
 Async computed signals are as straight forward as their sync counterparts. Just create the computed signal with an async function.
 
-**Caution**: To create an async computed signals you can't use the `.map()` method. And you need to be aware that it will return `undefined` until the Promise is resolved.
+**Caution**: You can't use the `.map()` method to create an async computed signal. And async computed signals will return `undefined` until the Promise is resolved.
 
 ```js
 import { State, Computed, effect } from '@efflore/cause-effect'
@@ -113,8 +113,8 @@ const sum = Computed.of(() => a.get() + b.get())
 effect(() => console.log(sum.get())) // logs '7'
 document.querySelector('button.double-all')
     .addEventListener('click', () => batch(() => {
-		a.set(v => v * 2)
-		b.set(v => v * 2)
-	}))
+        a.set(v => v * 2)
+        b.set(v => v * 2)
+    }))
 // Click on button logs '14' only once (instead of first '10' and then '14' without batch)
 ```

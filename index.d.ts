@@ -1,6 +1,6 @@
 /**
  * @name Cause & Effect
- * @version 0.9.2
+ * @version 0.9.3
  * @author Esther Brunner
  */
 export { State } from './lib/state';

@@ -1,17 +1,10 @@
 
 import { isFunction } from "./util"
-// import { scheduler, type Enqueue } from "./scheduler"
-import { watch } from "./signal"
+import { type Notifier, watch } from "./signal"
 
 /* === Types === */
 
-// eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-type EffectCallback = () => void | (() => void)
-
-/* === Internals === */
-
-// Hold schuduler instance
-// const { enqueue, cleanup } = scheduler()
+export type EffectCallback = () => void | (() => void)
 
 /* === Exported Function === */
 
@@ -22,17 +15,13 @@ type EffectCallback = () => void | (() => void)
  * @param {EffectCallback} fn - callback function to be executed when a state changes
  */
 export const effect = (fn: EffectCallback) => {
-	const run = () => watch(
-		() => {
-			try {
-				const cleanupFn = fn() // execute effect
-				if (cleanupFn && isFunction(cleanupFn))
-					setTimeout(cleanupFn) // run cleanup after current tick
-			} catch (error) {
-				console.error(error)
-			}
-		}, 
-		run
-	)
+	const run: Notifier = () => watch(() => {
+        try {
+            const cleanupFn = fn()
+            if (isFunction(cleanupFn)) setTimeout(cleanupFn)
+        } catch (error) {
+            console.error(error)
+        }
+    }, run)
 	run()
 }
