@@ -1,5 +1,5 @@
-import { State } from "./state"
-import { Computed } from "./computed"
+import { type State, isState } from "./state"
+import { type Computed, isComputed } from "./computed"
 
 /* === Types === */
 
@@ -22,7 +22,7 @@ const pending = new Set<() => void>()
 /* === Namespace Signal === */
 
 const isSignal = /*#__PURE__*/ (value: unknown): value is Signal<unknown> =>
-	State.isState(value) || Computed.isComputed(value)
+	isState(value) || isComputed(value)
 
 /**
  * Add notify function of active watchers to the set of watchers
@@ -31,7 +31,6 @@ const isSignal = /*#__PURE__*/ (value: unknown): value is Signal<unknown> =>
  */
 const subscribe = (watchers: Set<() => void>) => {
 	if (active) watchers.add(active)
-	// return () => watchers.delete(active);
 }
 
 /**

@@ -1,5 +1,5 @@
-import { State } from "./state";
-import { Computed } from "./computed";
+import { type State } from "./state";
+import { type Computed } from "./computed";
 type Signal<T> = State<T> | Computed<T>;
 type Notifier = () => void;
 type Watchers = Set<Notifier>;

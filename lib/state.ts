@@ -1,6 +1,6 @@
-import { isFunction, isInstanceOf } from "./util";
-import { type Watchers, subscribe, notify } from "./signal";
-import { Computed } from "./computed";
+import { isFunction, isInstanceOf } from "./util"
+import { type Watchers, subscribe, notify } from "./signal"
+import { type Computed, computed } from "./computed"
 
 /* === Types === */
 
@@ -18,19 +18,6 @@ export class State<T> {
     private watchers: Watchers = new Set()
 
     constructor(private value: T) {}
-
-	/**
-	 * Create a new state signal
-	 * 
-	 * @static method of State<T>
-	 * @param {T} value - initial value of the state
-	 * @returns {State<T>} - new state signal
-	 */
-    static of<T>(value: T): State<T> {
-		return /*#__PURE__*/ new State(value);
-	}
-
-    static isState = /*#__PURE__*/ isInstanceOf(State)
 
 	/**
 	 * Get the current value of the state
@@ -58,6 +45,18 @@ export class State<T> {
     }
 
     map<U>(fn: (value: T) => U): Computed<U> {
-        return Computed.of<U>(() => fn(this.get()))
+        return computed<U>(() => fn(this.get()))
     }
 }
+
+/**
+ * Create a new state signal
+ * 
+ * @static method of State<T>
+ * @param {T} value - initial value of the state
+ * @returns {State<T>} - new state signal
+ */
+export const state = /*#__PURE__*/ <T>(value: T): State<T> =>
+	new State(value)
+
+export const isState = /*#__PURE__*/ isInstanceOf(State)

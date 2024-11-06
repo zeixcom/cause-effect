@@ -10,7 +10,5 @@ export type Computed<T> = {
  * @param {() => T} fn - compute function to derive state
  * @returns {Computed<T>} result of derived state
  */
-export declare const Computed: {
-    of: <T>(fn: () => T | Promise<T>, memo?: boolean) => Computed<T>;
-    isComputed: <T>(value: unknown) => value is Computed<T>;
-};
+export declare const computed: <T>(fn: () => T | Promise<T>, memo?: boolean) => Computed<T>;
+export declare const isComputed: <T>(value: unknown) => value is Computed<T>;

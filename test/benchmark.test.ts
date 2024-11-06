@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { State, Computed, effect, batch } from '../index';
+import { state, computed, effect, batch } from '../index';
 import { makeGraph, runGraph, Counter } from "./util/dependency-graph";
 
 /* === Utility Functions === */
@@ -14,14 +14,14 @@ const busy = () => {
 const framework = {
 	name: "Cause & Effect",
 	signal: <T>(initialValue: T) => {
-		const s = State.of<T>(initialValue);
+		const s = state<T>(initialValue);
 		return {
 		write: (v: T) => s.set(v),
 		read: () => s.get(),
 		};
 	},
 	computed: <T>(fn: () => T) => {
-		const c = Computed.of(fn, true);
+		const c = computed(fn, true);
 		return { read: () => c.get() };
 	},
 	effect: (fn: () => void) => effect(fn),

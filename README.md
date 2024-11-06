@@ -1,6 +1,6 @@
 # Cause & Effect
 
-Version 0.9.3
+Version 0.9.4
 
 **Cause & Effect** is a lightweight library for reactive state management with signals.
 
@@ -24,12 +24,12 @@ yarn add @efflore/cause-effect
 
 ### Single State Signal
 
-`State.of()` creates a new state signal. To access the current value of the signal use the `.get()` method. To update the value of the signal use the `.set()` method with a new value or an updater function of the form `(v: T) => T`.
+`state()` creates a new state signal. To access the current value of the signal use the `.get()` method. To update the value of the signal use the `.set()` method with a new value or an updater function of the form `(v: T) => T`.
 
 ```js
-import { State, effect } from '@efflore/cause-effect'
+import { state, effect } from '@efflore/cause-effect'
 
-const count = State.of(42)
+const count = state(42)
 effect(() => console.log(count.get())) // logs '42'
 count.set(24) // logs '24'
 document.querySelector('button.increment')
@@ -39,13 +39,13 @@ document.querySelector('button.increment')
 
 ### Sync Computed Signal
 
-`Computed.of()` creates a new computed signal. Computed signals are read-only and you can access the current resulting value using the `.get()` method.
+`computed()` creates a new computed signal. Computed signals are read-only and you can access the current resulting value using the `.get()` method.
 
 ```js
-import { State, Computed, effect } from '@efflore/cause-effect'
+import { state, computed, effect } from '@efflore/cause-effect'
 
-const count = State.of(42)
-const isOdd = Computed.of(() => count.get() % 2)
+const count = state(42)
+const isOdd = computed(() => count.get() % 2)
 effect(() => console.log(isOdd.get())) // logs 'false'
 count.set(24) // logs nothing because 24 is also an even number
 document.querySelector('button.increment')
@@ -56,9 +56,9 @@ document.querySelector('button.increment')
 If you want to derive a computed signal from a single other signal you can use the `.map()` method on either `State` or `Computed`. This does the same as the snippet above:
 
 ```js
-import { State, effect } from '@efflore/cause-effect'
+import { state, effect } from '@efflore/cause-effect'
 
-const count = State.of(42)
+const count = state(42)
 const isOdd = count.map(v => v % 2)
 effect(() => console.log(isOdd.get())) // logs 'false'
 count.set(24) // logs nothing because 24 is also an even number
@@ -74,10 +74,10 @@ Async computed signals are as straight forward as their sync counterparts. Just 
 **Caution**: You can't use the `.map()` method to create an async computed signal. And async computed signals will return `undefined` until the Promise is resolved.
 
 ```js
-import { State, Computed, effect } from '@efflore/cause-effect'
+import { state, computed, effect } from '@efflore/cause-effect'
 
-const entryId = State.of(42)
-const entryData = Computed.of(async () => {
+const entryId = state(42)
+const entryData = computed(async () => {
     const response = await fetch(`/api/entry/${entryId.get()}`)
     if (!response.ok) return new Error(`Failed to fetch data: ${response.statusText}`)
     return response.json()
@@ -105,16 +105,18 @@ document.querySelector('button.next')
 Effects run synchronously as soon as the signal updates. If you set multiple signals you can batch them together to ensure they are executed at the same time.
 
 ```js
-import { State, Computed, effect, batch } from '@efflore/cause-effect'
+import { state, computed, effect, batch } from '@efflore/cause-effect'
 
-const a = State.of(3)
-const b = State.of(4)
-const sum = Computed.of(() => a.get() + b.get())
+const a = state(3)
+const b = state(4)
+const sum = computed(() => a.get() + b.get())
 effect(() => console.log(sum.get())) // logs '7'
 document.querySelector('button.double-all')
-    .addEventListener('click', () => batch(() => {
-        a.set(v => v * 2)
-        b.set(v => v * 2)
-    }))
+    .addEventListener('click', () =>
+        batch(() => {
+            a.set(v => v * 2)
+            b.set(v => v * 2)
+        }
+    ))
 // Click on button logs '14' only once (instead of first '10' and then '14' without batch)
 ```
