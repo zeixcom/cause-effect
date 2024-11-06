@@ -1,10 +1,5 @@
 
-import { isFunction } from "./util"
 import { type Notifier, watch } from "./signal"
-
-/* === Types === */
-
-export type EffectCallback = () => void | (() => void)
 
 /* === Exported Function === */
 
@@ -12,13 +7,12 @@ export type EffectCallback = () => void | (() => void)
  * Define what happens when a reactive state changes
  * 
  * @since 0.1.0
- * @param {EffectCallback} fn - callback function to be executed when a state changes
+ * @param {() => void} fn - callback function to be executed when a state changes
  */
-export const effect = (fn: EffectCallback) => {
+export const effect = (fn: () => void) => {
 	const run: Notifier = () => watch(() => {
         try {
-            const cleanupFn = fn()
-            if (isFunction(cleanupFn)) setTimeout(cleanupFn)
+            fn()
         } catch (error) {
             console.error(error)
         }
