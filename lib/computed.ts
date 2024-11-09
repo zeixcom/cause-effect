@@ -23,7 +23,7 @@ const TYPE_COMPUTED = 'Computed'
  * @returns {Computed<T>} result of derived state
  */
 export const computed =  /*#__PURE__*/ <T>(
-	fn: () => T | Promise<T>,
+	fn: (v?: T) => T | Promise<T>,
 	memo?: boolean
 ): Computed<T> => {
 	memo = memo ?? isAsyncFunction(fn)
@@ -37,7 +37,7 @@ export const computed =  /*#__PURE__*/ <T>(
 	}
 	const compute = (): T | Promise<T> | Error => {
 		try {
-			return fn()
+			return fn(value)
 		} catch (e) {
 			return isError(e) ? e
 				: new Error(`Error during reactive computation: ${e}`)
