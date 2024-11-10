@@ -448,7 +448,7 @@ describe('Batch', function () {
 		expect(count).toBe(1);
 	});
 
-	test('should be triggered only once multiple signals set', function() {
+	test('should be triggered only once when multiple signals are set', function() {
 		const a = state(3);
 		const b = state(4);
 		const sum = computed(() => a.get() + b.get());

@@ -1,5 +1,4 @@
 import { type Computed } from "./computed";
-export type StateUpdater<T> = (old: T) => T;
 /**
  * Define a reactive state
  *
@@ -21,10 +20,10 @@ export declare class State<T> {
      * Set a new value of the state
      *
      * @method of State<T>
-     * @param {T | StateUpdater<T>} value
+     * @param {T | ((v: T) => T) | null} value
      * @returns {void}
      */
-    set(value: T | ((v: T) => T)): void;
+    set(value: T | ((v: T) => T) | null): void;
     map<U>(fn: (value: T) => U): Computed<U>;
 }
 /**

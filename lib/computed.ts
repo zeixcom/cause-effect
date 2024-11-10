@@ -47,6 +47,7 @@ export const computed =  /*#__PURE__*/ <T>(
 		stale = false
 		value = v
 		error = null
+		// if (!memo) notify(watchers)
 	}
 	const handleErr = (e: Error) => {
 		stale = true

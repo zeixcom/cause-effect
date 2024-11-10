@@ -2,10 +2,6 @@ import { isFunction, isInstanceOf } from "./util"
 import { type Watchers, subscribe, notify } from "./signal"
 import { type Computed, computed } from "./computed"
 
-/* === Types === */
-
-export type StateUpdater<T> = (old: T) => T
-
 /* === Class State === */
 
 /**
@@ -34,14 +30,19 @@ export class State<T> {
 	 * Set a new value of the state
 	 * 
 	 * @method of State<T>
-	 * @param {T | StateUpdater<T>} value
+	 * @param {T | ((v: T) => T) | null} value
 	 * @returns {void}
 	 */
-    set(value: T | ((v: T) => T)): void {
-        const newValue = isFunction(value) ? value(this.value) : value
-		if (Object.is(this.value, newValue)) return
-		this.value = newValue
+    set(value: T | ((v: T) => T) | null): void {
+		if (null !== value) {
+			const newValue = isFunction(value) ? value(this.value) : value
+			if (Object.is(this.value, newValue)) return
+			this.value = newValue
+		}
 		notify(this.watchers)
+
+		// Setting to null clears the watchers so the signal can be garbage collected
+		if (null === value) this.watchers.clear()
     }
 
     map<U>(fn: (value: T) => U): Computed<U> {
