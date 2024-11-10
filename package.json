@@ -1,6 +1,6 @@
 {
   "name": "@efflore/cause-effect",
-  "version": "0.9.4",
+  "version": "0.9.5",
   "author": "Esther Brunner",
   "main": "index.js",
   "module": "index.ts",

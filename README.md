@@ -1,6 +1,6 @@
 # Cause & Effect
 
-Version 0.9.4
+Version 0.9.5
 
 **Cause & Effect** is a lightweight library for reactive state management with signals.
 
