@@ -1,4 +1,5 @@
 import { type Computed } from "./computed";
+export declare const UNSET: any;
 /**
  * Define a reactive state
  *
@@ -20,10 +21,10 @@ export declare class State<T> {
      * Set a new value of the state
      *
      * @method of State<T>
-     * @param {T | ((v: T) => T) | null} value
+     * @param {T | ((v: T) => T)} value
      * @returns {void}
      */
-    set(value: T | ((v: T) => T) | null): void;
+    set(value: T | ((v: T) => T)): void;
     map<U>(fn: (value: T) => U): Computed<U>;
 }
 /**

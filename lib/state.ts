@@ -2,6 +2,10 @@ import { isFunction, isInstanceOf } from "./util"
 import { type Watchers, subscribe, notify } from "./signal"
 import { type Computed, computed } from "./computed"
 
+/* === Constants === */
+
+export const UNSET: any = Symbol()
+
 /* === Class State === */
 
 /**
@@ -30,11 +34,11 @@ export class State<T> {
 	 * Set a new value of the state
 	 * 
 	 * @method of State<T>
-	 * @param {T | ((v: T) => T) | null} value
+	 * @param {T | ((v: T) => T)} value
 	 * @returns {void}
 	 */
-    set(value: T | ((v: T) => T) | null): void {
-		if (null !== value) {
+    set(value: T | ((v: T) => T)): void {
+		if (UNSET !== value) {
 			const newValue = isFunction(value) ? value(this.value) : value
 			if (Object.is(this.value, newValue)) return
 			this.value = newValue
@@ -42,7 +46,7 @@ export class State<T> {
 		notify(this.watchers)
 
 		// Setting to null clears the watchers so the signal can be garbage collected
-		if (null === value) this.watchers.clear()
+		if (UNSET === value) this.watchers.clear()
     }
 
     map<U>(fn: (value: T) => U): Computed<U> {
