@@ -1,12 +1,14 @@
-import { type State, isState } from "./state"
-import { type Computed, isComputed } from "./computed"
+import { type State, isState, state } from "./state"
+import { computed, type Computed, isComputed } from "./computed"
+import { isFunction } from "./util"
 
 /* === Types === */
 
 type Signal<T> = State<T> | Computed<T>
 
-type Notifier = () => void
-type Watchers = Set<Notifier>
+type MaybeSignal<T> = State<T> | Computed<T> | T
+
+type Watcher = () => void
 
 /* === Internals === */
 
@@ -17,52 +19,80 @@ let active: () => void | undefined
 let batching = false
 
 // Pending notifications
-const pending = new Set<() => void>()
+const pending: Watcher[] = []
 
-/* === Namespace Signal === */
+/* === Exported Functions === */
 
-const isSignal = /*#__PURE__*/ (value: unknown): value is Signal<unknown> =>
+/**
+ * Check whether a value is a Signal or not
+ * 
+ * @since 0.9.0
+ * @param {any} value - value to check
+ * @returns {boolean} - true if value is a Signal, false otherwise
+ */
+const isSignal = /*#__PURE__*/ <T>(value: any): value is Signal<T> =>
 	isState(value) || isComputed(value)
+
+/**
+ * Convert a value to a Signal if it's not already a Signal
+ * 
+ * @since 0.9.6
+ * @param {MaybeSignal<T>} value - value to convert to a Signal
+ * @param memo 
+ * @returns {Signal<T>} - converted Signal
+ */
+const toSignal = /*#__PURE__*/ <T>(
+	value: MaybeSignal<T>,
+	memo: boolean = false
+): Signal<T> =>
+	isSignal<T>(value) ? value
+		: isFunction(value) ? computed(value, memo)
+		: state(value)
 
 /**
  * Add notify function of active watchers to the set of watchers
  * 
- * @param {Set<() => void>} watchers - set of current watchers
+ * @param {Watcher[]} watchers - set of current watchers
  */
-const subscribe = (watchers: Set<() => void>) => {
-	if (active) watchers.add(active)
+const subscribe = (watchers: Watcher[]) => {
+	if (active && !watchers.includes(active)) watchers.push(active)
 }
 
 /**
  * Notify all subscribers of the state change or add to the pending set if batching is enabled
  * 
- * @param {Set<() => void>} watchers 
+ * @param {Watcher[]} watchers 
  */
-const notify = (watchers: Set<() => void>) =>
-	watchers.forEach(n => batching ? pending.add(n) : n())
+const notify = (watchers: Watcher[]) =>
+	watchers.forEach(n => batching ? pending.push(n) : n())
 
 /**
  * Run a function in a reactive context
  * 
- * @param {() => void} fn - function to run the computation or effect
- * @param {() => void} notify - function to be called when the state changes
+ * @param {() => void} run - function to run the computation or effect
+ * @param {Watcher} mark - function to be called when the state changes
  */
-const watch = (fn: () => void, notify: () => void): void => {
+const watch = (run: () => void, mark: Watcher): void => {
 	const prev = active
-	active = notify
-	fn()
+	active = mark
+	run()
 	active = prev
 }
 
-const batch = (fn: () => void): void => {
+/**
+ * Batch multiple state changes into a single update
+ * 
+ * @param {() => void} run - function to run the batch of state changes
+ */
+const batch = (run: () => void): void => {
     batching = true
-    fn()
+    run()
     batching = false
     pending.forEach(n => n())
-    pending.clear()
+    pending.length = 0
 }
 
 export {
-	type Signal, type Notifier, type Watchers,
-    isSignal, subscribe, notify, watch, batch
+	type Signal, type Watcher,
+    isSignal, toSignal, subscribe, notify, watch, batch
 }

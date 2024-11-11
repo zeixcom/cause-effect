@@ -1,27 +1,48 @@
 import { type State } from "./state";
 import { type Computed } from "./computed";
 type Signal<T> = State<T> | Computed<T>;
-type Notifier = () => void;
-type Watchers = Set<Notifier>;
-declare const isSignal: (value: unknown) => value is Signal<unknown>;
+type MaybeSignal<T> = State<T> | Computed<T> | T;
+type Watcher = () => void;
+/**
+ * Check whether a value is a Signal or not
+ *
+ * @since 0.9.0
+ * @param {any} value - value to check
+ * @returns {boolean} - true if value is a Signal, false otherwise
+ */
+declare const isSignal: <T>(value: any) => value is Signal<T>;
+/**
+ * Convert a value to a Signal if it's not already a Signal
+ *
+ * @since 0.9.6
+ * @param {MaybeSignal<T>} value - value to convert to a Signal
+ * @param memo
+ * @returns {Signal<T>} - converted Signal
+ */
+declare const toSignal: <T>(value: MaybeSignal<T>, memo?: boolean) => Signal<T>;
 /**
  * Add notify function of active watchers to the set of watchers
  *
- * @param {Set<() => void>} watchers - set of current watchers
+ * @param {Watcher[]} watchers - set of current watchers
  */
-declare const subscribe: (watchers: Set<() => void>) => void;
+declare const subscribe: (watchers: Watcher[]) => void;
 /**
  * Notify all subscribers of the state change or add to the pending set if batching is enabled
  *
- * @param {Set<() => void>} watchers
+ * @param {Watcher[]} watchers
  */
-declare const notify: (watchers: Set<() => void>) => void;
+declare const notify: (watchers: Watcher[]) => void;
 /**
  * Run a function in a reactive context
  *
- * @param {() => void} fn - function to run the computation or effect
- * @param {() => void} notify - function to be called when the state changes
+ * @param {() => void} run - function to run the computation or effect
+ * @param {Watcher} mark - function to be called when the state changes
  */
-declare const watch: (fn: () => void, notify: () => void) => void;
-declare const batch: (fn: () => void) => void;
-export { type Signal, type Notifier, type Watchers, isSignal, subscribe, notify, watch, batch };
+declare const watch: (run: () => void, mark: Watcher) => void;
+/**
+ * Batch multiple state changes into a single update
+ *
+ * @param {() => void} run - function to run the batch of state changes
+ */
+declare const batch: (run: () => void) => void;
+export { type Signal, type Watcher, isSignal, toSignal, subscribe, notify, watch, batch };

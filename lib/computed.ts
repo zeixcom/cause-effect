@@ -1,4 +1,4 @@
-import { type Watchers, type Notifier, subscribe, notify, watch } from "./signal"
+import { type Watcher, subscribe, notify, watch } from "./signal"
 import { isAsyncFunction, isError, isPromise } from "./util"
 
 /* === Types === */
@@ -27,44 +27,39 @@ export const computed =  /*#__PURE__*/ <T>(
 	memo?: boolean
 ): Computed<T> => {
 	memo = memo ?? isAsyncFunction(fn)
-	const watchers: Watchers = new Set()
+	const watchers: Watcher[] = []
 	let value: T
 	let error: Error | null = null
 	let stale = true
-	const mark: Notifier = () => {
+
+	const mark: Watcher = () => {
 		stale = true
 		if (memo) notify(watchers)
 	}
-	const compute = (): T | Promise<T> | Error => {
-		try {
-			return fn(value)
-		} catch (e) {
-			return isError(e) ? e
-				: new Error(`Error during reactive computation: ${e}`)
-		}
-	}
-	const handleOk = (v: T) => {
-		stale = false
-		value = v
-		error = null
-		// if (!memo) notify(watchers)
-	}
-	const handleErr = (e: Error) => {
-		stale = true
-		error = e
-	}
-	const update = (v: T | Error) =>
-		isError(v) ? handleErr(v) : handleOk(v)
 
 	const c: Computed<T> = {
 		[Symbol.toStringTag]: TYPE_COMPUTED,
 		get: () => {
-			subscribe(watchers)
+			if (memo) subscribe(watchers)
 			if (!memo || stale) watch(() => {
-				const result = compute()
-				isPromise(result)
-					? result.then(update).catch(handleErr)
-					: update(result)
+				const handleOk = (v: T) => {
+					value = v
+					stale = false
+					error = null
+				}
+				const handleErr = (e: unknown) => {
+					error = isError(e)
+						? e
+						: new Error(`Computed function failed: ${e}`)
+				}
+				try {
+					const res = fn(value)
+					isPromise(res)
+						? res.then(handleOk).catch(handleErr)
+						: handleOk(res)
+				} catch (e) {
+					handleErr(e)
+				}
 			}, mark)
 			if (isError(error)) throw error
 			return value

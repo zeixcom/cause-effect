@@ -1,5 +1,5 @@
 
-import { type Notifier, watch } from "./signal"
+import { type Watcher, watch } from "./signal"
 
 /* === Exported Function === */
 
@@ -10,7 +10,7 @@ import { type Notifier, watch } from "./signal"
  * @param {() => void} fn - callback function to be executed when a state changes
  */
 export const effect = (fn: () => void) => {
-	const run: Notifier = () => watch(() => {
+	const run: Watcher = () => watch(() => {
         try {
             fn()
         } catch (error) {

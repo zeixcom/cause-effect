@@ -1,5 +1,5 @@
 import { isFunction, isInstanceOf } from "./util"
-import { type Watchers, subscribe, notify } from "./signal"
+import { type Watcher, subscribe, notify } from "./signal"
 import { type Computed, computed } from "./computed"
 
 /* === Constants === */
@@ -15,7 +15,7 @@ export const UNSET: any = Symbol()
  * @class State
  */
 export class State<T> {
-    private watchers: Watchers = new Set()
+    private watchers: Watcher[] = []
 
     constructor(private value: T) {}
 
@@ -46,7 +46,7 @@ export class State<T> {
 		notify(this.watchers)
 
 		// Setting to null clears the watchers so the signal can be garbage collected
-		if (UNSET === value) this.watchers.clear()
+		if (UNSET === value) this.watchers = []
     }
 
     map<U>(fn: (value: T) => U): Computed<U> {

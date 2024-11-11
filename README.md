@@ -1,14 +1,14 @@
 # Cause & Effect
 
-Version 0.9.5
+Version 0.9.6
 
-**Cause & Effect** is a lightweight library for reactive state management with signals.
+**Cause & Effect** - efficient state management with signals that sync instantly and reactively across your application.
 
 ## Key Features
 
-* **State Signals**: Define states that auto-subscribe their dependencies and auto-notify them when the value changes. The set method
-* **Computed Signals**: Derive computed signals from sync or async functions. Like state signals they auto-subscribe their dependencies and auto-notify them when the computed value changes. With optional memoization, which is by default off for sync functions and on for async functions.
-* **Effects**: Trigger any effects when state or computed signals change.
+* **Efficient State Management**: Use lightweight signals for state updates that automatically notify dependents when needed.
+* **Support for Asynchronous Operations**: Handle state updates smoothly, even when dealing with network requests or Promise-based libraries, without disrupting reactivity.
+* **Memoized Computed Signals**: Optionally create derived values that are cached and automatically recalculated when source data changes.
 
 ## Installation
 
@@ -102,7 +102,7 @@ document.querySelector('button.next')
 
 ### Effects and Batching
 
-Effects run synchronously as soon as the signal updates. If you set multiple signals you can batch them together to ensure they are executed at the same time.
+Effects run synchronously as soon as source signals update. If you need to set multiple signals you can batch them together to ensure dependents are executed only once.
 
 ```js
 import { state, computed, effect, batch } from '@efflore/cause-effect'
