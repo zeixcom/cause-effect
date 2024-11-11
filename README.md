@@ -16,8 +16,8 @@ Version 0.9.5
 # with npm
 npm install @efflore/cause-effect
 
-# or with yarn
-yarn add @efflore/cause-effect
+# or with bun
+bun add @efflore/cause-effect
 ```
 
 ## Basic Usage

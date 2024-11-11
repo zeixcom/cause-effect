@@ -4,10 +4,8 @@ import { state, computed, isComputed, effect, batch } from '../index'
 /* === Utility Functions === */
 
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
-const paint = () => new Promise(resolve => setTimeout(resolve, 1))
 const increment = (n: number | void) => (n ?? 0) + 1;
 const decrement = (n: number | void) => (n ?? 0) - 1;
-const double = (n: number | void) => (n ?? 0) * 2;
 
 /* === Tests === */
 
