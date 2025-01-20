@@ -1,6 +1,6 @@
 # Cause & Effect
 
-Version 0.9.6
+Version 0.9.7
 
 **Cause & Effect** - efficient state management with signals that sync instantly and reactively across your application.
 
@@ -14,10 +14,10 @@ Version 0.9.6
 
 ```bash
 # with npm
-npm install @efflore/cause-effect
+npm install @zeix/cause-effect
 
 # or with bun
-bun add @efflore/cause-effect
+bun add @zeix/cause-effect
 ```
 
 ## Basic Usage
@@ -27,7 +27,7 @@ bun add @efflore/cause-effect
 `state()` creates a new state signal. To access the current value of the signal use the `.get()` method. To update the value of the signal use the `.set()` method with a new value or an updater function of the form `(v: T) => T`.
 
 ```js
-import { state, effect } from '@efflore/cause-effect'
+import { state, effect } from '@zeix/cause-effect'
 
 const count = state(42)
 effect(() => console.log(count.get())) // logs '42'
@@ -42,7 +42,7 @@ document.querySelector('button.increment')
 `computed()` creates a new computed signal. Computed signals are read-only and you can access the current resulting value using the `.get()` method.
 
 ```js
-import { state, computed, effect } from '@efflore/cause-effect'
+import { state, computed, effect } from '@zeix/cause-effect'
 
 const count = state(42)
 const isOdd = computed(() => count.get() % 2)
@@ -56,7 +56,7 @@ document.querySelector('button.increment')
 If you want to derive a computed signal from a single other signal you can use the `.map()` method on either `State` or `Computed`. This does the same as the snippet above:
 
 ```js
-import { state, effect } from '@efflore/cause-effect'
+import { state, effect } from '@zeix/cause-effect'
 
 const count = state(42)
 const isOdd = count.map(v => v % 2)
@@ -74,7 +74,7 @@ Async computed signals are as straight forward as their sync counterparts. Just 
 **Caution**: You can't use the `.map()` method to create an async computed signal. And async computed signals will return `undefined` until the Promise is resolved.
 
 ```js
-import { state, computed, effect } from '@efflore/cause-effect'
+import { state, computed, effect } from '@zeix/cause-effect'
 
 const entryId = state(42)
 const entryData = computed(async () => {
@@ -105,7 +105,7 @@ document.querySelector('button.next')
 Effects run synchronously as soon as source signals update. If you need to set multiple signals you can batch them together to ensure dependents are executed only once.
 
 ```js
-import { state, computed, effect, batch } from '@efflore/cause-effect'
+import { state, computed, effect, batch } from '@zeix/cause-effect'
 
 const a = state(3)
 const b = state(4)
