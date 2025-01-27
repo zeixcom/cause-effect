@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'bun:test'
+import { describe, test, expect, jest } from 'bun:test'
 import { state, computed, effect, batch } from '../index';
 import { makeGraph, runGraph, Counter } from "./util/dependency-graph";
 
@@ -16,17 +16,19 @@ const framework = {
 	signal: <T>(initialValue: T) => {
 		const s = state<T>(initialValue);
 		return {
-		write: (v: T) => s.set(v),
-		read: () => s.get(),
+			write: (v: T) => s.set(v),
+			read: () => s.get(),
 		};
 	},
 	computed: <T>(fn: () => T) => {
 		const c = computed(fn, true);
-		return { read: () => c.get() };
+		return {
+			read: () => c.get(),
+		};
 	},
 	effect: (fn: () => void) => effect(fn),
 	withBatch: (fn: () => void) => batch(fn),
-	withBuild: (fn: () => void) => fn(),
+	withBuild: <T>(fn: () => T) => fn(),
 };
 const testPullCounts = true;
 
@@ -49,51 +51,112 @@ return {
  */
 describe('Basic test', function () {
 	const name = framework.name;
-
 	test(`${name} | simple dependency executes`, () => {
-		const s = framework.signal(2);
-		const c = framework.computed(() => s.read()! * 2);
-
-		expect(c.read()).toBe(4);
-	});
-
-	test(`${name} | static graph`, () => {
+		framework.withBuild(() => {
+		  const s = framework.signal(2);
+		  const c = framework.computed(() => s.read() * 2);
+	
+		  expect(c.read()).toEqual(4);
+		});
+	  });
+	
+	  test(`${name} | simple write`, () => {
+		framework.withBuild(() => {
+		  const s = framework.signal(2);
+		  const c = framework.computed(() => s.read() * 2);
+		  expect(s.read()).toEqual(2);
+		  expect(c.read()).toEqual(4);
+	
+		  s.write(3);
+		  expect(s.read()).toEqual(3);
+		  expect(c.read()).toEqual(6);
+		});
+	  });
+	
+	  test(`${name} | static graph`, () => {
 		const config = makeConfig();
-		const { graph, counter } = makeGraph(framework, config);
+		const counter = new Counter();
+		const graph = makeGraph(framework, config, counter);
 		const sum = runGraph(graph, 2, 1, framework);
-
-		expect(sum).toBe(16);
+		expect(sum).toEqual(16);
 		if (testPullCounts) {
-			expect(counter.count).toBe(11);
+		  expect(counter.count).toEqual(11);
+		} else {
+		  expect(counter.count).toBeGreaterThanOrEqual(11);
 		}
-	});
-
-	test(`${name} | static graph, read 2/3 of leaves`, () => {
-		const config = makeConfig();
-		config.readFraction = 2 / 3;
-		config.iterations = 10;
-		const { counter, graph } = makeGraph(framework, config);
-		const sum = runGraph(graph, 10, 2 / 3, framework);
-
-		expect(sum).toBe(72);
-		if (testPullCounts) {
-			expect(counter.count).toBe(41);
-		}
-	});
-
-	test(`${name} | dynamic graph`, () => {
-		const config = makeConfig();
-		config.staticFraction = 0.5;
-		config.width = 4;
-		config.totalLayers = 2;
-		const { graph, counter } = makeGraph(framework, config);
-		const sum = runGraph(graph, 10, 1, framework);
-
-		expect(sum).toBe(72);
-		if (testPullCounts) {
-			expect(counter.count).toBe(22);
-		}
-	});
+	  });
+	
+	  test(`${name} | static graph, read 2/3 of leaves`, () => {
+		framework.withBuild(() => {
+		  const config = makeConfig();
+		  config.readFraction = 2 / 3;
+		  config.iterations = 10;
+		  const counter = new Counter();
+		  const graph = makeGraph(framework, config, counter);
+		  const sum = runGraph(graph, 10, 2 / 3, framework);
+	
+		  expect(sum).toEqual(73);
+		  if (testPullCounts) {
+			expect(counter.count).toEqual(41);
+		  } else {
+			expect(counter.count).toBeGreaterThanOrEqual(41);
+		  }
+		});
+	  });
+	
+	  test(`${name} | dynamic graph`, () => {
+		framework.withBuild(() => {
+		  const config = makeConfig();
+		  config.staticFraction = 0.5;
+		  config.width = 4;
+		  config.totalLayers = 2;
+		  const counter = new Counter();
+		  const graph = makeGraph(framework, config, counter);
+		  const sum = runGraph(graph, 10, 1, framework);
+	
+		  expect(sum).toEqual(72);
+		  if (testPullCounts) {
+			expect(counter.count).toEqual(22);
+		  } else {
+			expect(counter.count).toBeGreaterThanOrEqual(22);
+		  }
+		});
+	  });
+	
+	  test(`${name} | withBuild`, () => {
+		const r = framework.withBuild(() => {
+		  const s = framework.signal(2);
+		  const c = framework.computed(() => s.read() * 2);
+	
+		  expect(c.read()).toEqual(4);
+		  return c.read();
+		});
+	
+		expect(r).toEqual(4);
+	  });
+	
+	  test(`${name} | effect`, () => {
+		const spy = jest.fn();
+	
+		const s = framework.signal(2);
+		let c: any;
+	
+		framework.withBuild(() => {
+		  c = framework.computed(() => s.read() * 2);
+	
+		  framework.effect(() => {
+			spy(c.read());
+		  });
+		});
+		expect(spy.mock.calls.length).toBe(1);
+	
+		framework.withBatch(() => {
+		  s.write(3);
+		});
+		expect(s.read()).toEqual(3);
+		expect(c.read()).toEqual(6);
+		expect(spy.mock.calls.length).toBe(2);
+	  });
 });
 
 describe('Kairo tests', function () {

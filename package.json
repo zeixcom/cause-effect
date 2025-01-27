@@ -5,7 +5,8 @@
   "main": "index.js",
   "module": "index.ts",
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "random": "^5.1.1"
   },
   "peerDependencies": {
     "typescript": "^5.6.3"
