@@ -11,15 +11,6 @@ const decrement = (n: number | void) => (n ?? 0) - 1;
 
 describe('State', function () {
 
-	describe('Empty cause', function () {
-
-		test('should be undefined', function () {
-			const cause = state(undefined);
-			expect(cause.get()).toBeUndefined();
-		});
-
-	});
-
 	describe('Boolean cause', function () {
 
 		test('should be boolean', function () {
@@ -45,7 +36,7 @@ describe('State', function () {
 
 		test('should toggle initial value with .set(v => !v)', function () {
 			const cause = state(false);
-			cause.set((v) => !v);
+			cause.update((v) => !v);
 			expect(cause.get()).toBe(true);
 		});
 
@@ -71,7 +62,7 @@ describe('State', function () {
 
 		test('should increment value with .set(v => ++v)', function () {
 			const cause = state(0);
-			cause.set(v => ++v);
+			cause.update(v => ++v);
 			expect(cause.get()).toBe(1);
 		});
 
@@ -97,7 +88,7 @@ describe('State', function () {
 
 		test('should upper case value with .set(v => v.toUpperCase())', function () {
 			const cause = state('foo');
-			cause.set(v => v ? v.toUpperCase() : '');
+			cause.update(v => v ? v.toUpperCase() : '');
 			expect(cause.get()).toBe("FOO");
 		});
 

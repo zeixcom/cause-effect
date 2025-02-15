@@ -1,12 +1,12 @@
 import { type State, isState, state } from "./state"
 import { computed, type Computed, isComputed } from "./computed"
-import { isFunction } from "./util"
+import { isComputeFunction } from "./util"
 
 /* === Types === */
 
-type Signal<T> = State<T> | Computed<T>
+type Signal<T extends {}> = State<T> | Computed<T>
 
-type MaybeSignal<T> = State<T> | Computed<T> | T | ((old?: T) => T)
+type MaybeSignal<T extends {}> = State<T> | Computed<T> | T | ((old?: T) => T)
 
 type Watcher = () => void
 
@@ -30,7 +30,7 @@ const pending: Watcher[] = []
  * @param {any} value - value to check
  * @returns {boolean} - true if value is a Signal, false otherwise
  */
-const isSignal = /*#__PURE__*/ <T>(value: any): value is Signal<T> =>
+const isSignal = /*#__PURE__*/ <T extends {}>(value: any): value is Signal<T> =>
 	isState(value) || isComputed(value)
 
 /**
@@ -41,12 +41,12 @@ const isSignal = /*#__PURE__*/ <T>(value: any): value is Signal<T> =>
  * @param memo 
  * @returns {Signal<T>} - converted Signal
  */
-const toSignal = /*#__PURE__*/ <T>(
+const toSignal = /*#__PURE__*/ <T extends {}>(
 	value: MaybeSignal<T>,
 	memo: boolean = false
 ): Signal<T> =>
 	isSignal<T>(value) ? value
-		: isFunction(value) ? computed(value, memo)
+		: isComputeFunction<T>(value) ? computed(value, memo)
 		: state(value)
 
 /**

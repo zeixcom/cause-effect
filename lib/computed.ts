@@ -70,6 +70,15 @@ export const computed =  /*#__PURE__*/ <T>(
 	return c
 }
 
+/* === Helper Functions === */
+
+/**
+ * Check if a value is a computed state
+ * 
+ * @since 0.9.0
+ * @param {unknown} value - value to check
+ * @returns {boolean} - true if value is a computed state, false otherwise
+ */
 export const isComputed = /*#__PURE__*/ <T>(value: unknown): value is Computed<T> =>
 	!!value && typeof value === 'object'
 		&& (value as { [key in typeof Symbol.toStringTag]: string })[Symbol.toStringTag] === TYPE_COMPUTED

@@ -1,6 +1,6 @@
 /**
  * @name Cause & Effect
- * @version 0.9.7
+ * @version 0.10.0
  * @author Esther Brunner
  */
 export { UNSET, State, state, isState } from './lib/state'

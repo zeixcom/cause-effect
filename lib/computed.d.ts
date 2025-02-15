@@ -11,4 +11,11 @@ export type Computed<T> = {
  * @returns {Computed<T>} result of derived state
  */
 export declare const computed: <T>(fn: (v?: T) => T | Promise<T>, memo?: boolean) => Computed<T>;
+/**
+ * Check if a value is a computed state
+ *
+ * @since 0.9.0
+ * @param {unknown} value - value to check
+ * @returns {boolean} - true if value is a computed state, false otherwise
+ */
 export declare const isComputed: <T>(value: unknown) => value is Computed<T>;
