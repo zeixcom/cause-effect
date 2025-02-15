@@ -6,7 +6,7 @@ import { isFunction } from "./util"
 
 type Signal<T> = State<T> | Computed<T>
 
-type MaybeSignal<T> = State<T> | Computed<T> | T
+type MaybeSignal<T> = State<T> | Computed<T> | T | ((old?: T) => T)
 
 type Watcher = () => void
 
@@ -93,6 +93,6 @@ const batch = (run: () => void): void => {
 }
 
 export {
-	type Signal, type Watcher,
+	type Signal, type MaybeSignal, type Watcher,
     isSignal, toSignal, subscribe, notify, watch, batch
 }
