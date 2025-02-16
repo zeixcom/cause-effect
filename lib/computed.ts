@@ -6,7 +6,7 @@ import { isAsyncFunction, isError, isPromise } from "./util"
 export type Computed<T> = {
     [Symbol.toStringTag]: "Computed"
     get: () => T
-    map: <U>(fn: (value: T) => U) => Computed<U>
+    map: <U extends {}>(fn: (value: T) => U) => Computed<U>
 }
 
 /* === Constants === */
@@ -22,7 +22,7 @@ const TYPE_COMPUTED = 'Computed'
  * @param {() => T} fn - compute function to derive state
  * @returns {Computed<T>} result of derived state
  */
-export const computed =  /*#__PURE__*/ <T>(
+export const computed =  /*#__PURE__*/ <T extends {}>(
 	fn: (v?: T) => T | Promise<T>,
 	memo?: boolean
 ): Computed<T> => {
@@ -64,7 +64,7 @@ export const computed =  /*#__PURE__*/ <T>(
 			if (isError(error)) throw error
 			return value
 		},
-		map: <U>(fn: (value: T) => U): Computed<U> =>
+		map: <U extends {}>(fn: (value: T) => U): Computed<U> =>
 			computed(() => fn(c.get())),
 	}
 	return c

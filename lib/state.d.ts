@@ -44,7 +44,7 @@ export declare class State<T extends {}> {
      * @param {(value: T) => U} fn
      * @returns {Computed<U>} - derived state
      */
-    map<U>(fn: (value: T) => U): Computed<U>;
+    map<U extends {}>(fn: (value: T) => U): Computed<U>;
 }
 /**
  * Create a new state signal

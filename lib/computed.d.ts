@@ -1,7 +1,7 @@
 export type Computed<T> = {
     [Symbol.toStringTag]: "Computed";
     get: () => T;
-    map: <U>(fn: (value: T) => U) => Computed<U>;
+    map: <U extends {}>(fn: (value: T) => U) => Computed<U>;
 };
 /**
  * Create a derived state from existing states
@@ -10,7 +10,7 @@ export type Computed<T> = {
  * @param {() => T} fn - compute function to derive state
  * @returns {Computed<T>} result of derived state
  */
-export declare const computed: <T>(fn: (v?: T) => T | Promise<T>, memo?: boolean) => Computed<T>;
+export declare const computed: <T extends {}>(fn: (v?: T) => T | Promise<T>, memo?: boolean) => Computed<T>;
 /**
  * Check if a value is a computed state
  *

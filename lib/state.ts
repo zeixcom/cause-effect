@@ -39,10 +39,8 @@ export class State<T extends {}> {
 	 * @returns {void}
 	 */
     set(value: T): void {
-		if (UNSET !== value) {
-			if (Object.is(this.value, value)) return
-			this.value = value
-		}
+		if (Object.is(this.value, value)) return
+		this.value = value
 		notify(this.watchers)
 
 		// Setting to UNSET clears the watchers so the signal can be garbage collected
@@ -69,7 +67,7 @@ export class State<T extends {}> {
 	 * @param {(value: T) => U} fn
 	 * @returns {Computed<U>} - derived state
 	 */
-    map<U>(fn: (value: T) => U): Computed<U> {
+    map<U extends {}>(fn: (value: T) => U): Computed<U> {
         return computed<U>(() => fn(this.get()))
     }
 }

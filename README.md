@@ -1,6 +1,6 @@
 # Cause & Effect
 
-Version 0.10.0
+Version 0.10.1
 
 **Cause & Effect** - efficient state management with signals that sync instantly and reactively across your application.
 
