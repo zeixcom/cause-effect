@@ -21,6 +21,10 @@ let batching = false
 // Pending notifications
 const pending: Watcher[] = []
 
+/* === Constants === */
+
+export const UNSET: any = Symbol()
+
 /* === Exported Functions === */
 
 /**

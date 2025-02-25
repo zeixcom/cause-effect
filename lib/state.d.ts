@@ -1,5 +1,4 @@
 import { type Computed } from "./computed";
-export declare const UNSET: any;
 /**
  * Define a reactive state
  *

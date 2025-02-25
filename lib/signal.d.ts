@@ -3,6 +3,7 @@ import { type Computed } from "./computed";
 type Signal<T extends {}> = State<T> | Computed<T>;
 type MaybeSignal<T extends {}> = State<T> | Computed<T> | T | ((old?: T) => T);
 type Watcher = () => void;
+export declare const UNSET: any;
 /**
  * Check whether a value is a Signal or not
  *

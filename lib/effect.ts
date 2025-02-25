@@ -1,5 +1,14 @@
 
-import { type Watcher, watch } from "./signal"
+import { type Signal, UNSET, type Watcher, watch } from "./signal"
+import { isError } from "./util"
+
+/* === Types === */
+
+export type EffectCallbacks<T extends {}[]> = {
+	ok: (...values: T) => void
+	nil?: () => void
+	err?: (error: Error) => void
+}
 
 /* === Exported Function === */
 
@@ -9,13 +18,27 @@ import { type Watcher, watch } from "./signal"
  * @since 0.1.0
  * @param {() => void} fn - callback function to be executed when a state changes
  */
-export const effect = (fn: () => void) => {
+export const effect = <T extends {}[]>(
+	signals: [Signal<{}>],
+	callbacks: EffectCallbacks<T>,
+) => {
+	const { ok, nil = () => {}, err = () => {}} = callbacks
 	const run: Watcher = () => watch(() => {
-        try {
-            fn()
-        } catch (error) {
-            console.error(error)
-        }
+		const values = []
+		for (const signal of signals) {
+			try {
+				const value = signal.get()
+				if (value === UNSET) {
+					nil()
+					return
+				}
+				values.push(value)
+			} catch (error) {
+				err(isError(error) ? error : new Error(String(error)))
+				return
+			}
+			ok(...values as T)
+		}
     }, run)
 	run()
 }

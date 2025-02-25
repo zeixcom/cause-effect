@@ -1,4 +1,4 @@
-import { type Watcher, subscribe, notify, watch } from "./signal"
+import { type Watcher, subscribe, notify, watch, UNSET } from "./signal"
 import { isAsyncFunction, isError, isPromise } from "./util"
 
 /* === Types === */
@@ -28,7 +28,7 @@ export const computed =  /*#__PURE__*/ <T extends {}>(
 ): Computed<T> => {
 	memo = memo ?? isAsyncFunction(fn)
 	const watchers: Watcher[] = []
-	let value: T
+	let value: T = UNSET
 	let error: Error | null = null
 	let stale = true
 
@@ -55,7 +55,10 @@ export const computed =  /*#__PURE__*/ <T extends {}>(
 				try {
 					const res = fn(value)
 					isPromise(res)
-						? res.then(handleOk).catch(handleErr)
+						? res.then(v => {
+							handleOk(v)
+							notify(watchers)
+						}).catch(handleErr)
 						: handleOk(res)
 				} catch (e) {
 					handleErr(e)

@@ -1,11 +1,11 @@
 import { describe, test, expect } from 'bun:test'
-import { state, computed, isComputed, effect, batch } from '../index'
+import { state, computed, isComputed, effect, batch, UNSET } from '../index'
 
 /* === Utility Functions === */
 
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
-const increment = (n: number | void) => (n ?? 0) + 1;
-const decrement = (n: number | void) => (n ?? 0) - 1;
+const increment = (n: number) => Number.isFinite(n) ? n + 1 : UNSET;
+const decrement = (n: number) => Number.isFinite(n) ? n - 1 : UNSET;
 
 /* === Tests === */
 
@@ -197,13 +197,13 @@ describe('Computed', function () {
 
 	test('should compute function dependent on an async signal', async function() {
 		const status = state('pending');
-		const promised = computed<number>(async () => {
+		const promised = computed(async () => {
 			await wait(100);
 			status.set('success');
 			return 42;
 		});
 		const derived = promised.map(increment);
-		expect(derived.get()).toBe(1);
+		expect(derived.get()).toBe(UNSET);
 		expect(status.get()).toBe('pending');
 		await wait(100);
 		expect(derived.get()).toBe(43);
@@ -220,11 +220,32 @@ describe('Computed', function () {
 			return 0
 		});
 		const derived = promised.map(increment);
-		expect(derived.get()).toBe(1);
+		expect(derived.get()).toBe(UNSET);
 		expect(status.get()).toBe('pending');
 		await wait(100);
 		expect(error.get()).toBe('error occurred');
 		expect(status.get()).toBe('error');
+	});
+
+	test('should compute async signals in parallel without waterfalls', async function() {
+		const a = computed(async () => {
+			await wait(100);
+			return 10;
+		});
+		const b = computed(async () => {
+			await wait(100);
+			return 20;
+		});
+		const c = computed(() => {
+			const aValue = a.get();
+			const bValue = b.get();
+			return (aValue === UNSET || bValue === UNSET)
+				? UNSET
+				: aValue + bValue;
+		});
+		expect(c.get()).toBe(UNSET);
+		await wait(100);
+		expect(c.get()).toBe(30);
 	});
 
 	test('should compute function dependent on a chain of computed states dependent on a signal', function() {
@@ -237,7 +258,8 @@ describe('Computed', function () {
 
 	test('should compute function dependent on a chain of computed states dependent on an updated signal', function() {
 		const cause = state(42);
-		const derived = cause.map(v => ++v)
+		const derived = cause
+			.map(v => ++v)
 			.map(v => v * 2)
 			.map(v => ++v);
 		cause.set(24);
@@ -387,6 +409,37 @@ describe('Effect', function () {
 		expect(effectDidRun).toBe(true);
 	});
 
+	test('should be triggered after compute async signals resolve without waterfalls', async function() {
+		const startTime = Date.now();
+		const a = computed(async () => {
+			await wait(100);
+			return 10;
+		});
+		const b = computed(async () => {
+			await wait(100);
+			return 20;
+		});
+		let result = 0;
+		let count = 0;
+		effect(() => {
+			const aValue = a.get();
+			const bValue = b.get();
+			if (aValue !== UNSET && bValue !== UNSET) {
+				result = aValue + bValue;
+				count++;
+			}
+		});
+		expect(result).toBe(0);
+		expect(count).toBe(0);
+		await wait(110); // Wait slightly longer than the async computations
+		expect(result).toBe(30);
+		expect(count).toBe(1);
+		const endTime = Date.now();
+		const duration = endTime - startTime;
+		expect(duration).toBeLessThan(120); // Allow some margin for execution time
+		expect(duration).toBeGreaterThanOrEqual(100);
+	});
+
 	test('should be triggered repeatedly after repeated state change', async function() {
 		const cause = state(0);
 		let count = 0;
@@ -451,7 +504,7 @@ describe('Batch', function () {
             result = sum.get();
 			count++;
         });
-		expect(sum.get()).toBe(14);
+		expect(result).toBe(14);
 		expect(count).toBe(1);
 	});
 
