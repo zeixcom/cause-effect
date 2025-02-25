@@ -1,5 +1,5 @@
 import { type Watcher, subscribe, notify, watch, UNSET } from "./signal"
-import { isAsyncFunction, isError, isPromise } from "./util"
+import { isAsyncFunction, isError, isPromise, toError } from "./util"
 
 /* === Types === */
 
@@ -47,21 +47,20 @@ export const computed =  /*#__PURE__*/ <T extends {}>(
 					stale = false
 					error = null
 				}
-				const handleErr = (e: unknown) => {
-					error = isError(e)
-						? e
-						: new Error(`Computed function failed: ${e}`)
-				}
 				try {
 					const res = fn(value)
 					isPromise(res)
-						? res.then(v => {
-							handleOk(v)
-							notify(watchers)
-						}).catch(handleErr)
+						? res
+							.then(v => {
+								handleOk(v)
+								notify(watchers)
+							})
+							.catch(e => {
+								error = toError(e)
+							})
 						: handleOk(res)
 				} catch (e) {
-					handleErr(e)
+					error = toError(e)
 				}
 			}, mark)
 			if (isError(error)) throw error

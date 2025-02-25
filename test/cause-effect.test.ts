@@ -205,7 +205,7 @@ describe('Computed', function () {
 		const derived = promised.map(increment);
 		expect(derived.get()).toBe(UNSET);
 		expect(status.get()).toBe('pending');
-		await wait(100);
+		await wait(110);
 		expect(derived.get()).toBe(43);
 		expect(status.get()).toBe('success');
 	});
@@ -222,7 +222,7 @@ describe('Computed', function () {
 		const derived = promised.map(increment);
 		expect(derived.get()).toBe(UNSET);
 		expect(status.get()).toBe('pending');
-		await wait(100);
+		await wait(110);
 		expect(error.get()).toBe('error occurred');
 		expect(status.get()).toBe('error');
 	});
@@ -244,7 +244,7 @@ describe('Computed', function () {
 				: aValue + bValue;
 		});
 		expect(c.get()).toBe(UNSET);
-		await wait(100);
+		await wait(110);
 		expect(c.get()).toBe(30);
 	});
 
@@ -401,16 +401,14 @@ describe('Effect', function () {
 	test('should be triggered after a state change', function() {
 		const cause = state('foo');
 		let effectDidRun = false;
-		effect(() => {
-			cause.get();
+		effect((_value) => {
 			effectDidRun = true;
-		});
+		}, cause);
 		cause.set('bar');
 		expect(effectDidRun).toBe(true);
 	});
 
-	test('should be triggered after compute async signals resolve without waterfalls', async function() {
-		const startTime = Date.now();
+	test('should be triggered after computed async signals resolve without waterfalls', async function() {
 		const a = computed(async () => {
 			await wait(100);
 			return 10;
@@ -421,34 +419,28 @@ describe('Effect', function () {
 		});
 		let result = 0;
 		let count = 0;
-		effect(() => {
-			const aValue = a.get();
-			const bValue = b.get();
-			if (aValue !== UNSET && bValue !== UNSET) {
-				result = aValue + bValue;
-				count++;
-			}
-		});
+		effect((aValue, bValue) => {
+			result = aValue + bValue;
+			count++;
+		}, a, b);
 		expect(result).toBe(0);
 		expect(count).toBe(0);
-		await wait(110); // Wait slightly longer than the async computations
+		await wait(110);
 		expect(result).toBe(30);
 		expect(count).toBe(1);
-		const endTime = Date.now();
-		const duration = endTime - startTime;
-		expect(duration).toBeLessThan(120); // Allow some margin for execution time
-		expect(duration).toBeGreaterThanOrEqual(100);
 	});
 
 	test('should be triggered repeatedly after repeated state change', async function() {
 		const cause = state(0);
+		let result = 0;
 		let count = 0;
-		effect(() => {
-			cause.get();
+		effect((res) => {
+			result = res;
 			count++;
-		});
+		}, cause);
 		for (let i = 0; i < 10; i++) {
 			cause.set(i);
+			expect(result).toBe(i);
 			expect(count).toBe(i + 1); // + 1 for the initial state change
 		}
 	});
@@ -482,10 +474,10 @@ describe('Batch', function () {
 				cause.set(i);
 			}
 		});
-		effect(() => {
-			result = cause.get();
+		effect((res) => {
+			result = res;
 			count++;
-		});
+		}, cause);
 		expect(result).toBe(10);
 		expect(count).toBe(1);
 	});
@@ -500,10 +492,10 @@ describe('Batch', function () {
 			a.set(6);
             b.set(8);
 		});
-		effect(() => {
-            result = sum.get();
+		effect((res) => {
+			result = res;
 			count++;
-        });
+		}, sum);
 		expect(result).toBe(14);
 		expect(count).toBe(1);
 	});

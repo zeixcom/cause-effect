@@ -13,14 +13,14 @@ const busy = () => {
 
 const framework = {
 	name: "Cause & Effect",
-	signal: <T>(initialValue: T) => {
+	signal: <T extends {}>(initialValue: T) => {
 		const s = state<T>(initialValue);
 		return {
 		write: (v: T) => s.set(v),
 		read: () => s.get(),
 		};
 	},
-	computed: <T>(fn: () => T) => {
+	computed: <T extends {}>(fn: () => T) => {
 		const c = computed(fn, true);
 		return { read: () => c.get() };
 	},

@@ -16,4 +16,10 @@ const isInstanceOf = /*#__PURE__*/ <T>(type: new (...args: any[]) => T) =>
 const isError = /*#__PURE__*/ isInstanceOf(Error)
 const isPromise = /*#__PURE__*/ isInstanceOf(Promise)
 
-export { isFunction, isAsyncFunction, isComputeFunction, isInstanceOf, isError, isPromise }
+const toError = (value: unknown): Error =>
+	isError(value) ? value : new Error(String(value))
+
+export {
+	isFunction, isAsyncFunction, isComputeFunction,
+	isInstanceOf, isError, isPromise, toError
+}
