@@ -1,6 +1,6 @@
 # Cause & Effect
 
-Version 0.9.7
+Version 0.10.1
 
 **Cause & Effect** - efficient state management with signals that sync instantly and reactively across your application.
 
@@ -24,7 +24,7 @@ bun add @zeix/cause-effect
 
 ### Single State Signal
 
-`state()` creates a new state signal. To access the current value of the signal use the `.get()` method. To update the value of the signal use the `.set()` method with a new value or an updater function of the form `(v: T) => T`.
+`state()` creates a new state signal. To access the current value of the signal use the `.get()` method. To update the value of the signal use the `.set()` method with a new value or `.update()` with an updater function of the form `(v: T) => T`.
 
 ```js
 import { state, effect } from '@zeix/cause-effect'
@@ -33,7 +33,7 @@ const count = state(42)
 effect(() => console.log(count.get())) // logs '42'
 count.set(24) // logs '24'
 document.querySelector('button.increment')
-    .addEventListener('click', () => count.set(v => ++v))
+    .addEventListener('click', () => count.update(v => ++v))
 // Click on button logs '25', '26', and so on
 ```
 
@@ -49,7 +49,7 @@ const isOdd = computed(() => count.get() % 2)
 effect(() => console.log(isOdd.get())) // logs 'false'
 count.set(24) // logs nothing because 24 is also an even number
 document.querySelector('button.increment')
-    .addEventListener('click', () => count.set(v => ++v))
+    .addEventListener('click', () => count.update(v => ++v))
 // Click on button logs 'true', 'false', and so on
 ```
 
@@ -96,7 +96,7 @@ effect(() => {
 })
 // Updates h1 and p of the entry as soon as fetched data for entry becomes available
 document.querySelector('button.next')
-    .addEventListener('click', () => entryId.set(v => ++v))
+    .addEventListener('click', () => entryId.update(v => ++v))
 // Click on button updates h1 and p of the entry as soon as fetched data for the next entry is loaded
 ```
 
@@ -114,8 +114,8 @@ effect(() => console.log(sum.get())) // logs '7'
 document.querySelector('button.double-all')
     .addEventListener('click', () =>
         batch(() => {
-            a.set(v => v * 2)
-            b.set(v => v * 2)
+            a.update(v => v * 2)
+            b.update(v => v * 2)
         }
     ))
 // Click on button logs '14' only once (instead of first '10' and then '14' without batch)

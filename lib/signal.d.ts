@@ -1,8 +1,9 @@
 import { type State } from "./state";
 import { type Computed } from "./computed";
-type Signal<T> = State<T> | Computed<T>;
-type MaybeSignal<T> = State<T> | Computed<T> | T;
+type Signal<T extends {}> = State<T> | Computed<T>;
+type MaybeSignal<T extends {}> = State<T> | Computed<T> | T | ((old?: T) => T);
 type Watcher = () => void;
+export declare const UNSET: any;
 /**
  * Check whether a value is a Signal or not
  *
@@ -10,7 +11,7 @@ type Watcher = () => void;
  * @param {any} value - value to check
  * @returns {boolean} - true if value is a Signal, false otherwise
  */
-declare const isSignal: <T>(value: any) => value is Signal<T>;
+declare const isSignal: <T extends {}>(value: any) => value is Signal<T>;
 /**
  * Convert a value to a Signal if it's not already a Signal
  *
@@ -19,7 +20,7 @@ declare const isSignal: <T>(value: any) => value is Signal<T>;
  * @param memo
  * @returns {Signal<T>} - converted Signal
  */
-declare const toSignal: <T>(value: MaybeSignal<T>, memo?: boolean) => Signal<T>;
+declare const toSignal: <T extends {}>(value: MaybeSignal<T>) => Signal<T>;
 /**
  * Add notify function of active watchers to the set of watchers
  *
@@ -45,4 +46,4 @@ declare const watch: (run: () => void, mark: Watcher) => void;
  * @param {() => void} run - function to run the batch of state changes
  */
 declare const batch: (run: () => void) => void;
-export { type Signal, type Watcher, isSignal, toSignal, subscribe, notify, watch, batch };
+export { type Signal, type MaybeSignal, type Watcher, isSignal, toSignal, subscribe, notify, watch, batch };
