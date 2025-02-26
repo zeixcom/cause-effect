@@ -1,14 +1,48 @@
 # Cause & Effect
 
-Version 0.10.1
+Version 0.11.0
 
-**Cause & Effect** - efficient state management with signals that sync instantly and reactively across your application.
+**Cause & Effect** is a lightweight, reactive state management library for JavaScript applications. It uses the concept of signals to create a predictable and efficient data flow in your app.
+
+## What is Cause & Effect?
+
+**Cause & Effect** provides a simple way to manage application state using signals. Signals are containers for values that can change over time. When a signal's value changes, it automatically updates all parts of your app that depend on it, ensuring your UI stays in sync with your data.
+
+## Why Cause & Effect?
+
+- **Simplicity**: Easy to learn and use, with a small API surface.
+- **Performance**: Efficient updates that only recompute what's necessary.
+- **Type Safety**: Full TypeScript support for robust applications.
+- **Flexibility**: Works well with any UI framework or vanilla JavaScript.
+- **Lightweight**: Around 1kB gzipped over the wire.
 
 ## Key Features
 
-* **Efficient State Management**: Use lightweight signals for state updates that automatically notify dependents when needed.
-* **Support for Asynchronous Operations**: Handle state updates smoothly, even when dealing with network requests or Promise-based libraries, without disrupting reactivity.
-* **Memoized Computed Signals**: Optionally create derived values that are cached and automatically recalculated when source data changes.
+- 🚀 Efficient state management with automatic dependency tracking
+- ⏳ Built-in support for async operations
+- 🧠 Memoized computed values
+- 🛡️ Type-safe and non-nullable signals
+- 🎭 Declarative error and pending state handling
+
+## Quick Example
+
+```js
+import { state, computed, effect } from '@zeix/cause-effect'
+
+// Create a state signal
+const count = state(0)
+
+// Create a computed signal
+const doubleCount = computed(() => count.get() * 2)
+
+// Create an effect
+effect(() => {
+    console.log(`Count: ${count.get()}, Double: ${doubleCount.get()}`)
+})
+
+// Update the state
+count.set(5) // Logs: "Count: 5, Double: 10"
+```
 
 ## Installation
 
@@ -71,7 +105,7 @@ document.querySelector('button.increment')
 
 Async computed signals are as straight forward as their sync counterparts. Just create the computed signal with an async function.
 
-**Caution**: You can't use the `.map()` method to create an async computed signal. And async computed signals will return `undefined` until the Promise is resolved.
+**Caution**: You can't use the `.map()` method to create an async computed signal. And async computed signals will return a Symbol `UNSET` until the Promise is resolved.
 
 ```js
 import { state, computed, effect } from '@zeix/cause-effect'
@@ -82,23 +116,43 @@ const entryData = computed(async () => {
     if (!response.ok) return new Error(`Failed to fetch data: ${response.statusText}`)
     return response.json()
 })
-effect(() => {
-    let data
-    try {
-        data = entryData.get()
-    } catch (error) {
-        console.error(error.message) // logs the error message if an error ocurred
-        return
-    }
-    if (null == data) return // doesn't do anything while we are still waiting for the data
-    document.querySelector('.entry h2').textContent = data.title
-    document.querySelector('.entry p').textContent = data.description
-})
 // Updates h1 and p of the entry as soon as fetched data for entry becomes available
 document.querySelector('button.next')
     .addEventListener('click', () => entryId.update(v => ++v))
 // Click on button updates h1 and p of the entry as soon as fetched data for the next entry is loaded
 ```
+
+### Handling Unset Values and Errors in Effects
+
+Computations can fail and throw errors. Promises may not have resolved yet when you try to access their value. **Cause & Effect makes it easy to deal with errors and unresolved async functions.** Computed functions will catch errors and re-throw them when you access their values.
+
+**Effects** are where you handle different cases:
+
+```js
+const h2 = document.querySelector('.entry h2')
+const p = document.querySelector('.entry p')
+effect({
+
+    // Handle pending states while fetching data
+    nil: () => {
+        h2.textContent = 'Loading...'
+    },
+
+    // Handle errors
+    err: (error) => {
+        h2.textContent = 'Oops, Something Went Wrong'
+        p.textContent = error.message
+    },
+
+    // Happy path, data is entryData.get()
+    ok: (data) => {
+        h2.textContent = data.title
+        p.textContent = data.description
+    }
+}, entryData) // assuming an `entryData` async computed signal as in the example above
+```
+
+Instead of a single callback function, provide an object with `ok` (required), `err` and `nil` keys (both optional) and Cause & Effect will take care of anything that might go wrong with the listed signals in the rest parameters of `effect()`.
 
 ### Effects and Batching
 
