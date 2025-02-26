@@ -16,10 +16,25 @@ type Watcher = () => void
 let active: () => void | undefined
 
 // Batching state
-let batching = false
+let batchDepth = 0
 
 // Pending notifications
-const pending: Watcher[] = []
+const markQueue: Set<Watcher> = new Set()
+
+// Pending runs
+const runQueue: Set<() => void> = new Set()
+
+/**
+ * Flush pending notifications and runs
+ */
+const flush = () => {
+	while (markQueue.size || runQueue.size) {
+		markQueue.forEach(mark => mark())
+		markQueue.clear()
+		runQueue.forEach(run => run())
+		runQueue.clear()
+	}
+}
 
 /* === Constants === */
 
@@ -46,11 +61,10 @@ const isSignal = /*#__PURE__*/ <T extends {}>(value: any): value is Signal<T> =>
  * @returns {Signal<T>} - converted Signal
  */
 const toSignal = /*#__PURE__*/ <T extends {}>(
-	value: MaybeSignal<T>,
-	memo: boolean = false
+	value: MaybeSignal<T>
 ): Signal<T> =>
 	isSignal<T>(value) ? value
-		: isComputeFunction<T>(value) ? computed(value, memo)
+		: isComputeFunction<T>(value) ? computed(value)
 		: state(value)
 
 /**
@@ -67,8 +81,9 @@ const subscribe = (watchers: Watcher[]) => {
  * 
  * @param {Watcher[]} watchers 
  */
-const notify = (watchers: Watcher[]) =>
-	watchers.forEach(n => batching ? pending.push(n) : n())
+const notify = (watchers: Watcher[]) => {
+	watchers.forEach(mark => batchDepth ? markQueue.add(mark) : mark())
+}
 
 /**
  * Run a function in a reactive context
@@ -89,11 +104,10 @@ const watch = (run: () => void, mark: Watcher): void => {
  * @param {() => void} run - function to run the batch of state changes
  */
 const batch = (run: () => void): void => {
-    batching = true
+    batchDepth++
     run()
-    batching = false
-    pending.forEach(n => n())
-    pending.length = 0
+    batchDepth--
+	if (!batchDepth) flush()
 }
 
 export {

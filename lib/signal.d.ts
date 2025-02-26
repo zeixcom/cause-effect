@@ -20,7 +20,7 @@ declare const isSignal: <T extends {}>(value: any) => value is Signal<T>;
  * @param memo
  * @returns {Signal<T>} - converted Signal
  */
-declare const toSignal: <T extends {}>(value: MaybeSignal<T>, memo?: boolean) => Signal<T>;
+declare const toSignal: <T extends {}>(value: MaybeSignal<T>) => Signal<T>;
 /**
  * Add notify function of active watchers to the set of watchers
  *

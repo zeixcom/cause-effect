@@ -21,7 +21,7 @@ const framework = {
 		};
 	},
 	computed: <T extends {}>(fn: () => T) => {
-		const c = computed(fn, true);
+		const c = computed(fn);
 		return { read: () => c.get() };
 	},
 	effect: (fn: () => void) => effect(fn),
