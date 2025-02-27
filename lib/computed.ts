@@ -1,20 +1,22 @@
 import { type Watcher, subscribe, notify, watch, UNSET } from "./signal"
-import { isPromise, toError } from "./util"
+import { effect, type EffectCallbacks } from "./effect"
+import { isObjectOfType, isPromise, toError } from "./util"
 
 /* === Types === */
 
-export type Computed<T> = {
+export type Computed<T extends {}> = {
     [Symbol.toStringTag]: "Computed"
     get: () => T
     map: <U extends {}>(fn: (value: T) => U) => Computed<U>
+	match: (callbacks: EffectCallbacks<[T]>) => void
 }
 
 /* === Constants === */
 
 const TYPE_COMPUTED = 'Computed'
-const MAX_ITERATIONS = 1000;
+const MAX_ITERATIONS = 1000
 
-/* === Namespace Computed === */
+/* === Computed Factory === */
 
 /**
  * Create a derived state from existing states
@@ -87,6 +89,8 @@ export const computed =  /*#__PURE__*/ <T extends {}>(
 		},
 		map: <U extends {}>(fn: (value: T) => U): Computed<U> =>
 			computed(() => fn(c.get())),
+		match: (callbacks: EffectCallbacks<[T]>) =>
+			effect(callbacks, c),
 	}
 	return c
 }
@@ -100,6 +104,5 @@ export const computed =  /*#__PURE__*/ <T extends {}>(
  * @param {unknown} value - value to check
  * @returns {boolean} - true if value is a computed state, false otherwise
  */
-export const isComputed = /*#__PURE__*/ <T>(value: unknown): value is Computed<T> =>
-	!!value && typeof value === 'object'
-		&& (value as { [key in typeof Symbol.toStringTag]: string })[Symbol.toStringTag] === TYPE_COMPUTED
+export const isComputed = /*#__PURE__*/ <T extends {}>(value: unknown): value is Computed<T> =>
+	isObjectOfType(value, TYPE_COMPUTED)

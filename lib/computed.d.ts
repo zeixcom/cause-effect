@@ -1,7 +1,9 @@
-export type Computed<T> = {
+import { type EffectCallbacks } from "./effect";
+export type Computed<T extends {}> = {
     [Symbol.toStringTag]: "Computed";
     get: () => T;
     map: <U extends {}>(fn: (value: T) => U) => Computed<U>;
+    match: (callbacks: EffectCallbacks<[T]>) => void;
 };
 /**
  * Create a derived state from existing states
@@ -18,4 +20,4 @@ export declare const computed: <T extends {}>(fn: (v?: T) => T | Promise<T>) => 
  * @param {unknown} value - value to check
  * @returns {boolean} - true if value is a computed state, false otherwise
  */
-export declare const isComputed: <T>(value: unknown) => value is Computed<T>;
+export declare const isComputed: <T extends {}>(value: unknown) => value is Computed<T>;

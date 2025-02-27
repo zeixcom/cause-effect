@@ -3,7 +3,7 @@
  * @version 0.11.0
  * @author Esther Brunner
  */
-export { State, state, isState } from './lib/state'
+export { type State, state, isState } from './lib/state'
 export { type Computed, computed, isComputed } from './lib/computed'
 export {
 	type Signal, type MaybeSignal,

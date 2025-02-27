@@ -18,7 +18,7 @@ export type EffectCallbacks<T extends {}[]> = {
  * Define what happens when a reactive state changes
  * 
  * @since 0.1.0
- * @param {() => void} fn - callback function to be executed when a state changes
+ * @param {() => void} ok - callback function to be executed when a state changes
  */
 
 export function effect<T extends {}>(
