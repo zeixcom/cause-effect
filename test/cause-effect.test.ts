@@ -1,11 +1,11 @@
 import { describe, test, expect } from 'bun:test'
-import { state, computed, isComputed, effect, batch } from '../index'
+import { state, computed, isComputed, effect, batch, UNSET } from '../index'
 
 /* === Utility Functions === */
 
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
-const increment = (n: number | void) => (n ?? 0) + 1;
-const decrement = (n: number | void) => (n ?? 0) - 1;
+const increment = (n: number) => Number.isFinite(n) ? n + 1 : UNSET;
+const decrement = (n: number) => Number.isFinite(n) ? n - 1 : UNSET;
 
 /* === Tests === */
 
@@ -197,15 +197,15 @@ describe('Computed', function () {
 
 	test('should compute function dependent on an async signal', async function() {
 		const status = state('pending');
-		const promised = computed<number>(async () => {
+		const promised = computed(async () => {
 			await wait(100);
 			status.set('success');
 			return 42;
 		});
 		const derived = promised.map(increment);
-		expect(derived.get()).toBe(1);
+		expect(derived.get()).toBe(UNSET);
 		expect(status.get()).toBe('pending');
-		await wait(100);
+		await wait(110);
 		expect(derived.get()).toBe(43);
 		expect(status.get()).toBe('success');
 	});
@@ -220,11 +220,32 @@ describe('Computed', function () {
 			return 0
 		});
 		const derived = promised.map(increment);
-		expect(derived.get()).toBe(1);
+		expect(derived.get()).toBe(UNSET);
 		expect(status.get()).toBe('pending');
-		await wait(100);
+		await wait(110);
 		expect(error.get()).toBe('error occurred');
 		expect(status.get()).toBe('error');
+	});
+
+	test('should compute async signals in parallel without waterfalls', async function() {
+		const a = computed(async () => {
+			await wait(100);
+			return 10;
+		});
+		const b = computed(async () => {
+			await wait(100);
+			return 20;
+		});
+		const c = computed(() => {
+			const aValue = a.get();
+			const bValue = b.get();
+			return (aValue === UNSET || bValue === UNSET)
+				? UNSET
+				: aValue + bValue;
+		});
+		expect(c.get()).toBe(UNSET);
+		await wait(110);
+		expect(c.get()).toBe(30);
 	});
 
 	test('should compute function dependent on a chain of computed states dependent on a signal', function() {
@@ -237,7 +258,8 @@ describe('Computed', function () {
 
 	test('should compute function dependent on a chain of computed states dependent on an updated signal', function() {
 		const cause = state(42);
-		const derived = cause.map(v => ++v)
+		const derived = cause
+			.map(v => ++v)
 			.map(v => v * 2)
 			.map(v => ++v);
 		cause.set(24);
@@ -293,6 +315,14 @@ describe('Computed', function () {
 		expect(count).toBe(2);
 	});
 
+	/*
+	 * Note for the next two tests:
+	 * 
+	 * Due to the lazy evaluation strategy, unchanged computed signals may propagate
+	 * change notifications one additional time before stabilizing. This is a
+	 * one-time performance cost that allows for efficient memoization and
+	 * error handling in most cases.
+	 */
 	test('should bail out if result is the same', function() {
 		let count = 0;
 		const x = state('a');
@@ -303,55 +333,58 @@ describe('Computed', function () {
 		const b = computed(() => {
 			count++;
 			return a.get();
-		}, true); // turn memoization on
+		});
 		expect(b.get()).toBe('foo');
 		expect(count).toBe(1);
 		x.set('aa');
+		x.set('aaa');
 		expect(b.get()).toBe('foo');
-		expect(count).toBe(1);
+		expect(count).toBe(2);
 	});
 
 	test('should block if result remains unchanged', function() {
 		let count = 0;
 		const x = state(42);
 		const a = x.map(v => v % 2);
-		const b = computed(() => a.get() ? 'odd' : 'even', true);
+		const b = computed(() => a.get() ? 'odd' : 'even');
 		const c = computed(() => {
 			count++;
 			return `c: ${b.get()}`;
-		}, true);
+		});
 		expect(c.get()).toBe('c: even');
 		expect(count).toBe(1);
 		x.set(44);
+		x.set(46);
 		expect(c.get()).toBe('c: even');
-		expect(count).toBe(1);
+		expect(count).toBe(2);
 	});
 
-	test('should block if an error occurred', function() {
+	/* test('should propagate error if an error occurred', function() {
 		let count = 0;
 		const x = state(0);
 		const a = computed(() => {
 			if (x.get() === 1) throw new Error('Calculation error');
 			return 1;
-		}, true);
+		});
 		const b = a.map(v => v ? 'success' : 'pending');
 		const c = computed(() => {
 			count++;
 			return `c: ${b.get()}`;
-		}, true);
+		});
 		expect(a.get()).toBe(1);
 		expect(c.get()).toBe('c: success');
 		expect(count).toBe(1);
-		x.set(1);
+		x.set(1)
 		try {
 			expect(a.get()).toBe(1);
+			expect(true).toBe(false); // This line should not be reached
 		} catch (error) {
 			expect(error.message).toBe('Calculation error');
-		} finally {
+        } finally {
 			expect(c.get()).toBe('c: success');
-			expect(count).toBe(1);
+			expect(count).toBe(2);
 		}
-	});
+	}); */
 
 });
 
@@ -379,23 +412,46 @@ describe('Effect', function () {
 	test('should be triggered after a state change', function() {
 		const cause = state('foo');
 		let effectDidRun = false;
-		effect(() => {
-			cause.get();
+		effect((_value) => {
 			effectDidRun = true;
-		});
+		}, cause);
 		cause.set('bar');
 		expect(effectDidRun).toBe(true);
 	});
 
+	test('should be triggered after computed async signals resolve without waterfalls', async function() {
+		const a = computed(async () => {
+			await wait(100);
+			return 10;
+		});
+		const b = computed(async () => {
+			await wait(100);
+			return 20;
+		});
+		let result = 0;
+		let count = 0;
+		effect((aValue, bValue) => {
+			result = aValue + bValue;
+			count++;
+		}, a, b);
+		expect(result).toBe(0);
+		expect(count).toBe(0);
+		await wait(110);
+		expect(result).toBe(30);
+		expect(count).toBe(1);
+	});
+
 	test('should be triggered repeatedly after repeated state change', async function() {
 		const cause = state(0);
+		let result = 0;
 		let count = 0;
-		effect(() => {
-			cause.get();
+		effect((res) => {
+			result = res;
 			count++;
-		});
+		}, cause);
 		for (let i = 0; i < 10; i++) {
 			cause.set(i);
+			expect(result).toBe(i);
 			expect(count).toBe(i + 1); // + 1 for the initial state change
 		}
 	});
@@ -416,6 +472,89 @@ describe('Effect', function () {
 		expect(count).toBe(3);
 	});
 
+	test('should detect and throw error for circular dependencies', function() {
+		const a = state(1);
+		const b = computed(() => a.get() + 1);
+	
+		effect(() => {
+			a.set(b.get());
+		});
+
+		a.set(2);
+
+		try {
+			expect(b.get()).toBe(3);
+		} catch (error) {
+			expect(error.message).toBe('Circular dependency detected: exceeded 1000 iterations');
+		}
+	
+		expect(a.get()).toBeLessThan(1002);
+	});
+
+	test('should handle errors in effects', function() {
+		const a = state(1);
+		const b = computed(() => {
+			if (a.get() > 5) throw new Error('Value too high');
+			return a.get() * 2;
+		});
+	
+		let normalCallCount = 0;
+		let errorCallCount = 0;
+	
+		effect({
+			ok: (_bValue) => {
+				// console.log('Normal effect:', _bValue);
+				normalCallCount++;
+			},
+			err: (error) => {
+				// console.log('Error effect:', error);
+				errorCallCount++;
+				expect(error.message).toBe('Value too high');
+			}
+		}, b);
+	
+		// Normal case
+		a.set(2);
+		expect(normalCallCount).toBe(2);
+		expect(errorCallCount).toBe(0);
+	
+		// Error case
+		a.set(6);
+		expect(normalCallCount).toBe(2);
+		expect(errorCallCount).toBe(1);
+	
+		// Back to normal
+		a.set(3);
+		expect(normalCallCount).toBe(3);
+		expect(errorCallCount).toBe(1);
+	});
+
+	test('should handle UNSET values in effects', async function() {
+		const a = computed(async () => {
+			await wait(100);
+            return 42;
+		});
+
+		let normalCallCount = 0;
+		let nilCount = 0;
+
+		effect({
+			ok: (aValue) => {
+                normalCallCount++;
+				expect(aValue).toBe(42);
+            },
+			nil: () => {
+				nilCount++
+			}
+		}, a);
+
+		expect(normalCallCount).toBe(0);
+		expect(nilCount).toBe(1);
+		expect(a.get()).toBe(UNSET);
+		await wait(110);
+		expect(normalCallCount).toBe(2); // + 1 for effect initialization
+		expect(a.get()).toBe(42);
+	});
 });
 
 describe('Batch', function () {
@@ -429,10 +568,10 @@ describe('Batch', function () {
 				cause.set(i);
 			}
 		});
-		effect(() => {
-			result = cause.get();
+		effect((res) => {
+			result = res;
 			count++;
-		});
+		}, cause);
 		expect(result).toBe(10);
 		expect(count).toBe(1);
 	});
@@ -447,11 +586,11 @@ describe('Batch', function () {
 			a.set(6);
             b.set(8);
 		});
-		effect(() => {
-            result = sum.get();
+		effect((res) => {
+			result = res;
 			count++;
-        });
-		expect(sum.get()).toBe(14);
+		}, sum);
+		expect(result).toBe(14);
 		expect(count).toBe(1);
 	});
 

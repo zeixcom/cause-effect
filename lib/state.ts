@@ -1,9 +1,5 @@
-import { type Watcher, subscribe, notify } from "./signal"
+import { type Watcher, subscribe, notify, UNSET } from "./signal"
 import { type Computed, computed } from "./computed"
-
-/* === Constants === */
-
-export const UNSET: any = Symbol()
 
 /* === Class State === */
 

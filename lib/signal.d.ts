@@ -3,6 +3,7 @@ import { type Computed } from "./computed";
 type Signal<T extends {}> = State<T> | Computed<T>;
 type MaybeSignal<T extends {}> = State<T> | Computed<T> | T | ((old?: T) => T);
 type Watcher = () => void;
+export declare const UNSET: any;
 /**
  * Check whether a value is a Signal or not
  *
@@ -19,7 +20,7 @@ declare const isSignal: <T extends {}>(value: any) => value is Signal<T>;
  * @param memo
  * @returns {Signal<T>} - converted Signal
  */
-declare const toSignal: <T extends {}>(value: MaybeSignal<T>, memo?: boolean) => Signal<T>;
+declare const toSignal: <T extends {}>(value: MaybeSignal<T>) => Signal<T>;
 /**
  * Add notify function of active watchers to the set of watchers
  *
