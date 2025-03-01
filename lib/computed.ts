@@ -1,11 +1,12 @@
-import { type Watcher, subscribe, notify, watch, UNSET } from "./signal"
-import { effect, type EffectCallbacks } from "./effect"
-import { isObjectOfType, isPromise, toError } from "./util"
+import { UNSET } from './signal'
+import { effect, type EffectCallbacks } from './effect'
+import { isObjectOfType, isPromise, toError } from './util'
+import { type Watcher, notify, subscribe, watch } from './scheduler'
 
 /* === Types === */
 
 export type Computed<T extends {}> = {
-    [Symbol.toStringTag]: "Computed"
+    [Symbol.toStringTag]: 'Computed'
     get: () => T
     map: <U extends {}>(fn: (value: T) => U) => Computed<U>
 	match: (callbacks: EffectCallbacks<[T]>) => void
@@ -78,7 +79,15 @@ export const computed =  /*#__PURE__*/ <T extends {}>(
 
 	const c: Computed<T> = {
 		[Symbol.toStringTag]: TYPE_COMPUTED,
-		get: () => {
+
+		/**
+		 * Get the current value of the computed
+		 * 
+		 * @since 0.9.0
+		 * @method of Computed<T>
+		 * @returns {T} - current value of the computed
+		 */
+		get: (): T => {
 			if (iterations++ >= MAX_ITERATIONS) {
                 throw new Error(`Circular dependency detected: exceeded ${MAX_ITERATIONS} iterations`)
             }
@@ -87,9 +96,27 @@ export const computed =  /*#__PURE__*/ <T extends {}>(
 			if (error) throw error
 			return value
 		},
+
+		/**
+		 * Create a computed signal from the current computed signal
+		 * 
+		 * @since 0.9.0
+		 * @method of Computed<T>
+		 * @param {(value: T) => U} fn
+		 * @returns {Computed<U>} - computed signal
+		 */
 		map: <U extends {}>(fn: (value: T) => U): Computed<U> =>
 			computed(() => fn(c.get())),
-		match: (callbacks: EffectCallbacks<[T]>) =>
+
+		/**
+		 * Case matching for the computed signal with effect callbacks
+		 * 
+		 * @since 0.12.0
+		 * @method of Computed<T>
+		 * @param {EffectCallbacks[<T>]} callbacks 
+		 * @returns {void} - executes the effect callbacks when the computed signal changes
+		 */
+		match: (callbacks: EffectCallbacks<[T]>): void =>
 			effect(callbacks, c),
 	}
 	return c

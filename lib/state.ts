@@ -1,15 +1,18 @@
-import { type Watcher, subscribe, notify, UNSET } from "./signal"
-import { type Computed, computed } from "./computed"
-import { isObjectOfType } from "./util";
+import { UNSET } from './signal'
+import { type Computed, computed } from './computed'
+import { isObjectOfType } from './util';
+import { type Watcher, notify, subscribe } from './scheduler'
+import { effect, type EffectCallbacks } from './effect';
 
 /* === Types === */
 
 export type State<T extends {}> = {
+    [Symbol.toStringTag]: 'State';
     get(): T;
     set(value: T): void;
     update(fn: (value: T) => T): void;
     map<U extends {}>(fn: (value: T) => U): Computed<U>;
-    [Symbol.toStringTag]: string;
+	match: (callbacks: EffectCallbacks<[T]>) => void
 }
 
 /* === Constants === */
@@ -25,9 +28,9 @@ const TYPE_STATE = 'State'
  * @param {T} initialValue - initial value of the state
  * @returns {State<T>} - new state signal
  */
-export const state = /*#__PURE__*/ <T extends {}>(initialValue: T): State<T> => {
+export const state = /*#__PURE__*/ <T extends {}>(v: T): State<T> => {
 	const watchers: Watcher[] = []
-	let value: T = initialValue
+	let value: T = v
 
 	const s: State<T> = {
 		[Symbol.toStringTag]: TYPE_STATE,
@@ -49,12 +52,12 @@ export const state = /*#__PURE__*/ <T extends {}>(initialValue: T): State<T> => 
 		 * 
 		 * @since 0.9.0
 		 * @method of State<T>
-		 * @param {T} newValue
+		 * @param {T} v
 		 * @returns {void}
 		 */
-        set: (newValue: T): void => {
-            if (Object.is(value, newValue)) return
-            value = newValue
+        set: (v: T): void => {
+            if (Object.is(value, v)) return
+            value = v
             notify(watchers)
 
             // Setting to UNSET clears the watchers so the signal can be garbage collected
@@ -66,24 +69,35 @@ export const state = /*#__PURE__*/ <T extends {}>(initialValue: T): State<T> => 
 		 * 
 		 * @since 0.10.0
 		 * @method of State<T>
-		 * @param {(value: T) => T} fn
+		 * @param {(v: T) => T} fn
 		 * @returns {void} - updates the state with the result of the function
 		 */
-        update: (fn: (value: T) => T): void => {
+        update: (fn: (v: T) => T): void => {
             s.set(fn(value))
         },
 
 		/**
-		 * Create a derived state from an existing state
+		 * Create a computed signal from the current state signal
 		 * 
 		 * @since 0.9.0
 		 * @method of State<T>
-		 * @param {(value: T) => U} fn
-		 * @returns {Computed<U>} - derived state
+		 * @param {(v: T) => U} fn
+		 * @returns {Computed<U>} - computed signal
 		 */
-        map: <U extends {}>(fn: (value: T) => U): Computed<U> => {
-            return computed<U>(() => fn(value))
-        }
+        map: <U extends {}>(fn: (v: T) => U): Computed<U> => {
+            return computed<U>(() => fn(s.get()))
+        },
+
+		/**
+		 * Case matching for the computed signal with effect callbacks
+		 * 
+		 * @since 0.12.0
+		 * @method of State<T>
+		 * @param {EffectCallbacks[<T>]} callbacks 
+		 * @returns {void} - executes the effect callbacks when the computed signal changes
+		 */
+		match: (callbacks: EffectCallbacks<[T]>): void =>
+			effect(callbacks, s),
 	}
 
 	return s

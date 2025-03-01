@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { state, computed, effect, batch } from '../index';
+import { state, computed, effect } from '../index';
 import { makeGraph, runGraph, Counter } from "./util/dependency-graph";
 
 /* === Utility Functions === */
@@ -16,8 +16,8 @@ const framework = {
 	signal: <T extends {}>(initialValue: T) => {
 		const s = state<T>(initialValue);
 		return {
-		write: (v: T) => s.set(v),
-		read: () => s.get(),
+			write: (v: T) => s.set(v),
+			read: () => s.get(),
 		};
 	},
 	computed: <T extends {}>(fn: () => T) => {
@@ -25,7 +25,7 @@ const framework = {
 		return { read: () => c.get() };
 	},
 	effect: (fn: () => void) => effect(fn),
-	withBatch: (fn: () => void) => batch(fn),
+	withBatch: (fn: () => void) => fn(),
 	withBuild: (fn: () => void) => fn(),
 };
 const testPullCounts = true;
@@ -52,7 +52,7 @@ describe('Basic test', function () {
 
 	test(`${name} | simple dependency executes`, () => {
 		const s = framework.signal(2);
-		const c = framework.computed(() => s.read()! * 2);
+		const c = framework.computed(() => s.read() * 2);
 
 		expect(c.read()).toBe(4);
 	});
@@ -61,7 +61,7 @@ describe('Basic test', function () {
 		const config = makeConfig();
 		const { graph, counter } = makeGraph(framework, config);
 		const sum = runGraph(graph, 2, 1, framework);
-
+		
 		expect(sum).toBe(16);
 		if (testPullCounts) {
 			expect(counter.count).toBe(11);
@@ -74,7 +74,7 @@ describe('Basic test', function () {
 		config.iterations = 10;
 		const { counter, graph } = makeGraph(framework, config);
 		const sum = runGraph(graph, 10, 2 / 3, framework);
-
+		
 		expect(sum).toBe(72);
 		if (testPullCounts) {
 			expect(counter.count).toBe(41);
@@ -88,7 +88,7 @@ describe('Basic test', function () {
 		config.totalLayers = 2;
 		const { graph, counter } = makeGraph(framework, config);
 		const sum = runGraph(graph, 10, 1, framework);
-
+		
 		expect(sum).toBe(72);
 		if (testPullCounts) {
 			expect(counter.count).toBe(22);

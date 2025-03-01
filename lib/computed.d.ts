@@ -1,6 +1,6 @@
-import { type EffectCallbacks } from "./effect";
+import { type EffectCallbacks } from './effect';
 export type Computed<T extends {}> = {
-    [Symbol.toStringTag]: "Computed";
+    [Symbol.toStringTag]: 'Computed';
     get: () => T;
     map: <U extends {}>(fn: (value: T) => U) => Computed<U>;
     match: (callbacks: EffectCallbacks<[T]>) => void;

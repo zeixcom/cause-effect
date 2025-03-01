@@ -1,6 +1,7 @@
 
-import { type Signal, UNSET, type Watcher, watch } from "./signal"
-import { isFunction, toError } from "./util"
+import { type Signal, UNSET } from './signal'
+import { isFunction, toError } from './util'
+import { type Watcher, watch } from './scheduler'
 
 /* === Types === */
 

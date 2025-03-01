@@ -1,4 +1,4 @@
-import { type Signal } from "./signal";
+import { type Signal } from './signal';
 export type EffectOkCallback<T extends {}[]> = (...values: T) => void;
 export type EffectCallbacks<T extends {}[]> = {
     ok: EffectOkCallback<T>;

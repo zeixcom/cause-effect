@@ -1,10 +1,12 @@
-import { type Computed } from "./computed";
+import { type Computed } from './computed';
+import { type EffectCallbacks } from './effect';
 export type State<T extends {}> = {
+    [Symbol.toStringTag]: 'State';
     get(): T;
     set(value: T): void;
     update(fn: (value: T) => T): void;
     map<U extends {}>(fn: (value: T) => U): Computed<U>;
-    [Symbol.toStringTag]: string;
+    match: (callbacks: EffectCallbacks<[T]>) => void;
 };
 /**
  * Create a new state signal
@@ -13,7 +15,7 @@ export type State<T extends {}> = {
  * @param {T} initialValue - initial value of the state
  * @returns {State<T>} - new state signal
  */
-export declare const state: <T extends {}>(initialValue: T) => State<T>;
+export declare const state: <T extends {}>(v: T) => State<T>;
 /**
  * Check if the provided value is a State instance
  *

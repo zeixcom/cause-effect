@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { state, computed, isComputed, effect, batch, UNSET } from '../index'
+import { state, computed, isComputed, effect, flush, UNSET } from '../index'
 
 /* === Utility Functions === */
 
@@ -269,8 +269,8 @@ describe('Computed', function () {
 	test('should drop X->B->X updates', function () {
 		let count = 0;
 		const x = state(2);
-		const a = x.map(decrement);
-		const b = computed(() => x.get() + (a.get() ?? 0));
+		const a = computed(() => x.get() - 1);
+		const b = computed(() => x.get() + a.get());
 		const c = computed(() => {
 			count++;
 			return 'c: ' + b.get();
@@ -278,6 +278,7 @@ describe('Computed', function () {
 		expect(c.get()).toBe('c: 3');
 		expect(count).toBe(1);
 		x.set(4);
+		flush();
 		expect(c.get()).toBe('c: 7');
 		expect(count).toBe(2);
 	});
@@ -294,6 +295,7 @@ describe('Computed', function () {
 		expect(c.get()).toBe('a a');
 		expect(count).toBe(1);
 		x.set('aa');
+		flush();
 		expect(c.get()).toBe('aa aa');
 		expect(count).toBe(2);
 	});
@@ -311,6 +313,7 @@ describe('Computed', function () {
 		expect(d.get()).toBe('a a');
 		expect(count).toBe(1);
 		x.set('aa');
+		flush();
 		expect(d.get()).toBe('aa aa');
 		expect(count).toBe(2);
 	});
@@ -339,7 +342,7 @@ describe('Computed', function () {
 		x.set('aa');
 		x.set('aaa');
 		expect(b.get()).toBe('foo');
-		expect(count).toBe(2);
+		expect(count).toBe(1);
 	});
 
 	test('should block if result remains unchanged', function() {
@@ -356,7 +359,7 @@ describe('Computed', function () {
 		x.set(44);
 		x.set(46);
 		expect(c.get()).toBe('c: even');
-		expect(count).toBe(2);
+		expect(count).toBe(1);
 	});
 
 	/* test('should propagate error if an error occurred', function() {
@@ -389,25 +392,6 @@ describe('Computed', function () {
 });
 
 describe('Effect', function () {
-
-	/* test('should be added to state.effects', function () {
-	  const cause = state();
-	  effect(() => state());
-	  expect(state.effects.size).toBe(1);
-	  effect(() => state());
-	  expect(state.effects.size).toBe(2);
-	});
-
-	test('should be added to computed.effects', function () {
-	  const cause = state();
-	  const derived = computed(() => 1 + state());
-	  effect(() => computed());
-	  expect(computed.effects.size).toBe(1);
-	  const derived2 = computed(() => 2 + state());
-	  effect(() => computed() + computed2());
-	  expect(computed.effects.size).toBe(2);
-	  expect(computed2.effects.size).toBe(1);
-	}); */
 
 	test('should be triggered after a state change', function() {
 		const cause = state('foo');
@@ -451,6 +435,7 @@ describe('Effect', function () {
 		}, cause);
 		for (let i = 0; i < 10; i++) {
 			cause.set(i);
+			flush();
 			expect(result).toBe(i);
 			expect(count).toBe(i + 1); // + 1 for the initial state change
 		}
@@ -466,8 +451,10 @@ describe('Effect', function () {
 		});
 		expect(sum.get()).toBe(7);
 		a.set(6);
+		flush();
 		expect(sum.get()).toBe(10);
 		b.set(8);
+		flush();
 		expect(sum.get()).toBe(14);
 		expect(count).toBe(3);
 	});
@@ -475,19 +462,16 @@ describe('Effect', function () {
 	test('should detect and throw error for circular dependencies', function() {
 		const a = state(1);
 		const b = computed(() => a.get() + 1);
-	
 		effect(() => {
 			a.set(b.get());
 		});
-
 		a.set(2);
-
+		flush();
 		try {
 			expect(b.get()).toBe(3);
 		} catch (error) {
 			expect(error.message).toBe('Circular dependency detected: exceeded 1000 iterations');
 		}
-	
 		expect(a.get()).toBeLessThan(1002);
 	});
 
@@ -497,10 +481,8 @@ describe('Effect', function () {
 			if (a.get() > 5) throw new Error('Value too high');
 			return a.get() * 2;
 		});
-	
 		let normalCallCount = 0;
 		let errorCallCount = 0;
-	
 		effect({
 			ok: (_bValue) => {
 				// console.log('Normal effect:', _bValue);
@@ -515,16 +497,19 @@ describe('Effect', function () {
 	
 		// Normal case
 		a.set(2);
+		flush();
 		expect(normalCallCount).toBe(2);
 		expect(errorCallCount).toBe(0);
 	
 		// Error case
 		a.set(6);
+		flush();
 		expect(normalCallCount).toBe(2);
 		expect(errorCallCount).toBe(1);
 	
 		// Back to normal
 		a.set(3);
+		flush();
 		expect(normalCallCount).toBe(3);
 		expect(errorCallCount).toBe(1);
 	});
@@ -534,10 +519,8 @@ describe('Effect', function () {
 			await wait(100);
             return 42;
 		});
-
 		let normalCallCount = 0;
 		let nilCount = 0;
-
 		effect({
 			ok: (aValue) => {
                 normalCallCount++;
@@ -557,17 +540,15 @@ describe('Effect', function () {
 	});
 });
 
-describe('Batch', function () {
+describe('Flush', function () {
 
 	test('should be triggered only once after repeated state change', function() {
 		const cause = state(0);
 		let result = 0;
 		let count = 0;
-		batch(() => {
-			for (let i = 1; i <= 10; i++) {
-				cause.set(i);
-			}
-		});
+		for (let i = 1; i <= 10; i++) {
+			cause.set(i);
+		}
 		effect((res) => {
 			result = res;
 			count++;
@@ -582,10 +563,8 @@ describe('Batch', function () {
 		const sum = computed(() => a.get() + b.get());
 		let result = 0;
 		let count = 0;
-		batch(() => {
-			a.set(6);
-            b.set(8);
-		});
+		a.set(6);
+		b.set(8);
 		effect((res) => {
 			result = res;
 			count++;
