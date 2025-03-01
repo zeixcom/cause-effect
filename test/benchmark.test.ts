@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { state, computed, effect } from '../index';
+import { state, computed, effect, flush } from '../index';
 import { makeGraph, runGraph, Counter } from "./util/dependency-graph";
 
 /* === Utility Functions === */
@@ -22,7 +22,12 @@ const framework = {
 	},
 	computed: <T extends {}>(fn: () => T) => {
 		const c = computed(fn);
-		return { read: () => c.get() };
+		return {
+			read: () => {
+				flush();
+				return c.get();
+			},
+		};
 	},
 	effect: (fn: () => void) => effect(fn),
 	withBatch: (fn: () => void) => fn(),

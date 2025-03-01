@@ -15,7 +15,6 @@ export type Computed<T extends {}> = {
 /* === Constants === */
 
 const TYPE_COMPUTED = 'Computed'
-const MAX_ITERATIONS = 1000
 
 /* === Computed Factory === */
 
@@ -35,7 +34,6 @@ export const computed =  /*#__PURE__*/ <T extends {}>(
 	let dirty = true
 	let unchanged = false
 	let computing = false
-	let iterations = 0
 
 	const mark: Watcher = () => {
 		dirty = true
@@ -43,7 +41,8 @@ export const computed =  /*#__PURE__*/ <T extends {}>(
 	}
 
 	const compute = () => watch(() => {
-		if (!dirty || computing) return
+		if (!dirty) return
+		if (computing) throw new Error('Circular dependency detected')
 
 		const ok = (v: T) => {
 			if (!Object.is(v, value)) {
@@ -88,9 +87,6 @@ export const computed =  /*#__PURE__*/ <T extends {}>(
 		 * @returns {T} - current value of the computed
 		 */
 		get: (): T => {
-			if (iterations++ >= MAX_ITERATIONS) {
-                throw new Error(`Circular dependency detected: exceeded ${MAX_ITERATIONS} iterations`)
-            }
 			subscribe(watchers)
 			compute()
 			if (error) throw error

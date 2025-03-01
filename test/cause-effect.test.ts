@@ -269,7 +269,7 @@ describe('Computed', function () {
 	test('should drop X->B->X updates', function () {
 		let count = 0;
 		const x = state(2);
-		const a = computed(() => x.get() - 1);
+		const a = x.map(v => --v);
 		const b = computed(() => x.get() + a.get());
 		const c = computed(() => {
 			count++;
@@ -461,18 +461,12 @@ describe('Effect', function () {
 
 	test('should detect and throw error for circular dependencies', function() {
 		const a = state(1);
-		const b = computed(() => a.get() + 1);
-		effect(() => {
-			a.set(b.get());
-		});
-		a.set(2);
-		flush();
-		try {
-			expect(b.get()).toBe(3);
-		} catch (error) {
-			expect(error.message).toBe('Circular dependency detected: exceeded 1000 iterations');
-		}
-		expect(a.get()).toBeLessThan(1002);
+		const b = computed(() => c.get() + 1);
+		const c = computed(() => b.get() + a.get());
+		expect(() => {
+			b.get(); // This should trigger the circular dependency
+		}).toThrow('Circular dependency detected');
+		expect(a.get()).toBe(1);
 	});
 
 	test('should handle errors in effects', function() {
