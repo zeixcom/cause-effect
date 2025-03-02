@@ -10,7 +10,7 @@ export type ComputedOkCallback<T extends {}, U extends UnknownSignal[]> = (
 ) => T | Promise<T>
 
 export type ComputedCallbacks<T extends {}, U extends UnknownSignal[]> = {
-	ok: ComputedOkCallback<T, U>
+	ok: (...values: { [K in keyof U]: SignalValue<U[K]> }) => T | Promise<T>
 	nil?: () => T | Promise<T>
 	err?: (...errors: Error[]) => T | Promise<T>
 }
@@ -49,49 +49,48 @@ export const computed = <T extends {}, U extends UnknownSignal[]>(
 	let unchanged = false
 	let computing = false
 
+	// Functions to update internal state
+	const ok = (v: T) => {
+		if (!Object.is(v, value)) {
+			value = v
+			dirty = false
+			error = undefined
+			unchanged = false
+		}
+	}
+	const nil = () => {
+		unchanged = (UNSET === value)
+		value = UNSET
+		error = undefined
+	}
+	const err = (e: unknown) => {
+		const newError = toError(e)
+		unchanged = isEquivalentError(newError, error)
+		value = UNSET
+		error = newError
+	}
+
+	// Called when notified from sources (push)
 	const mark = () => {
 		dirty = true
 		if (!unchanged) notify(watchers)
 	}
 
+	// Called when requested by dependencies (pull)
 	const compute = () => watch(() => {
 		if (computing) throw new Error('Circular dependency detected')
-		
-		const ok = (v: T) => {
-			if (!Object.is(v, value)) {
-				value = v
-				dirty = false
-				error = undefined
-				unchanged = false
-			}
-		}
-		const err = (e: unknown) => {
-			const newError = toError(e)
-			unchanged = isEquivalentError(newError, error)
-			error = newError
-		}
-		
 		unchanged = true
 		computing = true
-		const result = resolveSignals(signals, callbacks as {
-			ok: (...values: { [K in keyof U]: SignalValue<U[K]> }) => T | Promise<T>
-			nil?: () => T | Promise<T>
-			err?: (...errors: Error[]) => T | Promise<T>
-		})
+		const result = resolveSignals(signals, callbacks as ComputedCallbacks<T, U>)
 		if (isPromise(result)) {
+			nil() // sync
 			result.then(v => {
-				ok(v)
+				ok(v) // async
                 notify(watchers)
 			}).catch(err)
-		} else if (isError(result)) {
-			err(result)
-		} else if (null == result) {
-			unchanged = (UNSET === value)
-			value = UNSET
-			error = undefined
-		} else {
-			ok(result)
-		}
+		} else if (null == result || UNSET === result) nil()
+		else if (isError(result)) err(result)
+		else ok(result)
 		computing = false
 	}, mark)
 

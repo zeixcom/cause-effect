@@ -1,6 +1,6 @@
 import { type State, isState, state } from "./state"
 import { computed, type Computed, isComputed } from "./computed"
-import { isComputeFunction, toError } from "./util"
+import { isComputeFunction, isPromise, toError } from "./util"
 
 /* === Types === */
 
@@ -42,6 +42,14 @@ const toSignal = /*#__PURE__*/ <T extends {}>(
 		: state(value)
 
 
+/**
+ * Resolve signals and apply callbacks based on the results
+ * 
+ * @since 0.12.0
+ * @param {U} signals - dependency signals
+ * @param {Record<string, (...args) => T | Promise<T> | Error | void>} callbacks - ok, nil, err callbacks
+ * @returns {T | Promise<T> | Error | void} - result of chosen callback
+ */
 const resolveSignals = <T extends {}, U extends UnknownSignal[]>(
 	signals: U,
 	callbacks: {
@@ -67,15 +75,12 @@ const resolveSignals = <T extends {}, U extends UnknownSignal[]>(
 
 	let result: T | Promise<T> | Error | void = undefined
     try {
-		if (!hasUnset && !errors.length) {
-			result = ok(...values)
-		} else if (errors.length && err) {
-			result = err(...errors)
-		} else if (hasUnset && nil) {
-			result = nil()
-		}
+		if (hasUnset && nil) result = nil()
+		else if (errors.length) result = err ? err(...errors) : errors[0]
+		else if (!hasUnset) result = ok(...values)
     } catch (e) {
 		result = toError(e)
+		if (err) result = err(result)
     } finally {
 		return result
 	}

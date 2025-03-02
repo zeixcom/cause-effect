@@ -10,7 +10,7 @@ export type EffectOkCallback<T extends UnknownSignal[]> = (
 ) => void
 
 export type EffectCallbacks<T extends UnknownSignal[]> = {
-	ok: EffectOkCallback<T>
+	ok: (...values: { [K in keyof T]: SignalValue<T[K]> }) => void
 	nil?: () => void
 	err?: (...errors: Error[]) => void
 }
@@ -29,12 +29,12 @@ export function effect<T extends UnknownSignal[]>(
 ): void {
 	const callbacks = isFunction(callbacksOrFn)
         ? { ok: callbacksOrFn }
-        : callbacksOrFn as EffectCallbacks<T>
+        : callbacksOrFn
 
 	const run = () => watch(() => {
-		const result = resolveSignals(signals, callbacks)
+		const result = resolveSignals(signals, callbacks as EffectCallbacks<T>)
 		if (isError(result))
-			throw new Error('Unhandled error in effect:', { cause: result })
+			console.error('Unhandled error in effect:', result)
     }, run)
 	run()
 }

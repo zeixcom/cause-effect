@@ -7,4 +7,4 @@ export { type Signal, type MaybeSignal, UNSET, isSignal, toSignal } from './lib/
 export { type State, state, isState } from './lib/state';
 export { type Computed, computed, isComputed } from './lib/computed';
 export { type EffectOkCallback, type EffectCallbacks, effect } from './lib/effect';
-export { type EnqueueDedupe, batch, watch, enqueue, animationFrame } from './lib/scheduler';
+export { type EnqueueDedupe, batch, watch, enqueue } from './lib/scheduler';

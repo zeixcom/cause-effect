@@ -22,6 +22,14 @@ declare const isSignal: <T extends {}>(value: any) => value is Signal<T>;
  * @returns {Signal<T>} - converted Signal
  */
 declare const toSignal: <T extends {}>(value: MaybeSignal<T>) => Signal<T>;
+/**
+ * Resolve signals and apply callbacks based on the results
+ *
+ * @since 0.12.0
+ * @param {U} signals - dependency signals
+ * @param {Record<string, (...args) => T | Promise<T> | Error | void>} callbacks - ok, nil, err callbacks
+ * @returns {T | Promise<T> | Error | void} - result of chosen callback
+ */
 declare const resolveSignals: <T extends {}, U extends UnknownSignal[]>(signals: U, callbacks: {
     ok: (...values: { [K in keyof U]: SignalValue<U[K]>; }) => T | Promise<T> | Error | void;
     nil?: () => T | Promise<T> | Error | void;

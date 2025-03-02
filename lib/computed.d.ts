@@ -4,7 +4,9 @@ export type ComputedOkCallback<T extends {}, U extends UnknownSignal[]> = (...va
     [K in keyof U]: SignalValue<U[K]>;
 }) => T | Promise<T>;
 export type ComputedCallbacks<T extends {}, U extends UnknownSignal[]> = {
-    ok: ComputedOkCallback<T, U>;
+    ok: (...values: {
+        [K in keyof U]: SignalValue<U[K]>;
+    }) => T | Promise<T>;
     nil?: () => T | Promise<T>;
     err?: (...errors: Error[]) => T | Promise<T>;
 };

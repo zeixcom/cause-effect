@@ -38,4 +38,3 @@ export declare const watch: (run: () => void, mark: Watcher) => void;
  * @returns
  */
 export declare const enqueue: <T>(update: Updater, dedupe?: EnqueueDedupe) => Promise<T>;
-export declare const animationFrame: () => Promise<number>;

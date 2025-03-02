@@ -1,8 +1,3 @@
-/* === Polyfills === */
-
-if (!('requestAnimationFrame' in globalThis))
-    globalThis.requestAnimationFrame = callback => setTimeout(callback, 16)
-
 /* === Types === */
 
 export type EnqueueDedupe = [Element, string]
@@ -130,6 +125,3 @@ export const enqueue = <T>(
     }
     requestTick()
 })
-
-export const animationFrame = /*#__PURE__*/ async () =>
-    new Promise(requestAnimationFrame)

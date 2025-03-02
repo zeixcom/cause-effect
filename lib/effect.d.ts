@@ -3,7 +3,9 @@ export type EffectOkCallback<T extends UnknownSignal[]> = (...values: {
     [K in keyof T]: SignalValue<T[K]>;
 }) => void;
 export type EffectCallbacks<T extends UnknownSignal[]> = {
-    ok: EffectOkCallback<T>;
+    ok: (...values: {
+        [K in keyof T]: SignalValue<T[K]>;
+    }) => void;
     nil?: () => void;
     err?: (...errors: Error[]) => void;
 };
