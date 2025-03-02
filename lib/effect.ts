@@ -1,7 +1,7 @@
 
 import { type Signal, UNSET } from './signal'
 import { isFunction, toError } from './util'
-import { type Watcher, watch } from './scheduler'
+import { watch } from './scheduler'
 
 /* === Types === */
 
@@ -34,13 +34,11 @@ export function effect<T extends {}>(
 	callbacksOrFn: EffectCallbacks<T[]> | EffectOkCallback<T[]>,
 	...signals: Signal<T>[]
 ): void {
-	const callbacks = isFunction(callbacksOrFn)
+	const { ok, nil, err } = isFunction(callbacksOrFn)
         ? { ok: callbacksOrFn }
         : callbacksOrFn as EffectCallbacks<T[]>
 
-    const { ok, nil, err } = callbacks
-
-	const run: Watcher = () => watch(() => {
+	const run = () => watch(() => {
 		const values: T[] = []
 		const errors: Error[] = []
 		let hasUnset = false

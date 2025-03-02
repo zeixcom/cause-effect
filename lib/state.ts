@@ -2,7 +2,7 @@ import { UNSET } from './signal'
 import { type Computed, computed } from './computed'
 import { isObjectOfType } from './util';
 import { type Watcher, notify, subscribe } from './scheduler'
-import { effect, type EffectCallbacks } from './effect';
+import { type EffectCallbacks, effect } from './effect';
 
 /* === Types === */
 
@@ -61,7 +61,7 @@ export const state = /*#__PURE__*/ <T extends {}>(v: T): State<T> => {
             notify(watchers)
 
             // Setting to UNSET clears the watchers so the signal can be garbage collected
-            if (UNSET === value) watchers.length = 0
+            if (UNSET === value) watchers.length = 0 // head = tail = undefined
         },
 
 		/**
@@ -89,7 +89,7 @@ export const state = /*#__PURE__*/ <T extends {}>(v: T): State<T> => {
         },
 
 		/**
-		 * Case matching for the computed signal with effect callbacks
+		 * Case matching for the state signal with effect callbacks
 		 * 
 		 * @since 0.12.0
 		 * @method of State<T>

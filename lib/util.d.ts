@@ -6,4 +6,5 @@ declare const isInstanceOf: <T>(type: new (...args: any[]) => T) => (value: unkn
 declare const isError: (value: unknown) => value is Error;
 declare const isPromise: (value: unknown) => value is Promise<unknown>;
 declare const toError: (value: unknown) => Error;
-export { isFunction, isAsyncFunction, isComputeFunction, isObjectOfType, isInstanceOf, isError, isPromise, toError };
+declare const isEquivalentError: (error1: Error, error2: Error | undefined) => boolean;
+export { isFunction, isAsyncFunction, isComputeFunction, isObjectOfType, isInstanceOf, isError, isPromise, toError, isEquivalentError };

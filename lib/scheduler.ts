@@ -8,7 +8,6 @@ if (!('requestAnimationFrame' in globalThis))
 export type EnqueueDedupe = [Element, string]
 
 export type Watcher = () => void
-export type Runner = () => void
 export type Updater = <T>() => T
 
 /* === Internal === */
@@ -16,15 +15,16 @@ export type Updater = <T>() => T
 // Currently active watcher
 let active: Watcher | undefined
 
-const markQueue = new Set<Watcher>()
-const runQueue = new Set<Runner>()
-const updateMap = new Map<Element, Map<string, () => void>>()
+// Pending queue for batched change notifications
+const pending = new Set<Watcher>()
+let batchDepth = 0
 
-let flushScheduled = false
-let requestId: number | null
+// Map of DOM elements to update functions
+const updateMap = new Map<Element, Map<string, () => void>>()
+let requestId: number | undefined
 
 const updateDOM = () => {
-	requestId = null
+	requestId = undefined
 	for (const elementMap of updateMap.values()) {
 		for (const fn of elementMap.values()) {
 			fn()
@@ -44,45 +44,51 @@ queueMicrotask(updateDOM)
 /* === Exported Functions === */
 
 /**
- * Flush all pending change notifications and runs in the signal graph
- */
-export const flush = () => {
-	flushScheduled = false
-	while (markQueue.size || runQueue.size) {
-		for (const mark of markQueue) {
-			mark()
-		}
-		markQueue.clear()
-		for (const run of runQueue) {
-			run()
-		}
-		runQueue.clear()
-	}
-}
-
-/**
- * Add notify function of active watcher to the set of watchers
+ * Add active watcher to the array of watchers
  * 
- * @param {Watcher[]} watchers - set of current watchers
+ * @param {Watcher[]} watchers - watchers of the signal
  */
 export const subscribe = (watchers: Watcher[]) => {
-	if (active && !watchers.includes(active))
+	// if (!active) console.warn('Calling .get() outside of a reactive context')
+	if (active && !watchers.includes(active)) {
 		watchers.push(active)
+	}
 }
 
 /**
  * Add watchers to the pending set of change notifications
  * 
- * @param {Watcher[]} watchers - set of current watchers
+ * @param {Watcher[]} watchers - watchers of the signal
  */
 export const notify = (watchers: Watcher[]) => {
-	for (const watcher of watchers) {
-        markQueue.add(watcher)
+	for (const mark of watchers) {
+        batchDepth ? pending.add(mark) : mark()
     }
-	if (!flushScheduled) {
-        flushScheduled = true
-        queueMicrotask(flush)
+}
+
+/**
+ * Flush all pending changes to notify watchers
+ */
+export const flush = () => {
+    while (pending.size) {
+        const watchers = Array.from(pending)
+        pending.clear()
+        for (const mark of watchers) {
+            mark()
+        }
     }
+}
+
+/**
+ * Batch multiple changes in a single signal graph and DOM update cycle
+ * 
+ * @param {() => void} fn - function with multiple signal writes to be batched
+ */
+export const batch = (fn: () => void) => {
+	batchDepth++
+    fn()
+	flush()
+	batchDepth--
 }
 
 /**

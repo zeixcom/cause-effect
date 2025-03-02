@@ -1,7 +1,7 @@
 import { UNSET } from './signal'
-import { effect, type EffectCallbacks } from './effect'
-import { isObjectOfType, isPromise, toError } from './util'
-import { type Watcher, notify, subscribe, watch } from './scheduler'
+import { isEquivalentError, isObjectOfType, isPromise, toError } from './util'
+import { type Watcher, flush, notify, subscribe, watch } from './scheduler'
+import { type EffectCallbacks, effect } from './effect'
 
 /* === Types === */
 
@@ -30,33 +30,30 @@ export const computed =  /*#__PURE__*/ <T extends {}>(
 ): Computed<T> => {
 	const watchers: Watcher[] = []
 	let value: T = UNSET
-	let error: Error | null = null
+	let error: Error | undefined
 	let dirty = true
 	let unchanged = false
 	let computing = false
 
-	const mark: Watcher = () => {
+	const mark = () => {
 		dirty = true
 		if (!unchanged) notify(watchers)
 	}
 
 	const compute = () => watch(() => {
-		if (!dirty) return
 		if (computing) throw new Error('Circular dependency detected')
-
+		unchanged = true
 		const ok = (v: T) => {
 			if (!Object.is(v, value)) {
 				value = v
 				dirty = false
-				error = null
+				error = undefined
 				unchanged = false
-			} else {
-				unchanged = true
 			}
 		}
 		const err = (e: unknown) => {
 			const newError = toError(e)
-			unchanged = Object.is(newError, error)
+			unchanged = isEquivalentError(newError, error)
 			error = newError
 		}
 		
@@ -88,7 +85,8 @@ export const computed =  /*#__PURE__*/ <T extends {}>(
 		 */
 		get: (): T => {
 			subscribe(watchers)
-			compute()
+			flush()
+			if (dirty) compute()
 			if (error) throw error
 			return value
 		},

@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { state, computed, isComputed, effect, flush, UNSET } from '../index'
+import { state, computed, isComputed, effect, UNSET, batch } from '../'
 
 /* === Utility Functions === */
 
@@ -278,7 +278,6 @@ describe('Computed', function () {
 		expect(c.get()).toBe('c: 3');
 		expect(count).toBe(1);
 		x.set(4);
-		flush();
 		expect(c.get()).toBe('c: 7');
 		expect(count).toBe(2);
 	});
@@ -295,7 +294,7 @@ describe('Computed', function () {
 		expect(c.get()).toBe('a a');
 		expect(count).toBe(1);
 		x.set('aa');
-		flush();
+		// flush();
 		expect(c.get()).toBe('aa aa');
 		expect(count).toBe(2);
 	});
@@ -313,9 +312,24 @@ describe('Computed', function () {
 		expect(d.get()).toBe('a a');
 		expect(count).toBe(1);
 		x.set('aa');
-		flush();
 		expect(d.get()).toBe('aa aa');
 		expect(count).toBe(2);
+	});
+
+	test('should update multiple times after multiple state changes', function() {
+		const a = state(3);
+		const b = state(4);
+		let count = 0;
+		const sum = computed(() => {
+			count++;
+			return a.get() + b.get()
+		});
+		expect(sum.get()).toBe(7);
+		a.set(6);
+		expect(sum.get()).toBe(10);
+		b.set(8);
+		expect(sum.get()).toBe(14);
+		expect(count).toBe(3);
 	});
 
 	/*
@@ -341,8 +355,9 @@ describe('Computed', function () {
 		expect(count).toBe(1);
 		x.set('aa');
 		x.set('aaa');
+		x.set('aaaa');
 		expect(b.get()).toBe('foo');
-		expect(count).toBe(1);
+		expect(count).toBe(2);
 	});
 
 	test('should block if result remains unchanged', function() {
@@ -358,8 +373,19 @@ describe('Computed', function () {
 		expect(count).toBe(1);
 		x.set(44);
 		x.set(46);
+		x.set(48);
 		expect(c.get()).toBe('c: even');
-		expect(count).toBe(1);
+		expect(count).toBe(2);
+	});
+
+	test('should detect and throw error for circular dependencies', function() {
+		const a = state(1);
+		const b = computed(() => c.get() + 1);
+		const c = computed(() => b.get() + a.get());
+		expect(() => {
+			b.get(); // This should trigger the circular dependency
+		}).toThrow('Circular dependency detected');
+		expect(a.get()).toBe(1);
 	});
 
 	/* test('should propagate error if an error occurred', function() {
@@ -395,12 +421,13 @@ describe('Effect', function () {
 
 	test('should be triggered after a state change', function() {
 		const cause = state('foo');
-		let effectDidRun = false;
+		let count = 0;
 		effect((_value) => {
-			effectDidRun = true;
+			count++;
 		}, cause);
+		expect(count).toBe(1);
 		cause.set('bar');
-		expect(effectDidRun).toBe(true);
+		expect(count).toBe(2);
 	});
 
 	test('should be triggered after computed async signals resolve without waterfalls', async function() {
@@ -435,38 +462,9 @@ describe('Effect', function () {
 		}, cause);
 		for (let i = 0; i < 10; i++) {
 			cause.set(i);
-			flush();
 			expect(result).toBe(i);
-			expect(count).toBe(i + 1); // + 1 for the initial state change
+			expect(count).toBe(i + 1); // + 1 for effect initialization
 		}
-	});
-
-	test('should update multiple times after multiple state changes', function() {
-		const a = state(3);
-		const b = state(4);
-		let count = 0;
-		const sum = computed(() => {
-			count++;
-			return a.get() + b.get()
-		});
-		expect(sum.get()).toBe(7);
-		a.set(6);
-		flush();
-		expect(sum.get()).toBe(10);
-		b.set(8);
-		flush();
-		expect(sum.get()).toBe(14);
-		expect(count).toBe(3);
-	});
-
-	test('should detect and throw error for circular dependencies', function() {
-		const a = state(1);
-		const b = computed(() => c.get() + 1);
-		const c = computed(() => b.get() + a.get());
-		expect(() => {
-			b.get(); // This should trigger the circular dependency
-		}).toThrow('Circular dependency detected');
-		expect(a.get()).toBe(1);
 	});
 
 	test('should handle errors in effects', function() {
@@ -491,19 +489,16 @@ describe('Effect', function () {
 	
 		// Normal case
 		a.set(2);
-		flush();
 		expect(normalCallCount).toBe(2);
 		expect(errorCallCount).toBe(0);
 	
 		// Error case
 		a.set(6);
-		flush();
 		expect(normalCallCount).toBe(2);
 		expect(errorCallCount).toBe(1);
 	
 		// Back to normal
 		a.set(3);
-		flush();
 		expect(normalCallCount).toBe(3);
 		expect(errorCallCount).toBe(1);
 	});
@@ -534,37 +529,43 @@ describe('Effect', function () {
 	});
 });
 
-describe('Flush', function () {
+describe('Batch', function () {
 
 	test('should be triggered only once after repeated state change', function() {
 		const cause = state(0);
 		let result = 0;
 		let count = 0;
-		for (let i = 1; i <= 10; i++) {
-			cause.set(i);
-		}
 		effect((res) => {
 			result = res;
 			count++;
 		}, cause);
+		batch(() => {
+			for (let i = 1; i <= 10; i++) {
+				cause.set(i);
+			}
+		});
 		expect(result).toBe(10);
-		expect(count).toBe(1);
+		expect(count).toBe(2); // + 1 for effect initialization
 	});
 
 	test('should be triggered only once when multiple signals are set', function() {
 		const a = state(3);
 		const b = state(4);
-		const sum = computed(() => a.get() + b.get());
+		const c = state(5);
+		const sum = computed(() => a.get() + b.get() + c.get());
 		let result = 0;
 		let count = 0;
-		a.set(6);
-		b.set(8);
 		effect((res) => {
 			result = res;
 			count++;
 		}, sum);
-		expect(result).toBe(14);
-		expect(count).toBe(1);
+		batch(() => {
+			a.set(6);
+			b.set(8);
+			c.set(10);
+		});
+		expect(result).toBe(24);
+		expect(count).toBe(2); // + 1 for effect initialization
 	});
 
 });

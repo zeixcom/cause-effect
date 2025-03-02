@@ -22,7 +22,15 @@ const isPromise = /*#__PURE__*/ isInstanceOf(Promise)
 const toError = (value: unknown): Error =>
 	isError(value) ? value : new Error(String(value))
 
+const isEquivalentError = /*#__PURE__*/ (
+	error1: Error,
+	error2: Error | undefined
+): boolean => {
+    if (!error2) return false
+    return error1.name === error2.name && error1.message === error2.message
+}
+
 export {
 	isFunction, isAsyncFunction, isComputeFunction,
-	isObjectOfType, isInstanceOf, isError, isPromise, toError
+	isObjectOfType, isInstanceOf, isError, isPromise, toError, isEquivalentError
 }

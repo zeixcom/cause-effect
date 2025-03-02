@@ -26,5 +26,8 @@
     "test": "bun test"
   },
   "type": "module",
-  "types": "index.d.ts"
+  "types": "index.d.ts",
+  "dependencies": {
+    "random": "^5.3.0"
+  }
 }

@@ -1,23 +1,28 @@
 export type EnqueueDedupe = [Element, string];
 export type Watcher = () => void;
-export type Runner = () => void;
 export type Updater = <T>() => T;
 /**
- * Flush all pending change notifications and runs in the signal graph
- */
-export declare const flush: () => void;
-/**
- * Add notify function of active watcher to the set of watchers
+ * Add active watcher to the array of watchers
  *
- * @param {Watcher[]} watchers - set of current watchers
+ * @param {Watcher[]} watchers - watchers of the signal
  */
 export declare const subscribe: (watchers: Watcher[]) => void;
 /**
  * Add watchers to the pending set of change notifications
  *
- * @param {Watcher[]} watchers - set of current watchers
+ * @param {Watcher[]} watchers - watchers of the signal
  */
 export declare const notify: (watchers: Watcher[]) => void;
+/**
+ * Flush all pending changes to notify watchers
+ */
+export declare const flush: () => void;
+/**
+ * Batch multiple changes in a single signal graph and DOM update cycle
+ *
+ * @param fn
+ */
+export declare const batch: (fn: () => void) => void;
 /**
  * Run a function in a reactive context
  *
