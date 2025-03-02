@@ -1,12 +1,14 @@
 import { type State, isState, state } from "./state"
 import { computed, type Computed, isComputed } from "./computed"
-import { isComputeFunction } from "./util"
+import { isComputeFunction, toError } from "./util"
 
 /* === Types === */
 
 type Signal<T extends {}> = State<T> | Computed<T>
+type UnknownSignal = Signal<{}>
+type MaybeSignal<T extends {}> = Signal<T> | T | (() => T)
 
-type MaybeSignal<T extends {}> = State<T> | Computed<T> | T | ((old?: T) => T)
+type SignalValue<T> = T extends Signal<infer U> ? U : never
 
 /* === Constants === */
 
@@ -39,7 +41,47 @@ const toSignal = /*#__PURE__*/ <T extends {}>(
 		: isComputeFunction<T>(value) ? computed(value)
 		: state(value)
 
+
+const resolveSignals = <T extends {}, U extends UnknownSignal[]>(
+	signals: U,
+	callbacks: {
+		ok: (...values: { [K in keyof U]: SignalValue<U[K]> }) => T | Promise<T> | Error | void
+		nil?: () => T | Promise<T> | Error | void
+		err?: (...errors: Error[]) => T | Promise<T> | Error | void
+	}
+): T | Promise<T> | Error | void => {
+	const { ok, nil, err  } = callbacks
+	const values = [] as { [K in keyof U]: SignalValue<U[K]> }
+    const errors: Error[] = []
+    let hasUnset = false
+
+    for (const signal of signals) {
+		try {
+			const value = signal.get()
+			if (value === UNSET) hasUnset = true
+			values.push(value)
+		} catch (e) {
+			errors.push(toError(e))
+		}
+    }
+
+	let result: T | Promise<T> | Error | void = undefined
+    try {
+		if (!hasUnset && !errors.length) {
+			result = ok(...values)
+		} else if (errors.length && err) {
+			result = err(...errors)
+		} else if (hasUnset && nil) {
+			result = nil()
+		}
+    } catch (e) {
+		result = toError(e)
+    } finally {
+		return result
+	}
+}
+
 export {
-	type Signal, type MaybeSignal,
-    isSignal, toSignal
+	type Signal, type UnknownSignal, type SignalValue, type MaybeSignal,
+    isSignal, toSignal, resolveSignals,
 }

@@ -12,7 +12,7 @@ export type State<T extends {}> = {
     set(value: T): void;
     update(fn: (value: T) => T): void;
     map<U extends {}>(fn: (value: T) => U): Computed<U>;
-	match: (callbacks: EffectCallbacks<[T]>) => void
+	match: (callbacks: EffectCallbacks<[State<T>]>) => void
 }
 
 /* === Constants === */
@@ -81,11 +81,11 @@ export const state = /*#__PURE__*/ <T extends {}>(v: T): State<T> => {
 		 * 
 		 * @since 0.9.0
 		 * @method of State<T>
-		 * @param {(v: T) => U} fn
-		 * @returns {Computed<U>} - computed signal
+		 * @param {(v: T) => R} fn
+		 * @returns {Computed<R>} - computed signal
 		 */
-        map: <U extends {}>(fn: (v: T) => U): Computed<U> => {
-            return computed<U>(() => fn(s.get()))
+        map: <R extends {}>(fn: (v: T) => R): Computed<R> => {
+            return computed(() => fn(s.get()))
         },
 
 		/**
@@ -96,7 +96,7 @@ export const state = /*#__PURE__*/ <T extends {}>(v: T): State<T> => {
 		 * @param {EffectCallbacks[<T>]} callbacks 
 		 * @returns {void} - executes the effect callbacks when the computed signal changes
 		 */
-		match: (callbacks: EffectCallbacks<[T]>): void =>
+		match: (callbacks: EffectCallbacks<[State<T>]>): void =>
 			effect(callbacks, s),
 	}
 

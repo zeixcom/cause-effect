@@ -6,7 +6,7 @@ export type State<T extends {}> = {
     set(value: T): void;
     update(fn: (value: T) => T): void;
     map<U extends {}>(fn: (value: T) => U): Computed<U>;
-    match: (callbacks: EffectCallbacks<[T]>) => void;
+    match: (callbacks: EffectCallbacks<[State<T>]>) => void;
 };
 /**
  * Create a new state signal

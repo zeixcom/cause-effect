@@ -20,7 +20,7 @@ export declare const flush: () => void;
 /**
  * Batch multiple changes in a single signal graph and DOM update cycle
  *
- * @param fn
+ * @param {() => void} fn - function with multiple signal writes to be batched
  */
 export declare const batch: (fn: () => void) => void;
 /**

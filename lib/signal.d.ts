@@ -1,7 +1,9 @@
 import { type State } from "./state";
 import { type Computed } from "./computed";
 type Signal<T extends {}> = State<T> | Computed<T>;
-type MaybeSignal<T extends {}> = State<T> | Computed<T> | T | ((old?: T) => T);
+type UnknownSignal = Signal<{}>;
+type MaybeSignal<T extends {}> = Signal<T> | T | (() => T);
+type SignalValue<T> = T extends Signal<infer U> ? U : never;
 export declare const UNSET: any;
 /**
  * Check whether a value is a Signal or not
@@ -20,4 +22,9 @@ declare const isSignal: <T extends {}>(value: any) => value is Signal<T>;
  * @returns {Signal<T>} - converted Signal
  */
 declare const toSignal: <T extends {}>(value: MaybeSignal<T>) => Signal<T>;
-export { type Signal, type MaybeSignal, isSignal, toSignal };
+declare const resolveSignals: <T extends {}, U extends UnknownSignal[]>(signals: U, callbacks: {
+    ok: (...values: { [K in keyof U]: SignalValue<U[K]>; }) => T | Promise<T> | Error | void;
+    nil?: () => T | Promise<T> | Error | void;
+    err?: (...errors: Error[]) => T | Promise<T> | Error | void;
+}) => T | Promise<T> | Error | void;
+export { type Signal, type UnknownSignal, type SignalValue, type MaybeSignal, isSignal, toSignal, resolveSignals, };
