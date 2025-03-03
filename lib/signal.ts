@@ -1,40 +1,14 @@
 import { type State, isState, state } from "./state"
 import { computed, type Computed, isComputed } from "./computed"
-import { isComputeFunction } from "./util"
+import { isComputeFunction, toError } from "./util"
 
 /* === Types === */
 
 type Signal<T extends {}> = State<T> | Computed<T>
+type UnknownSignal = Signal<{}>
+type MaybeSignal<T extends {}> = Signal<T> | T | (() => T)
 
-type MaybeSignal<T extends {}> = State<T> | Computed<T> | T | ((old?: T) => T)
-
-type Watcher = () => void
-
-/* === Internals === */
-
-// Currently active watcher
-let active: () => void | undefined
-
-// Batching state
-let batchDepth = 0
-
-// Pending notifications
-const markQueue: Set<Watcher> = new Set()
-
-// Pending runs
-const runQueue: Set<() => void> = new Set()
-
-/**
- * Flush pending notifications and runs
- */
-const flush = () => {
-	while (markQueue.size || runQueue.size) {
-		markQueue.forEach(mark => mark())
-		markQueue.clear()
-		runQueue.forEach(run => run())
-		runQueue.clear()
-	}
-}
+type SignalValue<T> = T extends Signal<infer U> ? U : never
 
 /* === Constants === */
 
@@ -67,50 +41,52 @@ const toSignal = /*#__PURE__*/ <T extends {}>(
 		: isComputeFunction<T>(value) ? computed(value)
 		: state(value)
 
-/**
- * Add notify function of active watchers to the set of watchers
- * 
- * @param {Watcher[]} watchers - set of current watchers
- */
-const subscribe = (watchers: Watcher[]) => {
-	if (active && !watchers.includes(active)) watchers.push(active)
-}
 
 /**
- * Notify all subscribers of the state change or add to the pending set if batching is enabled
+ * Resolve signals and apply callbacks based on the results
  * 
- * @param {Watcher[]} watchers 
+ * @since 0.12.0
+ * @param {U} signals - dependency signals
+ * @param {Record<string, (...args) => T | Promise<T> | Error | void>} callbacks - ok, nil, err callbacks
+ * @returns {T | Promise<T> | Error | void} - result of chosen callback
  */
-const notify = (watchers: Watcher[]) => {
-	watchers.forEach(mark => batchDepth ? markQueue.add(mark) : mark())
-}
+const resolveSignals = <T extends {}, U extends UnknownSignal[]>(
+	signals: U,
+	callbacks: {
+		ok: (...values: { [K in keyof U]: SignalValue<U[K]> }) => T | Promise<T> | Error | void
+		nil?: () => T | Promise<T> | Error | void
+		err?: (...errors: Error[]) => T | Promise<T> | Error | void
+	}
+): T | Promise<T> | Error | void => {
+	const { ok, nil, err  } = callbacks
+	const values = [] as { [K in keyof U]: SignalValue<U[K]> }
+    const errors: Error[] = []
+    let hasUnset = false
 
-/**
- * Run a function in a reactive context
- * 
- * @param {() => void} run - function to run the computation or effect
- * @param {Watcher} mark - function to be called when the state changes
- */
-const watch = (run: () => void, mark: Watcher): void => {
-	const prev = active
-	active = mark
-	run()
-	active = prev
-}
+    for (const signal of signals) {
+		try {
+			const value = signal.get()
+			if (value === UNSET) hasUnset = true
+			values.push(value)
+		} catch (e) {
+			errors.push(toError(e))
+		}
+    }
 
-/**
- * Batch multiple state changes into a single update
- * 
- * @param {() => void} run - function to run the batch of state changes
- */
-const batch = (run: () => void): void => {
-    batchDepth++
-    run()
-    batchDepth--
-	if (!batchDepth) flush()
+	let result: T | Promise<T> | Error | void = undefined
+    try {
+		if (hasUnset && nil) result = nil()
+		else if (errors.length) result = err ? err(...errors) : errors[0]
+		else if (!hasUnset) result = ok(...values)
+    } catch (e) {
+		result = toError(e)
+		if (err) result = err(result)
+    } finally {
+		return result
+	}
 }
 
 export {
-	type Signal, type MaybeSignal, type Watcher,
-    isSignal, toSignal, subscribe, notify, watch, batch
+	type Signal, type UnknownSignal, type SignalValue, type MaybeSignal,
+    isSignal, toSignal, resolveSignals,
 }

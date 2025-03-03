@@ -1,8 +1,9 @@
 import { type State } from "./state";
 import { type Computed } from "./computed";
 type Signal<T extends {}> = State<T> | Computed<T>;
-type MaybeSignal<T extends {}> = State<T> | Computed<T> | T | ((old?: T) => T);
-type Watcher = () => void;
+type UnknownSignal = Signal<{}>;
+type MaybeSignal<T extends {}> = Signal<T> | T | (() => T);
+type SignalValue<T> = T extends Signal<infer U> ? U : never;
 export declare const UNSET: any;
 /**
  * Check whether a value is a Signal or not
@@ -22,28 +23,16 @@ declare const isSignal: <T extends {}>(value: any) => value is Signal<T>;
  */
 declare const toSignal: <T extends {}>(value: MaybeSignal<T>) => Signal<T>;
 /**
- * Add notify function of active watchers to the set of watchers
+ * Resolve signals and apply callbacks based on the results
  *
- * @param {Watcher[]} watchers - set of current watchers
+ * @since 0.12.0
+ * @param {U} signals - dependency signals
+ * @param {Record<string, (...args) => T | Promise<T> | Error | void>} callbacks - ok, nil, err callbacks
+ * @returns {T | Promise<T> | Error | void} - result of chosen callback
  */
-declare const subscribe: (watchers: Watcher[]) => void;
-/**
- * Notify all subscribers of the state change or add to the pending set if batching is enabled
- *
- * @param {Watcher[]} watchers
- */
-declare const notify: (watchers: Watcher[]) => void;
-/**
- * Run a function in a reactive context
- *
- * @param {() => void} run - function to run the computation or effect
- * @param {Watcher} mark - function to be called when the state changes
- */
-declare const watch: (run: () => void, mark: Watcher) => void;
-/**
- * Batch multiple state changes into a single update
- *
- * @param {() => void} run - function to run the batch of state changes
- */
-declare const batch: (run: () => void) => void;
-export { type Signal, type MaybeSignal, type Watcher, isSignal, toSignal, subscribe, notify, watch, batch };
+declare const resolveSignals: <T extends {}, U extends UnknownSignal[]>(signals: U, callbacks: {
+    ok: (...values: { [K in keyof U]: SignalValue<U[K]>; }) => T | Promise<T> | Error | void;
+    nil?: () => T | Promise<T> | Error | void;
+    err?: (...errors: Error[]) => T | Promise<T> | Error | void;
+}) => T | Promise<T> | Error | void;
+export { type Signal, type UnknownSignal, type SignalValue, type MaybeSignal, isSignal, toSignal, resolveSignals, };

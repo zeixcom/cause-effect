@@ -1,13 +1,16 @@
 
-import { type Signal, UNSET, type Watcher, watch } from "./signal"
-import { isFunction, toError } from "./util"
+import { resolveSignals, type SignalValue, type UnknownSignal } from './signal'
+import { isError, isFunction } from './util'
+import { watch } from './scheduler'
 
 /* === Types === */
 
-export type EffectOkCallback<T extends {}[]> = (...values: T) => void
+export type EffectOkCallback<T extends UnknownSignal[]> = (
+	...values: { [K in keyof T]: SignalValue<T[K]> }
+) => void
 
-export type EffectCallbacks<T extends {}[]> = {
-	ok: EffectOkCallback<T>
+export type EffectCallbacks<T extends UnknownSignal[]> = {
+	ok: (...values: { [K in keyof T]: SignalValue<T[K]> }) => void
 	nil?: () => void
 	err?: (...errors: Error[]) => void
 }
@@ -18,48 +21,20 @@ export type EffectCallbacks<T extends {}[]> = {
  * Define what happens when a reactive state changes
  * 
  * @since 0.1.0
- * @param {() => void} fn - callback function to be executed when a state changes
+ * @param {() => void} callbacksOrFn - callback function to be executed when a state changes
  */
-
-export function effect<T extends {}>(
-    ok: EffectOkCallback<T[]>,
-    ...signals: Signal<T>[]
-): void
-export function effect<T extends {}>(
-    callbacks: EffectCallbacks<T[]>,
-    ...signals: Signal<T>[]
-): void
-export function effect<T extends {}>(
-	callbacksOrFn: EffectCallbacks<T[]> | EffectOkCallback<T[]>,
-	...signals: Signal<T>[]
+export function effect<T extends UnknownSignal[]>(
+	callbacksOrFn: EffectCallbacks<T> | EffectOkCallback<T>,
+	...signals: T
 ): void {
 	const callbacks = isFunction(callbacksOrFn)
         ? { ok: callbacksOrFn }
-        : callbacksOrFn as EffectCallbacks<T[]>
+        : callbacksOrFn
 
-    const { ok, nil, err } = callbacks
-
-	const run: Watcher = () => watch(() => {
-		const values: T[] = []
-		const errors: Error[] = []
-		let hasUnset = false
-
-		for (const signal of signals) {
-			try {
-				const value = signal.get()
-				if (value === UNSET) hasUnset = true
-				values.push(value)
-			} catch (error) {
-				errors.push(toError(error))
-			}
-		}
-		try {
-			if (!hasUnset && !errors.length) ok(...values)
-			else if (errors.length && err) err(...errors)
-		    else if (hasUnset && nil) nil()
-		} catch (error) {
-            err?.(toError(error))
-		}
+	const run = () => watch(() => {
+		const result = resolveSignals(signals, callbacks as EffectCallbacks<T>)
+		if (isError(result))
+			console.error('Unhandled error in effect:', result)
     }, run)
 	run()
 }
