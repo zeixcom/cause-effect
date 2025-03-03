@@ -1,6 +1,6 @@
 # Cause & Effect
 
-Version 0.11.0
+Version 0.12.0
 
 **Cause & Effect** is a lightweight, reactive state management library for JavaScript applications. It uses the concept of signals to create a predictable and efficient data flow in your app.
 
@@ -14,7 +14,7 @@ Version 0.11.0
 - **Performance**: Efficient updates that only recompute what's necessary.
 - **Type Safety**: Full TypeScript support for robust applications.
 - **Flexibility**: Works well with any UI framework or vanilla JavaScript.
-- **Lightweight**: Around 1kB gzipped over the wire.
+- **Lightweight**: Dependency-free, only 1kB gzipped over the wire.
 
 ## Key Features
 
@@ -27,18 +27,18 @@ Version 0.11.0
 ## Quick Example
 
 ```js
-import { state, computed, effect } from '@zeix/cause-effect'
+import { state, effect } from '@zeix/cause-effect'
 
 // Create a state signal
 const count = state(0)
 
 // Create a computed signal
-const doubleCount = computed(() => count.get() * 2)
+const doubleCount = count.map(v => v * 2)
 
 // Create an effect
-effect(() => {
-    console.log(`Count: ${count.get()}, Double: ${doubleCount.get()}`)
-})
+effect((c, d) => {
+    console.log(`Count: ${c}, Double: ${d}`)
+}, count, doubleCount)
 
 // Update the state
 count.set(5) // Logs: "Count: 5, Double: 10"
@@ -66,8 +66,9 @@ import { state, effect } from '@zeix/cause-effect'
 const count = state(42)
 effect(() => console.log(count.get())) // logs '42'
 count.set(24) // logs '24'
-document.querySelector('button.increment')
-    .addEventListener('click', () => count.update(v => ++v))
+document.querySelector('.increment').addEventListener('click', () => {
+	count.update(v => ++v)
+})
 // Click on button logs '25', '26', and so on
 ```
 
@@ -82,8 +83,9 @@ const count = state(42)
 const isOdd = computed(() => count.get() % 2)
 effect(() => console.log(isOdd.get())) // logs 'false'
 count.set(24) // logs nothing because 24 is also an even number
-document.querySelector('button.increment')
-    .addEventListener('click', () => count.update(v => ++v))
+document.querySelector('button.increment').addEventListener('click', () => {
+	count.update(v => ++v)
+})
 // Click on button logs 'true', 'false', and so on
 ```
 
@@ -96,8 +98,9 @@ const count = state(42)
 const isOdd = count.map(v => v % 2)
 effect(() => console.log(isOdd.get())) // logs 'false'
 count.set(24) // logs nothing because 24 is also an even number
-document.querySelector('button.increment')
-    .addEventListener('click', () => count.set(v => ++v))
+document.querySelector('.increment').addEventListener('click', () => {
+	count.update(v => ++v)
+})
 // Click on button logs 'true', 'false', and so on
 ```
 
@@ -154,23 +157,60 @@ effect({
 
 Instead of a single callback function, provide an object with `ok` (required), `err` and `nil` keys (both optional) and Cause & Effect will take care of anything that might go wrong with the listed signals in the rest parameters of `effect()`.
 
+If you want an effect based on a single signal, there's a shorthand too: The `.match()` method on either `State` or `Computed`. You can use it for easy debugging, for example:
+
+```js
+signal.match({
+	ok: v => console.log('Value:', v),
+	nil: () => console.warn('Not ready'),
+	err: e => console.error('Error:', e)
+})
+```
+
 ### Effects and Batching
 
 Effects run synchronously as soon as source signals update. If you need to set multiple signals you can batch them together to ensure dependents are executed only once.
 
 ```js
-import { state, computed, effect, batch } from '@zeix/cause-effect'
+import { state, computed, batch } from '@zeix/cause-effect'
 
-const a = state(3)
-const b = state(4)
-const sum = computed(() => a.get() + b.get())
-effect(() => console.log(sum.get())) // logs '7'
-document.querySelector('button.double-all')
-    .addEventListener('click', () =>
-        batch(() => {
-            a.update(v => v * 2)
-            b.update(v => v * 2)
-        }
-    ))
-// Click on button logs '14' only once (instead of first '10' and then '14' without batch)
+// State: define an array of State<number>
+const signals = [state(2), state(3), state(5)]
+
+// Computed: derive a calculation ...
+const sum = computed(
+	(...values) => values.reduce((total, v) => total + v, 0),
+	...signals
+).map(v => { // ... perform validation and handle errors
+	if (!Number.isFinite(v)) throw new Error('Invalid value')
+	return v
+})
+
+// Effect: switch cases for the result
+sum.match({
+	ok: v => console.log('Sum:', v),
+	err: error => console.error('Error:', error)
+})
+
+// Batch: apply changes to all signals in a single transaction
+document.querySelector('.double-all').addEventListener('click', () => {
+	batch(() => {
+		signals.forEach(signal => signal.update(v => v * 2))
+	})
+})
+// Click on button logs '20' only once
+// (instead of first '12', then '15' and then '20' without batch)
+
+// Provoke an error - but no worries: it will be handled fine
+signals[0].set(NaN)
 ```
+
+This example showcases several powerful features of Cause & Effect:
+
+1. **Composability and Declarative Computations**: Easily compose multiple signals into a single computed value, declaring how values should be calculated based on other signals.
+2. **Automatic Dependency Tracking and Efficient Updates**: The library tracks dependencies between signals and computed values, ensuring efficient propagation of changes.
+3. **Robust Error Handling**: Built-in error handling at computation level and reactive error management allow for graceful handling of unexpected situations.
+4. **Performance Optimization through Batching**: Group multiple state changes to ensure dependent computations and effects run only once after all changes are applied.
+5. **Flexibility and Integration**: Seamlessly integrates with DOM manipulation and event listeners, fitting into any JavaScript application or framework.
+
+These principles enable developers to create complex, reactive applications with clear data flow, efficient updates, and robust error handling, while promoting code reuse and modularity.

@@ -84,9 +84,8 @@ export const state = /*#__PURE__*/ <T extends {}>(v: T): State<T> => {
 		 * @param {(v: T) => R} fn
 		 * @returns {Computed<R>} - computed signal
 		 */
-        map: <R extends {}>(fn: (v: T) => R): Computed<R> => {
-            return computed(() => fn(s.get()))
-        },
+        map: <R extends {}>(fn: (v: T) => R): Computed<R> =>
+            computed(() => fn(s.get())),
 
 		/**
 		 * Case matching for the state signal with effect callbacks
@@ -94,10 +93,12 @@ export const state = /*#__PURE__*/ <T extends {}>(v: T): State<T> => {
 		 * @since 0.12.0
 		 * @method of State<T>
 		 * @param {EffectCallbacks[<T>]} callbacks 
-		 * @returns {void} - executes the effect callbacks when the computed signal changes
+		 * @returns {State<T>} - self, for chaining effect callbacks
 		 */
-		match: (callbacks: EffectCallbacks<[State<T>]>): void =>
-			effect(callbacks, s),
+		match: (callbacks: EffectCallbacks<[State<T>]>): State<T> => {
+			effect(callbacks, s)
+			return s
+		}
 	}
 
 	return s

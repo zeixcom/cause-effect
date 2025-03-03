@@ -129,10 +129,12 @@ export const computed = <T extends {}, U extends UnknownSignal[]>(
 		 * @since 0.12.0
 		 * @method of Computed<T>
 		 * @param {EffectCallbacks[<T>]} callbacks 
-		 * @returns {void} - executes the effect callbacks when the computed signal changes
+		 * @returns {Computed<T>} - self, for chaining effect callbacks
 		 */
-		match: (callbacks: EffectCallbacks<[Computed<T>]>): void =>
-			effect(callbacks, c),
+		match: (callbacks: EffectCallbacks<[Computed<T>]>): Computed<T> => {
+			effect(callbacks, c)
+			return c
+		}
 	}
 	return c
 }

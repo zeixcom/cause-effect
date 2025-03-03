@@ -1,6 +1,6 @@
 import { type State, isState, state } from "./state"
 import { computed, type Computed, isComputed } from "./computed"
-import { isComputeFunction, isPromise, toError } from "./util"
+import { isComputeFunction, toError } from "./util"
 
 /* === Types === */
 
