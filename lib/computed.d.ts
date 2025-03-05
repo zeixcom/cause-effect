@@ -1,29 +1,19 @@
-import { type SignalValue, type UnknownSignal } from './signal';
-import { type EffectCallbacks } from './effect';
-export type ComputedOkCallback<T extends {}, U extends UnknownSignal[]> = (...values: {
-    [K in keyof U]: SignalValue<U[K]>;
-}) => T | Promise<T>;
-export type ComputedCallbacks<T extends {}, U extends UnknownSignal[]> = {
-    ok: (...values: {
-        [K in keyof U]: SignalValue<U[K]>;
-    }) => T | Promise<T>;
-    nil?: () => T | Promise<T>;
-    err?: (...errors: Error[]) => T | Promise<T>;
-};
+import { type MaybeSignal, type EffectCallbacks, type ComputedCallbacks } from './signal';
 export type Computed<T extends {}> = {
     [Symbol.toStringTag]: 'Computed';
     get: () => T;
-    map: <U extends {}>(fn: (value: T) => U) => Computed<U>;
-    match: (callbacks: EffectCallbacks<[Computed<T>]>) => void;
+    map: <U extends {}>(cb: ComputedCallbacks<U, [Computed<T>]>) => Computed<U>;
+    match: (cb: EffectCallbacks<[Computed<T>]>) => void;
 };
 /**
- * Create a derived state from existing states
+ * Create a derived signal from existing signals
  *
  * @since 0.9.0
- * @param {() => T} callbacksOrFn - compute function to derive state
- * @returns {Computed<T>} result of derived state
+ * @param {() => T} cb - compute callback or object of ok, nil, err callbacks to derive state
+ * @param {U} maybeSignals - signals of functions using signals this values depends on
+ * @returns {Computed<T>} - Computed signal
  */
-export declare const computed: <T extends {}, U extends UnknownSignal[]>(callbacksOrFn: ComputedCallbacks<T, U> | ComputedOkCallback<T, U>, ...signals: U) => Computed<T>;
+export declare const computed: <T extends {}, U extends MaybeSignal<{}>[]>(cb: ComputedCallbacks<T, U>, ...maybeSignals: U) => Computed<T>;
 /**
  * Check if a value is a computed state
  *

@@ -1,19 +1,7 @@
 
-import { resolveSignals, type SignalValue, type UnknownSignal } from './signal'
-import { isError, isFunction } from './util'
+import { type EffectCallbacks, type MaybeSignal, resolve } from './signal'
+import { isError } from './util'
 import { watch } from './scheduler'
-
-/* === Types === */
-
-export type EffectOkCallback<T extends UnknownSignal[]> = (
-	...values: { [K in keyof T]: SignalValue<T[K]> }
-) => void
-
-export type EffectCallbacks<T extends UnknownSignal[]> = {
-	ok: (...values: { [K in keyof T]: SignalValue<T[K]> }) => void
-	nil?: () => void
-	err?: (...errors: Error[]) => void
-}
 
 /* === Exported Function === */
 
@@ -21,18 +9,15 @@ export type EffectCallbacks<T extends UnknownSignal[]> = {
  * Define what happens when a reactive state changes
  * 
  * @since 0.1.0
- * @param {() => void} callbacksOrFn - callback function to be executed when a state changes
+ * @param {() => void} cb - effect callback or object of ok, nil, err callbacks to be executed when a state changes
+ * @param {U} maybeSignals - signals of functions using signals that should trigger the effect
  */
-export function effect<T extends UnknownSignal[]>(
-	callbacksOrFn: EffectCallbacks<T> | EffectOkCallback<T>,
-	...signals: T
+export function effect<U extends MaybeSignal<{}>[]>(
+	cb: EffectCallbacks<U>,
+	...maybeSignals: U
 ): void {
-	const callbacks = isFunction(callbacksOrFn)
-        ? { ok: callbacksOrFn }
-        : callbacksOrFn
-
 	const run = () => watch(() => {
-		const result = resolveSignals(signals, callbacks as EffectCallbacks<T>)
+		const result = resolve(maybeSignals, cb)
 		if (isError(result))
 			console.error('Unhandled error in effect:', result)
     }, run)

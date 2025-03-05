@@ -6,10 +6,7 @@ const isFunction = /*#__PURE__*/ <T>(value: unknown): value is (...args: unknown
 const isAsyncFunction = /*#__PURE__*/ <T>(value: unknown): value is (...args: unknown[]) => Promise<T> | PromiseLike<T> =>
 	isFunction(value) && /^async\s+/.test(value.toString())
 
-const isComputeFunction = /*#__PURE__*/ <T>(value: unknown): value is ((old?: T) => T) =>
-	isFunction(value) && value.length < 2
-
-const isObjectOfType = <T>(value: unknown, type: string): value is T =>
+const isObjectOfType = /*#__PURE__*/ <T>(value: unknown, type: string): value is T =>
 	Object.prototype.toString.call(value) === `[object ${type}]`
 
 const isInstanceOf = /*#__PURE__*/ <T>(type: new (...args: any[]) => T) =>
@@ -22,15 +19,7 @@ const isPromise = /*#__PURE__*/ isInstanceOf(Promise)
 const toError = (value: unknown): Error =>
 	isError(value) ? value : new Error(String(value))
 
-const isEquivalentError = /*#__PURE__*/ (
-	error1: Error,
-	error2: Error | undefined
-): boolean => {
-    if (!error2) return false
-    return error1.name === error2.name && error1.message === error2.message
-}
-
 export {
-	isFunction, isAsyncFunction, isComputeFunction,
-	isObjectOfType, isInstanceOf, isError, isPromise, toError, isEquivalentError
+	isFunction, isAsyncFunction,
+	isObjectOfType, isInstanceOf, isError, isPromise, toError
 }

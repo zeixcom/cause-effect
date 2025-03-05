@@ -1,47 +1,48 @@
-import { resolveSignals, UNSET, type SignalValue, type UnknownSignal } from './signal'
-import { isEquivalentError, isError, isFunction, isObjectOfType, isPromise, toError } from './util'
+import {
+	type MaybeSignal, type EffectCallbacks, type ComputedCallbacks,
+	resolve, UNSET
+} from './signal'
+import { isError, isObjectOfType, isPromise, toError } from './util'
 import { type Watcher, flush, notify, subscribe, watch } from './scheduler'
-import { type EffectCallbacks, effect } from './effect'
+import { effect } from './effect'
 
 /* === Types === */
-
-export type ComputedOkCallback<T extends {}, U extends UnknownSignal[]> = (
-	...values: { [K in keyof U]: SignalValue<U[K]> }
-) => T | Promise<T>
-
-export type ComputedCallbacks<T extends {}, U extends UnknownSignal[]> = {
-	ok: (...values: { [K in keyof U]: SignalValue<U[K]> }) => T | Promise<T>
-	nil?: () => T | Promise<T>
-	err?: (...errors: Error[]) => T | Promise<T>
-}
 
 export type Computed<T extends {}> = {
     [Symbol.toStringTag]: 'Computed'
     get: () => T
-    map: <U extends {}>(fn: (value: T) => U) => Computed<U>
-	match: (callbacks: EffectCallbacks<[Computed<T>]>) => void
+    map: <U extends {}>(cb: ComputedCallbacks<U, [Computed<T>]>) => Computed<U>
+	match: (cb: EffectCallbacks<[Computed<T>]>) => void
 }
 
 /* === Constants === */
 
 const TYPE_COMPUTED = 'Computed'
 
+/* === Private Functions === */
+
+const isEquivalentError = /*#__PURE__*/ (
+	error1: Error,
+	error2: Error | undefined
+): boolean => {
+    if (!error2) return false
+    return error1.name === error2.name && error1.message === error2.message
+}
+
 /* === Computed Factory === */
 
 /**
- * Create a derived state from existing states
+ * Create a derived signal from existing signals
  * 
  * @since 0.9.0
- * @param {() => T} callbacksOrFn - compute function to derive state
- * @returns {Computed<T>} result of derived state
+ * @param {() => T} cb - compute callback or object of ok, nil, err callbacks to derive state
+ * @param {U} maybeSignals - signals of functions using signals this values depends on
+ * @returns {Computed<T>} - Computed signal
  */
-export const computed = <T extends {}, U extends UnknownSignal[]>(
-	callbacksOrFn: ComputedCallbacks<T, U> | ComputedOkCallback<T, U>,
-	...signals: U
+export const computed = <T extends {}, U extends MaybeSignal<{}>[]>(
+	cb: ComputedCallbacks<T, U>,
+	...maybeSignals: U
 ): Computed<T> => {
-	const callbacks = isFunction(callbacksOrFn)
-		? { ok: callbacksOrFn }
-		: callbacksOrFn
 	const watchers: Watcher[] = []
 	let value: T = UNSET
 	let error: Error | undefined
@@ -81,7 +82,7 @@ export const computed = <T extends {}, U extends UnknownSignal[]>(
 		if (computing) throw new Error('Circular dependency detected')
 		unchanged = true
 		computing = true
-		const result = resolveSignals(signals, callbacks as ComputedCallbacks<T, U>)
+		const result = resolve(maybeSignals, cb)
 		if (isPromise(result)) {
 			nil() // sync
 			result.then(v => {
@@ -101,7 +102,6 @@ export const computed = <T extends {}, U extends UnknownSignal[]>(
 		 * Get the current value of the computed
 		 * 
 		 * @since 0.9.0
-		 * @method of Computed<T>
 		 * @returns {T} - current value of the computed
 		 */
 		get: (): T => {
@@ -116,23 +116,21 @@ export const computed = <T extends {}, U extends UnknownSignal[]>(
 		 * Create a computed signal from the current computed signal
 		 * 
 		 * @since 0.9.0
-		 * @method of Computed<T>
-		 * @param {(value: T) => R} fn
-		 * @returns {Computed<R>} - computed signal
+		 * @param {ComputedCallbacks<U, [Computed<T>]>} cb - compute callback or object of ok, nil, err callbacks to map this value to new computed
+		 * @returns {Computed<U>} - computed signal
 		 */
-		map: <R extends {}>(fn: (value: T) => R): Computed<R> =>
-			computed(() => fn(c.get())),
+		map: <U extends {}>(cb: ComputedCallbacks<U, [Computed<T>]>): Computed<U> =>
+			computed(cb, c),
 
 		/**
 		 * Case matching for the computed signal with effect callbacks
 		 * 
 		 * @since 0.12.0
-		 * @method of Computed<T>
-		 * @param {EffectCallbacks[<T>]} callbacks 
+		 * @param {EffectCallbacks[Computed<T>]} cb - effect callback or object of ok, nil, err callbacks to be executed when the computed changes
 		 * @returns {Computed<T>} - self, for chaining effect callbacks
 		 */
-		match: (callbacks: EffectCallbacks<[Computed<T>]>): Computed<T> => {
-			effect(callbacks, c)
+		match: (cb: EffectCallbacks<[Computed<T>]>): Computed<T> => {
+			effect(cb, c)
 			return c
 		}
 	}

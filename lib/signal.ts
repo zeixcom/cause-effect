@@ -1,18 +1,44 @@
 import { type State, isState, state } from "./state"
-import { computed, type Computed, isComputed } from "./computed"
-import { isComputeFunction, toError } from "./util"
+import { type Computed, computed, isComputed } from "./computed"
+import { isFunction, toError } from "./util"
 
 /* === Types === */
 
 type Signal<T extends {}> = State<T> | Computed<T>
-type UnknownSignal = Signal<{}>
-type MaybeSignal<T extends {}> = Signal<T> | T | (() => T)
+type MaybeSignal<T extends {}> = Signal<T> | T | (() => T | Promise<T>)
+type InferMaybeSignalType<T> = T extends Signal<infer U> ? U :
+	T extends (() => infer U) ? U :
+	T
 
-type SignalValue<T> = T extends Signal<infer U> ? U : never
+type OkCallback<T, U extends MaybeSignal<{}>[]> = (...values: {
+	[K in keyof U]: InferMaybeSignalType<U[K]>
+}) => T | Promise<T> | Error
+type NilCallback<T> = () => T | Promise<T> | Error
+type ErrCallback<T> = (...errors: Error[]) => T | Promise<T> | Error
+
+type ComputedCallbacks<T extends {}, U extends MaybeSignal<{}>[]> = OkCallback<T, U> | {
+	ok: OkCallback<T, U>,
+    nil?: NilCallback<T>,
+    err?: ErrCallback<T>
+}
+
+type EffectCallbacks<U extends MaybeSignal<{}>[]> = OkCallback<void, U> | {
+	ok: OkCallback<void, U>,
+	nil?: NilCallback<void>,
+	err?: ErrCallback<void>
+}
+
+type CallbackReturnType<T> = T | Promise<T> | Error | void
 
 /* === Constants === */
 
-export const UNSET: any = Symbol()
+const UNSET: any = Symbol()
+
+/* === Private Functions === */
+
+const isComputedCallbacks = /*#__PURE__*/ <T extends {}>(value: unknown): value is ComputedCallbacks<T, []> =>
+	(isFunction(value) && !value.length)
+		|| (typeof value === 'object' && value !== null && 'ok' in value && isFunction(value.ok))
 
 /* === Exported Functions === */
 
@@ -35,58 +61,67 @@ const isSignal = /*#__PURE__*/ <T extends {}>(value: any): value is Signal<T> =>
  * @returns {Signal<T>} - converted Signal
  */
 const toSignal = /*#__PURE__*/ <T extends {}>(
-	value: MaybeSignal<T>
+	value: MaybeSignal<T> | ComputedCallbacks<T, []>
 ): Signal<T> =>
 	isSignal<T>(value) ? value
-		: isComputeFunction<T>(value) ? computed(value)
-		: state(value)
+		: isComputedCallbacks<T>(value) ? computed(value)
+		: state(value as T)
 
 
 /**
- * Resolve signals and apply callbacks based on the results
+ * Resolve signals or functions using signals and apply callbacks based on the results
  * 
  * @since 0.12.0
- * @param {U} signals - dependency signals
- * @param {Record<string, (...args) => T | Promise<T> | Error | void>} callbacks - ok, nil, err callbacks
- * @returns {T | Promise<T> | Error | void} - result of chosen callback
+ * @param {U} maybeSignals - dependency signals (or functions using signals)
+ * @param {Record<string, (...args) => CallbackReturnType<T>} cb - object of ok, nil, err callbacks or just ok callback
+ * @returns {CallbackReturnType<T>} - result of chosen callback
  */
-const resolveSignals = <T extends {}, U extends UnknownSignal[]>(
-	signals: U,
-	callbacks: {
-		ok: (...values: { [K in keyof U]: SignalValue<U[K]> }) => T | Promise<T> | Error | void
-		nil?: () => T | Promise<T> | Error | void
-		err?: (...errors: Error[]) => T | Promise<T> | Error | void
+const resolve = <T, U extends MaybeSignal<{}>[]>(
+	maybeSignals: U,
+	cb: OkCallback<T | Promise<T>, U> | {
+		ok: OkCallback<T | Promise<T>, U>
+		nil?: NilCallback<T>
+		err?: ErrCallback<T>
 	}
-): T | Promise<T> | Error | void => {
-	const { ok, nil, err  } = callbacks
-	const values = [] as { [K in keyof U]: SignalValue<U[K]> }
+): CallbackReturnType<T> => {
+	const { ok, nil, err } = isFunction(cb)
+		? { ok: cb }
+		: cb as {
+			ok: OkCallback<T | Promise<T>, U>
+			nil?: NilCallback<T>
+			err?: ErrCallback<T>
+		}
+	const values = [] as {
+		[K in keyof U]: InferMaybeSignalType<U[K]>
+	}
     const errors: Error[] = []
     let hasUnset = false
 
-    for (const signal of signals) {
+    for (let i = 0; i < maybeSignals.length; i++) {
+		const s = maybeSignals[i]
 		try {
-			const value = signal.get()
+			const value = isSignal(s) ? s.get() : isFunction(s) ? s() : s
 			if (value === UNSET) hasUnset = true
-			values.push(value)
+			values[i] = value as InferMaybeSignalType<typeof s>
 		} catch (e) {
 			errors.push(toError(e))
 		}
     }
 
-	let result: T | Promise<T> | Error | void = undefined
+	let result: CallbackReturnType<T> = undefined
     try {
 		if (hasUnset && nil) result = nil()
 		else if (errors.length) result = err ? err(...errors) : errors[0]
-		else if (!hasUnset) result = ok(...values)
+		else if (!hasUnset) result = ok(...values) as CallbackReturnType<T>
     } catch (e) {
 		result = toError(e)
 		if (err) result = err(result)
-    } finally {
-		return result
-	}
+    }
+	return result
 }
 
 export {
-	type Signal, type UnknownSignal, type SignalValue, type MaybeSignal,
-    isSignal, toSignal, resolveSignals,
+	type Signal, type MaybeSignal, type InferMaybeSignalType,
+	type EffectCallbacks, type ComputedCallbacks, type CallbackReturnType,
+    UNSET, isSignal, toSignal, resolve,
 }

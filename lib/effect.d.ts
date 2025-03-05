@@ -1,18 +1,9 @@
-import { type SignalValue, type UnknownSignal } from './signal';
-export type EffectOkCallback<T extends UnknownSignal[]> = (...values: {
-    [K in keyof T]: SignalValue<T[K]>;
-}) => void;
-export type EffectCallbacks<T extends UnknownSignal[]> = {
-    ok: (...values: {
-        [K in keyof T]: SignalValue<T[K]>;
-    }) => void;
-    nil?: () => void;
-    err?: (...errors: Error[]) => void;
-};
+import { type EffectCallbacks, type MaybeSignal } from './signal';
 /**
  * Define what happens when a reactive state changes
  *
  * @since 0.1.0
- * @param {() => void} callbacksOrFn - callback function to be executed when a state changes
+ * @param {() => void} cb - effect callback or object of ok, nil, err callbacks to be executed when a state changes
+ * @param {U} maybeSignals - signals of functions using signals that should trigger the effect
  */
-export declare function effect<T extends UnknownSignal[]>(callbacksOrFn: EffectCallbacks<T> | EffectOkCallback<T>, ...signals: T): void;
+export declare function effect<U extends MaybeSignal<{}>[]>(cb: EffectCallbacks<U>, ...maybeSignals: U): void;

@@ -1,18 +1,18 @@
-import { UNSET } from './signal'
+import { UNSET, type ComputedCallbacks, type EffectCallbacks } from './signal'
 import { type Computed, computed } from './computed'
 import { isObjectOfType } from './util';
 import { type Watcher, notify, subscribe } from './scheduler'
-import { type EffectCallbacks, effect } from './effect';
+import { effect } from './effect';
 
 /* === Types === */
 
 export type State<T extends {}> = {
     [Symbol.toStringTag]: 'State';
     get(): T;
-    set(value: T): void;
-    update(fn: (value: T) => T): void;
-    map<U extends {}>(fn: (value: T) => U): Computed<U>;
-	match: (callbacks: EffectCallbacks<[State<T>]>) => void
+    set(v: T): void;
+    update(fn: (v: T) => T): void;
+    map<U extends {}>(cb: ComputedCallbacks<U, [State<T>]>): Computed<U>;
+	match: (cb: EffectCallbacks<[State<T>]>) => void
 }
 
 /* === Constants === */
@@ -28,9 +28,9 @@ const TYPE_STATE = 'State'
  * @param {T} initialValue - initial value of the state
  * @returns {State<T>} - new state signal
  */
-export const state = /*#__PURE__*/ <T extends {}>(v: T): State<T> => {
+export const state = /*#__PURE__*/ <T extends {}>(initialValue: T): State<T> => {
 	const watchers: Watcher[] = []
-	let value: T = v
+	let value: T = initialValue
 
 	const s: State<T> = {
 		[Symbol.toStringTag]: TYPE_STATE,
@@ -39,7 +39,6 @@ export const state = /*#__PURE__*/ <T extends {}>(v: T): State<T> => {
 		 * Get the current value of the state
 		 * 
 		 * @since 0.9.0
-		 * @method of State<T>
 		 * @returns {T} - current value of the state
 		 */
         get: (): T => {
@@ -51,7 +50,6 @@ export const state = /*#__PURE__*/ <T extends {}>(v: T): State<T> => {
 		 * Set a new value of the state
 		 * 
 		 * @since 0.9.0
-		 * @method of State<T>
 		 * @param {T} v
 		 * @returns {void}
 		 */
@@ -68,8 +66,7 @@ export const state = /*#__PURE__*/ <T extends {}>(v: T): State<T> => {
 		 * Update the state with a new value using a function
 		 * 
 		 * @since 0.10.0
-		 * @method of State<T>
-		 * @param {(v: T) => T} fn
+		 * @param {(v: T) => T} fn - function to update the state
 		 * @returns {void} - updates the state with the result of the function
 		 */
         update: (fn: (v: T) => T): void => {
@@ -80,23 +77,22 @@ export const state = /*#__PURE__*/ <T extends {}>(v: T): State<T> => {
 		 * Create a computed signal from the current state signal
 		 * 
 		 * @since 0.9.0
-		 * @method of State<T>
-		 * @param {(v: T) => R} fn
-		 * @returns {Computed<R>} - computed signal
+		 * @param {ComputedCallbacks<U, [State<T>]>} cb - compute callback or object of ok, nil, err callbacks to map this value to new computed
+		 * @returns {Computed<U>} - computed signal
 		 */
-        map: <R extends {}>(fn: (v: T) => R): Computed<R> =>
-            computed(() => fn(s.get())),
+        map: <U extends {}>(cb: ComputedCallbacks<U, [State<T>]>): Computed<U> =>
+            computed(cb, s),
 
 		/**
 		 * Case matching for the state signal with effect callbacks
 		 * 
 		 * @since 0.12.0
 		 * @method of State<T>
-		 * @param {EffectCallbacks[<T>]} callbacks 
+		 * @param {EffectCallbacks<[State<T>]>} cb - effect callback or object of ok, nil, err callbacks to be executed when the state changes
 		 * @returns {State<T>} - self, for chaining effect callbacks
 		 */
-		match: (callbacks: EffectCallbacks<[State<T>]>): State<T> => {
-			effect(callbacks, s)
+		match: (cb: EffectCallbacks<[State<T>]>): State<T> => {
+			effect(cb, s)
 			return s
 		}
 	}

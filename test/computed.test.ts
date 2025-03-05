@@ -308,7 +308,7 @@ describe('Computed', function () {
 				return 0
 			},
 			err: (_e) => { // error path
-				console.error('Error:', _e);
+				// console.error('Error:', _e);
 				errCount++;
 				return -1
 			},
@@ -318,7 +318,7 @@ describe('Computed', function () {
 			toggleState.set(!!(i % 2));
 			await wait(10);
 			result = complexComputed.get();
-			console.log(`i: ${i}, result: ${result}`);
+			// console.log(`i: ${i}, result: ${result}`);
 		}
 	
 		expect(nilCount).toBeGreaterThanOrEqual(4);

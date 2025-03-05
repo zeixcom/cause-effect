@@ -1,6 +1,6 @@
 # Cause & Effect
 
-Version 0.12.0
+Version 0.12.1
 
 **Cause & Effect** is a lightweight, reactive state management library for JavaScript applications. It uses the concept of signals to create a predictable and efficient data flow in your app.
 
@@ -108,14 +108,14 @@ document.querySelector('.increment').addEventListener('click', () => {
 
 Async computed signals are as straight forward as their sync counterparts. Just create the computed signal with an async function.
 
-**Caution**: You can't use the `.map()` method to create an async computed signal. And async computed signals will return a Symbol `UNSET` until the Promise is resolved.
+**Caution**: Async computed signals will return a Symbol `UNSET` until the Promise is resolved.
 
 ```js
-import { state, computed, effect } from '@zeix/cause-effect'
+import { state, effect } from '@zeix/cause-effect'
 
 const entryId = state(42)
-const entryData = computed(async () => {
-    const response = await fetch(`/api/entry/${entryId.get()}`)
+const entryData = entryId.map(async id => {
+    const response = await fetch(`/api/entry/${id}`)
     if (!response.ok) return new Error(`Failed to fetch data: ${response.statusText}`)
     return response.json()
 })

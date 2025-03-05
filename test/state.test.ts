@@ -1,6 +1,10 @@
 import { describe, test, expect } from 'bun:test'
 import { state, isComputed, UNSET } from '../'
 
+/* === Utility Functions === */
+
+const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
 /* === Tests === */
 
 describe('State', function () {
@@ -166,6 +170,18 @@ describe('State', function () {
 			expect(double.get()).toBe(84);
 		});
 
+		test('should return a computed signal for an async function', async function() {
+			const cause = state(42);
+			const asyncDouble = cause.map(async v => {
+				await wait(100);
+				return v * 2;
+			});
+			expect(isComputed(asyncDouble)).toBe(true);
+			expect(asyncDouble.get()).toBe(UNSET);
+			await wait(110);
+			expect(asyncDouble.get()).toBe(84);
+		});
+
 	});
 
 	describe('Match method', function () {
@@ -174,7 +190,7 @@ describe('State', function () {
 			const cause = state(42);
 			let okCount = 0;
 			let nilCount = 0;
-			let result: number = 0;
+			let result = 0;
 			cause.match({
 				ok: v => {
 					result = v;
