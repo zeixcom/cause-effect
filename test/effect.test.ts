@@ -154,4 +154,28 @@ describe('Effect', function () {
             console.error = originalConsoleError;
         }
     });
+
+	test('should detect and throw error for circular dependencies in effects', () => {
+		let okCount = 0
+		let errCount = 0
+		const count = state(0)
+		
+		effect({
+			ok: () => {
+				okCount++
+				// This effect updates the signal it depends on, creating a circular dependency
+				count.update(v => ++v)
+			},
+			err: e => {
+				errCount++
+				expect(e).toBeInstanceOf(Error)
+				expect(e.message).toBe('Circular dependency in effect detected')
+			}
+		}, count)
+	  
+		// Verify that the count was changed only once due to the circular dependency error
+		expect(count.get()).toBe(1)
+		expect(okCount).toBe(1)
+		expect(errCount).toBe(1)
+	})
 });

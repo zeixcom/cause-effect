@@ -1,6 +1,6 @@
 /**
  * @name Cause & Effect
- * @version 0.12.1
+ * @version 0.12.2
  * @author Esther Brunner
  */
 export { type Signal, type MaybeSignal, type InferMaybeSignalType, type ComputedCallbacks, type EffectCallbacks, UNSET, isSignal, toSignal } from './lib/signal';

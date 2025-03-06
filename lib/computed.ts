@@ -79,7 +79,7 @@ export const computed = <T extends {}, U extends MaybeSignal<{}>[]>(
 
 	// Called when requested by dependencies (pull)
 	const compute = () => watch(() => {
-		if (computing) throw new Error('Circular dependency detected')
+		if (computing) throw new Error('Circular dependency in computed detected')
 		unchanged = true
 		computing = true
 		const result = resolve(maybeSignals, cb)

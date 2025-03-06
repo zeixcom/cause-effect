@@ -216,36 +216,45 @@ describe('Computed', function () {
 		const c = computed(() => b.get() + a.get());
 		expect(() => {
 			b.get(); // This should trigger the circular dependency
-		}).toThrow('Circular dependency detected');
+		}).toThrow('Circular dependency in computed detected');
 		expect(a.get()).toBe(1);
 	});
 
-	/* test('should propagate error if an error occurred', function() {
-		let count = 0;
+	test('should propagate error if an error occurred', function() {
+		let okCount = 0;
+		let errCount = 0;
 		const x = state(0);
-		const a = computed(() => {
-			if (x.get() === 1) throw new Error('Calculation error');
+		const a = x.map(v => {
+			if (v === 1) throw new Error('Calculation error');
 			return 1;
 		});
-		const b = a.map(v => v ? 'success' : 'pending');
-		const c = computed(() => {
-			count++;
-			return `c: ${b.get()}`;
+		const b = a.map({
+			ok: v => v ? 'success' : 'failure',
+			err: _e => {
+				errCount++;
+                // console.error(e);
+				return `recovered`;
+			}
+		});
+		const c = b.map(v => {
+			okCount++;
+			return `c: ${v}`;
 		});
 		expect(a.get()).toBe(1);
 		expect(c.get()).toBe('c: success');
-		expect(count).toBe(1);
-		x.set(1)
+		expect(okCount).toBe(1);
 		try {
+			x.set(1)
 			expect(a.get()).toBe(1);
 			expect(true).toBe(false); // This line should not be reached
 		} catch (error) {
 			expect(error.message).toBe('Calculation error');
 		} finally {
-			expect(c.get()).toBe('c: success');
-			expect(count).toBe(2);
+			expect(c.get()).toBe('c: recovered');
+			expect(okCount).toBe(2);
+			expect(errCount).toBe(1);
 		}
-	}); */
+	});
 
 	test('should return a computed signal with .map()', function() {
 		const cause = state(42);

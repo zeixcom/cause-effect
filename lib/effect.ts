@@ -16,10 +16,14 @@ export function effect<U extends MaybeSignal<{}>[]>(
 	cb: EffectCallbacks<U>,
 	...maybeSignals: U
 ): void {
+	let running = false
 	const run = () => watch(() => {
+		if (running) throw new Error('Circular dependency in effect detected')
+		running = true
 		const result = resolve(maybeSignals, cb)
 		if (isError(result))
 			console.error('Unhandled error in effect:', result)
+		running = false
     }, run)
 	run()
 }
