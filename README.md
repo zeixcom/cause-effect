@@ -1,6 +1,6 @@
 # Cause & Effect
 
-Version 0.12.2
+Version 0.12.3
 
 **Cause & Effect** is a lightweight, reactive state management library for JavaScript applications. It uses the concept of signals to create a predictable and efficient data flow in your app.
 
@@ -54,7 +54,7 @@ npm install @zeix/cause-effect
 bun add @zeix/cause-effect
 ```
 
-## Basic Usage
+## Usage
 
 ### Single State Signal
 
@@ -214,3 +214,45 @@ This example showcases several powerful features of Cause & Effect:
 5. **Flexibility and Integration**: Seamlessly integrates with DOM manipulation and event listeners, fitting into any JavaScript application or framework.
 
 These principles enable developers to create complex, reactive applications with clear data flow, efficient updates, and robust error handling, while promoting code reuse and modularity.
+
+### Effects and DOM Updates
+
+The `enqueue()` function allows you to schedule DOM updates to be executed on the next animation frame. This function returns a `Promise`, which makes it easy to detect when updates are applied or if they fail.
+
+```js
+import { enqueue } from '@zeix/cause-effect'
+
+// Schedule a DOM update
+enqueue(() => {
+  document.getElementById('myElement').textContent = 'Updated content'
+})
+  .then(() => console.log('Update applied successfully'))
+  .catch(error => console.error('Update failed:', error))
+```
+
+You can also use the deduplication feature to ensure that only the latest update for a specific element and operation is applied:
+
+```js
+import { enqueue } from '@zeix/cause-effect'
+
+// Define a signal and update it in an event handler
+const name = state('')
+document.querySelector('input[name="name"]').addEventListener('input', e => {
+	state.set(e.target.value) // Triggers an update on every keystroke
+})
+
+// Define an effect to react to signal changes
+effect(text => {
+	const nameSpan = document.querySelector('.greeting .name')
+	enqueue(() => {
+		nameSpan.textContent = text
+		return text
+	}, [nameSpan, 'setName']) // For deduplication
+		.then(result => console.log(`Name was updated to ${result}`))
+		.catch(error => console.error('Failed to update name:', error))
+}, name)
+```
+
+In this example, as the user types in the input field only 'Jane' will be applied to the DOM. 'J', 'Ja', 'Jan' were superseded by more recent updates and deduplicated (if typing was fast enough).
+
+When multiple `enqueue` calls are made with the same deduplication key before the next animation frame, only the last call will be executed. Previous calls are superseded and their Promises will not be resolved or rejected. This "last-write-wins" behavior ensures that only the most recent update is applied, which is typically desirable for UI updates and state changes.

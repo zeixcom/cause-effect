@@ -1,6 +1,6 @@
 /**
  * @name Cause & Effect
- * @version 0.12.2
+ * @version 0.12.3
  * @author Esther Brunner
  */
 export {

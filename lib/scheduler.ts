@@ -3,7 +3,7 @@
 export type EnqueueDedupe = [Element, string]
 
 export type Watcher = () => void
-export type Updater = <T>() => T
+export type Updater = <T>() => T | boolean | void
 
 /* === Internal === */
 
@@ -15,16 +15,15 @@ const pending = new Set<Watcher>()
 let batchDepth = 0
 
 // Map of DOM elements to update functions
-const updateMap = new Map<Element, Map<string, () => void>>()
+const updateMap = new Map<EnqueueDedupe, () => void>()
 let requestId: number | undefined
 
 const updateDOM = () => {
 	requestId = undefined
-	for (const elementMap of updateMap.values()) {
-		for (const fn of elementMap.values()) {
-			fn()
-		}
-		elementMap.clear()
+	const updates = Array.from(updateMap.values())
+	updateMap.clear()
+	for (const fn of updates) {
+		fn()
 	}
 }
 
@@ -81,47 +80,49 @@ export const flush = () => {
  */
 export const batch = (fn: () => void) => {
 	batchDepth++
-    fn()
-	flush()
-	batchDepth--
+	try {
+		fn()
+	} finally {
+		flush()
+        batchDepth--
+    }
 }
 
 /**
  * Run a function in a reactive context
  * 
  * @param {() => void} run - function to run the computation or effect
- * @param {Watcher} mark - function to be called when the state changes
+ * @param {Watcher} mark - function to be called when the state changes or undefined for temporary unwatching while inserting auto-hydrating DOM nodes that might read signals (e.g., web components)
  */
-export const watch = (run: () => void, mark: Watcher): void => {
+export const watch = (run: () => void, mark?: Watcher): void => {
 	const prev = active
 	active = mark
-	run()
-	active = prev
+	try {
+		run()
+	} finally {
+		active = prev
+	}
 }
 
 /**
  * Enqueue a function to be executed on the next animation frame
  * 
- * @param callback 
- * @param dedupe 
- * @returns 
+ * @param {Updater} fn - function to be executed on the next animation frame; can return updated value <T>, success <boolean> or void
+ * @param {EnqueueDedupe} dedupe - [element, operation] pair for deduplication
  */
 export const enqueue = <T>(
-    update: Updater,
+    fn: Updater,
     dedupe?: EnqueueDedupe
-) => new Promise<T>((resolve, reject) => {
+) => new Promise<T | boolean | void>((resolve, reject) => {
     const wrappedCallback = () => {
         try {
-            resolve(update())
+            resolve(fn())
         } catch (error) {
             reject(error)
         }
     }
     if (dedupe) {
-        const [el, op] = dedupe
-        if (!updateMap.has(el)) updateMap.set(el, new Map())
-        const elementMap = updateMap.get(el)!
-        elementMap.set(op, wrappedCallback)
+        updateMap.set(dedupe, wrappedCallback)
     }
     requestTick()
 })
