@@ -233,7 +233,7 @@ enqueue(() => {
 You can also use the deduplication feature to ensure that only the latest update for a specific element and operation is applied:
 
 ```js
-import { enqueue } from '@zeix/cause-effect'
+import { state, effect, enqueue } from '@zeix/cause-effect'
 
 // Define a signal and update it in an event handler
 const name = state('')
