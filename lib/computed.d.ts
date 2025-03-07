@@ -1,4 +1,4 @@
-import { type MaybeSignal, type EffectCallbacks, type ComputedCallbacks } from './signal';
+import { type Signal, type EffectCallbacks, type ComputedCallbacks } from './signal';
 export type Computed<T extends {}> = {
     [Symbol.toStringTag]: 'Computed';
     get: () => T;
@@ -13,7 +13,7 @@ export type Computed<T extends {}> = {
  * @param {U} maybeSignals - signals of functions using signals this values depends on
  * @returns {Computed<T>} - Computed signal
  */
-export declare const computed: <T extends {}, U extends MaybeSignal<{}>[]>(cb: ComputedCallbacks<T, U>, ...maybeSignals: U) => Computed<T>;
+export declare const computed: <T extends {}, U extends Signal<{}>[]>(cb: ComputedCallbacks<T, U>, ...maybeSignals: U) => Computed<T>;
 /**
  * Check if a value is a computed state
  *

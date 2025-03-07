@@ -1,4 +1,4 @@
-import { type EffectCallbacks, type MaybeSignal } from './signal';
+import { type EffectCallbacks, type Signal } from './signal';
 /**
  * Define what happens when a reactive state changes
  *
@@ -6,4 +6,4 @@ import { type EffectCallbacks, type MaybeSignal } from './signal';
  * @param {() => void} cb - effect callback or object of ok, nil, err callbacks to be executed when a state changes
  * @param {U} maybeSignals - signals of functions using signals that should trigger the effect
  */
-export declare function effect<U extends MaybeSignal<{}>[]>(cb: EffectCallbacks<U>, ...maybeSignals: U): void;
+export declare function effect<U extends Signal<{}>[]>(cb: EffectCallbacks<U>, ...maybeSignals: U): void;

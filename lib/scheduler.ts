@@ -56,7 +56,8 @@ export const subscribe = (watchers: Watcher[]) => {
  */
 export const notify = (watchers: Watcher[]) => {
 	for (const mark of watchers) {
-        batchDepth ? pending.add(mark) : mark()
+        if (batchDepth) pending.add(mark)
+		else mark()
     }
 }
 

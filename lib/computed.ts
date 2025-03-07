@@ -1,5 +1,5 @@
 import {
-	type MaybeSignal, type EffectCallbacks, type ComputedCallbacks,
+	type Signal, type EffectCallbacks, type ComputedCallbacks,
 	resolve, UNSET
 } from './signal'
 import { isError, isObjectOfType, isPromise, toError } from './util'
@@ -39,7 +39,7 @@ const isEquivalentError = /*#__PURE__*/ (
  * @param {U} maybeSignals - signals of functions using signals this values depends on
  * @returns {Computed<T>} - Computed signal
  */
-export const computed = <T extends {}, U extends MaybeSignal<{}>[]>(
+export const computed = <T extends {}, U extends Signal<{}>[]>(
 	cb: ComputedCallbacks<T, U>,
 	...maybeSignals: U
 ): Computed<T> => {

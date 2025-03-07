@@ -2,18 +2,18 @@ import { type State } from "./state";
 import { type Computed } from "./computed";
 type Signal<T extends {}> = State<T> | Computed<T>;
 type MaybeSignal<T extends {}> = Signal<T> | T | (() => T | Promise<T>);
-type InferMaybeSignalType<T> = T extends Signal<infer U> ? U : T extends (() => infer U) ? U : T;
-type OkCallback<T, U extends MaybeSignal<{}>[]> = (...values: {
-    [K in keyof U]: InferMaybeSignalType<U[K]>;
+type InferSignalType<T> = T extends Signal<infer U> ? U : never;
+type OkCallback<T, U extends Signal<{}>[]> = (...values: {
+    [K in keyof U]: InferSignalType<U[K]>;
 }) => T | Promise<T> | Error;
 type NilCallback<T> = () => T | Promise<T> | Error;
 type ErrCallback<T> = (...errors: Error[]) => T | Promise<T> | Error;
-type ComputedCallbacks<T extends {}, U extends MaybeSignal<{}>[]> = OkCallback<T, U> | {
+type ComputedCallbacks<T extends {}, U extends Signal<{}>[]> = OkCallback<T, U> | {
     ok: OkCallback<T, U>;
     nil?: NilCallback<T>;
     err?: ErrCallback<T>;
 };
-type EffectCallbacks<U extends MaybeSignal<{}>[]> = OkCallback<void, U> | {
+type EffectCallbacks<U extends Signal<{}>[]> = OkCallback<void, U> | {
     ok: OkCallback<void, U>;
     nil?: NilCallback<void>;
     err?: ErrCallback<void>;
@@ -24,10 +24,18 @@ declare const UNSET: any;
  * Check whether a value is a Signal or not
  *
  * @since 0.9.0
- * @param {any} value - value to check
+ * @param {unknown} value - value to check
  * @returns {boolean} - true if value is a Signal, false otherwise
  */
 declare const isSignal: <T extends {}>(value: any) => value is Signal<T>;
+/**
+ * Check if the provided value is a callback or callbacks object of { ok, nil?, err? } that may be used as input for toSignal() to derive a computed state
+ *
+ * @since 0.12.4
+ * @param {unknown} value - value to check
+ * @returns {boolean} - true if value is a callback or callbacks object, false otherwise
+ */
+declare const isComputedCallbacks: <T extends {}>(value: unknown) => value is ComputedCallbacks<T, []>;
 /**
  * Convert a value to a Signal if it's not already a Signal
  *
@@ -45,9 +53,9 @@ declare const toSignal: <T extends {}>(value: MaybeSignal<T> | ComputedCallbacks
  * @param {Record<string, (...args) => CallbackReturnType<T>} cb - object of ok, nil, err callbacks or just ok callback
  * @returns {CallbackReturnType<T>} - result of chosen callback
  */
-declare const resolve: <T, U extends MaybeSignal<{}>[]>(maybeSignals: U, cb: OkCallback<T | Promise<T>, U> | {
+declare const resolve: <T, U extends Signal<{}>[]>(maybeSignals: U, cb: OkCallback<T | Promise<T>, U> | {
     ok: OkCallback<T | Promise<T>, U>;
     nil?: NilCallback<T>;
     err?: ErrCallback<T>;
 }) => CallbackReturnType<T>;
-export { type Signal, type MaybeSignal, type InferMaybeSignalType, type EffectCallbacks, type ComputedCallbacks, type CallbackReturnType, UNSET, isSignal, toSignal, resolve, };
+export { type Signal, type MaybeSignal, type InferSignalType, type EffectCallbacks, type ComputedCallbacks, type CallbackReturnType, UNSET, isSignal, isComputedCallbacks, toSignal, resolve, };

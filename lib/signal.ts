@@ -6,23 +6,21 @@ import { isFunction, toError } from "./util"
 
 type Signal<T extends {}> = State<T> | Computed<T>
 type MaybeSignal<T extends {}> = Signal<T> | T | (() => T | Promise<T>)
-type InferMaybeSignalType<T> = T extends Signal<infer U> ? U :
-	T extends (() => infer U) ? U :
-	T
+type InferSignalType<T> = T extends Signal<infer U> ? U : never
 
-type OkCallback<T, U extends MaybeSignal<{}>[]> = (...values: {
-	[K in keyof U]: InferMaybeSignalType<U[K]>
+type OkCallback<T, U extends Signal<{}>[]> = (...values: {
+	[K in keyof U]: InferSignalType<U[K]>
 }) => T | Promise<T> | Error
 type NilCallback<T> = () => T | Promise<T> | Error
 type ErrCallback<T> = (...errors: Error[]) => T | Promise<T> | Error
 
-type ComputedCallbacks<T extends {}, U extends MaybeSignal<{}>[]> = OkCallback<T, U> | {
+type ComputedCallbacks<T extends {}, U extends Signal<{}>[]> = OkCallback<T, U> | {
 	ok: OkCallback<T, U>,
     nil?: NilCallback<T>,
     err?: ErrCallback<T>
 }
 
-type EffectCallbacks<U extends MaybeSignal<{}>[]> = OkCallback<void, U> | {
+type EffectCallbacks<U extends Signal<{}>[]> = OkCallback<void, U> | {
 	ok: OkCallback<void, U>,
 	nil?: NilCallback<void>,
 	err?: ErrCallback<void>
@@ -34,23 +32,28 @@ type CallbackReturnType<T> = T | Promise<T> | Error | void
 
 const UNSET: any = Symbol()
 
-/* === Private Functions === */
-
-const isComputedCallbacks = /*#__PURE__*/ <T extends {}>(value: unknown): value is ComputedCallbacks<T, []> =>
-	(isFunction(value) && !value.length)
-		|| (typeof value === 'object' && value !== null && 'ok' in value && isFunction(value.ok))
-
 /* === Exported Functions === */
 
 /**
  * Check whether a value is a Signal or not
  * 
  * @since 0.9.0
- * @param {any} value - value to check
+ * @param {unknown} value - value to check
  * @returns {boolean} - true if value is a Signal, false otherwise
  */
 const isSignal = /*#__PURE__*/ <T extends {}>(value: any): value is Signal<T> =>
 	isState(value) || isComputed(value)
+
+/**
+ * Check if the provided value is a callback or callbacks object of { ok, nil?, err? } that may be used as input for toSignal() to derive a computed state
+ * 
+ * @since 0.12.4
+ * @param {unknown} value - value to check
+ * @returns {boolean} - true if value is a callback or callbacks object, false otherwise
+ */
+const isComputedCallbacks = /*#__PURE__*/ <T extends {}>(value: unknown): value is ComputedCallbacks<T, []> =>
+	(isFunction(value) && !value.length)
+		|| (typeof value === 'object' && value !== null && 'ok' in value && isFunction(value.ok))
 
 /**
  * Convert a value to a Signal if it's not already a Signal
@@ -76,7 +79,7 @@ const toSignal = /*#__PURE__*/ <T extends {}>(
  * @param {Record<string, (...args) => CallbackReturnType<T>} cb - object of ok, nil, err callbacks or just ok callback
  * @returns {CallbackReturnType<T>} - result of chosen callback
  */
-const resolve = <T, U extends MaybeSignal<{}>[]>(
+const resolve = <T, U extends Signal<{}>[]>(
 	maybeSignals: U,
 	cb: OkCallback<T | Promise<T>, U> | {
 		ok: OkCallback<T | Promise<T>, U>
@@ -92,7 +95,7 @@ const resolve = <T, U extends MaybeSignal<{}>[]>(
 			err?: ErrCallback<T>
 		}
 	const values = [] as {
-		[K in keyof U]: InferMaybeSignalType<U[K]>
+		[K in keyof U]: InferSignalType<U[K]>
 	}
     const errors: Error[] = []
     let hasUnset = false
@@ -100,9 +103,9 @@ const resolve = <T, U extends MaybeSignal<{}>[]>(
     for (let i = 0; i < maybeSignals.length; i++) {
 		const s = maybeSignals[i]
 		try {
-			const value = isSignal(s) ? s.get() : isFunction(s) ? s() : s
+			const value = s.get()
 			if (value === UNSET) hasUnset = true
-			values[i] = value as InferMaybeSignalType<typeof s>
+			values[i] = value as InferSignalType<typeof s>
 		} catch (e) {
 			errors.push(toError(e))
 		}
@@ -121,7 +124,7 @@ const resolve = <T, U extends MaybeSignal<{}>[]>(
 }
 
 export {
-	type Signal, type MaybeSignal, type InferMaybeSignalType,
+	type Signal, type MaybeSignal, type InferSignalType,
 	type EffectCallbacks, type ComputedCallbacks, type CallbackReturnType,
-    UNSET, isSignal, toSignal, resolve,
+    UNSET, isSignal, isComputedCallbacks, toSignal, resolve,
 }

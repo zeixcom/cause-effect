@@ -1,5 +1,5 @@
 
-import { type EffectCallbacks, type MaybeSignal, resolve } from './signal'
+import { type EffectCallbacks, type Signal, resolve } from './signal'
 import { isError } from './util'
 import { watch } from './scheduler'
 
@@ -12,7 +12,7 @@ import { watch } from './scheduler'
  * @param {() => void} cb - effect callback or object of ok, nil, err callbacks to be executed when a state changes
  * @param {U} maybeSignals - signals of functions using signals that should trigger the effect
  */
-export function effect<U extends MaybeSignal<{}>[]>(
+export function effect<U extends Signal<{}>[]>(
 	cb: EffectCallbacks<U>,
 	...maybeSignals: U
 ): void {
