@@ -36,12 +36,12 @@ const isEquivalentError = /*#__PURE__*/ (
  * 
  * @since 0.9.0
  * @param {() => T} cb - compute callback or object of ok, nil, err callbacks to derive state
- * @param {U} maybeSignals - signals of functions using signals this values depends on
+ * @param {U} signals - signals of functions using signals this values depends on
  * @returns {Computed<T>} - Computed signal
  */
 export const computed = <T extends {}, U extends Signal<{}>[]>(
 	cb: ComputedCallbacks<T, U>,
-	...maybeSignals: U
+	...signals: U
 ): Computed<T> => {
 	const watchers: Watcher[] = []
 	let value: T = UNSET
@@ -82,7 +82,7 @@ export const computed = <T extends {}, U extends Signal<{}>[]>(
 		if (computing) throw new Error('Circular dependency in computed detected')
 		unchanged = true
 		computing = true
-		const result = resolve(maybeSignals, cb)
+		const result = resolve(signals, cb)
 		if (isPromise(result)) {
 			nil() // sync
 			result.then(v => {

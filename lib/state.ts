@@ -1,4 +1,4 @@
-import { UNSET, type ComputedCallbacks, type EffectCallbacks } from './signal'
+import { type ComputedCallbacks, type EffectCallbacks, UNSET } from './signal'
 import { type Computed, computed } from './computed'
 import { isObjectOfType } from './util';
 import { type Watcher, notify, subscribe } from './scheduler'

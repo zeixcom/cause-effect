@@ -2,9 +2,8 @@ import { type State } from "./state";
 import { type Computed } from "./computed";
 type Signal<T extends {}> = State<T> | Computed<T>;
 type MaybeSignal<T extends {}> = Signal<T> | T | (() => T | Promise<T>);
-type InferSignalType<T> = T extends Signal<infer U> ? U : never;
 type OkCallback<T, U extends Signal<{}>[]> = (...values: {
-    [K in keyof U]: InferSignalType<U[K]>;
+    [K in keyof U]: U[K] extends Signal<infer T> ? T : never;
 }) => T | Promise<T> | Error;
 type NilCallback<T> = () => T | Promise<T> | Error;
 type ErrCallback<T> = (...errors: Error[]) => T | Promise<T> | Error;
@@ -49,13 +48,13 @@ declare const toSignal: <T extends {}>(value: MaybeSignal<T> | ComputedCallbacks
  * Resolve signals or functions using signals and apply callbacks based on the results
  *
  * @since 0.12.0
- * @param {U} maybeSignals - dependency signals (or functions using signals)
+ * @param {U} signals - dependency signals (or functions using signals)
  * @param {Record<string, (...args) => CallbackReturnType<T>} cb - object of ok, nil, err callbacks or just ok callback
  * @returns {CallbackReturnType<T>} - result of chosen callback
  */
-declare const resolve: <T, U extends Signal<{}>[]>(maybeSignals: U, cb: OkCallback<T | Promise<T>, U> | {
+declare const resolve: <T, U extends Signal<{}>[]>(signals: U, cb: OkCallback<T | Promise<T>, U> | {
     ok: OkCallback<T | Promise<T>, U>;
     nil?: NilCallback<T>;
     err?: ErrCallback<T>;
 }) => CallbackReturnType<T>;
-export { type Signal, type MaybeSignal, type InferSignalType, type EffectCallbacks, type ComputedCallbacks, type CallbackReturnType, UNSET, isSignal, isComputedCallbacks, toSignal, resolve, };
+export { type Signal, type MaybeSignal, type EffectCallbacks, type ComputedCallbacks, type CallbackReturnType, UNSET, isSignal, isComputedCallbacks, toSignal, resolve, };

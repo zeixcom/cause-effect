@@ -4,6 +4,6 @@ import { type EffectCallbacks, type Signal } from './signal';
  *
  * @since 0.1.0
  * @param {() => void} cb - effect callback or object of ok, nil, err callbacks to be executed when a state changes
- * @param {U} maybeSignals - signals of functions using signals that should trigger the effect
+ * @param {U} signals - signals that should trigger the effect
  */
-export declare function effect<U extends Signal<{}>[]>(cb: EffectCallbacks<U>, ...maybeSignals: U): void;
+export declare function effect<U extends Signal<{}>[]>(cb: EffectCallbacks<U>, ...signals: U): void;

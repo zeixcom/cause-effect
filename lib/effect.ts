@@ -10,17 +10,17 @@ import { watch } from './scheduler'
  * 
  * @since 0.1.0
  * @param {() => void} cb - effect callback or object of ok, nil, err callbacks to be executed when a state changes
- * @param {U} maybeSignals - signals of functions using signals that should trigger the effect
+ * @param {U} signals - signals that should trigger the effect
  */
 export function effect<U extends Signal<{}>[]>(
 	cb: EffectCallbacks<U>,
-	...maybeSignals: U
+	...signals: U
 ): void {
 	let running = false
 	const run = () => watch(() => {
 		if (running) throw new Error('Circular dependency in effect detected')
 		running = true
-		const result = resolve(maybeSignals, cb)
+		const result = resolve(signals, cb)
 		if (isError(result))
 			console.error('Unhandled error in effect:', result)
 		running = false

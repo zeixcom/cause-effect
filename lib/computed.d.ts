@@ -10,10 +10,10 @@ export type Computed<T extends {}> = {
  *
  * @since 0.9.0
  * @param {() => T} cb - compute callback or object of ok, nil, err callbacks to derive state
- * @param {U} maybeSignals - signals of functions using signals this values depends on
+ * @param {U} signals - signals of functions using signals this values depends on
  * @returns {Computed<T>} - Computed signal
  */
-export declare const computed: <T extends {}, U extends Signal<{}>[]>(cb: ComputedCallbacks<T, U>, ...maybeSignals: U) => Computed<T>;
+export declare const computed: <T extends {}, U extends Signal<{}>[]>(cb: ComputedCallbacks<T, U>, ...signals: U) => Computed<T>;
 /**
  * Check if a value is a computed state
  *

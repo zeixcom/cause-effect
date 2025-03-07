@@ -4,8 +4,7 @@
  * @author Esther Brunner
  */
 export {
-	type Signal, type MaybeSignal, type InferSignalType,
-	type ComputedCallbacks, type EffectCallbacks,
+	type Signal, type MaybeSignal, type ComputedCallbacks, type EffectCallbacks,
 	UNSET, isSignal, isComputedCallbacks, toSignal
 } from './lib/signal'
 
