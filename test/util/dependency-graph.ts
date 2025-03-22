@@ -1,80 +1,11 @@
+import { TestConfig } from "./framework-types";
+import { Computed, ReactiveFramework, Signal } from "./reactive-framework";
 import { Random } from "random";
-
-/** interface for a reactive framework.
- *
- * Implement this interface to add a new reactive framework to the test and performance test suite.
- */
-export interface ReactiveFramework {
-  name: string;
-  signal<T>(initialValue: T): Signal<T>;
-  computed<T>(fn: () => T): Computed<T>;
-  effect(fn: () => void): void;
-  withBatch<T>(fn: () => T): void;
-  withBuild<T>(fn: () => T): T;
-}
-
-export interface Signal<T> {
-  read(): T;
-  write(v: T): void;
-}
-
-export interface Computed<T> {
-  read(): T;
-}
 
 export interface Graph {
   sources: Signal<number>[];
   layers: Computed<number>[][];
 }
-
-export interface TestResult {
-  sum: number;
-  count: number;
-}
-
-/** Parameters for a running a performance benchmark test
- *
- * The benchmarks create a rectangular grid of reactive elements, with
- * mutable signals in the first level, computed elements in the middle levels,
- * and read effect elements in the last level.
- *
- * Each test iteration modifies one signal, and then reads specified
- * fraction of the effect elements.
- *
- * Each non-signal node sums values from a specified number of elements
- * in the preceding layer. Some nodes are dynamic, and read vary
- * the number of sources the read for the sum.
- *
- * Tests may optionally provide result values to verify the sum
- * of all read effect elements in all iterations, and the total
- * number of non-signal updated.
- */
-export interface TestConfig {
-  /** friendly name for the test, should be unique */
-  name?: string;
-
-  /** width of dependency graph to construct */
-  width: number;
-
-  /** depth of dependency graph to construct */
-  totalLayers: number;
-
-  /** fraction of nodes that are static */ // TODO change to dynamicFraction
-  staticFraction: number;
-
-  /** construct a graph with number of sources in each node */
-  nSources: number;
-
-  /** fraction of [0, 1] elements in the last layer from which to read values in each test iteration */
-  readFraction: number;
-
-  /** number of test iterations */
-  iterations: number;
-
-  /** sum and count of all iterations, for verification */
-  expected: Partial<TestResult>;
-}
-
 
 /**
  * Make a rectangular dependency graph, with an equal number of source elements
@@ -149,9 +80,9 @@ export function runGraph(
         // due to `computed` effects not being cached efficiently, and as the number
         // of layers increases, the uncached `computed` effects are re-evaluated in
         // an `O(n^2)` manner where `n` is the number of layers.
-        // if (i % 100 === 0) {
-        //   console.log("iteration:", i, "delta:", Date.now() - start);
-        // }
+        /* if (i % 100 === 0) {
+           console.log("iteration:", i, "delta:", Date.now() - start);
+        } */
 
         const sourceDex = i % sources.length;
         sources[sourceDex].write(i + sourceDex);
@@ -160,7 +91,7 @@ export function runGraph(
           leaf.read();
         }
       }
-
+	  
       sum = readLeaves.reduce((total, leaf) => leaf.read() + total, 0);
     });
   }
@@ -191,7 +122,7 @@ function makeDependentRows(
 ): Computed<number>[][] {
   let prevRow = sources;
   const rand = new Random("seed");
-  const rows: any = [];
+  const rows = [];
   for (let l = 0; l < numRows; l++) {
     const row = makeRow(
       prevRow,
@@ -202,7 +133,7 @@ function makeDependentRows(
       l,
       rand
     );
-    rows.push(row);
+    rows.push(row as never);
     prevRow = row;
   }
   return rows;

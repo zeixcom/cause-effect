@@ -1,12 +1,12 @@
 {
   "name": "@zeix/cause-effect",
-  "version": "0.10.1",
+  "version": "0.12.4",
   "author": "Esther Brunner",
   "main": "index.js",
   "module": "index.ts",
   "devDependencies": {
     "@types/bun": "latest",
-    "random": "^5.1.1"
+	"random": "^5.3.0"
   },
   "peerDependencies": {
     "typescript": "^5.6.3"

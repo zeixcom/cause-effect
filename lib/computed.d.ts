@@ -1,16 +1,19 @@
-export type Computed<T> = {
-    [Symbol.toStringTag]: "Computed";
+import { type Signal, type EffectCallbacks, type ComputedCallbacks } from './signal';
+export type Computed<T extends {}> = {
+    [Symbol.toStringTag]: 'Computed';
     get: () => T;
-    map: <U extends {}>(fn: (value: T) => U) => Computed<U>;
+    map: <U extends {}>(cb: ComputedCallbacks<U, [Computed<T>]>) => Computed<U>;
+    match: (cb: EffectCallbacks<[Computed<T>]>) => void;
 };
 /**
- * Create a derived state from existing states
+ * Create a derived signal from existing signals
  *
  * @since 0.9.0
- * @param {() => T} fn - compute function to derive state
- * @returns {Computed<T>} result of derived state
+ * @param {() => T} cb - compute callback or object of ok, nil, err callbacks to derive state
+ * @param {U} signals - signals of functions using signals this values depends on
+ * @returns {Computed<T>} - Computed signal
  */
-export declare const computed: <T extends {}>(fn: (v?: T) => T | Promise<T>) => Computed<T>;
+export declare const computed: <T extends {}, U extends Signal<{}>[]>(cb: ComputedCallbacks<T, U>, ...signals: U) => Computed<T>;
 /**
  * Check if a value is a computed state
  *
@@ -18,4 +21,4 @@ export declare const computed: <T extends {}>(fn: (v?: T) => T | Promise<T>) => 
  * @param {unknown} value - value to check
  * @returns {boolean} - true if value is a computed state, false otherwise
  */
-export declare const isComputed: <T>(value: unknown) => value is Computed<T>;
+export declare const isComputed: <T extends {}>(value: unknown) => value is Computed<T>;

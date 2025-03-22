@@ -1,44 +1,35 @@
 import { type State, isState, state } from "./state"
-import { computed, type Computed, isComputed } from "./computed"
-import { isComputeFunction } from "./util"
+import { type Computed, computed, isComputed } from "./computed"
+import { isFunction, toError } from "./util"
 
 /* === Types === */
 
 type Signal<T extends {}> = State<T> | Computed<T>
+type MaybeSignal<T extends {}> = Signal<T> | T | (() => T | Promise<T>)
 
-type MaybeSignal<T extends {}> = State<T> | Computed<T> | T | ((old?: T) => T)
+type OkCallback<T, U extends Signal<{}>[]> = (...values: {
+	[K in keyof U]: U[K] extends Signal<infer T> ? T : never
+}) => T | Promise<T> | Error
+type NilCallback<T> = () => T | Promise<T> | Error
+type ErrCallback<T> = (...errors: Error[]) => T | Promise<T> | Error
 
-type Watcher = () => void
-
-/* === Internals === */
-
-// Currently active watcher
-let active: () => void | undefined
-
-// Batching state
-let batchDepth = 0
-
-// Pending notifications
-const markQueue: Set<Watcher> = new Set()
-
-// Pending runs
-const runQueue: Set<() => void> = new Set()
-
-/**
- * Flush pending notifications and runs
- */
-const flush = () => {
-	while (markQueue.size || runQueue.size) {
-		markQueue.forEach(mark => mark())
-		markQueue.clear()
-		runQueue.forEach(run => run())
-		runQueue.clear()
-	}
+type ComputedCallbacks<T extends {}, U extends Signal<{}>[]> = OkCallback<T, U> | {
+	ok: OkCallback<T, U>,
+    nil?: NilCallback<T>,
+    err?: ErrCallback<T>
 }
+
+type EffectCallbacks<U extends Signal<{}>[]> = OkCallback<void, U> | {
+	ok: OkCallback<void, U>,
+	nil?: NilCallback<void>,
+	err?: ErrCallback<void>
+}
+
+type CallbackReturnType<T> = T | Promise<T> | Error | void
 
 /* === Constants === */
 
-export const UNSET: any = Symbol()
+const UNSET: any = Symbol()
 
 /* === Exported Functions === */
 
@@ -46,11 +37,22 @@ export const UNSET: any = Symbol()
  * Check whether a value is a Signal or not
  * 
  * @since 0.9.0
- * @param {any} value - value to check
+ * @param {unknown} value - value to check
  * @returns {boolean} - true if value is a Signal, false otherwise
  */
 const isSignal = /*#__PURE__*/ <T extends {}>(value: any): value is Signal<T> =>
 	isState(value) || isComputed(value)
+
+/**
+ * Check if the provided value is a callback or callbacks object of { ok, nil?, err? } that may be used as input for toSignal() to derive a computed state
+ * 
+ * @since 0.12.4
+ * @param {unknown} value - value to check
+ * @returns {boolean} - true if value is a callback or callbacks object, false otherwise
+ */
+const isComputedCallbacks = /*#__PURE__*/ <T extends {}>(value: unknown): value is ComputedCallbacks<T, []> =>
+	(isFunction(value) && !value.length)
+		|| (typeof value === 'object' && value !== null && 'ok' in value && isFunction(value.ok))
 
 /**
  * Convert a value to a Signal if it's not already a Signal
@@ -61,56 +63,67 @@ const isSignal = /*#__PURE__*/ <T extends {}>(value: any): value is Signal<T> =>
  * @returns {Signal<T>} - converted Signal
  */
 const toSignal = /*#__PURE__*/ <T extends {}>(
-	value: MaybeSignal<T>
+	value: MaybeSignal<T> | ComputedCallbacks<T, []>
 ): Signal<T> =>
 	isSignal<T>(value) ? value
-		: isComputeFunction<T>(value) ? computed(value)
-		: state(value)
+		: isComputedCallbacks<T>(value) ? computed(value)
+		: state(value as T)
+
 
 /**
- * Add notify function of active watchers to the set of watchers
+ * Resolve signals or functions using signals and apply callbacks based on the results
  * 
- * @param {Watcher[]} watchers - set of current watchers
+ * @since 0.12.0
+ * @param {U} signals - dependency signals (or functions using signals)
+ * @param {Record<string, (...args) => CallbackReturnType<T>} cb - object of ok, nil, err callbacks or just ok callback
+ * @returns {CallbackReturnType<T>} - result of chosen callback
  */
-const subscribe = (watchers: Watcher[]) => {
-	if (active && !watchers.includes(active)) watchers.push(active)
-}
+const resolve = <T, U extends Signal<{}>[]>(
+	signals: U,
+	cb: OkCallback<T | Promise<T>, U> | {
+		ok: OkCallback<T | Promise<T>, U>
+		nil?: NilCallback<T>
+		err?: ErrCallback<T>
+	}
+): CallbackReturnType<T> => {
+	const { ok, nil, err } = isFunction(cb)
+		? { ok: cb }
+		: cb as {
+			ok: OkCallback<T | Promise<T>, U>
+			nil?: NilCallback<T>
+			err?: ErrCallback<T>
+		}
+	const values = [] as {
+		[K in keyof U]: U[K] extends Signal<infer T> ? T : never
+	}
+    const errors: Error[] = []
+    let hasUnset = false
 
-/**
- * Notify all subscribers of the state change or add to the pending set if batching is enabled
- * 
- * @param {Watcher[]} watchers 
- */
-const notify = (watchers: Watcher[]) => {
-	watchers.forEach(mark => batchDepth ? markQueue.add(mark) : mark())
-}
+    for (let i = 0; i < signals.length; i++) {
+		const s = signals[i]
+		try {
+			const value = s.get()
+			if (value === UNSET) hasUnset = true
+			values[i] = value
+		} catch (e) {
+			errors.push(toError(e))
+		}
+    }
 
-/**
- * Run a function in a reactive context
- * 
- * @param {() => void} run - function to run the computation or effect
- * @param {Watcher} mark - function to be called when the state changes
- */
-const watch = (run: () => void, mark: Watcher): void => {
-	const prev = active
-	active = mark
-	run()
-	active = prev
-}
-
-/**
- * Batch multiple state changes into a single update
- * 
- * @param {() => void} run - function to run the batch of state changes
- */
-const batch = (run: () => void): void => {
-    batchDepth++
-    run()
-    batchDepth--
-	if (!batchDepth) flush()
+	let result: CallbackReturnType<T> = undefined
+    try {
+		if (hasUnset && nil) result = nil()
+		else if (errors.length) result = err ? err(...errors) : errors[0]
+		else if (!hasUnset) result = ok(...values) as CallbackReturnType<T>
+    } catch (e) {
+		result = toError(e)
+		if (err) result = err(result)
+    }
+	return result
 }
 
 export {
-	type Signal, type MaybeSignal, type Watcher,
-    isSignal, toSignal, subscribe, notify, watch, batch
+	type Signal, type MaybeSignal,
+	type EffectCallbacks, type ComputedCallbacks, type CallbackReturnType,
+    UNSET, isSignal, isComputedCallbacks, toSignal, resolve,
 }
