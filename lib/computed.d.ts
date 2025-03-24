@@ -1,19 +1,18 @@
-import { type Signal, type EffectCallbacks, type ComputedCallbacks } from './signal';
+import { type TapMatcher } from './effect';
 export type Computed<T extends {}> = {
     [Symbol.toStringTag]: 'Computed';
-    get: () => T;
-    map: <U extends {}>(cb: ComputedCallbacks<U, [Computed<T>]>) => Computed<U>;
-    match: (cb: EffectCallbacks<[Computed<T>]>) => void;
+    get(): T;
+    map<U extends {}>(fn: (v: T) => U | Promise<U>): Computed<U>;
+    tap(matcher: TapMatcher<[Computed<T>]>): void;
 };
 /**
  * Create a derived signal from existing signals
  *
  * @since 0.9.0
- * @param {() => T} cb - compute callback or object of ok, nil, err callbacks to derive state
- * @param {U} signals - signals of functions using signals this values depends on
+ * @param {() => T | Promise<T>} fn - computed callback
  * @returns {Computed<T>} - Computed signal
  */
-export declare const computed: <T extends {}, U extends Signal<{}>[]>(cb: ComputedCallbacks<T, U>, ...signals: U) => Computed<T>;
+export declare const computed: <T extends {}>(fn: () => T | Promise<T>) => Computed<T>;
 /**
  * Check if a value is a computed state
  *

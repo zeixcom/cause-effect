@@ -20,18 +20,20 @@ const framework = {
 			read: () => s.get(),
 		};
 	},
-	computed: <T extends {} | Promise<{}>>(fn: () => T) => {
+	computed: <T extends {}>(fn: () => T) => {
 		const c = computed(fn);
 		return {
 			read: () => c.get(),
 		};
 	},
 	effect: (fn: () => void) => effect({
+		signals: [],
 		ok: fn,
+		nil: () => {},
 		err: () => {}
 	}),
 	withBatch: (fn: () => void) => batch(fn),
-	withBuild: <T>(fn: () => T) => fn(),
+	withBuild: (fn: () => void) => fn(),
 };
 const testPullCounts = true;
 

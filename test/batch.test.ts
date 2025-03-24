@@ -13,10 +13,14 @@ describe('Batch', function () {
 		const cause = state(0);
 		let result = 0;
 		let count = 0;
-		effect((res) => {
-			result = res;
-			count++;
-		}, cause);
+		effect({
+			signals: [cause],
+			ok: (res) => {
+				result = res;
+				count++;
+			},
+			err: () => {},
+		});
 		batch(() => {
 			for (let i = 1; i <= 10; i++) {
 				cause.set(i);
@@ -33,10 +37,14 @@ describe('Batch', function () {
 		const sum = computed(() => a.get() + b.get() + c.get());
 		let result = 0;
 		let count = 0;
-		effect((res) => {
-			result = res;
-			count++;
-		}, sum);
+		effect({
+			signals: [sum],
+			ok: res => {
+				result = res;
+				count++;
+			},
+			err: () => {},
+		});
 		batch(() => {
 			a.set(6);
 			b.set(8);
@@ -52,20 +60,18 @@ describe('Batch', function () {
 		const signals = [state(2), state(3), state(5)]
 
 		// Computed: derive a calculation ...
-		const sum = computed(
-			(...values) => values.reduce((total, v) => total + v, 0),
-			...signals
-		).map(v => { // ... perform validation and handle errors
-			if (!Number.isFinite(v)) throw new Error('Invalid value')
-			return v
-		})
+		const sum = computed(() => signals.reduce((total, v) => total + v.get(), 0))
+			.map(v => { // ... perform validation and handle errors
+				if (!Number.isFinite(v)) throw new Error('Invalid value')
+				return v
+			})
 
 		let result = 0
 		let okCount = 0
 		let errCount = 0
 		
 		// Effect: switch cases for the result
-		sum.match({
+		sum.tap({
 			ok: v => {
 				result = v
 				okCount++

@@ -228,14 +228,23 @@ describe('Computed', function () {
 			if (v === 1) throw new Error('Calculation error');
 			return 1;
 		});
-		const b = a.map({
+		const b = a.map(v => {
+			try {
+				return v ? 'success' : 'failure'
+			} catch (error) {
+                errCount++;
+                // console.error(e);
+                return `recovered`;
+            }
+		});
+		/* const b = a.map({
 			ok: v => v ? 'success' : 'failure',
 			err: _e => {
 				errCount++;
                 // console.error(e);
 				return `recovered`;
 			}
-		});
+		}); */
 		const c = b.map(v => {
 			okCount++;
 			return `c: ${v}`;
@@ -264,23 +273,24 @@ describe('Computed', function () {
 		expect(double.get()).toBe(86);
 	});
 
-	test('should create an effect that reacts on signal changes with .match()', async function() {
+	test('should create an effect that reacts on signal changes with .tap()', async function() {
 		const cause = state(42);
 		const derived = computed(async () => {
 			await wait(100);
 			return cause.get() + 1;
-		});
+		}); 
 		let okCount = 0;
 		let nilCount = 0;
 		let result: number = 0;
-		derived.match({
+		derived.tap({
 			ok: v => {
 				result = v;
 				okCount++
 			},
+			err: () => {},
 			nil: () => {
 				nilCount++
-			}
+			},
 		})
 		cause.set(43);
 		expect(okCount).toBe(0);
@@ -307,7 +317,24 @@ describe('Computed', function () {
 		let nilCount = 0;
 		let errCount = 0;
 		let result: number = 0;
-		const complexComputed = computed({
+		const complexComputed = computed(() => {
+			try {
+				const x = errorProne.get();
+				const y = asyncValue.get();
+				if (y === UNSET) { // not ready yet
+					nilCount++;
+					return 0;
+				} else { // happy path
+					okCount++;
+					return x + y;
+				}
+			} catch (error) { // error path
+				errCount++;
+				return -1
+			}
+		})
+		/* const complexComputed = computed({
+			signals: [errorProne, asyncValue],
 			ok: (x, y) => { // happy path
 				okCount++;
 				return x + y
@@ -321,7 +348,7 @@ describe('Computed', function () {
 				errCount++;
 				return -1
 			},
-		}, errorProne, asyncValue);
+		}); */
 	
 		for (let i = 0; i < 10; i++) {
 			toggleState.set(!!(i % 2));

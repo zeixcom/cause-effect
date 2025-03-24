@@ -1,18 +1,15 @@
-import {
-	type Signal, type EffectCallbacks, type ComputedCallbacks,
-	resolve, UNSET
-} from './signal'
+import { UNSET } from './signal'
 import { isError, isObjectOfType, isPromise, toError } from './util'
 import { type Watcher, flush, notify, subscribe, watch } from './scheduler'
-import { effect } from './effect'
+import { type TapMatcher, type EffectMatcher, effect } from './effect'
 
 /* === Types === */
 
 export type Computed<T extends {}> = {
     [Symbol.toStringTag]: 'Computed'
-    get: () => T
-    map: <U extends {}>(cb: ComputedCallbacks<U, [Computed<T>]>) => Computed<U>
-	match: (cb: EffectCallbacks<[Computed<T>]>) => void
+    get(): T
+    map<U extends {}>(fn: (v: T) => U | Promise<U>): Computed<U>
+	tap(matcher: TapMatcher<[Computed<T>]>): void
 }
 
 /* === Constants === */
@@ -35,13 +32,11 @@ const isEquivalentError = /*#__PURE__*/ (
  * Create a derived signal from existing signals
  * 
  * @since 0.9.0
- * @param {() => T} cb - compute callback or object of ok, nil, err callbacks to derive state
- * @param {U} signals - signals of functions using signals this values depends on
+ * @param {() => T | Promise<T>} fn - computed callback
  * @returns {Computed<T>} - Computed signal
  */
-export const computed = <T extends {}, U extends Signal<{}>[]>(
-	cb: ComputedCallbacks<T, U>,
-	...signals: U
+export const computed = <T extends {}>(
+	fn: () => T | Promise<T>,
 ): Computed<T> => {
 	const watchers: Watcher[] = []
 	let value: T = UNSET
@@ -82,16 +77,25 @@ export const computed = <T extends {}, U extends Signal<{}>[]>(
 		if (computing) throw new Error('Circular dependency in computed detected')
 		unchanged = true
 		computing = true
-		const result = resolve(signals, cb)
+		let result: T | Promise<T>
+		try {
+			result = fn()
+		} catch (e) {
+			err(toError(e))
+			computing = false
+			return
+        }
 		if (isPromise(result)) {
 			nil() // sync
 			result.then(v => {
 				ok(v) // async
                 notify(watchers)
 			}).catch(err)
-		} else if (null == result || UNSET === result) nil()
-		else if (isError(result)) err(result)
-		else ok(result)
+		} else if (null == result || UNSET === result) {
+			nil()
+		} else {
+			ok(result)
+		}
 		computing = false
 	}, mark)
 
@@ -116,21 +120,28 @@ export const computed = <T extends {}, U extends Signal<{}>[]>(
 		 * Create a computed signal from the current computed signal
 		 * 
 		 * @since 0.9.0
-		 * @param {ComputedCallbacks<U, [Computed<T>]>} cb - compute callback or object of ok, nil, err callbacks to map this value to new computed
+		 * @param {(v: T) => U | Promise<U>} fn - computed callback
 		 * @returns {Computed<U>} - computed signal
 		 */
-		map: <U extends {}>(cb: ComputedCallbacks<U, [Computed<T>]>): Computed<U> =>
-			computed(cb, c),
+		map: <U extends {}>(fn: (v: T) => U | Promise<U>): Computed<U> =>
+			computed(() => {
+				try {
+					return fn(c.get())
+				} catch (e) {
+                    throw toError(e)
+                }
+			}),
 
 		/**
 		 * Case matching for the computed signal with effect callbacks
 		 * 
-		 * @since 0.12.0
-		 * @param {EffectCallbacks[Computed<T>]} cb - effect callback or object of ok, nil, err callbacks to be executed when the computed changes
+		 * @since 0.13.0
+		 * @param {TapMatcher<[Computed<T>]>} matcher - effect callback
 		 * @returns {Computed<T>} - self, for chaining effect callbacks
 		 */
-		match: (cb: EffectCallbacks<[Computed<T>]>): Computed<T> => {
-			effect(cb, c)
+		tap: (matcher: TapMatcher<[Computed<T>]>): Computed<T> => {
+			const m = { ...matcher, signals: [c] } as EffectMatcher<[Computed<T>]>
+			effect(m)
 			return c
 		}
 	}

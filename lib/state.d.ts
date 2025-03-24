@@ -1,12 +1,12 @@
-import { type ComputedCallbacks, type EffectCallbacks } from './signal';
 import { type Computed } from './computed';
+import { type TapMatcher } from './effect';
 export type State<T extends {}> = {
     [Symbol.toStringTag]: 'State';
     get(): T;
     set(v: T): void;
     update(fn: (v: T) => T): void;
-    map<U extends {}>(cb: ComputedCallbacks<U, [State<T>]>): Computed<U>;
-    match: (cb: EffectCallbacks<[State<T>]>) => void;
+    map<U extends {}>(fn: (v: T) => U | Promise<U>): Computed<U>;
+    tap(matcher: TapMatcher<[State<T>]>): void;
 };
 /**
  * Create a new state signal

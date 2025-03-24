@@ -157,10 +157,10 @@ effect({
 
 Instead of a single callback function, provide an object with `ok` (required), `err` and `nil` keys (both optional) and Cause & Effect will take care of anything that might go wrong with the listed signals in the rest parameters of `effect()`.
 
-If you want an effect based on a single signal, there's a shorthand too: The `.match()` method on either `State` or `Computed`. You can use it for easy debugging, for example:
+If you want an effect based on a single signal, there's a shorthand too: The `.tap()` method on either `State` or `Computed`. You can use it for easy debugging, for example:
 
 ```js
-signal.match({
+signal.tap({
 	ok: v => console.log('Value:', v),
 	nil: () => console.warn('Not ready'),
 	err: e => console.error('Error:', e)
@@ -187,7 +187,7 @@ const sum = computed(
 })
 
 // Effect: switch cases for the result
-sum.match({
+sum.tap({
 	ok: v => console.log('Sum:', v),
 	err: error => console.error('Error:', error)
 })

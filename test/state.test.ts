@@ -184,21 +184,22 @@ describe('State', function () {
 
 	});
 
-	describe('Match method', function () {
+	describe('Tap method', function () {
 
 		test('should create an effect that reacts on signal changes', function() {
 			const cause = state(42);
 			let okCount = 0;
 			let nilCount = 0;
 			let result = 0;
-			cause.match({
+			cause.tap({
 				ok: v => {
 					result = v;
 					okCount++
 				},
 				nil: () => {
 					nilCount++
-				}
+				},
+				err: () => {}
 			})
 			cause.set(43);
 			expect(okCount).toBe(2); // + 1 for effect initialization 

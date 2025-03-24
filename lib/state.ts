@@ -1,18 +1,18 @@
-import { type ComputedCallbacks, type EffectCallbacks, UNSET } from './signal'
+import { UNSET } from './signal'
 import { type Computed, computed } from './computed'
-import { isObjectOfType } from './util';
+import { isObjectOfType } from './util'
 import { type Watcher, notify, subscribe } from './scheduler'
-import { effect } from './effect';
+import { type TapMatcher, type EffectMatcher, effect } from './effect'
 
 /* === Types === */
 
 export type State<T extends {}> = {
-    [Symbol.toStringTag]: 'State';
-    get(): T;
-    set(v: T): void;
-    update(fn: (v: T) => T): void;
-    map<U extends {}>(cb: ComputedCallbacks<U, [State<T>]>): Computed<U>;
-	match: (cb: EffectCallbacks<[State<T>]>) => void
+    [Symbol.toStringTag]: 'State'
+    get(): T
+    set(v: T): void
+    update(fn: (v: T) => T): void
+    map<U extends {}>(fn: (v: T) => U | Promise<U>): Computed<U>
+	tap(matcher: TapMatcher<[State<T>]>): void
 }
 
 /* === Constants === */
@@ -77,22 +77,22 @@ export const state = /*#__PURE__*/ <T extends {}>(initialValue: T): State<T> => 
 		 * Create a computed signal from the current state signal
 		 * 
 		 * @since 0.9.0
-		 * @param {ComputedCallbacks<U, [State<T>]>} cb - compute callback or object of ok, nil, err callbacks to map this value to new computed
+		 * @param {(v: T) => U | Promise<U>} fn - computed callback
 		 * @returns {Computed<U>} - computed signal
 		 */
-        map: <U extends {}>(cb: ComputedCallbacks<U, [State<T>]>): Computed<U> =>
-            computed(cb, s),
+        map: <U extends {}>(fn: (v: T) => U | Promise<U>): Computed<U> =>
+            computed(() => fn(s.get())),
 
 		/**
 		 * Case matching for the state signal with effect callbacks
 		 * 
-		 * @since 0.12.0
-		 * @method of State<T>
-		 * @param {EffectCallbacks<[State<T>]>} cb - effect callback or object of ok, nil, err callbacks to be executed when the state changes
+		 * @since 0.13.0
+		 * @param {TapMatcher<[State<T>], void>} matcher - effect callback
 		 * @returns {State<T>} - self, for chaining effect callbacks
 		 */
-		match: (cb: EffectCallbacks<[State<T>]>): State<T> => {
-			effect(cb, s)
+		tap: (matcher: TapMatcher<[State<T>]>): State<T> => {
+			const m = { ...matcher, signals: [s] } as EffectMatcher<[State<T>]>
+			effect(m)
 			return s
 		}
 	}
