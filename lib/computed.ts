@@ -1,5 +1,5 @@
 import { UNSET } from './signal'
-import { isError, isObjectOfType, isPromise, toError } from './util'
+import { CircularDependencyError, isObjectOfType, isPromise, toError } from './util'
 import { type Watcher, flush, notify, subscribe, watch } from './scheduler'
 import { type TapMatcher, type EffectMatcher, effect } from './effect'
 
@@ -74,7 +74,7 @@ export const computed = <T extends {}>(
 
 	// Called when requested by dependencies (pull)
 	const compute = () => watch(() => {
-		if (computing) throw new Error('Circular dependency in computed detected')
+		if (computing) throw new CircularDependencyError('computed')
 		unchanged = true
 		computing = true
 		let result: T | Promise<T>
@@ -124,13 +124,7 @@ export const computed = <T extends {}>(
 		 * @returns {Computed<U>} - computed signal
 		 */
 		map: <U extends {}>(fn: (v: T) => U | Promise<U>): Computed<U> =>
-			computed(() => {
-				try {
-					return fn(c.get())
-				} catch (e) {
-                    throw toError(e)
-                }
-			}),
+			computed(() => fn(c.get())),
 
 		/**
 		 * Case matching for the computed signal with effect callbacks

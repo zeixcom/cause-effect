@@ -5,4 +5,7 @@ declare const isInstanceOf: <T>(type: new (...args: any[]) => T) => (value: unkn
 declare const isError: (value: unknown) => value is Error;
 declare const isPromise: (value: unknown) => value is Promise<unknown>;
 declare const toError: (value: unknown) => Error;
-export { isFunction, isAsyncFunction, isObjectOfType, isInstanceOf, isError, isPromise, toError };
+declare class CircularDependencyError extends Error {
+    constructor(where: string);
+}
+export { isFunction, isAsyncFunction, isObjectOfType, isInstanceOf, isError, isPromise, toError, CircularDependencyError };

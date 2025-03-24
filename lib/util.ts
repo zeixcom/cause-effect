@@ -17,9 +17,17 @@ const isError = /*#__PURE__*/ isInstanceOf(Error)
 const isPromise = /*#__PURE__*/ isInstanceOf(Promise)
 
 const toError = (value: unknown): Error =>
-	isError(value) ? value : new Error(String(value))
+	isError(value) ? value : Error(String(value))
+
+class CircularDependencyError extends Error {
+	constructor(where: string) {
+        super(`Circular dependency in ${where} detected`)
+		return this
+    }
+}
 
 export {
 	isFunction, isAsyncFunction,
-	isObjectOfType, isInstanceOf, isError, isPromise, toError
+	isObjectOfType, isInstanceOf, isError, isPromise, toError,
+	CircularDependencyError
 }

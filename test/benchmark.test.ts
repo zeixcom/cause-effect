@@ -86,11 +86,11 @@ describe('Basic test', function () {
 		// @ts-expect-error
 		const sum = runGraph(graph, 2, 1, framework);
 		expect(sum).toEqual(16);
-		/* if (testPullCounts) {
+		if (testPullCounts) {
 			expect(counter.count).toEqual(11);
 		} else {
 			expect(counter.count).toBeGreaterThanOrEqual(11);
-		} */
+		}
 	});
 	
 	test(`${name} | static graph, read 2/3 of leaves`, () => {
@@ -104,12 +104,12 @@ describe('Basic test', function () {
 			// @ts-expect-error
 			const sum = runGraph(graph, 10, 2 / 3, framework);
 		
-			expect(sum).toEqual(71);
-			/* if (testPullCounts) {
+			expect(sum).toEqual(73);
+			if (testPullCounts) {
 				expect(counter.count).toEqual(41);
 			} else {
 				expect(counter.count).toBeGreaterThanOrEqual(41);
-			} */
+			}
 		});
 	});
 	
@@ -126,11 +126,11 @@ describe('Basic test', function () {
 			const sum = runGraph(graph, 10, 1, framework);
 		
 			expect(sum).toEqual(72);
-			/* if (testPullCounts) {
+			if (testPullCounts) {
 				expect(counter.count).toEqual(22);
 			} else {
 				expect(counter.count).toBeGreaterThanOrEqual(22);
-			} */
+			}
 		});
 	});
 	

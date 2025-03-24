@@ -24,9 +24,9 @@ const isSignal = /*#__PURE__*/ <T extends {}>(value: any): value is Signal<T> =>
 	isState(value) || isComputed(value)
 
 /**
- * Check if the provided value is a callback or callbacks object of { ok, nil?, err? } that may be used as input for toSignal() to derive a computed state
+ * Check if the provided value is a callback that may be used as input for toSignal() to derive a computed state
  * 
- * @since 0.12.4
+ * @since 0.12.0
  * @param {unknown} value - value to check
  * @returns {boolean} - true if value is a callback or callbacks object, false otherwise
  */

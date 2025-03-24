@@ -1,8 +1,9 @@
 /**
  * @name Cause & Effect
- * @version 0.12.4
+ * @version 0.13.0
  * @author Esther Brunner
  */
+export { CircularDependencyError } from './lib/util'
 export {
 	type Signal, type MaybeSignal,
 	UNSET, isSignal, isComputedCallback, toSignal

@@ -1,6 +1,6 @@
 
 import { UNSET, type Signal } from './signal'
-import { isFunction, toError } from './util'
+import { CircularDependencyError, toError } from './util'
 import { watch } from './scheduler'
 
 /* === Types === */
@@ -73,7 +73,7 @@ export function effect<S extends Signal<{}>[]>(
 ): void | (() => void) {
 	let running = false
 	const run = () => watch(() => {
-		if (running) throw new Error('Circular dependency in effect detected')
+		if (running) throw new CircularDependencyError('effect')
 		running = true
 		match(matcher)
 		running = false

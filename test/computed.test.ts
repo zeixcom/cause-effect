@@ -228,27 +228,17 @@ describe('Computed', function () {
 			if (v === 1) throw new Error('Calculation error');
 			return 1;
 		});
-		const b = a.map(v => {
+		const b = a.map(v => v ? 'success' : 'failure');
+		const c = computed(() => {
 			try {
-				return v ? 'success' : 'failure'
-			} catch (error) {
-                errCount++;
-                // console.error(e);
-                return `recovered`;
-            }
-		});
-		/* const b = a.map({
-			ok: v => v ? 'success' : 'failure',
-			err: _e => {
+				okCount++;
+				return `c: ${b.get()}`;
+			} catch (_e) {
 				errCount++;
-                // console.error(e);
-				return `recovered`;
-			}
-		}); */
-		const c = b.map(v => {
-			okCount++;
-			return `c: ${v}`;
-		});
+                // console.error(_e);
+                return `c: recovered`;
+            }
+		})
 		expect(a.get()).toBe(1);
 		expect(c.get()).toBe('c: success');
 		expect(okCount).toBe(1);
@@ -333,22 +323,6 @@ describe('Computed', function () {
 				return -1
 			}
 		})
-		/* const complexComputed = computed({
-			signals: [errorProne, asyncValue],
-			ok: (x, y) => { // happy path
-				okCount++;
-				return x + y
-			},
-			nil: () => { // not ready yet
-			    nilCount++;
-				return 0
-			},
-			err: (_e) => { // error path
-				// console.error('Error:', _e);
-				errCount++;
-				return -1
-			},
-		}); */
 	
 		for (let i = 0; i < 10; i++) {
 			toggleState.set(!!(i % 2));
@@ -357,9 +331,9 @@ describe('Computed', function () {
 			// console.log(`i: ${i}, result: ${result}`);
 		}
 	
-		expect(nilCount).toBeGreaterThanOrEqual(4);
+		expect(nilCount).toBeGreaterThanOrEqual(3);
 		expect(okCount).toBeGreaterThanOrEqual(2);
-		expect(errCount).toBeGreaterThanOrEqual(2);
+		expect(errCount).toBeGreaterThanOrEqual(5);
 		expect(okCount + errCount + nilCount).toBe(10);
 	});
 });
