@@ -29,7 +29,7 @@ const TYPE_STATE = 'State'
  * @returns {State<T>} - new state signal
  */
 export const state = /*#__PURE__*/ <T extends {}>(initialValue: T): State<T> => {
-	const watchers: Watcher[] = []
+	const watchers: Set<Watcher> = new Set()
 	let value: T = initialValue
 
 	const s: State<T> = {
@@ -59,7 +59,7 @@ export const state = /*#__PURE__*/ <T extends {}>(initialValue: T): State<T> => 
             notify(watchers)
 
             // Setting to UNSET clears the watchers so the signal can be garbage collected
-            if (UNSET === value) watchers.length = 0 // head = tail = undefined
+            if (UNSET === value) watchers.clear()
         },
 
 		/**

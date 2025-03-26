@@ -14,10 +14,9 @@ describe('Effect', function () {
 		let count = 0;
 		effect({
 			signals: [cause],
-			ok: (_value) => {
+			ok: _value => {
 				count++;
-			},
-			err: () => {},
+			}
 		});
 		expect(count).toBe(1);
 		cause.set('bar');
@@ -40,9 +39,7 @@ describe('Effect', function () {
 			ok: (aValue, bValue) => {
 				result = aValue + bValue;
 				count++;
-			},
-			nil: () => {},
-			err: () => {},
+			}
 		});
 		expect(result).toBe(0);
 		expect(count).toBe(0);
@@ -57,11 +54,10 @@ describe('Effect', function () {
 		let count = 0;
 		effect({
 			signals: [cause],
-			ok: (res) => {
+			ok: res => {
 				result = res;
 				count++;
-			},
-			err: () => {},
+			}
 		});
 		for (let i = 0; i < 10; i++) {
 			cause.set(i);
@@ -71,20 +67,20 @@ describe('Effect', function () {
 	});
 
 	test('should handle errors in effects', function() {
-		const a = state(1);
-		const b = computed(() => {
-			if (a.get() > 5) throw new Error('Value too high');
-			return a.get() * 2;
-		});
+		const a = state(1)
+		const b = a.map(v => {
+			if (v > 5) throw new Error('Value too high')
+			return v * 2
+		})
 		let normalCallCount = 0;
 		let errorCallCount = 0;
 		effect({
 			signals: [b],
-			ok: (_bValue) => {
+			ok: _bValue => {
 				// console.log('Normal effect:', _bValue);
 				normalCallCount++;
 			},
-			err: (error) => {
+			err: error => {
 				// console.log('Error effect:', error);
 				errorCallCount++;
 				expect(error.message).toBe('Value too high');
@@ -116,14 +112,13 @@ describe('Effect', function () {
 		let nilCount = 0;
 		effect({
 			signals: [a],
-			ok: (aValue) => {
+			ok: aValue => {
 				normalCallCount++;
 				expect(aValue).toBe(42);
 			},
 			nil: () => {
 				nilCount++
-			},
-			err: () => {}
+			}
 		});
 
 		expect(normalCallCount).toBe(0);
@@ -174,6 +169,25 @@ describe('Effect', function () {
             console.error = originalConsoleError;
         }
     }); */
+
+	test('should clean up subscriptions when disposed', () => {
+		const count = state(42)
+		let received = 0
+
+		const cleanup = effect({
+			signals: [count],
+			ok: value => {
+				received = value
+			}
+		})
+
+		count.set(43)
+		expect(received).toBe(43)
+
+		cleanup()
+		count.set(44)
+		expect(received).toBe(43) // Should not update after dispose
+	})
 
 	test('should detect and throw error for circular dependencies in effects', () => {
 		let okCount = 0

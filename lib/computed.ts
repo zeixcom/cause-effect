@@ -38,7 +38,7 @@ const isEquivalentError = /*#__PURE__*/ (
 export const computed = <T extends {}>(
 	fn: () => T | Promise<T>,
 ): Computed<T> => {
-	const watchers: Watcher[] = []
+	const watchers: Set<Watcher> = new Set()
 	let value: T = UNSET
 	let error: Error | undefined
 	let dirty = true
@@ -67,10 +67,11 @@ export const computed = <T extends {}>(
 	}
 
 	// Called when notified from sources (push)
-	const mark = () => {
+	const mark = (() => {
 		dirty = true
 		if (!unchanged) notify(watchers)
-	}
+	}) as Watcher
+	mark.cleanups = new Set()
 
 	// Called when requested by dependencies (pull)
 	const compute = () => watch(() => {

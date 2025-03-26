@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { state, isComputed, UNSET } from '../'
+import { state, isComputed, UNSET, isState } from '../'
 
 /* === Utility Functions === */
 
@@ -8,6 +8,14 @@ const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 /* === Tests === */
 
 describe('State', function () {
+
+	describe("State type guard", () => {
+		test("isState identifies state signals", () => {
+			const count = state(42)
+			expect(isState(count)).toBe(true)
+			expect(isComputed(count)).toBe(false)
+		})
+	})
 
 	describe('Boolean cause', function () {
 

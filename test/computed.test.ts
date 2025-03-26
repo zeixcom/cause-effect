@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { state, computed, UNSET, isComputed } from '../'
+import { state, computed, UNSET, isComputed, isState } from '../'
 
 /* === Utility Functions === */
 
@@ -9,6 +9,13 @@ const increment = (n: number) => Number.isFinite(n) ? n + 1 : UNSET;
 /* === Tests === */
 
 describe('Computed', function () {
+
+	test("isComputed identifies computed signals", () => {
+		const count = state(42)
+		const doubled = computed(() => count.get() * 2)
+		expect(isComputed(doubled)).toBe(true)
+		expect(isState(doubled)).toBe(false)
+	})
 
 	test('should compute a function', function() {
 		const derived = computed(() => 1 + 2);
