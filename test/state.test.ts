@@ -206,8 +206,7 @@ describe('State', function () {
 				},
 				nil: () => {
 					nilCount++
-				},
-				err: () => {}
+				}
 			})
 			cause.set(43);
 			expect(okCount).toBe(2); // + 1 for effect initialization 

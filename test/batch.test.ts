@@ -37,8 +37,7 @@ describe('Batch', function () {
 		const sum = computed(() => a.get() + b.get() + c.get());
 		let result = 0;
 		let count = 0;
-		effect({
-			signals: [sum],
+		sum.tap({
 			ok: res => {
 				result = res;
 				count++;

@@ -26,12 +26,7 @@ const framework = {
 			read: () => c.get(),
 		};
 	},
-	effect: (fn: () => void) => effect({
-		signals: [],
-		ok: fn,
-		nil: () => {},
-		err: () => {}
-	}),
+	effect: (fn: () => void) => effect(fn),
 	withBatch: (fn: () => void) => batch(fn),
 	withBuild: (fn: () => void) => fn(),
 };

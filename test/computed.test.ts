@@ -10,9 +10,9 @@ const increment = (n: number) => Number.isFinite(n) ? n + 1 : UNSET;
 
 describe('Computed', function () {
 
-	test("isComputed identifies computed signals", () => {
+	test('should identify computed signals with isComputed()', () => {
 		const count = state(42)
-		const doubled = computed(() => count.get() * 2)
+		const doubled = count.map(v => v * 2)
 		expect(isComputed(doubled)).toBe(true)
 		expect(isState(doubled)).toBe(false)
 	})
@@ -110,9 +110,9 @@ describe('Computed', function () {
 		const x = state(2);
 		const a = x.map(v => --v);
 		const b = computed(() => x.get() + a.get());
-		const c = computed(() => {
+		const c = b.map(v => {
 			count++;
-			return 'c: ' + b.get();
+			return 'c: ' + v;
 		});
 		expect(c.get()).toBe('c: 3');
 		expect(count).toBe(1);
@@ -144,9 +144,9 @@ describe('Computed', function () {
 		const a = x.map(v => v);
 		const b = x.map(v => v);
 		const c = computed(() => a.get() + ' ' + b.get());
-		const d = computed(() => {
+		const d = c.map(v => {
 			count++;
-			return c.get();
+			return v
 		});
 		expect(d.get()).toBe('a a');
 		expect(count).toBe(1);
@@ -182,13 +182,10 @@ describe('Computed', function () {
 	test('should bail out if result is the same', function() {
 		let count = 0;
 		const x = state('a');
-		const a = computed(() => {
-			x.get();
-			return 'foo';
-		});
-		const b = computed(() => {
-			count++;
-			return a.get();
+		const a = x.map(() => 'foo');
+		const b = a.map(v => {
+			count++
+			return v
 		});
 		expect(b.get()).toBe('foo');
 		expect(count).toBe(1);
@@ -201,13 +198,13 @@ describe('Computed', function () {
 
 	test('should block if result remains unchanged', function() {
 		let count = 0;
-		const x = state(42);
-		const a = x.map(v => v % 2);
-		const b = computed(() => a.get() ? 'odd' : 'even');
-		const c = computed(() => {
-			count++;
-			return `c: ${b.get()}`;
-		});
+		const x = state(42)
+		const c = x.map(v => v % 2)
+			.map(v => v ? 'odd' : 'even')
+			.map(v => {
+				count++
+				return `c: ${v}`
+			})
 		expect(c.get()).toBe('c: even');
 		expect(count).toBe(1);
 		x.set(44);

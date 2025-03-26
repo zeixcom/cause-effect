@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'bun:test'
+import { describe, test, expect, mock } from 'bun:test'
 import { state, computed, effect, UNSET } from '../'
 
 /* === Utility Functions === */
@@ -12,12 +12,9 @@ describe('Effect', function () {
 	test('should be triggered after a state change', function() {
 		const cause = state('foo');
 		let count = 0;
-		effect({
-			signals: [cause],
-			ok: _value => {
-				count++;
-			}
-		});
+		cause.tap(_value => {
+			count++;
+		})
 		expect(count).toBe(1);
 		cause.set('bar');
 		expect(count).toBe(2);
@@ -52,13 +49,10 @@ describe('Effect', function () {
 		const cause = state(0);
 		let result = 0;
 		let count = 0;
-		effect({
-			signals: [cause],
-			ok: res => {
-				result = res;
-				count++;
-			}
-		});
+		cause.tap(res => {
+			result = res;
+			count++;
+		})
 		for (let i = 0; i < 10; i++) {
 			cause.set(i);
 			expect(result).toBe(i);
@@ -74,8 +68,7 @@ describe('Effect', function () {
 		})
 		let normalCallCount = 0;
 		let errorCallCount = 0;
-		effect({
-			signals: [b],
+		b.tap({
 			ok: _bValue => {
 				// console.log('Normal effect:', _bValue);
 				normalCallCount++;
@@ -110,8 +103,7 @@ describe('Effect', function () {
 		});
 		let normalCallCount = 0;
 		let nilCount = 0;
-		effect({
-			signals: [a],
+		a.tap({
 			ok: aValue => {
 				normalCallCount++;
 				expect(aValue).toBe(42);
@@ -119,7 +111,7 @@ describe('Effect', function () {
 			nil: () => {
 				nilCount++
 			}
-		});
+		})
 
 		expect(normalCallCount).toBe(0);
 		expect(nilCount).toBe(1);
@@ -129,56 +121,46 @@ describe('Effect', function () {
 		expect(a.get()).toBe(42);
 	});
 
-	/* test('should log error to console when error is not handled', () => {
-        // Mock console.error
-        const originalConsoleError = console.error;
-        const mockConsoleError = mock((message: string, error: Error) => {});
-        console.error = mockConsoleError;
+	test('should log error to console when error is not handled', () => {
+		// Mock console.error
+		const originalConsoleError = console.error;
+		const mockConsoleError = mock(() => {});
+		console.error = mockConsoleError;
 
-        try {
-            const a = state(1);
-            const b = computed(() => {
-                if (a.get() > 5) throw new Error('Value too high');
-                return a.get() * 2;
-            });
-
-            // Create an effect without explicit error handling
-            effect({
-				signals: [],
-				ok: () => {
-					b.get();
-				},
-				err: () => {}
+		try {
+			const a = state(1);
+			const b = a.map(v => {
+				if (v > 5) throw new Error('Value too high')
+				return v * 2
 			});
 
-            // This should trigger the error
-            a.set(6);
+			// Create an effect without explicit error handling
+			b.tap(() => {})
 
-            // Check if console.error was called with the expected message
-            expect(mockConsoleError).toHaveBeenCalledWith(
-                'Unhandled error in effect:',
-                expect.any(Error)
-            );
+			// This should trigger the error
+			a.set(6)
 
-            // Check the error message
-            const [, error] = mockConsoleError.mock.calls[0];
-            expect(error.message).toBe('Value too high');
+			// Check if console.error was called with the error
+			expect(mockConsoleError).toHaveBeenCalledWith(
+				expect.any(Error)
+			);
 
-        } finally {
-            // Restore the original console.error
-            console.error = originalConsoleError;
-        }
-    }); */
+			// Check the error message
+			const error = (mockConsoleError as ReturnType<typeof mock>).mock.calls[0][0] as Error;
+			expect(error.message).toBe('Value too high');
+
+		} finally {
+			// Restore the original console.error
+			console.error = originalConsoleError;
+		}
+	})
 
 	test('should clean up subscriptions when disposed', () => {
 		const count = state(42)
 		let received = 0
 
-		const cleanup = effect({
-			signals: [count],
-			ok: value => {
-				received = value
-			}
+		const cleanup = count.tap(value => {
+			received = value
 		})
 
 		count.set(43)
@@ -194,8 +176,7 @@ describe('Effect', function () {
 		let errCount = 0
 		const count = state(0)
 		
-		effect({
-			signals: [count],
+		count.tap({
 			ok: () => {
 				okCount++
 				// This effect updates the signal it depends on, creating a circular dependency
