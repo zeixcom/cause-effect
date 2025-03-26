@@ -1,6 +1,6 @@
 import { UNSET } from './signal'
 import { type Computed, computed } from './computed'
-import { isObjectOfType } from './util'
+import { isFunction, isObjectOfType } from './util'
 import { type Watcher, notify, subscribe } from './scheduler'
 import { type TapMatcher, type EffectMatcher, effect } from './effect'
 
@@ -12,7 +12,7 @@ export type State<T extends {}> = {
     set(v: T): void
     update(fn: (v: T) => T): void
     map<U extends {}>(fn: (v: T) => U | Promise<U>): Computed<U>
-	tap(matcher: TapMatcher<[State<T>]>): void
+	tap(matcher: TapMatcher<T> | ((v: T) => void | (() => void))): () => void
 }
 
 /* === Constants === */
@@ -87,14 +87,16 @@ export const state = /*#__PURE__*/ <T extends {}>(initialValue: T): State<T> => 
 		 * Case matching for the state signal with effect callbacks
 		 * 
 		 * @since 0.13.0
-		 * @param {TapMatcher<[State<T>], void>} matcher - effect callback
-		 * @returns {State<T>} - self, for chaining effect callbacks
+		 * @param {TapMatcher<T> | ((v: T) => void | (() => void))} matcher - tap matcher or effect callback
+		 * @returns {() => void} - cleanup function for the effect
 		 */
-		tap: (matcher: TapMatcher<[State<T>]>): State<T> => {
-			const m = { ...matcher, signals: [s] } as EffectMatcher<[State<T>]>
-			effect(m)
-			return s
-		}
+		tap: (
+			matcher: TapMatcher<T> | ((v: T) => void | (() => void))
+		): () => void =>
+			effect({
+				signals: [s],
+				...(isFunction(matcher) ? { ok: matcher } : matcher)
+			} as EffectMatcher<[State<T>]>)
 	}
 
 	return s

@@ -1,6 +1,6 @@
 
 import { UNSET, type Signal } from './signal'
-import { CircularDependencyError, toError } from './util'
+import { CircularDependencyError, isFunction, toError } from './util'
 import { watch, type Watcher } from './scheduler'
 
 /* === Types === */
@@ -11,8 +11,8 @@ export type OkCallback<S extends Signal<{}>[]> = (...values: {
 export type NilCallback = () => void | (() => void)
 export type ErrCallback = (...errors: Error[]) => void | (() => void)
 
-export type TapMatcher<S extends Signal<{}>[]> = {
-	ok: OkCallback<S>
+export type TapMatcher<T extends {}> = {
+	ok: (v: T) => void | (() => void)
 	err?: ErrCallback
 	nil?: NilCallback
 }
@@ -30,14 +30,20 @@ export type EffectMatcher<S extends Signal<{}>[]> = {
  * Define what happens when a reactive state changes
  * 
  * @since 0.1.0
- * @param {EffectMatcher<S>} matcher - effect callback or signal matcher object
+ * @param {EffectMatcher<S> | (() => void | (() => void))} matcher - effect matcher or callback
+ * @returns {() => void} - cleanup function for the effect
  */
-export function effect<S extends Signal<{}>[]>({
-	signals,
-	ok,
-	err = console.error,
-	nil = () => {}
-}: EffectMatcher<S>): () => void {
+export function effect<S extends Signal<{}>[]>(
+	matcher: EffectMatcher<S> | (() => void | (() => void))
+): () => void {
+	const {
+		signals,
+		ok,
+		err = console.error,
+		nil = () => {}
+	} = isFunction(matcher)
+		? { signals: [], ok: matcher }
+		: matcher
 	let running = false
 	const run = (() => watch(() => {
 		if (running) throw new CircularDependencyError('effect')
@@ -54,11 +60,12 @@ export function effect<S extends Signal<{}>[]>({
 			}
 		})
 		try {
-			suspense ? nil()
+			const cleanup = suspense ? nil()
 				: errors.length ? err(...errors)
 				: ok(...values as {
 					[K in keyof S]: S[K] extends Signal<infer T> ? T : never
 				})
+			if (isFunction(cleanup)) run.cleanups.add(cleanup)
 		} catch (e) {
 			err(toError(e))
 		}

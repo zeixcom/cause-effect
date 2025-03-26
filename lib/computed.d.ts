@@ -3,7 +3,7 @@ export type Computed<T extends {}> = {
     [Symbol.toStringTag]: 'Computed';
     get(): T;
     map<U extends {}>(fn: (v: T) => U | Promise<U>): Computed<U>;
-    tap(matcher: TapMatcher<[Computed<T>]>): void;
+    tap(matcher: TapMatcher<T> | ((v: T) => void | (() => void))): () => void;
 };
 /**
  * Create a derived signal from existing signals

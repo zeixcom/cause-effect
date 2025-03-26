@@ -11,5 +11,5 @@ export {
 
 export { type State, state, isState } from './lib/state'
 export { type Computed, computed, isComputed } from './lib/computed'
-export { type EffectMatcher, effect } from './lib/effect'
+export { type EffectMatcher, type TapMatcher, effect } from './lib/effect'
 export { type EnqueueDedupe, batch, watch, enqueue } from './lib/scheduler'

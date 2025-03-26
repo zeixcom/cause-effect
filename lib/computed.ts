@@ -1,5 +1,5 @@
 import { UNSET } from './signal'
-import { CircularDependencyError, isObjectOfType, isPromise, toError } from './util'
+import { CircularDependencyError, isFunction, isObjectOfType, isPromise, toError } from './util'
 import { type Watcher, flush, notify, subscribe, watch } from './scheduler'
 import { type TapMatcher, type EffectMatcher, effect } from './effect'
 
@@ -9,7 +9,7 @@ export type Computed<T extends {}> = {
     [Symbol.toStringTag]: 'Computed'
     get(): T
     map<U extends {}>(fn: (v: T) => U | Promise<U>): Computed<U>
-	tap(matcher: TapMatcher<[Computed<T>]>): void
+	tap(matcher: TapMatcher<T> | ((v: T) => void | (() => void))): () => void
 }
 
 /* === Constants === */
@@ -131,14 +131,16 @@ export const computed = <T extends {}>(
 		 * Case matching for the computed signal with effect callbacks
 		 * 
 		 * @since 0.13.0
-		 * @param {TapMatcher<[Computed<T>]>} matcher - effect callback
-		 * @returns {Computed<T>} - self, for chaining effect callbacks
+		 * @param {TapMatcher<[Computed<T>]> | ((v: T) => void | (() => void))} matcher - tap matcher or effect callback
+		 * @returns {() => void} - cleanup function for the effect
 		 */
-		tap: (matcher: TapMatcher<[Computed<T>]>): Computed<T> => {
-			const m = { ...matcher, signals: [c] } as EffectMatcher<[Computed<T>]>
-			effect(m)
-			return c
-		}
+		tap: (
+			matcher: TapMatcher<T> | ((v: T) => void | (() => void))
+		): () => void =>
+			effect({
+				signals: [c],
+				...(isFunction(matcher) ? { ok: matcher } : matcher)
+			} as EffectMatcher<[Computed<T>]>)
 	}
 	return c
 }

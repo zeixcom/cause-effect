@@ -4,8 +4,8 @@ export type OkCallback<S extends Signal<{}>[]> = (...values: {
 }) => void | (() => void);
 export type NilCallback = () => void | (() => void);
 export type ErrCallback = (...errors: Error[]) => void | (() => void);
-export type TapMatcher<S extends Signal<{}>[]> = {
-    ok: OkCallback<S>;
+export type TapMatcher<T extends {}> = {
+    ok: (v: T) => void | (() => void);
     err?: ErrCallback;
     nil?: NilCallback;
 };
@@ -19,6 +19,7 @@ export type EffectMatcher<S extends Signal<{}>[]> = {
  * Define what happens when a reactive state changes
  *
  * @since 0.1.0
- * @param {EffectMatcher<S>} matcher - effect callback or signal matcher object
+ * @param {EffectMatcher<S> | (() => void | (() => void))} matcher - effect matcher or callback
+ * @returns {() => void} - cleanup function for the effect
  */
-export declare function effect<S extends Signal<{}>[]>({ signals, ok, err, nil }: EffectMatcher<S>): () => void;
+export declare function effect<S extends Signal<{}>[]>(matcher: EffectMatcher<S> | (() => void | (() => void))): () => void;

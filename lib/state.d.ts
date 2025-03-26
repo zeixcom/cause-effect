@@ -6,7 +6,7 @@ export type State<T extends {}> = {
     set(v: T): void;
     update(fn: (v: T) => T): void;
     map<U extends {}>(fn: (v: T) => U | Promise<U>): Computed<U>;
-    tap(matcher: TapMatcher<[State<T>]>): void;
+    tap(matcher: TapMatcher<T> | ((v: T) => void | (() => void))): () => void;
 };
 /**
  * Create a new state signal
