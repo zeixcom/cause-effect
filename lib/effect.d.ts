@@ -1,19 +1,16 @@
 import { type Signal } from './signal';
-export type OkCallback<S extends Signal<{}>[]> = (...values: {
-    [K in keyof S]: S[K] extends Signal<infer T> ? T : never;
-}) => void | (() => void);
-export type NilCallback = () => void | (() => void);
-export type ErrCallback = (...errors: Error[]) => void | (() => void);
 export type TapMatcher<T extends {}> = {
-    ok: (v: T) => void | (() => void);
-    err?: ErrCallback;
-    nil?: NilCallback;
+    ok: (value: T) => void | (() => void);
+    err?: (error: Error) => void | (() => void);
+    nil?: () => void | (() => void);
 };
 export type EffectMatcher<S extends Signal<{}>[]> = {
     signals: S;
-    ok: OkCallback<S>;
-    err?: ErrCallback;
-    nil?: NilCallback;
+    ok: (...values: {
+        [K in keyof S]: S[K] extends Signal<infer T> ? T : never;
+    }) => void | (() => void);
+    err?: (...errors: Error[]) => void | (() => void);
+    nil?: () => void | (() => void);
 };
 /**
  * Define what happens when a reactive state changes

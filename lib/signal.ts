@@ -1,6 +1,6 @@
 import { type State, isState, state } from "./state"
 import { type Computed, computed, isComputed } from "./computed"
-import { isFunction } from "./util"
+import { isFunction, toError } from "./util"
 
 /* === Types === */
 
@@ -46,7 +46,48 @@ const toSignal = /*#__PURE__*/ <T extends {}>(
 	: isFunction<T>(value) ? computed(value)
 	: state(value as T)
 
+
+const match = <R, S extends Signal<{}>[]>(
+	matcher: {
+		signals: S
+		ok: (...values: {
+			[K in keyof S]: S[K] extends Signal<infer T> ? T : never
+		}) => R
+		err?: (...errors: Error[]) => R
+		nil?: () => R
+	}
+) => {
+	const { signals, ok } = matcher
+	const err = matcher.err ?? ((...errors: Error[]) => {
+		if (errors.length > 1) throw new AggregateError(errors)
+		else throw errors[0]
+	})
+	const nil = matcher.nil ?? (() => UNSET)
+
+	const errors: Error[] = []
+	let suspense = false
+	const values = signals.map(signal => {
+		try {
+			const value = signal.get()
+			if (value === UNSET) suspense = true
+			return value
+		} catch (e) {
+			errors.push(toError(e))
+		}
+	})
+	
+	try {
+		return suspense ? nil()
+			: errors.length ? err(...errors)
+			: ok(...values as {
+				[K in keyof S]: S[K] extends Signal<infer T> ? T : never
+			})
+	} catch (e) {
+		return err(toError(e))
+	}
+}
+
 export {
 	type Signal, type MaybeSignal,
-    UNSET, isSignal, isComputedCallback, toSignal,
+    UNSET, isSignal, isComputedCallback, toSignal, match,
 }

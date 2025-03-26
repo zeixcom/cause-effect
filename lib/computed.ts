@@ -1,14 +1,29 @@
-import { UNSET } from './signal'
+import { match, UNSET, type Signal } from './signal'
 import { CircularDependencyError, isFunction, isObjectOfType, isPromise, toError } from './util'
 import { type Watcher, flush, notify, subscribe, watch } from './scheduler'
 import { type TapMatcher, type EffectMatcher, effect } from './effect'
 
 /* === Types === */
 
+export type MapMatcher<T extends {}, U extends {}> = {
+	ok: (value: T) => U | Promise<U>
+	err?: (error: Error) => U | Promise<U>
+	nil?: () => U | Promise<U>
+}
+
+export type ComputedMatcher<S extends Signal<{}>[], U extends {}> = {
+	signals: S
+	ok: (...values: {
+		[K in keyof S]: S[K] extends Signal<infer T> ? T : never
+	}) => U | Promise<U>
+	err?: (...errors: Error[]) => U | Promise<U>
+	nil?: () => U | Promise<U>
+}
+
 export type Computed<T extends {}> = {
     [Symbol.toStringTag]: 'Computed'
     get(): T
-    map<U extends {}>(fn: (v: T) => U | Promise<U>): Computed<U>
+    map<U extends {}>(matcher: MapMatcher<T, U> | ((v: T) => U)): Computed<U>
 	tap(matcher: TapMatcher<T> | ((v: T) => void | (() => void))): () => void
 }
 
@@ -32,11 +47,11 @@ const isEquivalentError = /*#__PURE__*/ (
  * Create a derived signal from existing signals
  * 
  * @since 0.9.0
- * @param {() => T | Promise<T>} fn - computed callback
+ * @param {ComputedMatcher<S, T> | (() => T | Promise<T>)} matcher - computed matcher or callback
  * @returns {Computed<T>} - Computed signal
  */
-export const computed = <T extends {}>(
-	fn: () => T | Promise<T>,
+export const computed = <T extends {}, S extends Signal<{}>[] = []>(
+	matcher: ComputedMatcher<S, T> | (() => T | Promise<T>),
 ): Computed<T> => {
 	const watchers: Set<Watcher> = new Set()
 	let value: T = UNSET
@@ -69,7 +84,12 @@ export const computed = <T extends {}>(
 	// Called when notified from sources (push)
 	const mark = (() => {
 		dirty = true
-		if (!unchanged) notify(watchers)
+		if (watchers.size) {
+			if (!unchanged) notify(watchers)
+		} else {
+			mark.cleanups.forEach((fn: () => void) => fn())
+			mark.cleanups.clear()
+		}
 	}) as Watcher
 	mark.cleanups = new Set()
 
@@ -80,7 +100,9 @@ export const computed = <T extends {}>(
 		computing = true
 		let result: T | Promise<T>
 		try {
-			result = fn()
+			result = match<T | Promise<T>, S>(isFunction(matcher)
+				? { signals: [] as unknown as S, ok: matcher }
+				: matcher)
 		} catch (e) {
 			err(toError(e))
 			computing = false
@@ -121,17 +143,22 @@ export const computed = <T extends {}>(
 		 * Create a computed signal from the current computed signal
 		 * 
 		 * @since 0.9.0
-		 * @param {(v: T) => U | Promise<U>} fn - computed callback
+		 * @param {MapMatcher<T, U> | ((v: T) => U | Promise<U>)} matcher - computed matcher or callback
 		 * @returns {Computed<U>} - computed signal
 		 */
-		map: <U extends {}>(fn: (v: T) => U | Promise<U>): Computed<U> =>
-			computed(() => fn(c.get())),
+		map: <U extends {}>(
+			matcher: MapMatcher<T, U> | ((v: T) => U | Promise<U>)
+		): Computed<U> =>
+			computed({
+				signals: [c],
+				...(isFunction(matcher) ? { ok: matcher } : matcher)
+			} as ComputedMatcher<[Computed<T>], U>),
 
-		/**
+		/** 
 		 * Case matching for the computed signal with effect callbacks
 		 * 
 		 * @since 0.13.0
-		 * @param {TapMatcher<[Computed<T>]> | ((v: T) => void | (() => void))} matcher - tap matcher or effect callback
+		 * @param {TapMatcher<T> | ((v: T) => void | (() => void))} matcher - tap matcher or effect callback
 		 * @returns {() => void} - cleanup function for the effect
 		 */
 		tap: (

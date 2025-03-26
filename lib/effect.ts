@@ -1,27 +1,22 @@
-
-import { UNSET, type Signal } from './signal'
+import { match, UNSET, type Signal } from './signal'
 import { CircularDependencyError, isFunction, toError } from './util'
 import { watch, type Watcher } from './scheduler'
 
 /* === Types === */
 
-export type OkCallback<S extends Signal<{}>[]> = (...values: {
-	[K in keyof S]: S[K] extends Signal<infer T> ? T : never
-}) => void | (() => void)
-export type NilCallback = () => void | (() => void)
-export type ErrCallback = (...errors: Error[]) => void | (() => void)
-
 export type TapMatcher<T extends {}> = {
-	ok: (v: T) => void | (() => void)
-	err?: ErrCallback
-	nil?: NilCallback
+	ok: (value: T) => void | (() => void)
+	err?: (error: Error) => void | (() => void)
+	nil?: () => void | (() => void)
 }
 
 export type EffectMatcher<S extends Signal<{}>[]> = {
 	signals: S
-	ok: OkCallback<S>
-	err?: ErrCallback
-	nil?: NilCallback
+	ok: (...values: {
+		[K in keyof S]: S[K] extends Signal<infer T> ? T : never
+	}) => void | (() => void)
+	err?: (...errors: Error[]) => void | (() => void)
+	nil?: () => void | (() => void)
 }
 
 /* === Exported Functions === */
@@ -42,33 +37,14 @@ export function effect<S extends Signal<{}>[]>(
 		err = console.error,
 		nil = () => {}
 	} = isFunction(matcher)
-		? { signals: [], ok: matcher }
+		? { signals: [] as unknown as S, ok: matcher }
 		: matcher
 	let running = false
 	const run = (() => watch(() => {
 		if (running) throw new CircularDependencyError('effect')
 		running = true
-		const errors: Error[] = []
-		let suspense = false
-		const values = signals.map(signal => {
-			try {
-				const value = signal.get()
-				if (value === UNSET) suspense = true
-				return value
-			} catch (e) {
-				errors.push(toError(e))
-			}
-		})
-		try {
-			const cleanup = suspense ? nil()
-				: errors.length ? err(...errors)
-				: ok(...values as {
-					[K in keyof S]: S[K] extends Signal<infer T> ? T : never
-				})
-			if (isFunction(cleanup)) run.cleanups.add(cleanup)
-		} catch (e) {
-			err(toError(e))
-		}
+		const cleanup = match({ signals, ok, err, nil })
+		if (isFunction(cleanup)) run.cleanups.add(cleanup)
 		running = false
     }, run)) as Watcher
 	run.cleanups = new Set()

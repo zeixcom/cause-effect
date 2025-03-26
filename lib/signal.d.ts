@@ -27,4 +27,10 @@ declare const isComputedCallback: <T extends {}>(value: unknown) => value is (()
  * @returns {Signal<T>} - converted Signal
  */
 declare const toSignal: <T extends {}>(value: MaybeSignal<T>) => Signal<T>;
-export { type Signal, type MaybeSignal, UNSET, isSignal, isComputedCallback, toSignal, };
+declare const match: <R, S extends Signal<{}>[]>(matcher: {
+    signals: S;
+    ok: (...values: { [K in keyof S]: S[K] extends Signal<infer T> ? T : never; }) => R;
+    err?: (...errors: Error[]) => R;
+    nil?: () => R;
+}) => any;
+export { type Signal, type MaybeSignal, UNSET, isSignal, isComputedCallback, toSignal, match, };
