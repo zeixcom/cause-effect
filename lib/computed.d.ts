@@ -1,17 +1,18 @@
 import { type Signal } from './signal';
 import { type TapMatcher } from './effect';
-export type MapMatcher<T extends {}, U extends {}> = {
-    ok: (value: T) => U | Promise<U>;
-    err?: (error: Error) => U | Promise<U>;
-    nil?: () => U | Promise<U>;
+export type MapMatcher<T extends {}, R extends {}> = {
+    ok: (value: T) => R | Promise<R>;
+    err?: (error: Error) => R | Promise<R>;
+    nil?: () => R | Promise<R>;
 };
-export type ComputedMatcher<S extends Signal<{}>[], U extends {}> = {
+export type ComputedMatcher<S extends Signal<{}>[], R extends {}> = {
     signals: S;
+    abort?: AbortSignal;
     ok: (...values: {
         [K in keyof S]: S[K] extends Signal<infer T> ? T : never;
-    }) => U | Promise<U>;
-    err?: (...errors: Error[]) => U | Promise<U>;
-    nil?: () => U | Promise<U>;
+    }) => R | Promise<R>;
+    err?: (...errors: Error[]) => R | Promise<R>;
+    nil?: () => R | Promise<R>;
 };
 export type Computed<T extends {}> = {
     [Symbol.toStringTag]: 'Computed';

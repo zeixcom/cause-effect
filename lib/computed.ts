@@ -1,23 +1,24 @@
 import { match, UNSET, type Signal } from './signal'
-import { CircularDependencyError, isFunction, isObjectOfType, isPromise, toError } from './util'
+import { CircularDependencyError, isAsyncFunction, isFunction, isObjectOfType, isPromise, toError } from './util'
 import { type Watcher, flush, notify, subscribe, watch } from './scheduler'
 import { type TapMatcher, type EffectMatcher, effect } from './effect'
 
 /* === Types === */
 
-export type MapMatcher<T extends {}, U extends {}> = {
-	ok: (value: T) => U | Promise<U>
-	err?: (error: Error) => U | Promise<U>
-	nil?: () => U | Promise<U>
+export type MapMatcher<T extends {}, R extends {}> = {
+	ok: (value: T) => R | Promise<R>
+	err?: (error: Error) => R | Promise<R>
+	nil?: () => R | Promise<R>
 }
 
-export type ComputedMatcher<S extends Signal<{}>[], U extends {}> = {
-	signals: S
+export type ComputedMatcher<S extends Signal<{}>[], R extends {}> = {
+	signals: S,
+	abort?: AbortSignal
 	ok: (...values: {
 		[K in keyof S]: S[K] extends Signal<infer T> ? T : never
-	}) => U | Promise<U>
-	err?: (...errors: Error[]) => U | Promise<U>
-	nil?: () => U | Promise<U>
+	}) => R | Promise<R>
+	err?: (...errors: Error[]) => R | Promise<R>
+	nil?: () => R | Promise<R>
 }
 
 export type Computed<T extends {}> = {
@@ -54,11 +55,15 @@ export const computed = <T extends {}, S extends Signal<{}>[] = []>(
 	matcher: ComputedMatcher<S, T> | (() => T | Promise<T>),
 ): Computed<T> => {
 	const watchers: Set<Watcher> = new Set()
+	const m = (isFunction(matcher)
+		? { signals: [] as unknown as S, ok: matcher }
+		: matcher)
 	let value: T = UNSET
 	let error: Error | undefined
 	let dirty = true
 	let unchanged = false
 	let computing = false
+	let controller: AbortController | undefined
 
 	// Functions to update internal state
 	const ok = (v: T) => {
@@ -84,6 +89,7 @@ export const computed = <T extends {}, S extends Signal<{}>[] = []>(
 	// Called when notified from sources (push)
 	const mark = (() => {
 		dirty = true
+		controller?.abort('Aborted because source signal changed')
 		if (watchers.size) {
 			if (!unchanged) notify(watchers)
 		} else {
@@ -98,11 +104,15 @@ export const computed = <T extends {}, S extends Signal<{}>[] = []>(
 		if (computing) throw new CircularDependencyError('computed')
 		unchanged = true
 		computing = true
+		if (isAsyncFunction(m.ok)) {
+			controller = new AbortController()
+			m.abort = m.abort instanceof AbortSignal
+				? AbortSignal.any([m.abort, controller.signal])
+				: controller.signal
+		}
 		let result: T | Promise<T>
 		try {
-			result = match<T | Promise<T>, S>(isFunction(matcher)
-				? { signals: [] as unknown as S, ok: matcher }
-				: matcher)
+			result = match<S, T | Promise<T>>(m)
 		} catch (e) {
 			err(toError(e))
 			computing = false
@@ -111,9 +121,19 @@ export const computed = <T extends {}, S extends Signal<{}>[] = []>(
 		if (isPromise(result)) {
 			nil() // sync
 			result.then(v => {
-				ok(v) // async
-                notify(watchers)
-			}).catch(err)
+				if (controller?.signal.aborted) {
+					err(new DOMException(controller?.signal.reason, 'AbortError'))
+					computing = false
+					return compute() // retry
+				} else {
+					ok(v) // async
+					notify(watchers)
+				}
+			}).catch(e => {
+				// console.error('Failed to compute:', e)
+				err(e)
+				notify(watchers)
+			})
 		} else if (null == result || UNSET === result) {
 			nil()
 		} else {

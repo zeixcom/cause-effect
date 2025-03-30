@@ -2,6 +2,15 @@ import { type State } from "./state";
 import { type Computed } from "./computed";
 type Signal<T extends {}> = State<T> | Computed<T>;
 type MaybeSignal<T extends {}> = Signal<T> | T | (() => T | Promise<T>);
+type SignalMatcher<S extends Signal<{}>[], R> = {
+    signals: S;
+    abort?: AbortSignal;
+    ok: (...values: {
+        [K in keyof S]: S[K] extends Signal<infer T> ? T : never;
+    }) => R;
+    err?: (...errors: Error[]) => R;
+    nil?: () => R;
+};
 declare const UNSET: any;
 /**
  * Check whether a value is a Signal or not
@@ -27,10 +36,5 @@ declare const isComputedCallback: <T extends {}>(value: unknown) => value is (()
  * @returns {Signal<T>} - converted Signal
  */
 declare const toSignal: <T extends {}>(value: MaybeSignal<T>) => Signal<T>;
-declare const match: <R, S extends Signal<{}>[]>(matcher: {
-    signals: S;
-    ok: (...values: { [K in keyof S]: S[K] extends Signal<infer T> ? T : never; }) => R;
-    err?: (...errors: Error[]) => R;
-    nil?: () => R;
-}) => any;
+declare const match: <S extends Signal<{}>[], R>(matcher: SignalMatcher<S, R>) => any;
 export { type Signal, type MaybeSignal, UNSET, isSignal, isComputedCallback, toSignal, match, };

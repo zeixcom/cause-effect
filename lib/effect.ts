@@ -43,7 +43,7 @@ export function effect<S extends Signal<{}>[]>(
 	const run = (() => watch(() => {
 		if (running) throw new CircularDependencyError('effect')
 		running = true
-		const cleanup = match({ signals, ok, err, nil })
+		const cleanup = match<S, void | (() => void)>({ signals, ok, err, nil })
 		if (isFunction(cleanup)) run.cleanups.add(cleanup)
 		running = false
     }, run)) as Watcher

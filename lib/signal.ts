@@ -1,11 +1,21 @@
 import { type State, isState, state } from "./state"
 import { type Computed, computed, isComputed } from "./computed"
-import { isFunction, toError } from "./util"
+import { isAbortError, isFunction, toError } from "./util"
 
 /* === Types === */
 
 type Signal<T extends {}> = State<T> | Computed<T>
 type MaybeSignal<T extends {}> = Signal<T> | T | (() => T | Promise<T>)
+
+type SignalMatcher<S extends Signal<{}>[], R> = {
+	signals: S,
+	abort?: AbortSignal
+	ok: (...values: {
+		[K in keyof S]: S[K] extends Signal<infer T> ? T : never
+	}) => R
+	err?: (...errors: Error[]) => R
+	nil?: () => R
+}
 
 /* === Constants === */
 
@@ -47,15 +57,8 @@ const toSignal = /*#__PURE__*/ <T extends {}>(
 	: state(value as T)
 
 
-const match = <R, S extends Signal<{}>[]>(
-	matcher: {
-		signals: S
-		ok: (...values: {
-			[K in keyof S]: S[K] extends Signal<infer T> ? T : never
-		}) => R
-		err?: (...errors: Error[]) => R
-		nil?: () => R
-	}
+const match = <S extends Signal<{}>[], R>(
+	matcher: SignalMatcher<S, R>
 ) => {
 	const { signals, ok } = matcher
 	const err = matcher.err ?? ((...errors: Error[]) => {
@@ -72,6 +75,7 @@ const match = <R, S extends Signal<{}>[]>(
 			if (value === UNSET) suspense = true
 			return value
 		} catch (e) {
+			if (isAbortError(e)) throw e
 			errors.push(toError(e))
 		}
 	})
@@ -83,6 +87,7 @@ const match = <R, S extends Signal<{}>[]>(
 				[K in keyof S]: S[K] extends Signal<infer T> ? T : never
 			})
 	} catch (e) {
+		if (isAbortError(e)) throw e
 		return err(toError(e))
 	}
 }

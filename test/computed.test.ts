@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { state, computed, UNSET, isComputed, isState } from '../'
+import { state, computed, UNSET, isComputed, isState } from '../index.ts'
 
 /* === Utility Functions === */
 
@@ -218,7 +218,7 @@ describe('Computed', function () {
 		const b = computed(() => c.get() + 1)
 		const c = computed(() => b.get() + a.get())
 		expect(() => {
-			b.get(); // This should trigger the circular dependency
+			b.get() // This should trigger the circular dependency
 		}).toThrow('Circular dependency in computed detected')
 		expect(a.get()).toBe(1)
 	})
@@ -263,35 +263,6 @@ describe('Computed', function () {
 		const double = derived.map(v => v * 2)
 		expect(isComputed(double)).toBe(true)
 		expect(double.get()).toBe(86)
-	})
-
-	test('should warn if map() is used with an async computed', async function() {
-		const cause = state(42)
-		const derived = cause.map(async v => {
-			await wait(100)
-			return v + 1
-		})
-		let okCount = 0
-		let nilCount = 0
-		let result: number = 0
-		derived.tap({
-			ok: v => {
-				result = v
-				okCount++
-			},
-			nil: () => {
-				nilCount++
-			}
-		})
-		expect(okCount).toBe(0)
-		expect(nilCount).toBe(1)
-		expect(result).toBe(0)
-		
-		cause.set(43)
-		await wait(110)
-		expect(okCount).toBe(1) // not +1 because initial state never made it here
-		expect(nilCount).toBe(1)
-		expect(result).toBe(44)
 	})
 
 	test('should create an effect that reacts on async computed changes with .tap()', async function() {
@@ -365,5 +336,68 @@ describe('Computed', function () {
 		expect(okCount).toBeGreaterThanOrEqual(2)
 		expect(errCount).toBeGreaterThanOrEqual(5)
 		expect(okCount + errCount + nilCount).toBe(10)
+	})
+
+	test('should handle signal changes during async computation', async function() {
+		const source = state(1)
+		let computationCount = 0
+		const derived = source.map(async value => {
+			computationCount++
+			await wait(100)
+			return value
+		})
+
+		// Start first computation
+		expect(derived.get()).toBe(UNSET)
+		expect(computationCount).toBe(1)
+
+		// Change source before first computation completes
+		source.set(2)
+		await wait(210)
+		expect(derived.get()).toBe(2)
+		expect(computationCount).toBe(2)
+	})
+
+	test('should handle multiple rapid changes during async computation', async function() {
+		const source = state(1)
+		let computationCount = 0
+		const derived = source.map(async value => {
+			computationCount++
+			await wait(100)
+			return value
+		})
+
+		// Start first computation
+		expect(derived.get()).toBe(UNSET)
+		expect(computationCount).toBe(1)
+
+		// Make multiple rapid changes
+		source.set(2)
+		source.set(3)
+		source.set(4)
+		await wait(210)
+
+		// Should have computed twice (initial + final change)
+		expect(derived.get()).toBe(4)
+		expect(computationCount).toBe(2)
+	})
+
+	test('should handle errors in aborted computations', async function() {
+		const source = state(1)
+		const derived = source.map(async value => {
+			await wait(100)
+			if (value === 2) throw new Error('Intentional error')
+			return value
+		})
+
+		// Start first computation
+		expect(derived.get()).toBe(UNSET)
+
+		// Change to error state before first computation completes
+		source.set(2)
+		await wait(210)
+
+		// Should have aborted first computation and handled error in second
+		expect(() => derived.get()).toThrow('Intentional error')
 	})
 })
