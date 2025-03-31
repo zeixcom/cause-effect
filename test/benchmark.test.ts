@@ -575,4 +575,4 @@ describe('CellX tests', function () {
 			expect(after.toString()).toBe(expectedAfter.toString())
 		}
 	})
-}); */
+}) */

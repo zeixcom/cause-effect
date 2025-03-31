@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { state, isComputed, UNSET, isState } from '../'
+import { isComputed, isState, state, UNSET } from '../'
 
 /* === Utility Functions === */
 
@@ -180,9 +180,9 @@ describe('State', function () {
 
 		test('should return a computed signal for an async function', async function() {
 			const cause = state(42)
-			const asyncDouble = cause.map(async v => {
+			const asyncDouble = cause.map(async value => {
 				await wait(100)
-				return v * 2
+				return value * 2
 			})
 			expect(isComputed(asyncDouble)).toBe(true)
 			expect(asyncDouble.get()).toBe(UNSET)

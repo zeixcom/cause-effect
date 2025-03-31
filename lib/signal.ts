@@ -5,17 +5,7 @@ import { isAbortError, isFunction, toError } from "./util"
 /* === Types === */
 
 type Signal<T extends {}> = State<T> | Computed<T>
-type MaybeSignal<T extends {}> = Signal<T> | T | (() => T | Promise<T>)
-
-type SignalMatcher<S extends Signal<{}>[], R> = {
-	signals: S,
-	abort?: AbortSignal
-	ok: (...values: {
-		[K in keyof S]: S[K] extends Signal<infer T> ? T : never
-	}) => R
-	err?: (...errors: Error[]) => R
-	nil?: () => R
-}
+type MaybeSignal<T extends {}> = Signal<T> | T | (() => T) | ((abort: AbortSignal) => Promise<T>)
 
 /* === Constants === */
 
@@ -40,8 +30,10 @@ const isSignal = /*#__PURE__*/ <T extends {}>(value: any): value is Signal<T> =>
  * @param {unknown} value - value to check
  * @returns {boolean} - true if value is a callback or callbacks object, false otherwise
  */
-const isComputedCallback = /*#__PURE__*/ <T extends {}>(value: unknown): value is (() => T | Promise<T>) =>
-	(isFunction(value) && !value.length)
+const isComputedCallback = /*#__PURE__*/ <T extends {}>(
+	value: unknown
+): value is (abort?: AbortSignal) => T | Promise<T> =>
+	isFunction(value) && value.length < 2
 
 /**
  * Convert a value to a Signal if it's not already a Signal
@@ -53,19 +45,29 @@ const isComputedCallback = /*#__PURE__*/ <T extends {}>(value: unknown): value i
 const toSignal = /*#__PURE__*/ <T extends {}>(
 	value: MaybeSignal<T>
 ): Signal<T> => isSignal<T>(value) ? value
-	: isFunction<T>(value) ? computed(value)
+	: isComputedCallback<T>(value) ? computed(value)
 	: state(value as T)
 
 
+/**
+ * Match a SignalMatcher and return the result of the matched callback
+ * 
+ * @since 0.13.0
+ * @param {SignalMatcher<S, R>} matcher - SignalMatcher to match
+ * @returns {R | Promise<R>} - result of the matched callback
+ */
 const match = <S extends Signal<{}>[], R>(
-	matcher: SignalMatcher<S, R>
-) => {
-	const { signals, ok } = matcher
-	const err = matcher.err ?? ((...errors: Error[]) => {
-		if (errors.length > 1) throw new AggregateError(errors)
-		else throw errors[0]
-	})
-	const nil = matcher.nil ?? (() => UNSET)
+	matcher: {
+		signals: S,
+		abort?: AbortSignal,
+		ok: ((...values: {
+				[K in keyof S]: S[K] extends Signal<infer T> ? T : never
+			}) => R | Promise<R>),
+		err: ((...errors: Error[]) => R | Promise<R>),
+		nil: (abort?: AbortSignal) => R | Promise<R>
+	}
+): R | Promise<R> => {
+	const { signals, abort, ok, err, nil } = matcher
 
 	const errors: Error[] = []
 	let suspense = false
@@ -78,17 +80,18 @@ const match = <S extends Signal<{}>[], R>(
 			if (isAbortError(e)) throw e
 			errors.push(toError(e))
 		}
-	})
+	}) as {
+		[K in keyof S]: S[K] extends Signal<infer T extends {}> ? T : never
+	}
 	
 	try {
-		return suspense ? nil()
+		return suspense ? nil(abort)
 			: errors.length ? err(...errors)
-			: ok(...values as {
-				[K in keyof S]: S[K] extends Signal<infer T> ? T : never
-			})
+			: ok(...values)
 	} catch (e) {
 		if (isAbortError(e)) throw e
-		return err(toError(e))
+		const error = toError(e)
+		return err(error)
 	}
 }
 

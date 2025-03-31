@@ -1,11 +1,11 @@
-import { type Computed, type MapMatcher } from './computed';
+import { type Computed } from './computed';
 import { type TapMatcher } from './effect';
 export type State<T extends {}> = {
     [Symbol.toStringTag]: 'State';
     get(): T;
     set(v: T): void;
     update(fn: (v: T) => T): void;
-    map<U extends {}>(matcher: MapMatcher<T, U> | ((v: T) => U | Promise<U>)): Computed<U>;
+    map<U extends {}>(fn: (v: T) => U | Promise<U>): Computed<U>;
     tap(matcher: TapMatcher<T> | ((v: T) => void | (() => void))): () => void;
 };
 /**

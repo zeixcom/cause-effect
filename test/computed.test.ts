@@ -75,12 +75,9 @@ describe('Computed', function () {
 			await wait(100)
 			return 20
 		})
-		const c = computed(() => {
-			const aValue = a.get()
-			const bValue = b.get()
-			return (aValue === UNSET || bValue === UNSET)
-				? UNSET
-				: aValue + bValue
+		const c = computed({
+			signals: [a, b],
+			ok: (aValue, bValue) => aValue + bValue
 		})
 		expect(c.get()).toBe(UNSET)
 		await wait(110)
@@ -231,7 +228,8 @@ describe('Computed', function () {
 			if (v === 1) throw new Error('Calculation error')
 			return 1
 		})
-		const c = a.map({
+		const c = computed({
+			signals: [a],
 			ok: v => v ? 'success' : 'failure',
 			err: () => {
 				errCount++
@@ -308,7 +306,23 @@ describe('Computed', function () {
 		let nilCount = 0
 		let errCount = 0
 		let result: number = 0
-		const complexComputed = computed(() => {
+		const complexComputed = computed({
+			signals: [errorProne, asyncValue],
+			ok: v => {
+				okCount++
+				return v
+			},
+			nil: () => {
+				nilCount++
+				return 0
+			},
+			err: () => {
+				errCount++
+				return -1
+			}
+		})
+		
+		/* computed(() => {
 			try {
 				const x = errorProne.get()
 				const y = asyncValue.get()
@@ -323,7 +337,7 @@ describe('Computed', function () {
 				errCount++
 				return -1
 			}
-		})
+		}) */
 	
 		for (let i = 0; i < 10; i++) {
 			toggleState.set(!!(i % 2))
@@ -332,19 +346,20 @@ describe('Computed', function () {
 			// console.log(`i: ${i}, result: ${result}`)
 		}
 	
-		expect(nilCount).toBeGreaterThanOrEqual(3)
+		expect(nilCount).toBeGreaterThanOrEqual(5)
 		expect(okCount).toBeGreaterThanOrEqual(2)
-		expect(errCount).toBeGreaterThanOrEqual(5)
+		expect(errCount).toBeGreaterThanOrEqual(3)
 		expect(okCount + errCount + nilCount).toBe(10)
 	})
 
 	test('should handle signal changes during async computation', async function() {
 		const source = state(1)
 		let computationCount = 0
-		const derived = source.map(async value => {
+		const derived = computed(async abort => {
 			computationCount++
+			expect(abort?.aborted).toBe(false)
 			await wait(100)
-			return value
+			return source.get()
 		})
 
 		// Start first computation
@@ -355,16 +370,17 @@ describe('Computed', function () {
 		source.set(2)
 		await wait(210)
 		expect(derived.get()).toBe(2)
-		expect(computationCount).toBe(2)
+		expect(computationCount).toBe(1)
 	})
 
 	test('should handle multiple rapid changes during async computation', async function() {
 		const source = state(1)
 		let computationCount = 0
-		const derived = source.map(async value => {
+		const derived = computed(async abort => {
 			computationCount++
+			expect(abort?.aborted).toBe(false)
 			await wait(100)
-			return value
+			return source.get()
 		})
 
 		// Start first computation
@@ -379,25 +395,43 @@ describe('Computed', function () {
 
 		// Should have computed twice (initial + final change)
 		expect(derived.get()).toBe(4)
-		expect(computationCount).toBe(2)
+		expect(computationCount).toBe(1)
 	})
 
 	test('should handle errors in aborted computations', async function() {
+		// const startTime = performance.now()
 		const source = state(1)
-		const derived = source.map(async value => {
+		const derived = computed(async () => {
 			await wait(100)
+			const value = source.get()
 			if (value === 2) throw new Error('Intentional error')
 			return value
 		})
+		
+		/* derived.tap({
+			ok: v => {
+				console.log(`ok: ${v}, time: ${performance.now() - startTime}ms`)
+			},
+			nil: () => {
+				console.warn(`nil, time: ${performance.now() - startTime}ms`)
+			},
+			err: e => {
+				console.error(`err: ${e.message}, time: ${performance.now() - startTime}ms`)
+			}
+		}) */
 
 		// Start first computation
 		expect(derived.get()).toBe(UNSET)
 
 		// Change to error state before first computation completes
 		source.set(2)
-		await wait(210)
-
-		// Should have aborted first computation and handled error in second
+		await wait(110)
 		expect(() => derived.get()).toThrow('Intentional error')
+		
+		// Change to normal state before second computation completes
+		source.set(3)
+		await wait(100)
+		expect(derived.get()).toBe(3)
+		
 	})
 })

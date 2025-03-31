@@ -12,7 +12,7 @@ describe('Effect', function () {
 	test('should be triggered after a state change', function() {
 		const cause = state('foo')
 		let count = 0
-		cause.tap(_value => {
+		cause.tap(() => {
 			count++
 		})
 		expect(count).toBe(1)
@@ -69,8 +69,8 @@ describe('Effect', function () {
 		let normalCallCount = 0
 		let errorCallCount = 0
 		b.tap({
-			ok: _bValue => {
-				// console.log('Normal effect:', _bValue)
+			ok: () => {
+				// console.log('Normal effect:', value)
 				normalCallCount++
 			},
 			err: error => {
@@ -117,7 +117,8 @@ describe('Effect', function () {
 		expect(nilCount).toBe(1)
 		expect(a.get()).toBe(UNSET)
 		await wait(110)
-		expect(normalCallCount).toBe(2); // + 1 for effect initialization
+		expect(normalCallCount).toBe(1)
+		expect(nilCount).toBe(1)
 		expect(a.get()).toBe(42)
 	})
 

@@ -3,7 +3,7 @@
 const isFunction = /*#__PURE__*/ <T>(value: unknown): value is (...args: unknown[]) => T =>
     typeof value === 'function'
 
-const isAsyncFunction = /*#__PURE__*/ <T>(value: unknown): value is (...args: unknown[]) => Promise<T> | PromiseLike<T> =>
+const isAsyncFunction = /*#__PURE__*/ <T>(value: unknown): value is (...args: unknown[]) => Promise<T> =>
 	isFunction(value) && value.constructor.name === 'AsyncFunction'
 
 const isObjectOfType = /*#__PURE__*/ <T>(value: unknown, type: string): value is T =>
@@ -13,11 +13,10 @@ const isError = /*#__PURE__*/ (value: unknown): value is Error =>
 	value instanceof Error
 const isAbortError = /*#__PURE__*/ (value: unknown): value is DOMException =>
 	value instanceof DOMException && value.name === 'AbortError'
-const isPromise = /*#__PURE__*/ (value: unknown): value is Promise<unknown> =>
+const isPromise = /*#__PURE__*/ <T>(value: unknown): value is Promise<T> =>
 	value instanceof Promise
-
-const toError = (value: unknown): Error =>
-	isError(value) ? value : Error(String(value))
+const toError = (reason: unknown): Error =>
+	isError(reason) ? reason : Error(String(reason))
 
 class CircularDependencyError extends Error {
 	constructor(where: string) {

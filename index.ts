@@ -10,6 +10,6 @@ export {
 } from './lib/signal'
 
 export { type State, state, isState } from './lib/state'
-export { type Computed, computed, isComputed } from './lib/computed'
+export { type Computed, type ComputedMatcher, computed, isComputed } from './lib/computed'
 export { type EffectMatcher, type TapMatcher, effect } from './lib/effect'
 export { type EnqueueDedupe, batch, watch, enqueue } from './lib/scheduler'

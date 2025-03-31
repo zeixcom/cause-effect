@@ -1,4 +1,4 @@
-import { match, UNSET, type Signal } from './signal'
+import { type Signal, match } from './signal'
 import { CircularDependencyError, isFunction, toError } from './util'
 import { watch, type Watcher } from './scheduler'
 
@@ -43,7 +43,12 @@ export function effect<S extends Signal<{}>[]>(
 	const run = (() => watch(() => {
 		if (running) throw new CircularDependencyError('effect')
 		running = true
-		const cleanup = match<S, void | (() => void)>({ signals, ok, err, nil })
+		let cleanup: void | (() => void) = undefined
+		try {
+			cleanup = match<S, void | (() => void)>({ signals, ok, err, nil }) as void | (() => void)
+		} catch (e) {
+			err(toError(e))
+		}
 		if (isFunction(cleanup)) run.cleanups.add(cleanup)
 		running = false
     }, run)) as Watcher
