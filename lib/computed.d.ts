@@ -1,10 +1,5 @@
 import { type Signal } from './signal';
 import { type TapMatcher } from './effect';
-export type MapMatcher<T extends {}, R extends {}> = {
-    ok: ((value: T, abort: AbortSignal) => R | Promise<R>);
-    err?: ((error: Error, abort: AbortSignal) => R | Promise<R>);
-    nil?: ((abort: AbortSignal) => R | Promise<R>);
-};
 export type ComputedMatcher<S extends Signal<{}>[], R extends {}> = {
     signals: S;
     abort?: AbortSignal;
