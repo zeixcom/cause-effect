@@ -30,10 +30,10 @@ const greeting = computed(() => `Hello ${user.get().name}!`)
 
 // 3. React to changes
 effect({
-  signals: [user, greeting],
-  ok: ({ age }, greet) => {
-    console.log(`${greet} You are ${age} years old`)
-  }
+    signals: [user, greeting],
+    ok: ({ age }, greet) => {
+        console.log(`${greet} You are ${age} years old`)
+    }
 })
 
 // 4. Update state

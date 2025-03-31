@@ -50,7 +50,7 @@ const toSignal = /*#__PURE__*/ <T extends {}>(
 
 
 /**
- * Match a SignalMatcher and return the result of the matched callback
+ * Resolve signals or functions using signals and apply callbacks based on the results
  * 
  * @since 0.13.0
  * @param {SignalMatcher<S, R>} matcher - SignalMatcher to match

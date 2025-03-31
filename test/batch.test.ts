@@ -13,13 +13,9 @@ describe('Batch', function () {
 		const cause = state(0)
 		let result = 0
 		let count = 0
-		effect({
-			signals: [cause],
-			ok: (res) => {
-				result = res
-				count++
-			},
-			err: () => {},
+		cause.tap(res => {
+			result = res
+			count++
 		})
 		batch(() => {
 			for (let i = 1; i <= 10; i++) {
