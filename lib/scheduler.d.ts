@@ -1,18 +1,21 @@
 export type EnqueueDedupe = [Element, string];
-export type Watcher = () => void;
+export type Watcher = {
+    (): void;
+    cleanups: Set<() => void>;
+};
 export type Updater = <T>() => T | boolean | void;
 /**
- * Add active watcher to the array of watchers
+ * Add active watcher to the Set of watchers
  *
- * @param {Watcher[]} watchers - watchers of the signal
+ * @param {Set<Watcher>} watchers - watchers of the signal
  */
-export declare const subscribe: (watchers: Watcher[]) => void;
+export declare const subscribe: (watchers: Set<Watcher>) => void;
 /**
  * Add watchers to the pending set of change notifications
  *
- * @param {Watcher[]} watchers - watchers of the signal
+ * @param {Set<Watcher>} watchers - watchers of the signal
  */
-export declare const notify: (watchers: Watcher[]) => void;
+export declare const notify: (watchers: Set<Watcher>) => void;
 /**
  * Flush all pending changes to notify watchers
  */

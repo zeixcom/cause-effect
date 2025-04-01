@@ -2,7 +2,11 @@
 
 export type EnqueueDedupe = [Element, string]
 
-export type Watcher = () => void
+export type Watcher = {
+	(): void,
+	cleanups: Set<() => void>
+}
+
 export type Updater = <T>() => T | boolean | void
 
 /* === Internal === */
@@ -38,23 +42,27 @@ queueMicrotask(updateDOM)
 /* === Exported Functions === */
 
 /**
- * Add active watcher to the array of watchers
+ * Add active watcher to the Set of watchers
  * 
- * @param {Watcher[]} watchers - watchers of the signal
+ * @param {Set<Watcher>} watchers - watchers of the signal
  */
-export const subscribe = (watchers: Watcher[]) => {
+export const subscribe = (watchers: Set<Watcher>) => {
 	// if (!active) console.warn('Calling .get() outside of a reactive context')
-	if (active && !watchers.includes(active)) {
-		watchers.push(active)
+	if (active && !watchers.has(active)) {
+		const watcher = active
+		watchers.add(watcher)
+		active.cleanups.add(() => {
+			watchers.delete(watcher)
+		})
 	}
 }
 
 /**
  * Add watchers to the pending set of change notifications
  * 
- * @param {Watcher[]} watchers - watchers of the signal
+ * @param {Set<Watcher>} watchers - watchers of the signal
  */
-export const notify = (watchers: Watcher[]) => {
+export const notify = (watchers: Set<Watcher>) => {
 	for (const mark of watchers) {
         if (batchDepth) pending.add(mark)
 		else mark()

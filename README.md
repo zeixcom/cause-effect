@@ -1,6 +1,6 @@
 # Cause & Effect
 
-Version 0.12.4
+Version 0.13.0
 
 **Cause & Effect** is a lightweight, reactive state management library for JavaScript applications. It uses the concept of signals to create a predictable and efficient data flow in your app.
 
@@ -8,40 +8,36 @@ Version 0.12.4
 
 **Cause & Effect** provides a simple way to manage application state using signals. Signals are containers for values that can change over time. When a signal's value changes, it automatically updates all parts of your app that depend on it, ensuring your UI stays in sync with your data.
 
-## Why Cause & Effect?
-
-- **Simplicity**: Easy to learn and use, with a small API surface.
-- **Performance**: Efficient updates that only recompute what's necessary.
-- **Type Safety**: Full TypeScript support for robust applications.
-- **Flexibility**: Works well with any UI framework or vanilla JavaScript.
-- **Lightweight**: Dependency-free, only 1kB gzipped over the wire.
-
 ## Key Features
 
-- 🚀 Efficient state management with automatic dependency tracking
-- ⏳ Built-in support for async operations
-- 🧠 Memoized computed values
-- 🛡️ Type-safe and non-nullable signals
-- 🎭 Declarative error and pending state handling
+- ⚡ **Reactive States**: Automatic updates when dependencies change
+- 🧩 **Composable**: Chain signals with `.map()` and `.tap()`
+- ⏱️ **Async Ready**: Built-in `Promise` and `AbortController` support
+- 🛡️ **Error Handling**: Declare handlers for errors and unset states in effects
+- 🚀 **Performance**: Batching and efficient dependency tracking
+- 📦 **Tiny**: ~1kB gzipped, zero dependencies
 
-## Quick Example
+## Quick Start
 
 ```js
-import { state, effect } from '@zeix/cause-effect'
+import { state, computed, effect } from '@zeix/cause-effect'
 
-// Create a state signal
-const count = state(0)
+// 1. Create state
+const user = state({ name: 'Alice', age: 30 })
 
-// Create a computed signal
-const doubleCount = count.map(v => v * 2)
+// 2. Create computed values
+const greeting = computed(() => `Hello ${user.get().name}!`)
 
-// Create an effect
-effect((c, d) => {
-    console.log(`Count: ${c}, Double: ${d}`)
-}, count, doubleCount)
+// 3. React to changes
+effect({
+    signals: [user, greeting],
+    ok: ({ age }, greet) => {
+        console.log(`${greet} You are ${age} years old`)
+    }
+})
 
-// Update the state
-count.set(5) // Logs: "Count: 5, Double: 10"
+// 4. Update state
+user.update(u => ({ ...u, age: 31 })) // Logs: "Hello Alice! You are 31 years old"
 ```
 
 ## Installation
@@ -54,17 +50,21 @@ npm install @zeix/cause-effect
 bun add @zeix/cause-effect
 ```
 
-## Usage
+## Usage of Signals
 
 ### Single State Signal
 
 `state()` creates a new state signal. To access the current value of the signal use the `.get()` method. To update the value of the signal use the `.set()` method with a new value or `.update()` with an updater function of the form `(v: T) => T`.
 
+The `.tap()` method on either `State` or `Computed` is a shorthand for creating an effect on the signal.
+
 ```js
-import { state, effect } from '@zeix/cause-effect'
+import { state } from '@zeix/cause-effect'
 
 const count = state(42)
-effect(() => console.log(count.get())) // logs '42'
+count.tap(v => {
+	console.log(v) // logs '42'
+})
 count.set(24) // logs '24'
 document.querySelector('.increment').addEventListener('click', () => {
 	count.update(v => ++v)
@@ -92,11 +92,10 @@ document.querySelector('button.increment').addEventListener('click', () => {
 If you want to derive a computed signal from a single other signal you can use the `.map()` method on either `State` or `Computed`. This does the same as the snippet above:
 
 ```js
-import { state, effect } from '@zeix/cause-effect'
+import { state } from '@zeix/cause-effect'
 
 const count = state(42)
-const isOdd = count.map(v => v % 2)
-effect(() => console.log(isOdd.get())) // logs 'false'
+count.map(v => v % 2).tap(v => console.log(v)) // logs 'false'
 count.set(24) // logs nothing because 24 is also an even number
 document.querySelector('.increment').addEventListener('click', () => {
 	count.update(v => ++v)
@@ -111,7 +110,7 @@ Async computed signals are as straight forward as their sync counterparts. Just 
 **Caution**: Async computed signals will return a Symbol `UNSET` until the Promise is resolved.
 
 ```js
-import { state, effect } from '@zeix/cause-effect'
+import { state } from '@zeix/cause-effect'
 
 const entryId = state(42)
 const entryData = entryId.map(async id => {
@@ -120,56 +119,90 @@ const entryData = entryId.map(async id => {
     return response.json()
 })
 // Updates h1 and p of the entry as soon as fetched data for entry becomes available
-document.querySelector('button.next')
-    .addEventListener('click', () => entryId.update(v => ++v))
+document.querySelector('button.next').addEventListener('click', () => {
+	entryId.update(v => ++v)
+})
 // Click on button updates h1 and p of the entry as soon as fetched data for the next entry is loaded
 ```
 
-### Handling Unset Values and Errors in Effects
+## Error Handling
 
-Computations can fail and throw errors. Promises may not have resolved yet when you try to access their value. **Cause & Effect makes it easy to deal with errors and unresolved async functions.** Computed functions will catch errors and re-throw them when you access their values.
+Cause & Effect provides three paths for robust error handling:
 
-**Effects** are where you handle different cases:
+1. **Ok**: Value is available
+2. **Nil**: Loading/Unset state (especially for async)
+3. **Err**: Error occurred
+
+Handle all cases declaratively:
 
 ```js
-const h2 = document.querySelector('.entry h2')
-const p = document.querySelector('.entry p')
 effect({
-
-    // Handle pending states while fetching data
-    nil: () => {
-        h2.textContent = 'Loading...'
-    },
-
-    // Handle errors
-    err: (error) => {
-        h2.textContent = 'Oops, Something Went Wrong'
-        p.textContent = error.message
-    },
-
-    // Happy path, data is entryData.get()
-    ok: (data) => {
-        h2.textContent = data.title
-        p.textContent = data.description
-    }
-}, entryData) // assuming an `entryData` async computed signal as in the example above
+    signals: [data],
+    ok: (value) => /* update UI */,
+    nil: () => /* show loading */,
+    err: (error) => /* show error */
+})
 ```
 
 Instead of a single callback function, provide an object with `ok` (required), `err` and `nil` keys (both optional) and Cause & Effect will take care of anything that might go wrong with the listed signals in the rest parameters of `effect()`.
 
-If you want an effect based on a single signal, there's a shorthand too: The `.match()` method on either `State` or `Computed`. You can use it for easy debugging, for example:
+If you want an effect based on a single signal, there's a shorthand too: The `.tap()` method on either `State` or `Computed`. You can use it for easy debugging, for example:
 
 ```js
-signal.match({
+signal.tap({
 	ok: v => console.log('Value:', v),
 	nil: () => console.warn('Not ready'),
 	err: e => console.error('Error:', e)
 })
 ```
 
-### Effects and Batching
+## DOM Updates
 
-Effects run synchronously as soon as source signals update. If you need to set multiple signals you can batch them together to ensure dependents are executed only once.
+The `enqueue()` function allows you to schedule DOM updates to be executed on the next animation frame. It returns a `Promise`, which makes it easy to detect when updates are applied or if they fail.
+
+```js
+import { enqueue } from '@zeix/cause-effect'
+
+// Schedule a DOM update
+enqueue(() => {
+  document.getElementById('myElement').textContent = 'Updated content'
+})
+  .then(() => console.log('Update applied successfully'))
+  .catch(error => console.error('Update failed:', error))
+```
+
+You can also use the deduplication feature to ensure that only the latest update for a specific element and operation is applied:
+
+```js
+import { state, effect, enqueue } from '@zeix/cause-effect'
+
+// Define a signal and update it in an event handler
+const name = state('')
+document.querySelector('input[name="name"]').addEventListener('input', e => {
+	name.set(e.target.value) // Triggers an update on every keystroke
+})
+
+// Define an effect to react to signal changes
+name.tap(text => {
+	const nameSpan = document.querySelector('.greeting .name')
+	enqueue(() => {
+		nameSpan.textContent = text
+		return text
+	}, [nameSpan, 'setName']) // For deduplication
+		.then(result => console.log(`Name was updated to ${result}`))
+		.catch(error => console.error('Failed to update name:', error))
+})
+```
+
+In this example, as the user types in the input field only 'Jane' will be applied to the DOM. 'J', 'Ja', 'Jan' were superseded by more recent updates and deduplicated (if typing was fast enough).
+
+When multiple `enqueue` calls are made with the same deduplication key before the next animation frame, only the last call will be executed. Previous calls are superseded and their Promises will not be resolved or rejected. This "last-write-wins" behavior ensures that only the most recent update is applied, which is typically desirable for UI updates and state changes.
+
+## Advanced Usage
+
+### Batching
+
+Effects run synchronously as soon as source signals update. If you need to set multiple signals you can batch them together to ensure dependent effects are executed simultanously and only once.
 
 ```js
 import { state, computed, batch } from '@zeix/cause-effect'
@@ -178,16 +211,16 @@ import { state, computed, batch } from '@zeix/cause-effect'
 const signals = [state(2), state(3), state(5)]
 
 // Computed: derive a calculation ...
-const sum = computed(
-	(...values) => values.reduce((total, v) => total + v, 0),
-	...signals
-).map(v => { // ... perform validation and handle errors
+const sum = computed({
+	signals,
+	ok: (...values) => values.reduce((total, v) => total + v, 0),
+}).map(v => { // ... perform validation and handle errors
 	if (!Number.isFinite(v)) throw new Error('Invalid value')
 	return v
 })
 
 // Effect: switch cases for the result
-sum.match({
+sum.tap({
 	ok: v => console.log('Sum:', v),
 	err: error => console.error('Error:', error)
 })
@@ -215,44 +248,57 @@ This example showcases several powerful features of Cause & Effect:
 
 These principles enable developers to create complex, reactive applications with clear data flow, efficient updates, and robust error handling, while promoting code reuse and modularity.
 
-### Effects and DOM Updates
+### Cleanup
 
-The `enqueue()` function allows you to schedule DOM updates to be executed on the next animation frame. This function returns a `Promise`, which makes it easy to detect when updates are applied or if they fail.
-
-```js
-import { enqueue } from '@zeix/cause-effect'
-
-// Schedule a DOM update
-enqueue(() => {
-  document.getElementById('myElement').textContent = 'Updated content'
-})
-  .then(() => console.log('Update applied successfully'))
-  .catch(error => console.error('Update failed:', error))
-```
-
-You can also use the deduplication feature to ensure that only the latest update for a specific element and operation is applied:
+Effects return a cleanup function. When executed, it will unsubscribe from signals and run cleanup functions returned by effect callbacks, for example to remove event listeners.
 
 ```js
-import { state, effect, enqueue } from '@zeix/cause-effect'
+import { state, computed, effect } from '@zeix/cause-effect'
 
-// Define a signal and update it in an event handler
-const name = state('')
-document.querySelector('input[name="name"]').addEventListener('input', e => {
-	state.set(e.target.value) // Triggers an update on every keystroke
+const user = state({ name: 'Alice', age: 30 })
+const greeting = computed(() => `Hello ${user.get().name}!`)
+const cleanup = effect({
+    signals: [user, greeting],
+    ok: ({ age }, greet) => {
+        console.log(`${greet} You are ${age} years old`)
+        return () => console.log('Cleanup') // Cleanup function
+    }
 })
 
-// Define an effect to react to signal changes
-effect(text => {
-	const nameSpan = document.querySelector('.greeting .name')
-	enqueue(() => {
-		nameSpan.textContent = text
-		return text
-	}, [nameSpan, 'setName']) // For deduplication
-		.then(result => console.log(`Name was updated to ${result}`))
-		.catch(error => console.error('Failed to update name:', error))
-}, name)
+// When you no longer need the effect, execute the cleanup function
+cleanup() // Logs: 'Cleanup' and unsubscribes from signals `user` and `greeting`
+
+user.set({ name: 'Bob', age: 28 }) // Won't trigger the effect anymore
 ```
 
-In this example, as the user types in the input field only 'Jane' will be applied to the DOM. 'J', 'Ja', 'Jan' were superseded by more recent updates and deduplicated (if typing was fast enough).
+### Abort Controller
 
-When multiple `enqueue` calls are made with the same deduplication key before the next animation frame, only the last call will be executed. Previous calls are superseded and their Promises will not be resolved or rejected. This "last-write-wins" behavior ensures that only the most recent update is applied, which is typically desirable for UI updates and state changes.
+For asynchronous computed signals, Cause & Effect uses an `AbortController` to cancel pending promises when source signals update. You can use the `abort` parameter in `computed()` callbacks and pass it on to other AbortController aware APIs like `fetch()`:
+
+```js
+import { state, computed } from '@zeix/cause-effect'
+
+const id = state(42)
+const url = id.map(v => `https://example.com/api/entries/${v}`)
+const data = computed(async abort => {
+	const response = await fetch(url.get(), { signal: abort })
+	if (!response.ok) throw new Error(`Failed to fetch data: ${response.statusText}`)
+	return response.json()
+})
+data.tap({
+	ok: v => console.log('Value:', v),
+	nil: () => console.warn('Not ready'),
+	err: e => console.error('Error:', e)
+})
+
+// User switches to another entry
+id.set(24) // Cancels or ignores the previous fetch request and starts a new one
+```
+
+## Contributing & License
+
+Feel free to contribute, report issues, or suggest improvements.
+
+Licence: [MIT](LICENCE.md)
+
+(c) 2025 [Zeix AG](https://zeix.com)

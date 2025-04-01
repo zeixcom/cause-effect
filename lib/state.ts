@@ -1,18 +1,18 @@
-import { type ComputedCallbacks, type EffectCallbacks, UNSET } from './signal'
+import { UNSET } from './signal'
 import { type Computed, computed } from './computed'
-import { isObjectOfType } from './util';
+import { isFunction, isObjectOfType } from './util'
 import { type Watcher, notify, subscribe } from './scheduler'
-import { effect } from './effect';
+import { type TapMatcher, type EffectMatcher, effect } from './effect'
 
 /* === Types === */
 
 export type State<T extends {}> = {
-    [Symbol.toStringTag]: 'State';
-    get(): T;
-    set(v: T): void;
-    update(fn: (v: T) => T): void;
-    map<U extends {}>(cb: ComputedCallbacks<U, [State<T>]>): Computed<U>;
-	match: (cb: EffectCallbacks<[State<T>]>) => void
+    [Symbol.toStringTag]: 'State'
+    get(): T
+    set(v: T): void
+    update(fn: (v: T) => T): void
+	map<U extends {}>(fn: (v: T) => U | Promise<U>): Computed<U>
+	tap(matcher: TapMatcher<T> | ((v: T) => void | (() => void))): () => void
 }
 
 /* === Constants === */
@@ -29,7 +29,7 @@ const TYPE_STATE = 'State'
  * @returns {State<T>} - new state signal
  */
 export const state = /*#__PURE__*/ <T extends {}>(initialValue: T): State<T> => {
-	const watchers: Watcher[] = []
+	const watchers: Set<Watcher> = new Set()
 	let value: T = initialValue
 
 	const s: State<T> = {
@@ -59,7 +59,7 @@ export const state = /*#__PURE__*/ <T extends {}>(initialValue: T): State<T> => 
             notify(watchers)
 
             // Setting to UNSET clears the watchers so the signal can be garbage collected
-            if (UNSET === value) watchers.length = 0 // head = tail = undefined
+            if (UNSET === value) watchers.clear()
         },
 
 		/**
@@ -77,24 +77,31 @@ export const state = /*#__PURE__*/ <T extends {}>(initialValue: T): State<T> => 
 		 * Create a computed signal from the current state signal
 		 * 
 		 * @since 0.9.0
-		 * @param {ComputedCallbacks<U, [State<T>]>} cb - compute callback or object of ok, nil, err callbacks to map this value to new computed
+		 * @param {(v: T) => U | Promise<U>} fn - computed callback
 		 * @returns {Computed<U>} - computed signal
 		 */
-        map: <U extends {}>(cb: ComputedCallbacks<U, [State<T>]>): Computed<U> =>
-            computed(cb, s),
+		map: <U extends {}>(
+			fn: (v: T) => U | Promise<U>
+		): Computed<U> => 
+			computed({
+				signals: [s],
+				ok: fn
+			}),
 
 		/**
 		 * Case matching for the state signal with effect callbacks
 		 * 
-		 * @since 0.12.0
-		 * @method of State<T>
-		 * @param {EffectCallbacks<[State<T>]>} cb - effect callback or object of ok, nil, err callbacks to be executed when the state changes
-		 * @returns {State<T>} - self, for chaining effect callbacks
+		 * @since 0.13.0
+		 * @param {TapMatcher<T> | ((v: T) => void | (() => void))} matcher - tap matcher or effect callback
+		 * @returns {() => void} - cleanup function for the effect
 		 */
-		match: (cb: EffectCallbacks<[State<T>]>): State<T> => {
-			effect(cb, s)
-			return s
-		}
+		tap: (
+			matcher: TapMatcher<T> | ((v: T) => void | (() => void))
+		): () => void =>
+			effect({
+				signals: [s],
+				...(isFunction(matcher) ? { ok: matcher } : matcher)
+			} as EffectMatcher<[State<T>]>)
 	}
 
 	return s

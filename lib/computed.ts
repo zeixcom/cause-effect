@@ -1,18 +1,25 @@
-import {
-	type Signal, type EffectCallbacks, type ComputedCallbacks,
-	resolve, UNSET
-} from './signal'
-import { isError, isObjectOfType, isPromise, toError } from './util'
+import { type Signal, match, UNSET } from './signal'
+import { CircularDependencyError, isAbortError, isAsyncFunction, isFunction, isObjectOfType, isPromise, toError } from './util'
 import { type Watcher, flush, notify, subscribe, watch } from './scheduler'
-import { effect } from './effect'
+import { type TapMatcher, type EffectMatcher, effect } from './effect'
 
 /* === Types === */
 
+export type ComputedMatcher<S extends Signal<{}>[], R extends {}> = {
+	signals: S,
+	abort?: AbortSignal
+	ok: (...values: {
+			[K in keyof S]: S[K] extends Signal<infer T> ? T : never
+		}) => R | Promise<R>
+	err?: (...errors: Error[]) => R | Promise<R>
+	nil?: () => R | Promise<R>
+}
+
 export type Computed<T extends {}> = {
     [Symbol.toStringTag]: 'Computed'
-    get: () => T
-    map: <U extends {}>(cb: ComputedCallbacks<U, [Computed<T>]>) => Computed<U>
-	match: (cb: EffectCallbacks<[Computed<T>]>) => void
+    get(): T
+    map<U extends {}>(fn: (v: T) => U | Promise<U>): Computed<U>
+	tap(matcher: TapMatcher<T> | ((v: T) => void | (() => void))): () => void
 }
 
 /* === Constants === */
@@ -35,20 +42,30 @@ const isEquivalentError = /*#__PURE__*/ (
  * Create a derived signal from existing signals
  * 
  * @since 0.9.0
- * @param {() => T} cb - compute callback or object of ok, nil, err callbacks to derive state
- * @param {U} signals - signals of functions using signals this values depends on
+ * @param {ComputedMatcher<S, T> | ((abort?: AbortSignal) => T | Promise<T>)} matcher - computed matcher or callback
  * @returns {Computed<T>} - Computed signal
  */
-export const computed = <T extends {}, U extends Signal<{}>[]>(
-	cb: ComputedCallbacks<T, U>,
-	...signals: U
+export const computed = <T extends {}, S extends Signal<{}>[] = []>(
+	matcher: ComputedMatcher<S, T> | ((abort?: AbortSignal) => T | Promise<T>)
 ): Computed<T> => {
-	const watchers: Watcher[] = []
+	const watchers: Set<Watcher> = new Set()
+	const m = isFunction(matcher) ? undefined : {
+			nil: () => UNSET,
+			err: (...errors: Error[]) => {
+				if (errors.length > 1) throw new AggregateError(errors)
+				else throw errors[0]
+			},
+			...matcher,
+		} as Required<ComputedMatcher<S, T>>
+	const fn = (m ? m.ok : matcher) as (abort?: AbortSignal) => T | Promise<T>
+
+	// Internal state
 	let value: T = UNSET
 	let error: Error | undefined
 	let dirty = true
-	let unchanged = false
+	let changed = false
 	let computing = false
+	let controller: AbortController | undefined
 
 	// Functions to update internal state
 	const ok = (v: T) => {
@@ -56,41 +73,76 @@ export const computed = <T extends {}, U extends Signal<{}>[]>(
 			value = v
 			dirty = false
 			error = undefined
-			unchanged = false
+			changed = true
 		}
 	}
 	const nil = () => {
-		unchanged = (UNSET === value)
+		changed = (UNSET !== value)
 		value = UNSET
 		error = undefined
 	}
 	const err = (e: unknown) => {
 		const newError = toError(e)
-		unchanged = isEquivalentError(newError, error)
+		changed = !isEquivalentError(newError, error)
 		value = UNSET
 		error = newError
 	}
+	const resolve = (v: T) => {
+		computing = false
+		controller = undefined
+		ok(v)
+		if (changed) notify(watchers)
+	}
+	const reject = (e: unknown) => {
+		computing = false
+		controller = undefined
+		err(e)
+		if (changed) notify(watchers)
+	}
+	const abort = () => {
+        computing = false
+        controller = undefined
+		compute() // retry
+    }
 
 	// Called when notified from sources (push)
-	const mark = () => {
+	const mark = (() => {
 		dirty = true
-		if (!unchanged) notify(watchers)
-	}
+		controller?.abort('Aborted because source signal changed')
+		if (watchers.size) {
+			if (changed) notify(watchers)
+		} else {
+			mark.cleanups.forEach((fn: () => void) => fn())
+			mark.cleanups.clear()
+		}
+	}) as Watcher
+	mark.cleanups = new Set()
 
 	// Called when requested by dependencies (pull)
 	const compute = () => watch(() => {
-		if (computing) throw new Error('Circular dependency in computed detected')
-		unchanged = true
+		if (computing) throw new CircularDependencyError('computed')
+		changed = false
+		if (isAsyncFunction(fn)) {
+			if (controller) return value // return current value until promise resolves
+			controller = new AbortController()
+			if (m) m.abort = m.abort instanceof AbortSignal
+			? AbortSignal.any([m.abort, controller.signal])
+			: controller.signal
+			controller.signal.addEventListener('abort', abort, { once: true })
+		}
+		let result: T | Promise<T>
 		computing = true
-		const result = resolve(signals, cb)
-		if (isPromise(result)) {
-			nil() // sync
-			result.then(v => {
-				ok(v) // async
-                notify(watchers)
-			}).catch(err)
-		} else if (null == result || UNSET === result) nil()
-		else if (isError(result)) err(result)
+		try {
+			result = m && m.signals.length
+				? match<S, T>(m)
+				: fn(controller?.signal)
+		} catch (e) {
+			isAbortError(e) ? nil() : err(e)
+			computing = false
+			return
+        }
+		if (isPromise(result)) result.then(resolve, reject)
+		else if (null == result || UNSET === result) nil()
 		else ok(result)
 		computing = false
 	}, mark)
@@ -116,23 +168,27 @@ export const computed = <T extends {}, U extends Signal<{}>[]>(
 		 * Create a computed signal from the current computed signal
 		 * 
 		 * @since 0.9.0
-		 * @param {ComputedCallbacks<U, [Computed<T>]>} cb - compute callback or object of ok, nil, err callbacks to map this value to new computed
+		 * @param {((v: T) => U | Promise<U>)} fn - computed callback
 		 * @returns {Computed<U>} - computed signal
 		 */
-		map: <U extends {}>(cb: ComputedCallbacks<U, [Computed<T>]>): Computed<U> =>
-			computed(cb, c),
+		map: <U extends {}>(fn: (v: T) => U | Promise<U>): Computed<U> =>
+			computed({
+				signals: [c],
+				ok: fn
+			}),
 
-		/**
+		/** 
 		 * Case matching for the computed signal with effect callbacks
 		 * 
-		 * @since 0.12.0
-		 * @param {EffectCallbacks[Computed<T>]} cb - effect callback or object of ok, nil, err callbacks to be executed when the computed changes
-		 * @returns {Computed<T>} - self, for chaining effect callbacks
+		 * @since 0.13.0
+		 * @param {TapMatcher<T> | ((v: T) => void | (() => void))} matcher - tap matcher or effect callback
+		 * @returns {() => void} - cleanup function for the effect
 		 */
-		match: (cb: EffectCallbacks<[Computed<T>]>): Computed<T> => {
-			effect(cb, c)
-			return c
-		}
+		tap: (matcher: TapMatcher<T> | ((v: T) => void | (() => void))): () => void =>
+			effect({
+				signals: [c],
+				...(isFunction(matcher) ? { ok: matcher } : matcher)
+			} as EffectMatcher<[Computed<T>]>)
 	}
 	return c
 }
