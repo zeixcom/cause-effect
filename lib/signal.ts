@@ -5,7 +5,8 @@ import { isAbortError, isFunction, toError } from "./util"
 /* === Types === */
 
 type Signal<T extends {}> = State<T> | Computed<T>
-type MaybeSignal<T extends {}> = Signal<T> | T | (() => T) | ((abort: AbortSignal) => Promise<T>)
+type ComputedCallback<T extends {}> = (abort?: AbortSignal) => T | Promise<T>
+type MaybeSignal<T extends {}> = Signal<T> | T | ComputedCallback<T>
 
 /* === Constants === */
 
@@ -32,7 +33,7 @@ const isSignal = /*#__PURE__*/ <T extends {}>(value: any): value is Signal<T> =>
  */
 const isComputedCallback = /*#__PURE__*/ <T extends {}>(
 	value: unknown
-): value is (abort?: AbortSignal) => T | Promise<T> =>
+): value is ComputedCallback<T> =>
 	isFunction(value) && value.length < 2
 
 /**
@@ -96,6 +97,6 @@ const match = <S extends Signal<{}>[], R>(
 }
 
 export {
-	type Signal, type MaybeSignal,
+	type Signal, type MaybeSignal, type ComputedCallback,
     UNSET, isSignal, isComputedCallback, toSignal, match,
 }

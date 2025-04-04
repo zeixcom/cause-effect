@@ -1,7 +1,8 @@
 import { type State } from "./state";
 import { type Computed } from "./computed";
 type Signal<T extends {}> = State<T> | Computed<T>;
-type MaybeSignal<T extends {}> = Signal<T> | T | (() => T) | ((abort: AbortSignal) => Promise<T>);
+type ComputedCallback<T extends {}> = (abort?: AbortSignal) => T | Promise<T>;
+type MaybeSignal<T extends {}> = Signal<T> | T | ComputedCallback<T>;
 declare const UNSET: any;
 /**
  * Check whether a value is a Signal or not
@@ -18,7 +19,7 @@ declare const isSignal: <T extends {}>(value: any) => value is Signal<T>;
  * @param {unknown} value - value to check
  * @returns {boolean} - true if value is a callback or callbacks object, false otherwise
  */
-declare const isComputedCallback: <T extends {}>(value: unknown) => value is (abort?: AbortSignal) => T | Promise<T>;
+declare const isComputedCallback: <T extends {}>(value: unknown) => value is ComputedCallback<T>;
 /**
  * Convert a value to a Signal if it's not already a Signal
  *
@@ -41,4 +42,4 @@ declare const match: <S extends Signal<{}>[], R>(matcher: {
     err: ((...errors: Error[]) => R | Promise<R>);
     nil: (abort?: AbortSignal) => R | Promise<R>;
 }) => R | Promise<R>;
-export { type Signal, type MaybeSignal, UNSET, isSignal, isComputedCallback, toSignal, match, };
+export { type Signal, type MaybeSignal, type ComputedCallback, UNSET, isSignal, isComputedCallback, toSignal, match, };

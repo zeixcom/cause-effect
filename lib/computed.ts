@@ -1,4 +1,4 @@
-import { type Signal, match, UNSET } from './signal'
+import { type Signal, type ComputedCallback, match, UNSET } from './signal'
 import { CircularDependencyError, isAbortError, isAsyncFunction, isFunction, isObjectOfType, isPromise, toError } from './util'
 import { type Watcher, flush, notify, subscribe, watch } from './scheduler'
 import { type TapMatcher, type EffectMatcher, effect } from './effect'
@@ -42,11 +42,11 @@ const isEquivalentError = /*#__PURE__*/ (
  * Create a derived signal from existing signals
  * 
  * @since 0.9.0
- * @param {ComputedMatcher<S, T> | ((abort?: AbortSignal) => T | Promise<T>)} matcher - computed matcher or callback
+ * @param {ComputedMatcher<S, T> | ComputedCallback<T>} matcher - computed matcher or callback
  * @returns {Computed<T>} - Computed signal
  */
 export const computed = <T extends {}, S extends Signal<{}>[] = []>(
-	matcher: ComputedMatcher<S, T> | ((abort?: AbortSignal) => T | Promise<T>)
+	matcher: ComputedMatcher<S, T> | ComputedCallback<T>,
 ): Computed<T> => {
 	const watchers: Set<Watcher> = new Set()
 	const m = isFunction(matcher) ? undefined : {
@@ -57,7 +57,7 @@ export const computed = <T extends {}, S extends Signal<{}>[] = []>(
 			},
 			...matcher,
 		} as Required<ComputedMatcher<S, T>>
-	const fn = (m ? m.ok : matcher) as (abort?: AbortSignal) => T | Promise<T>
+	const fn = (m ? m.ok : matcher) as ComputedCallback<T>
 
 	// Internal state
 	let value: T = UNSET

@@ -1,4 +1,4 @@
-import { type Signal } from './signal';
+import { type Signal, type ComputedCallback } from './signal';
 import { type TapMatcher } from './effect';
 export type ComputedMatcher<S extends Signal<{}>[], R extends {}> = {
     signals: S;
@@ -19,10 +19,10 @@ export type Computed<T extends {}> = {
  * Create a derived signal from existing signals
  *
  * @since 0.9.0
- * @param {ComputedMatcher<S, T> | ((abort?: AbortSignal) => T | Promise<T>)} matcher - computed matcher or callback
+ * @param {ComputedMatcher<S, T> | ComputedCallback<T>} matcher - computed matcher or callback
  * @returns {Computed<T>} - Computed signal
  */
-export declare const computed: <T extends {}, S extends Signal<{}>[] = []>(matcher: ComputedMatcher<S, T> | ((abort?: AbortSignal) => T | Promise<T>)) => Computed<T>;
+export declare const computed: <T extends {}, S extends Signal<{}>[] = []>(matcher: ComputedMatcher<S, T> | ComputedCallback<T>) => Computed<T>;
 /**
  * Check if a value is a computed state
  *
