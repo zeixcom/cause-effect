@@ -8,8 +8,7 @@ const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 /* === Tests === */
 
 describe('Effect', function () {
-
-	test('should be triggered after a state change', function() {
+	test('should be triggered after a state change', function () {
 		const cause = state('foo')
 		let count = 0
 		cause.tap(() => {
@@ -20,7 +19,7 @@ describe('Effect', function () {
 		expect(count).toBe(2)
 	})
 
-	test('should be triggered after computed async signals resolve without waterfalls', async function() {
+	test('should be triggered after computed async signals resolve without waterfalls', async function () {
 		const a = computed(async () => {
 			await wait(100)
 			return 10
@@ -36,7 +35,7 @@ describe('Effect', function () {
 			ok: (aValue, bValue) => {
 				result = aValue + bValue
 				count++
-			}
+			},
 		})
 		expect(result).toBe(0)
 		expect(count).toBe(0)
@@ -45,7 +44,7 @@ describe('Effect', function () {
 		expect(count).toBe(1)
 	})
 
-	test('should be triggered repeatedly after repeated state change', async function() {
+	test('should be triggered repeatedly after repeated state change', async function () {
 		const cause = state(0)
 		let result = 0
 		let count = 0
@@ -56,11 +55,11 @@ describe('Effect', function () {
 		for (let i = 0; i < 10; i++) {
 			cause.set(i)
 			expect(result).toBe(i)
-			expect(count).toBe(i + 1); // + 1 for effect initialization
+			expect(count).toBe(i + 1) // + 1 for effect initialization
 		}
 	})
 
-	test('should handle errors in effects', function() {
+	test('should handle errors in effects', function () {
 		const a = state(1)
 		const b = a.map(v => {
 			if (v > 5) throw new Error('Value too high')
@@ -77,26 +76,26 @@ describe('Effect', function () {
 				// console.log('Error effect:', error)
 				errorCallCount++
 				expect(error.message).toBe('Value too high')
-			}
+			},
 		})
-	
+
 		// Normal case
 		a.set(2)
 		expect(normalCallCount).toBe(2)
 		expect(errorCallCount).toBe(0)
-	
+
 		// Error case
 		a.set(6)
 		expect(normalCallCount).toBe(2)
 		expect(errorCallCount).toBe(1)
-	
+
 		// Back to normal
 		a.set(3)
 		expect(normalCallCount).toBe(3)
 		expect(errorCallCount).toBe(1)
 	})
 
-	test('should handle UNSET values in effects', async function() {
+	test('should handle UNSET values in effects', async function () {
 		const a = computed(async () => {
 			await wait(100)
 			return 42
@@ -110,7 +109,7 @@ describe('Effect', function () {
 			},
 			nil: () => {
 				nilCount++
-			}
+			},
 		})
 
 		expect(normalCallCount).toBe(0)
@@ -142,14 +141,12 @@ describe('Effect', function () {
 			a.set(6)
 
 			// Check if console.error was called with the error
-			expect(mockConsoleError).toHaveBeenCalledWith(
-				expect.any(Error)
-			)
+			expect(mockConsoleError).toHaveBeenCalledWith(expect.any(Error))
 
 			// Check the error message
-			const error = (mockConsoleError as ReturnType<typeof mock>).mock.calls[0][0] as Error
+			const error = (mockConsoleError as ReturnType<typeof mock>).mock
+				.calls[0][0] as Error
 			expect(error.message).toBe('Value too high')
-
 		} finally {
 			// Restore the original console.error
 			console.error = originalConsoleError
@@ -176,7 +173,7 @@ describe('Effect', function () {
 		let okCount = 0
 		let errCount = 0
 		const count = state(0)
-		
+
 		count.tap({
 			ok: () => {
 				okCount++
@@ -187,9 +184,9 @@ describe('Effect', function () {
 				errCount++
 				expect(e).toBeInstanceOf(Error)
 				expect(e.message).toBe('Circular dependency in effect detected')
-			}
+			},
 		})
-	  
+
 		// Verify that the count was changed only once due to the circular dependency error
 		expect(count.get()).toBe(1)
 		expect(okCount).toBe(1)

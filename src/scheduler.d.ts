@@ -39,4 +39,4 @@ export declare const watch: (run: () => void, mark?: Watcher) => void;
  * @param {Updater} fn - function to be executed on the next animation frame; can return updated value <T>, success <boolean> or void
  * @param {EnqueueDedupe} dedupe - [element, operation] pair for deduplication
  */
-export declare const enqueue: <T>(fn: Updater, dedupe?: EnqueueDedupe) => Promise<boolean | void | T>;
+export declare const enqueue: <T>(fn: Updater, dedupe: EnqueueDedupe) => Promise<boolean | void | T>;

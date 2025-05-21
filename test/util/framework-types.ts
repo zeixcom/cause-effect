@@ -1,5 +1,5 @@
-import { TestResult } from "./perf-tests";
-import { ReactiveFramework } from "./reactive-framework";
+import { TestResult } from './perf-tests'
+import { ReactiveFramework } from './reactive-framework'
 
 /** Parameters for a running a performance benchmark test
  *
@@ -19,35 +19,35 @@ import { ReactiveFramework } from "./reactive-framework";
  * number of non-signal updated.
  */
 export interface TestConfig {
-  /** friendly name for the test, should be unique */
-  name?: string;
+	/** friendly name for the test, should be unique */
+	name?: string
 
-  /** width of dependency graph to construct */
-  width: number;
+	/** width of dependency graph to construct */
+	width: number
 
-  /** depth of dependency graph to construct */
-  totalLayers: number;
+	/** depth of dependency graph to construct */
+	totalLayers: number
 
-  /** fraction of nodes that are static */ // TODO change to dynamicFraction
-  staticFraction: number;
+	/** fraction of nodes that are static */ // TODO change to dynamicFraction
+	staticFraction: number
 
-  /** construct a graph with number of sources in each node */
-  nSources: number;
+	/** construct a graph with number of sources in each node */
+	nSources: number
 
-  /** fraction of [0, 1] elements in the last layer from which to read values in each test iteration */
-  readFraction: number;
+	/** fraction of [0, 1] elements in the last layer from which to read values in each test iteration */
+	readFraction: number
 
-  /** number of test iterations */
-  iterations: number;
+	/** number of test iterations */
+	iterations: number
 
-  /** sum and count of all iterations, for verification */
-  expected: Partial<TestResult>;
+	/** sum and count of all iterations, for verification */
+	expected: Partial<TestResult>
 }
 
 export interface FrameworkInfo {
-  /** wrapper/adapter for a benchmarking a reactive framework */
-  framework: ReactiveFramework;
+	/** wrapper/adapter for a benchmarking a reactive framework */
+	framework: ReactiveFramework
 
-  /** verify the number of nodes executed matches the expected number */
-  testPullCounts?: boolean;
+	/** verify the number of nodes executed matches the expected number */
+	testPullCounts?: boolean
 }

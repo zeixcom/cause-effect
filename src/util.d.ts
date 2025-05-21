@@ -8,4 +8,4 @@ declare const toError: (reason: unknown) => Error;
 declare class CircularDependencyError extends Error {
     constructor(where: string);
 }
-export { isFunction, isAsyncFunction, isObjectOfType, isError, isAbortError, isPromise, toError, CircularDependencyError };
+export { isFunction, isAsyncFunction, isObjectOfType, isError, isAbortError, isPromise, toError, CircularDependencyError, };

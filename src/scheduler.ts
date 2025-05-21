@@ -3,7 +3,7 @@
 export type EnqueueDedupe = [Element, string]
 
 export type Watcher = {
-	(): void,
+	(): void
 	cleanups: Set<() => void>
 }
 
@@ -32,8 +32,8 @@ const updateDOM = () => {
 }
 
 const requestTick = () => {
-    if (requestId) cancelAnimationFrame(requestId)
-    requestId = requestAnimationFrame(updateDOM)
+	if (requestId) cancelAnimationFrame(requestId)
+	requestId = requestAnimationFrame(updateDOM)
 }
 
 // Initial render when the call stack is empty
@@ -43,7 +43,7 @@ queueMicrotask(updateDOM)
 
 /**
  * Add active watcher to the Set of watchers
- * 
+ *
  * @param {Set<Watcher>} watchers - watchers of the signal
  */
 export const subscribe = (watchers: Set<Watcher>) => {
@@ -59,32 +59,32 @@ export const subscribe = (watchers: Set<Watcher>) => {
 
 /**
  * Add watchers to the pending set of change notifications
- * 
+ *
  * @param {Set<Watcher>} watchers - watchers of the signal
  */
 export const notify = (watchers: Set<Watcher>) => {
 	for (const mark of watchers) {
-        if (batchDepth) pending.add(mark)
+		if (batchDepth) pending.add(mark)
 		else mark()
-    }
+	}
 }
 
 /**
  * Flush all pending changes to notify watchers
  */
 export const flush = () => {
-    while (pending.size) {
-        const watchers = Array.from(pending)
-        pending.clear()
-        for (const mark of watchers) {
-            mark()
-        }
-    }
+	while (pending.size) {
+		const watchers = Array.from(pending)
+		pending.clear()
+		for (const mark of watchers) {
+			mark()
+		}
+	}
 }
 
 /**
  * Batch multiple changes in a single signal graph and DOM update cycle
- * 
+ *
  * @param {() => void} fn - function with multiple signal writes to be batched
  */
 export const batch = (fn: () => void) => {
@@ -93,13 +93,13 @@ export const batch = (fn: () => void) => {
 		fn()
 	} finally {
 		flush()
-        batchDepth--
-    }
+		batchDepth--
+	}
 }
 
 /**
  * Run a function in a reactive context
- * 
+ *
  * @param {() => void} run - function to run the computation or effect
  * @param {Watcher} mark - function to be called when the state changes or undefined for temporary unwatching while inserting auto-hydrating DOM nodes that might read signals (e.g., web components)
  */
@@ -115,23 +115,18 @@ export const watch = (run: () => void, mark?: Watcher): void => {
 
 /**
  * Enqueue a function to be executed on the next animation frame
- * 
+ *
  * @param {Updater} fn - function to be executed on the next animation frame; can return updated value <T>, success <boolean> or void
  * @param {EnqueueDedupe} dedupe - [element, operation] pair for deduplication
  */
-export const enqueue = <T>(
-    fn: Updater,
-    dedupe?: EnqueueDedupe
-) => new Promise<T | boolean | void>((resolve, reject) => {
-    const wrappedCallback = () => {
-        try {
-            resolve(fn())
-        } catch (error) {
-            reject(error)
-        }
-    }
-    if (dedupe) {
-        updateMap.set(dedupe, wrappedCallback)
-    }
-    requestTick()
-})
+export const enqueue = <T>(fn: Updater, dedupe: EnqueueDedupe) =>
+	new Promise<T | boolean | void>((resolve, reject) => {
+		updateMap.set(dedupe, () => {
+			try {
+				resolve(fn())
+			} catch (error) {
+				reject(error)
+			}
+		})
+		requestTick()
+	})

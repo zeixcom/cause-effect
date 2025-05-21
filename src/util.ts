@@ -1,13 +1,18 @@
 /* === Utility Functions === */
 
-const isFunction = /*#__PURE__*/ <T>(value: unknown): value is (...args: unknown[]) => T =>
-    typeof value === 'function'
+const isFunction = /*#__PURE__*/ <T>(
+	value: unknown,
+): value is (...args: unknown[]) => T => typeof value === 'function'
 
-const isAsyncFunction = /*#__PURE__*/ <T>(value: unknown): value is (...args: unknown[]) => Promise<T> =>
+const isAsyncFunction = /*#__PURE__*/ <T>(
+	value: unknown,
+): value is (...args: unknown[]) => Promise<T> =>
 	isFunction(value) && value.constructor.name === 'AsyncFunction'
 
-const isObjectOfType = /*#__PURE__*/ <T>(value: unknown, type: string): value is T =>
-	Object.prototype.toString.call(value) === `[object ${type}]`
+const isObjectOfType = /*#__PURE__*/ <T>(
+	value: unknown,
+	type: string,
+): value is T => Object.prototype.toString.call(value) === `[object ${type}]`
 
 const isError = /*#__PURE__*/ (value: unknown): value is Error =>
 	value instanceof Error
@@ -20,13 +25,18 @@ const toError = (reason: unknown): Error =>
 
 class CircularDependencyError extends Error {
 	constructor(where: string) {
-        super(`Circular dependency in ${where} detected`)
+		super(`Circular dependency in ${where} detected`)
 		return this
-    }
+	}
 }
 
 export {
-	isFunction, isAsyncFunction,
-	isObjectOfType, isError, isAbortError, isPromise, toError,
-	CircularDependencyError
+	isFunction,
+	isAsyncFunction,
+	isObjectOfType,
+	isError,
+	isAbortError,
+	isPromise,
+	toError,
+	CircularDependencyError,
 }

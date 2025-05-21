@@ -21,7 +21,7 @@ const UNSET: any = Symbol()
  * @param {unknown} value - value to check
  * @returns {boolean} - true if value is a Signal, false otherwise
  */
-const isSignal = /*#__PURE__*/ <T extends {}>(value: any): value is Signal<T> =>
+const isSignal = /*#__PURE__*/ <T extends {}>(value: unknown): value is Signal<T> =>
 	isState(value) || isComputed(value)
 
 /**

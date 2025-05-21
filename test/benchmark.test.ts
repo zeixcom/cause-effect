@@ -1,6 +1,6 @@
 import { describe, test, expect, mock } from 'bun:test'
 import { state, computed, effect, batch } from '../'
-import { makeGraph, runGraph, Counter } from "./util/dependency-graph"
+import { makeGraph, runGraph, Counter } from './util/dependency-graph'
 
 /* === Utility Functions === */
 
@@ -12,7 +12,7 @@ const busy = () => {
 }
 
 const framework = {
-	name: "Cause & Effect",
+	name: 'Cause & Effect',
 	signal: <T extends {}>(initialValue: T) => {
 		const s = state<T>(initialValue)
 		return {
@@ -45,7 +45,7 @@ function makeConfig() {
 }
 
 /* === Test functions === */
-	 
+
 /** some basic tests to validate the reactive framework
  * wrapper works and can run performance tests.
  */
@@ -55,24 +55,24 @@ describe('Basic test', function () {
 		framework.withBuild(() => {
 			const s = framework.signal(2)
 			const c = framework.computed(() => s.read() * 2)
-		
+
 			expect(c.read()).toEqual(4)
 		})
 	})
-	
+
 	test(`${name} | simple write`, () => {
 		framework.withBuild(() => {
 			const s = framework.signal(2)
 			const c = framework.computed(() => s.read() * 2)
 			expect(s.read()).toEqual(2)
 			expect(c.read()).toEqual(4)
-		
+
 			s.write(3)
 			expect(s.read()).toEqual(3)
 			expect(c.read()).toEqual(6)
 		})
 	})
-	
+
 	test(`${name} | static graph`, () => {
 		const config = makeConfig()
 		const counter = new Counter()
@@ -87,7 +87,7 @@ describe('Basic test', function () {
 			expect(counter.count).toBeGreaterThanOrEqual(11)
 		}
 	})
-	
+
 	test(`${name} | static graph, read 2/3 of leaves`, () => {
 		framework.withBuild(() => {
 			const config = makeConfig()
@@ -98,7 +98,7 @@ describe('Basic test', function () {
 			const graph = makeGraph(framework, config, counter)
 			// @ts-expect-error
 			const sum = runGraph(graph, 10, 2 / 3, framework)
-		
+
 			expect(sum).toEqual(71)
 			if (testPullCounts) {
 				expect(counter.count).toEqual(41)
@@ -107,7 +107,7 @@ describe('Basic test', function () {
 			}
 		})
 	})
-	
+
 	test(`${name} | dynamic graph`, () => {
 		framework.withBuild(() => {
 			const config = makeConfig()
@@ -119,7 +119,7 @@ describe('Basic test', function () {
 			const graph = makeGraph(framework, config, counter)
 			// @ts-expect-error
 			const sum = runGraph(graph, 10, 1, framework)
-		
+
 			expect(sum).toEqual(72)
 			if (testPullCounts) {
 				expect(counter.count).toEqual(22)
@@ -128,38 +128,38 @@ describe('Basic test', function () {
 			}
 		})
 	})
-	
+
 	test(`${name} | withBuild`, () => {
 		const r = framework.withBuild(() => {
 			const s = framework.signal(2)
 			const c = framework.computed(() => s.read() * 2)
-		
+
 			expect(c.read()).toEqual(4)
 			return c.read()
 		})
-	
+
 		// @ts-expect-error
 		expect(r).toEqual(4)
 	})
-	
+
 	test(`${name} | effect`, () => {
-		const spy = (_v) => {}
-    	const spyMock = mock(spy)
-	
+		const spy = _v => {}
+		const spyMock = mock(spy)
+
 		const s = framework.signal(2)
 		let c: any
-	
+
 		framework.withBuild(() => {
-		  c = framework.computed(() => s.read() * 2)
-	
-		  framework.effect(() => {
-			spyMock(c.read())
-		  })
+			c = framework.computed(() => s.read() * 2)
+
+			framework.effect(() => {
+				spyMock(c.read())
+			})
 		})
 		expect(spyMock.mock.calls.length).toBe(1)
-	
+
 		framework.withBatch(() => {
-		  s.write(3)
+			s.write(3)
 		})
 		expect(s.read()).toEqual(3)
 		expect(c.read()).toEqual(6)
@@ -174,12 +174,14 @@ describe('Kairo tests', function () {
 		const head = framework.signal(0)
 		const computed1 = framework.computed(() => head.read())
 		const computed2 = framework.computed(() => (computed1.read(), 0))
-		const computed3 = framework.computed(() => (busy(), computed2.read()! + 1)); // heavy computation
+		const computed3 = framework.computed(
+			() => (busy(), computed2.read()! + 1),
+		) // heavy computation
 		const computed4 = framework.computed(() => computed3.read()! + 2)
 		const computed5 = framework.computed(() => computed4.read()! + 3)
 		framework.effect(() => {
 			computed5.read()
-			busy(); // heavy side effect
+			busy() // heavy side effect
 		})
 
 		return () => {
@@ -268,9 +270,7 @@ describe('Kairo tests', function () {
 		const head = framework.signal(0)
 		let current: { read(): number }[] = []
 		for (let i = 0; i < width; i++) {
-			current.push(
-				framework.computed(() => head.read() + 1)
-			)
+			current.push(framework.computed(() => head.read() + 1))
 		}
 		let sum = framework.computed(() => {
 			return current.map(x => x.read()).reduce((a, b) => a + b, 0)
@@ -299,15 +299,15 @@ describe('Kairo tests', function () {
 	})
 
 	test(`${name} | mux`, function () {
-		let heads = new Array(100).fill(null).map((_) => framework.signal(0))
+		let heads = new Array(100).fill(null).map(_ => framework.signal(0))
 		const mux = framework.computed(() => {
-			return Object.fromEntries(heads.map((h) => h.read()).entries())
+			return Object.fromEntries(heads.map(h => h.read()).entries())
 		})
 		const splited = heads
 			.map((_, index) => framework.computed(() => mux.read()[index]))
-			.map((x) => framework.computed(() => x.read() + 1))
+			.map(x => framework.computed(() => x.read() + 1))
 
-		splited.forEach((x) => {
+		splited.forEach(x => {
 			framework.effect(() => x.read())
 		})
 
@@ -373,7 +373,7 @@ describe('Kairo tests', function () {
 			})
 		}
 		let sum = framework.computed(() => {
-			return list.map((x) => x.read()).reduce((a, b) => a + b, 0)
+			return list.map(x => x.read()).reduce((a, b) => a + b, 0)
 		})
 		let callCounter = new Counter()
 		framework.effect(() => {

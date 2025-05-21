@@ -4,12 +4,11 @@ import { state, computed, UNSET, isComputed, isState } from '../index.ts'
 /* === Utility Functions === */
 
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
-const increment = (n: number) => Number.isFinite(n) ? n + 1 : UNSET
+const increment = (n: number) => (Number.isFinite(n) ? n + 1 : UNSET)
 
 /* === Tests === */
 
 describe('Computed', function () {
-
 	test('should identify computed signals with isComputed()', () => {
 		const count = state(42)
 		const doubled = count.map(v => v * 2)
@@ -17,24 +16,24 @@ describe('Computed', function () {
 		expect(isState(doubled)).toBe(false)
 	})
 
-	test('should compute a function', function() {
+	test('should compute a function', function () {
 		const derived = computed(() => 1 + 2)
 		expect(derived.get()).toBe(3)
 	})
 
-	test('should compute function dependent on a signal', function() {
+	test('should compute function dependent on a signal', function () {
 		const derived = state(42).map(v => ++v)
 		expect(derived.get()).toBe(43)
 	})
 
-	test('should compute function dependent on an updated signal', function() {
+	test('should compute function dependent on an updated signal', function () {
 		const cause = state(42)
 		const derived = cause.map(v => ++v)
 		cause.set(24)
 		expect(derived.get()).toBe(25)
 	})
 
-	test('should compute function dependent on an async signal', async function() {
+	test('should compute function dependent on an async signal', async function () {
 		const status = state('pending')
 		const promised = computed(async () => {
 			await wait(100)
@@ -49,7 +48,7 @@ describe('Computed', function () {
 		expect(status.get()).toBe('success')
 	})
 
-	test('should handle errors from an async signal gracefully', async function() {
+	test('should handle errors from an async signal gracefully', async function () {
 		const status = state('pending')
 		const error = state('')
 		const promised = computed(async () => {
@@ -66,7 +65,7 @@ describe('Computed', function () {
 		expect(status.get()).toBe('error')
 	})
 
-	test('should compute async signals in parallel without waterfalls', async function() {
+	test('should compute async signals in parallel without waterfalls', async function () {
 		const a = computed(async () => {
 			await wait(100)
 			return 10
@@ -77,14 +76,14 @@ describe('Computed', function () {
 		})
 		const c = computed({
 			signals: [a, b],
-			ok: (aValue, bValue) => aValue + bValue
+			ok: (aValue, bValue) => aValue + bValue,
 		})
 		expect(c.get()).toBe(UNSET)
 		await wait(110)
 		expect(c.get()).toBe(30)
 	})
 
-	test('should compute function dependent on a chain of computed states dependent on a signal', function() {
+	test('should compute function dependent on a chain of computed states dependent on a signal', function () {
 		const derived = state(42)
 			.map(v => ++v)
 			.map(v => v * 2)
@@ -92,7 +91,7 @@ describe('Computed', function () {
 		expect(derived.get()).toBe(87)
 	})
 
-	test('should compute function dependent on a chain of computed states dependent on an updated signal', function() {
+	test('should compute function dependent on a chain of computed states dependent on an updated signal', function () {
 		const cause = state(42)
 		const derived = cause
 			.map(v => ++v)
@@ -118,7 +117,7 @@ describe('Computed', function () {
 		expect(count).toBe(2)
 	})
 
-	test('should only update every signal once (diamond graph)', function() {
+	test('should only update every signal once (diamond graph)', function () {
 		let count = 0
 		const x = state('a')
 		const a = x.map(v => v)
@@ -135,7 +134,7 @@ describe('Computed', function () {
 		expect(count).toBe(2)
 	})
 
-	test('should only update every signal once (diamond graph + tail)', function() {
+	test('should only update every signal once (diamond graph + tail)', function () {
 		let count = 0
 		const x = state('a')
 		const a = x.map(v => v)
@@ -152,7 +151,7 @@ describe('Computed', function () {
 		expect(count).toBe(2)
 	})
 
-	test('should update multiple times after multiple state changes', function() {
+	test('should update multiple times after multiple state changes', function () {
 		const a = state(3)
 		const b = state(4)
 		let count = 0
@@ -170,19 +169,21 @@ describe('Computed', function () {
 
 	/*
 	 * Note for the next two tests:
-	 * 
+	 *
 	 * Due to the lazy evaluation strategy, unchanged computed signals may propagate
 	 * change notifications one additional time before stabilizing. This is a
 	 * one-time performance cost that allows for efficient memoization and
 	 * error handling in most cases.
 	 */
-	test('should bail out if result is the same', function() {
+	test('should bail out if result is the same', function () {
 		let count = 0
 		const x = state('a')
-		const b = x.map(() => 'foo').map(v => {
-			count++
-			return v
-		})
+		const b = x
+			.map(() => 'foo')
+			.map(v => {
+				count++
+				return v
+			})
 		expect(b.get()).toBe('foo')
 		expect(count).toBe(1)
 		x.set('aa')
@@ -192,11 +193,12 @@ describe('Computed', function () {
 		expect(count).toBe(2)
 	})
 
-	test('should block if result remains unchanged', function() {
+	test('should block if result remains unchanged', function () {
 		let count = 0
 		const x = state(42)
-		const c = x.map(v => v % 2)
-			.map(v => v ? 'odd' : 'even')
+		const c = x
+			.map(v => v % 2)
+			.map(v => (v ? 'odd' : 'even'))
 			.map(v => {
 				count++
 				return `c: ${v}`
@@ -210,7 +212,7 @@ describe('Computed', function () {
 		expect(count).toBe(2)
 	})
 
-	test('should detect and throw error for circular dependencies', function() {
+	test('should detect and throw error for circular dependencies', function () {
 		const a = state(1)
 		const b = computed(() => c.get() + 1)
 		const c = computed(() => b.get() + a.get())
@@ -220,7 +222,7 @@ describe('Computed', function () {
 		expect(a.get()).toBe(1)
 	})
 
-	test('should propagate error if an error occurred', function() {
+	test('should propagate error if an error occurred', function () {
 		let okCount = 0
 		let errCount = 0
 		const x = state(0)
@@ -230,7 +232,7 @@ describe('Computed', function () {
 		})
 		const c = computed({
 			signals: [a],
-			ok: v => v ? 'success' : 'failure',
+			ok: v => (v ? 'success' : 'failure'),
 			err: () => {
 				errCount++
 				return 'recovered'
@@ -245,7 +247,7 @@ describe('Computed', function () {
 		try {
 			x.set(1)
 			expect(a.get()).toBe(1)
-			expect(true).toBe(false); // This line should not be reached
+			expect(true).toBe(false) // This line should not be reached
 		} catch (error) {
 			expect(error.message).toBe('Calculation error')
 		} finally {
@@ -255,7 +257,7 @@ describe('Computed', function () {
 		}
 	})
 
-	test('should return a computed signal with .map()', function() {
+	test('should return a computed signal with .map()', function () {
 		const cause = state(42)
 		const derived = cause.map(v => ++v)
 		const double = derived.map(v => v * 2)
@@ -263,7 +265,7 @@ describe('Computed', function () {
 		expect(double.get()).toBe(86)
 	})
 
-	test('should create an effect that reacts on async computed changes with .tap()', async function() {
+	test('should create an effect that reacts on async computed changes with .tap()', async function () {
 		const cause = state(42)
 		const derived = computed(async () => {
 			await wait(100)
@@ -279,7 +281,7 @@ describe('Computed', function () {
 			},
 			nil: () => {
 				nilCount++
-			}
+			},
 		})
 		cause.set(43)
 		expect(okCount).toBe(0)
@@ -292,7 +294,7 @@ describe('Computed', function () {
 		expect(result).toBe(44)
 	})
 
-	test('should handle complex computed signal with error and async dependencies', async function() {
+	test('should handle complex computed signal with error and async dependencies', async function () {
 		const toggleState = state(true)
 		const errorProne = toggleState.map(v => {
 			if (v) throw new Error('Intentional error')
@@ -319,9 +321,9 @@ describe('Computed', function () {
 			err: () => {
 				errCount++
 				return -1
-			}
+			},
 		})
-		
+
 		/* computed(() => {
 			try {
 				const x = errorProne.get()
@@ -338,21 +340,21 @@ describe('Computed', function () {
 				return -1
 			}
 		}) */
-	
+
 		for (let i = 0; i < 10; i++) {
 			toggleState.set(!!(i % 2))
 			await wait(10)
 			result = complexComputed.get()
 			// console.log(`i: ${i}, result: ${result}`)
 		}
-	
+
 		expect(nilCount).toBeGreaterThanOrEqual(5)
 		expect(okCount).toBeGreaterThanOrEqual(2)
 		expect(errCount).toBeGreaterThanOrEqual(3)
 		expect(okCount + errCount + nilCount).toBe(10)
 	})
 
-	test('should handle signal changes during async computation', async function() {
+	test('should handle signal changes during async computation', async function () {
 		const source = state(1)
 		let computationCount = 0
 		const derived = computed(async abort => {
@@ -373,7 +375,7 @@ describe('Computed', function () {
 		expect(computationCount).toBe(1)
 	})
 
-	test('should handle multiple rapid changes during async computation', async function() {
+	test('should handle multiple rapid changes during async computation', async function () {
 		const source = state(1)
 		let computationCount = 0
 		const derived = computed(async abort => {
@@ -398,7 +400,7 @@ describe('Computed', function () {
 		expect(computationCount).toBe(1)
 	})
 
-	test('should handle errors in aborted computations', async function() {
+	test('should handle errors in aborted computations', async function () {
 		// const startTime = performance.now()
 		const source = state(1)
 		const derived = computed(async () => {
@@ -407,7 +409,7 @@ describe('Computed', function () {
 			if (value === 2) throw new Error('Intentional error')
 			return value
 		})
-		
+
 		/* derived.tap({
 			ok: v => {
 				console.log(`ok: ${v}, time: ${performance.now() - startTime}ms`)
@@ -427,11 +429,10 @@ describe('Computed', function () {
 		source.set(2)
 		await wait(110)
 		expect(() => derived.get()).toThrow('Intentional error')
-		
+
 		// Change to normal state before second computation completes
 		source.set(3)
 		await wait(100)
 		expect(derived.get()).toBe(3)
-		
 	})
 })

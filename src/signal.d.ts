@@ -11,7 +11,7 @@ declare const UNSET: any;
  * @param {unknown} value - value to check
  * @returns {boolean} - true if value is a Signal, false otherwise
  */
-declare const isSignal: <T extends {}>(value: any) => value is Signal<T>;
+declare const isSignal: <T extends {}>(value: unknown) => value is Signal<T>;
 /**
  * Check if the provided value is a callback that may be used as input for toSignal() to derive a computed state
  *

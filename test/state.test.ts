@@ -8,9 +8,8 @@ const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 /* === Tests === */
 
 describe('State', function () {
-
-	describe("State type guard", () => {
-		test("isState identifies state signals", () => {
+	describe('State type guard', () => {
+		test('isState identifies state signals', () => {
 			const count = state(42)
 			expect(isState(count)).toBe(true)
 			expect(isComputed(count)).toBe(false)
@@ -18,7 +17,6 @@ describe('State', function () {
 	})
 
 	describe('Boolean cause', function () {
-
 		test('should be boolean', function () {
 			const cause = state(false)
 			expect(typeof cause.get()).toBe('boolean')
@@ -42,14 +40,12 @@ describe('State', function () {
 
 		test('should toggle initial value with .set(v => !v)', function () {
 			const cause = state(false)
-			cause.update((v) => !v)
+			cause.update(v => !v)
 			expect(cause.get()).toBe(true)
 		})
-
 	})
 
 	describe('Number cause', function () {
-
 		test('should be number', function () {
 			const cause = state(0)
 			expect(typeof cause.get()).toBe('number')
@@ -71,11 +67,9 @@ describe('State', function () {
 			cause.update(v => ++v)
 			expect(cause.get()).toBe(1)
 		})
-
 	})
 
 	describe('String cause', function () {
-
 		test('should be string', function () {
 			const cause = state('foo')
 			expect(typeof cause.get()).toBe('string')
@@ -94,14 +88,12 @@ describe('State', function () {
 
 		test('should upper case value with .set(v => v.toUpperCase())', function () {
 			const cause = state('foo')
-			cause.update(v => v ? v.toUpperCase() : '')
-			expect(cause.get()).toBe("FOO")
+			cause.update(v => (v ? v.toUpperCase() : ''))
+			expect(cause.get()).toBe('FOO')
 		})
-
 	})
 
 	describe('Array cause', function () {
-
 		test('should be array', function () {
 			const cause = state([1, 2, 3])
 			expect(Array.isArray(cause.get())).toBe(true)
@@ -121,21 +113,19 @@ describe('State', function () {
 		test('should reflect current value of array after modification', function () {
 			const array = [1, 2, 3]
 			const cause = state(array)
-			array.push(4); // don't do this! the result will be correct, but we can't trigger effects
+			array.push(4) // don't do this! the result will be correct, but we can't trigger effects
 			expect(cause.get()).toEqual([1, 2, 3, 4])
 		})
 
 		test('should set new value with .set([...array, 4])', function () {
 			const array = [1, 2, 3]
 			const cause = state(array)
-			cause.set([...array, 4]); // use destructuring instead!
+			cause.set([...array, 4]) // use destructuring instead!
 			expect(cause.get()).toEqual([1, 2, 3, 4])
 		})
-
 	})
 
 	describe('Object cause', function () {
-
 		test('should be object', function () {
 			const cause = state({ a: 'a', b: 1 })
 			expect(typeof cause.get()).toBe('object')
@@ -156,29 +146,27 @@ describe('State', function () {
 			const obj = { a: 'a', b: 1 }
 			const cause = state<Record<string, any>>(obj)
 			// @ts-expect-error
-			obj.c = true; // don't do this! the result will be correct, but we can't trigger effects
+			obj.c = true // don't do this! the result will be correct, but we can't trigger effects
 			expect(cause.get()).toEqual({ a: 'a', b: 1, c: true })
 		})
 
 		test('should set new value with .set({...obj, c: true})', function () {
 			const obj = { a: 'a', b: 1 }
 			const cause = state<Record<string, any>>(obj)
-			cause.set({...obj, c: true}); // use destructuring instead!
+			cause.set({ ...obj, c: true }) // use destructuring instead!
 			expect(cause.get()).toEqual({ a: 'a', b: 1, c: true })
 		})
-
 	})
 
 	describe('Map method', function () {
-
-		test('should return a computed signal', function() {
+		test('should return a computed signal', function () {
 			const cause = state(42)
 			const double = cause.map(v => v * 2)
 			expect(isComputed(double)).toBe(true)
 			expect(double.get()).toBe(84)
 		})
 
-		test('should return a computed signal for an async function', async function() {
+		test('should return a computed signal for an async function', async function () {
 			const cause = state(42)
 			const asyncDouble = cause.map(async value => {
 				await wait(100)
@@ -189,12 +177,10 @@ describe('State', function () {
 			await wait(110)
 			expect(asyncDouble.get()).toBe(84)
 		})
-
 	})
 
 	describe('Tap method', function () {
-
-		test('should create an effect that reacts on signal changes', function() {
+		test('should create an effect that reacts on signal changes', function () {
 			const cause = state(42)
 			let okCount = 0
 			let nilCount = 0
@@ -206,10 +192,10 @@ describe('State', function () {
 				},
 				nil: () => {
 					nilCount++
-				}
+				},
 			})
 			cause.set(43)
-			expect(okCount).toBe(2); // + 1 for effect initialization 
+			expect(okCount).toBe(2) // + 1 for effect initialization
 			expect(nilCount).toBe(0)
 			expect(result).toBe(43)
 
@@ -217,7 +203,5 @@ describe('State', function () {
 			expect(okCount).toBe(2)
 			expect(nilCount).toBe(1)
 		})
-
 	})
-
-});
+})
