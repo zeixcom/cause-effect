@@ -307,7 +307,7 @@ describe('Computed', function () {
 		let okCount = 0
 		let nilCount = 0
 		let errCount = 0
-		let result: number = 0
+		let _result: number = 0
 		const complexComputed = computed({
 			signals: [errorProne, asyncValue],
 			ok: v => {
@@ -344,8 +344,8 @@ describe('Computed', function () {
 		for (let i = 0; i < 10; i++) {
 			toggleState.set(!!(i % 2))
 			await wait(10)
-			result = complexComputed.get()
-			// console.log(`i: ${i}, result: ${result}`)
+			_result = complexComputed.get()
+			// console.log(`i: ${i}, result: ${_result}`)
 		}
 
 		expect(nilCount).toBeGreaterThanOrEqual(5)

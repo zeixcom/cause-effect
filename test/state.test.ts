@@ -145,7 +145,7 @@ describe('State', function () {
 		test('should reflect current value of object after modification', function () {
 			const obj = { a: 'a', b: 1 }
 			const cause = state<Record<string, any>>(obj)
-			// @ts-expect-error
+			// @ts-expect-error Property 'c' does not exist on type '{ a: string; b: number; }'. (ts 2339)
 			obj.c = true // don't do this! the result will be correct, but we can't trigger effects
 			expect(cause.get()).toEqual({ a: 'a', b: 1, c: true })
 		})

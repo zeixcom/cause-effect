@@ -5,9 +5,9 @@ import { makeGraph, runGraph, Counter } from './util/dependency-graph'
 /* === Utility Functions === */
 
 const busy = () => {
-	let a = 0
+	let _a = 0
 	for (let i = 0; i < 1_00; i++) {
-		a++
+		_a++
 	}
 }
 
@@ -28,7 +28,7 @@ const framework = {
 	},
 	effect: (fn: () => void) => effect(fn),
 	withBatch: (fn: () => void) => batch(fn),
-	withBuild: (fn: () => void) => fn(),
+	withBuild: <T>(fn: () => T) => fn(),
 }
 const testPullCounts = true
 
@@ -76,9 +76,9 @@ describe('Basic test', function () {
 	test(`${name} | static graph`, () => {
 		const config = makeConfig()
 		const counter = new Counter()
-		// @ts-expect-error
+		// @ts-expect-error - Framework object has incompatible type constraints with ReactiveFramework
 		const graph = makeGraph(framework, config, counter)
-		// @ts-expect-error
+		// @ts-expect-error - Framework object has incompatible type constraints with ReactiveFramework
 		const sum = runGraph(graph, 2, 1, framework)
 		expect(sum).toEqual(16)
 		if (testPullCounts) {
@@ -94,9 +94,9 @@ describe('Basic test', function () {
 			config.readFraction = 2 / 3
 			config.iterations = 10
 			const counter = new Counter()
-			// @ts-expect-error
+			// @ts-expect-error - Framework object has incompatible type constraints with ReactiveFramework
 			const graph = makeGraph(framework, config, counter)
-			// @ts-expect-error
+			// @ts-expect-error - Framework object has incompatible type constraints with ReactiveFramework
 			const sum = runGraph(graph, 10, 2 / 3, framework)
 
 			expect(sum).toEqual(71)
@@ -115,9 +115,9 @@ describe('Basic test', function () {
 			config.width = 4
 			config.totalLayers = 2
 			const counter = new Counter()
-			// @ts-expect-error
+			// @ts-expect-error - Framework object has incompatible type constraints with ReactiveFramework
 			const graph = makeGraph(framework, config, counter)
-			// @ts-expect-error
+			// @ts-expect-error - Framework object has incompatible type constraints with ReactiveFramework
 			const sum = runGraph(graph, 10, 1, framework)
 
 			expect(sum).toEqual(72)
@@ -137,8 +137,6 @@ describe('Basic test', function () {
 			expect(c.read()).toEqual(4)
 			return c.read()
 		})
-
-		// @ts-expect-error
 		expect(r).toEqual(4)
 	})
 
@@ -203,10 +201,10 @@ describe('Kairo tests', function () {
 		let last = head as { read: () => number }
 		const callCounter = new Counter()
 		for (let i = 0; i < 50; i++) {
-			let current = framework.computed(() => {
+			const current = framework.computed(() => {
 				return head.read()! + i
 			})
-			let current2 = framework.computed(() => {
+			const current2 = framework.computed(() => {
 				return current.read()! + 1
 			})
 			framework.effect(() => {
@@ -233,16 +231,16 @@ describe('Kairo tests', function () {
 	})
 
 	test(`${name} | deep propagation`, () => {
-		let len = 50
+		const len = 50
 		const head = framework.signal(0)
 		let current = head as { read: () => number }
 		for (let i = 0; i < len; i++) {
-			let c = current
+			const c = current
 			current = framework.computed(() => {
 				return c.read() + 1
 			})
 		}
-		let callCounter = new Counter()
+		const callCounter = new Counter()
 		framework.effect(() => {
 			current.read()
 			callCounter.count++
@@ -266,16 +264,16 @@ describe('Kairo tests', function () {
 	})
 
 	test(`${name} | diamond`, function () {
-		let width = 5
+		const width = 5
 		const head = framework.signal(0)
-		let current: { read(): number }[] = []
+		const current: { read(): number }[] = []
 		for (let i = 0; i < width; i++) {
 			current.push(framework.computed(() => head.read() + 1))
 		}
-		let sum = framework.computed(() => {
+		const sum = framework.computed(() => {
 			return current.map(x => x.read()).reduce((a, b) => a + b, 0)
 		})
-		let callCounter = new Counter()
+		const callCounter = new Counter()
 		framework.effect(() => {
 			sum.read()
 			callCounter.count++
@@ -299,7 +297,7 @@ describe('Kairo tests', function () {
 	})
 
 	test(`${name} | mux`, function () {
-		let heads = new Array(100).fill(null).map(_ => framework.signal(0))
+		const heads = new Array(100).fill(null).map(_ => framework.signal(0))
 		const mux = framework.computed(() => {
 			return Object.fromEntries(heads.map(h => h.read()).entries())
 		})
@@ -329,15 +327,15 @@ describe('Kairo tests', function () {
 
 	test(`${name} | repeated observers`, function () {
 		const size = 30
-		let head = framework.signal(0)
-		let current = framework.computed(() => {
+		const head = framework.signal(0)
+		const current = framework.computed(() => {
 			let result = 0
 			for (let i = 0; i < size; i++) {
 				result += head.read()
 			}
 			return result
 		})
-		let callCounter = new Counter()
+		const callCounter = new Counter()
 		framework.effect(() => {
 			current.read()
 			callCounter.count++
@@ -361,28 +359,28 @@ describe('Kairo tests', function () {
 	})
 
 	test(`${name} | triangle`, function () {
-		let width = 10
-		let head = framework.signal(0)
+		const width = 10
+		const head = framework.signal(0)
 		let current = head as { read: () => number }
-		let list: { read: () => number }[] = []
+		const list: { read: () => number }[] = []
 		for (let i = 0; i < width; i++) {
-			let c = current
+			const c = current
 			list.push(current)
 			current = framework.computed(() => {
 				return c.read() + 1
 			})
 		}
-		let sum = framework.computed(() => {
+		const sum = framework.computed(() => {
 			return list.map(x => x.read()).reduce((a, b) => a + b, 0)
 		})
-		let callCounter = new Counter()
+		const callCounter = new Counter()
 		framework.effect(() => {
 			sum.read()
 			callCounter.count++
 		})
 
 		return () => {
-			const count = (number: Number) => {
+			const count = (number: number) => {
 				return new Array(number)
 					.fill(0)
 					.map((_, i) => i + 1)
@@ -406,17 +404,17 @@ describe('Kairo tests', function () {
 	})
 
 	test(`${name} | unstable`, function () {
-		let head = framework.signal(0)
+		const head = framework.signal(0)
 		const double = framework.computed(() => head.read() * 2)
 		const inverse = framework.computed(() => -head.read())
-		let current = framework.computed(() => {
+		const current = framework.computed(() => {
 			let result = 0
 			for (let i = 0; i < 20; i++) {
 				result += head.read() % 2 ? double.read() : inverse.read()
 			}
 			return result
 		})
-		let callCounter = new Counter()
+		const callCounter = new Counter()
 		framework.effect(() => {
 			current.read()
 			callCounter.count++

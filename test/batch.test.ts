@@ -1,10 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import { state, computed, batch } from '../'
 
-/* === Utility Functions === */
-
-const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
-
 /* === Tests === */
 
 describe('Batch', function () {
