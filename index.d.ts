@@ -10,4 +10,4 @@ export { type Computed, computed, isComputed } from './src/computed';
 export { type MemoCallback, memo } from './src/memo';
 export { type TaskCallback, task } from './src/task';
 export { type EffectMatcher, type TapMatcher, effect } from './src/effect';
-export { type EnqueueDedupe, batch, watch, enqueue } from './src/scheduler';
+export { batch, watch, enqueue } from './src/scheduler';

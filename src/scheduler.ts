@@ -1,7 +1,5 @@
 /* === Types === */
 
-type EnqueueDedupe = [Element, string]
-
 type Cleanup = () => void
 
 type Watcher = {
@@ -20,8 +18,8 @@ let active: Watcher | undefined
 const pending = new Set<Watcher>()
 let batchDepth = 0
 
-// Map of DOM elements to update functions
-const updateMap = new Map<EnqueueDedupe, Updater>()
+// Map of deduplication symbols to update functions (using Symbol keys prevents unintended overwrites)
+const updateMap = new Map<symbol, Updater>()
 let requestId: number | undefined
 
 const updateDOM = () => {
@@ -118,12 +116,15 @@ const watch = (run: () => void, mark?: Watcher): void => {
 /**
  * Enqueue a function to be executed on the next animation frame
  *
+ * If the same Symbol is provided for multiple calls before the next animation frame,
+ * only the latest call will be executed (deduplication).
+ *
  * @param {Updater} fn - function to be executed on the next animation frame; can return updated value <T>, success <boolean> or void
- * @param {EnqueueDedupe} dedupe - [element, operation] pair for deduplication
+ * @param {symbol} dedupe - Symbol for deduplication; if not provided, a unique Symbol is created ensuring the update is always executed
  */
-const enqueue = <T>(fn: Updater, dedupe: EnqueueDedupe) =>
+const enqueue = <T>(fn: Updater, dedupe?: symbol) =>
 	new Promise<T | boolean | void>((resolve, reject) => {
-		updateMap.set(dedupe, () => {
+		updateMap.set(dedupe || Symbol(), () => {
 			try {
 				resolve(fn())
 			} catch (error) {
@@ -136,7 +137,6 @@ const enqueue = <T>(fn: Updater, dedupe: EnqueueDedupe) =>
 /* === Exports === */
 
 export {
-	type EnqueueDedupe,
 	type Cleanup,
 	type Watcher,
 	type Updater,

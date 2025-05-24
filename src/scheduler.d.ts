@@ -1,4 +1,3 @@
-type EnqueueDedupe = [Element, string];
 type Cleanup = () => void;
 type Watcher = {
     (): void;
@@ -37,8 +36,11 @@ declare const watch: (run: () => void, mark?: Watcher) => void;
 /**
  * Enqueue a function to be executed on the next animation frame
  *
+ * If the same Symbol is provided for multiple calls before the next animation frame,
+ * only the latest call will be executed (deduplication).
+ *
  * @param {Updater} fn - function to be executed on the next animation frame; can return updated value <T>, success <boolean> or void
- * @param {EnqueueDedupe} dedupe - [element, operation] pair for deduplication
+ * @param {symbol} dedupe - Symbol for deduplication; if not provided, a unique Symbol is created ensuring the update is always executed
  */
-declare const enqueue: <T>(fn: Updater, dedupe: EnqueueDedupe) => Promise<boolean | void | T>;
-export { type EnqueueDedupe, type Cleanup, type Watcher, type Updater, subscribe, notify, flush, batch, watch, enqueue, };
+declare const enqueue: <T>(fn: Updater, dedupe?: symbol) => Promise<boolean | void | T>;
+export { type Cleanup, type Watcher, type Updater, subscribe, notify, flush, batch, watch, enqueue, };
