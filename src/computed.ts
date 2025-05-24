@@ -1,5 +1,5 @@
 import type { Signal } from './signal'
-import { isAsyncFunction } from './util'
+import { isAsyncFunction, isObjectOfType } from './util'
 import type { Cleanup } from './scheduler'
 import type { TapMatcher } from './effect'
 import { type MemoCallback, memo } from './memo'
@@ -65,10 +65,7 @@ const toComputed = <T extends {}, U extends {}>(
  */
 const isComputed = /*#__PURE__*/ <T extends {}>(
 	value: unknown,
-): value is Computed<T> => {
-	if (!value || typeof value !== 'object') return false
-	return (value as any)[Symbol.toStringTag] === TYPE_COMPUTED
-}
+): value is Computed<T> => isObjectOfType(value, TYPE_COMPUTED)
 
 /* === Exports === */
 
