@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { state, computed, batch } from '../'
+import { state, memo, batch, effect } from '../'
 
 /* === Tests === */
 
@@ -8,8 +8,8 @@ describe('Batch', function () {
 		const cause = state(0)
 		let result = 0
 		let count = 0
-		cause.tap(res => {
-			result = res
+		effect(() => {
+			result = cause.get()
 			count++
 		})
 		batch(() => {
@@ -25,10 +25,11 @@ describe('Batch', function () {
 		const a = state(3)
 		const b = state(4)
 		const c = state(5)
-		const sum = computed(() => a.get() + b.get() + c.get())
+		const sum = memo(() => a.get() + b.get() + c.get())
 		let result = 0
 		let count = 0
-		sum.tap({
+		effect({
+			signals: [sum],
 			ok: res => {
 				result = res
 				count++
@@ -49,10 +50,8 @@ describe('Batch', function () {
 		const signals = [state(2), state(3), state(5)]
 
 		// Computed: derive a calculation ...
-		const sum = computed(() =>
-			signals.reduce((total, v) => total + v.get(), 0),
-		).map(v => {
-			// ... perform validation and handle errors
+		const sum = memo(() => {
+			const v = signals.reduce((total, v) => total + v.get(), 0)
 			if (!Number.isFinite(v)) throw new Error('Invalid value')
 			return v
 		})
@@ -62,7 +61,8 @@ describe('Batch', function () {
 		let errCount = 0
 
 		// Effect: switch cases for the result
-		sum.tap({
+		effect({
+			signals: [sum],
 			ok: v => {
 				result = v
 				okCount++

@@ -30,6 +30,8 @@ class CircularDependencyError extends Error {
 	}
 }
 
+/* === Exports === */
+
 export {
 	isFunction,
 	isAsyncFunction,

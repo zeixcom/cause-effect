@@ -1,8 +1,8 @@
-import { type State } from "./state";
-import { type Computed } from "./computed";
-type Signal<T extends {}> = State<T> | Computed<T>;
-type ComputedCallback<T extends {}> = (abort?: AbortSignal) => T | Promise<T>;
-type MaybeSignal<T extends {}> = Signal<T> | T | ComputedCallback<T>;
+import { type ComputedCallback } from './computed';
+type Signal<T extends {}> = {
+    get(): T;
+};
+type MaybeSignal<T extends {}> = T | Signal<T> | ComputedCallback<T>;
 declare const UNSET: any;
 /**
  * Check whether a value is a Signal or not
@@ -28,18 +28,4 @@ declare const isComputedCallback: <T extends {}>(value: unknown) => value is Com
  * @returns {Signal<T>} - converted Signal
  */
 declare const toSignal: <T extends {}>(value: MaybeSignal<T>) => Signal<T>;
-/**
- * Resolve signals or functions using signals and apply callbacks based on the results
- *
- * @since 0.13.0
- * @param {SignalMatcher<S, R>} matcher - SignalMatcher to match
- * @returns {R | Promise<R>} - result of the matched callback
- */
-declare const match: <S extends Signal<{}>[], R>(matcher: {
-    signals: S;
-    abort?: AbortSignal;
-    ok: ((...values: { [K in keyof S]: S[K] extends Signal<infer T> ? T : never; }) => R | Promise<R>);
-    err: ((...errors: Error[]) => R | Promise<R>);
-    nil: (abort?: AbortSignal) => R | Promise<R>;
-}) => R | Promise<R>;
-export { type Signal, type MaybeSignal, type ComputedCallback, UNSET, isSignal, isComputedCallback, toSignal, match, };
+export { type Signal, type MaybeSignal, UNSET, isSignal, isComputedCallback, toSignal, };

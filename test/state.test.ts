@@ -1,9 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { isComputed, isState, state, UNSET } from '../'
-
-/* === Utility Functions === */
-
-const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+import { isComputed, isState, state } from '../'
 
 /* === Tests === */
 
@@ -155,53 +151,6 @@ describe('State', function () {
 			const cause = state<Record<string, any>>(obj)
 			cause.set({ ...obj, c: true }) // use destructuring instead!
 			expect(cause.get()).toEqual({ a: 'a', b: 1, c: true })
-		})
-	})
-
-	describe('Map method', function () {
-		test('should return a computed signal', function () {
-			const cause = state(42)
-			const double = cause.map(v => v * 2)
-			expect(isComputed(double)).toBe(true)
-			expect(double.get()).toBe(84)
-		})
-
-		test('should return a computed signal for an async function', async function () {
-			const cause = state(42)
-			const asyncDouble = cause.map(async value => {
-				await wait(100)
-				return value * 2
-			})
-			expect(isComputed(asyncDouble)).toBe(true)
-			expect(asyncDouble.get()).toBe(UNSET)
-			await wait(110)
-			expect(asyncDouble.get()).toBe(84)
-		})
-	})
-
-	describe('Tap method', function () {
-		test('should create an effect that reacts on signal changes', function () {
-			const cause = state(42)
-			let okCount = 0
-			let nilCount = 0
-			let result = 0
-			cause.tap({
-				ok: v => {
-					result = v
-					okCount++
-				},
-				nil: () => {
-					nilCount++
-				},
-			})
-			cause.set(43)
-			expect(okCount).toBe(2) // + 1 for effect initialization
-			expect(nilCount).toBe(0)
-			expect(result).toBe(43)
-
-			cause.set(UNSET)
-			expect(okCount).toBe(2)
-			expect(nilCount).toBe(1)
 		})
 	})
 })

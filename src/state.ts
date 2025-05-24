@@ -1,25 +1,21 @@
 import { UNSET } from './signal'
-import { type Computed, computed } from './computed'
-import { isFunction, isObjectOfType } from './util'
+import { isObjectOfType } from './util'
 import { type Watcher, notify, subscribe } from './scheduler'
-import { type TapMatcher, type EffectMatcher, effect } from './effect'
 
 /* === Types === */
 
-export type State<T extends {}> = {
+type State<T extends {}> = {
 	[Symbol.toStringTag]: 'State'
 	get(): T
 	set(v: T): void
 	update(fn: (v: T) => T): void
-	map<U extends {}>(fn: (v: T) => U | Promise<U>): Computed<U>
-	tap(matcher: TapMatcher<T> | ((v: T) => void | (() => void))): () => void
 }
 
 /* === Constants === */
 
 const TYPE_STATE = 'State'
 
-/* === State Factory === */
+/* === Functions === */
 
 /**
  * Create a new state signal
@@ -28,9 +24,7 @@ const TYPE_STATE = 'State'
  * @param {T} initialValue - initial value of the state
  * @returns {State<T>} - new state signal
  */
-export const state = /*#__PURE__*/ <T extends {}>(
-	initialValue: T,
-): State<T> => {
+const state = /*#__PURE__*/ <T extends {}>(initialValue: T): State<T> => {
 	const watchers: Set<Watcher> = new Set()
 	let value: T = initialValue
 
@@ -74,34 +68,6 @@ export const state = /*#__PURE__*/ <T extends {}>(
 		update: (fn: (v: T) => T): void => {
 			s.set(fn(value))
 		},
-
-		/**
-		 * Create a computed signal from the current state signal
-		 *
-		 * @since 0.9.0
-		 * @param {(v: T) => U | Promise<U>} fn - computed callback
-		 * @returns {Computed<U>} - computed signal
-		 */
-		map: <U extends {}>(fn: (v: T) => U | Promise<U>): Computed<U> =>
-			computed({
-				signals: [s],
-				ok: fn,
-			}),
-
-		/**
-		 * Case matching for the state signal with effect callbacks
-		 *
-		 * @since 0.13.0
-		 * @param {TapMatcher<T> | ((v: T) => void | (() => void))} matcher - tap matcher or effect callback
-		 * @returns {() => void} - cleanup function for the effect
-		 */
-		tap: (
-			matcher: TapMatcher<T> | ((v: T) => void | (() => void)),
-		): (() => void) =>
-			effect({
-				signals: [s],
-				...(isFunction(matcher) ? { ok: matcher } : matcher),
-			} as EffectMatcher<[State<T>]>),
 	}
 
 	return s
@@ -114,6 +80,10 @@ export const state = /*#__PURE__*/ <T extends {}>(
  * @param {unknown} value - value to check
  * @returns {boolean} - true if the value is a State instance, false otherwise
  */
-export const isState = /*#__PURE__*/ <T extends {}>(
+const isState = /*#__PURE__*/ <T extends {}>(
 	value: unknown,
 ): value is State<T> => isObjectOfType(value, TYPE_STATE)
+
+/* === Exports === */
+
+export { type State, state, isState }
