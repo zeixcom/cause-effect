@@ -9,12 +9,6 @@ import { watch, type Cleanup, type Watcher } from './scheduler'
 
 /* === Types === */
 
-type TapMatcher<T extends {}> = {
-	ok: (value: T) => void | Cleanup
-	err?: (error: Error) => void | Cleanup
-	nil?: () => void | Cleanup
-}
-
 type EffectMatcher<S extends Signal<{}>[]> = {
 	signals: S
 	ok: (
@@ -98,4 +92,4 @@ function effect<S extends Signal<{}>[]>(
 
 /* === Exports === */
 
-export { type TapMatcher, type EffectMatcher, effect }
+export { type EffectMatcher, effect }

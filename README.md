@@ -17,11 +17,11 @@ Version 0.14.0
 ## Key Features
 
 - ⚡ **Reactive States**: Automatic updates when dependencies change
-- 🧩 **Composable**: Chain signals with `.map()` and `.tap()`
+- 🧩 **Composable**: Create a complex signal graph with a minimal API
 - ⏱️ **Async Ready**: Built-in `Promise` and `AbortController` support
 - 🛡️ **Error Handling**: Declare handlers for errors and unset states in effects
 - 🚀 **Performance**: Batching and efficient dependency tracking
-- 📦 **Tiny**: ~1kB gzipped, zero dependencies
+- 📦 **Tiny**: Around 1kB gzipped, zero dependencies
 
 ## Quick Start
 
@@ -60,16 +60,14 @@ bun add @zeix/cause-effect
 
 ### State Signals
 
-`state()` creates a new state signal. To access the current value of the signal use the `.get()` method. To update the value of the signal use the `.set()` method with a new value or `.update()` with an updater function of the form `(v: T) => T`.
-
-Both `State` and `Computed` signals provide a `.tap()` method as a shorthand for creating an effect on a single signal.
+`state()` creates a mutable signal. Every signal has a `.get()` method to access its current value. State signals also provide `.set()` to directly assign a new value and `.update()` to modify the value with a function.
 
 ```js
-import { state } from '@zeix/cause-effect'
+import { state, effect } from '@zeix/cause-effect'
 
 const count = state(42)
-count.tap(v => {
-  console.log(v) // logs '42'
+effect(() => {
+  console.log(count.get()) // logs '42'
 })
 count.set(24) // logs '24'
 document.querySelector('.increment').addEventListener('click', () => {
@@ -82,7 +80,7 @@ document.querySelector('.increment').addEventListener('click', () => {
 
 #### Synchronous Computations with memo()
 
-`memo()` creates a new computed signal for synchronous computations. Computed signals are read-only and you can access the current resulting value using the `.get()` method.
+`memo()` creates a read-only computed signal for synchronous calculations. It automatically tracks dependencies and updates when they change.
 
 ```js
 import { state, memo, effect } from '@zeix/cause-effect'
@@ -97,28 +95,14 @@ document.querySelector('button.increment').addEventListener('click', () => {
 // Click on button logs 'true', 'false', and so on
 ```
 
-To derive a computed signal from a single existing signal, you can use the `.map()` method on either `State` or `Computed`. The following example demonstrates an alternative to the above approach:
-
-```js
-import { state } from '@zeix/cause-effect'
-
-const count = state(42)
-count.map(v => v % 2).tap(v => console.log(v)) // logs 'false'
-count.set(24) // logs nothing because 24 is also an even number
-document.querySelector('.increment').addEventListener('click', () => {
-  count.update(v => ++v)
-})
-// Click on button logs 'true', 'false', and so on
-```
-
 #### Asynchronous Computations with task()
 
-`task()` creates computed signals for asynchronous operations. Like `memo()` but for async functions, it tracks dependencies and automatically recomputes when they change.
+`task()` creates computed signals for asynchronous operations. It automatically manages promises, tracks dependencies, and handles cancellation through `AbortController`.
 
-**Caution**: Task signals will return a Symbol `UNSET` until the Promise is resolved, which you can handle with the `nil` case in effects.
+**Note**: Task signals return `UNSET` while pending, which you can handle with the `nil` case in effects.
 
 ```js
-import { state, task } from '@zeix/cause-effect'
+import { state, task, effect } from '@zeix/cause-effect'
 
 const entryId = state(42)
 const entryData = task(async abort => {
@@ -128,7 +112,8 @@ const entryData = task(async abort => {
 })
 
 // Display data when available
-entryData.tap({
+effect({
+  signals: [entryData],
   ok: data => console.log('Data loaded:', data),
   nil: () => console.log('Loading...'),
   err: error => console.error('Error:', error)
@@ -142,19 +127,13 @@ document.querySelector('button.next').addEventListener('click', () => {
 
 ## Effects and Error Handling
 
-### Creating Effects
+Cause & Effect provides a robust way to handle side effects and errors through the `effect()` function, with three distinct paths:
 
-Effects allow you to run side effects in response to signal changes. You can create effects using the `effect()` function or the `.tap()` method on signals.
+1. **Ok**: When values are available
+2. **Nil**: For loading/unset states (primarily with async tasks)
+3. **Err**: When errors occur during computation
 
-### Error Handling Paths
-
-Cause & Effect provides a robust error handling model with three distinct paths:
-
-1. **Ok**: When a value is successfully computed and available
-2. **Nil**: For loading/unset states (primarily with async `task()` operations)
-3. **Err**: When an error occurs during computation
-
-This allows you to handle all possible states declaratively:
+This allows for declarative handling of all possible states:
 
 ```js
 effect({
@@ -166,16 +145,6 @@ effect({
 ```
 
 Instead of using a single callback function, you can provide an object with an `ok` handler (required), plus optional `err` and `nil` handlers. Cause & Effect will automatically route to the appropriate handler based on the state of the signals.
-
-For effects on a single signal, the `.tap()` method on both `State` and `Computed` signals provides a convenient shorthand. This is particularly useful for debugging:
-
-```js
-signal.tap({
-  ok: v => console.log('Value:', v),
-  nil: () => console.warn('Not ready'),
-  err: e => console.error('Error:', e)
-})
-```
 
 ## DOM Updates
 
@@ -199,10 +168,7 @@ A powerful feature of `enqueue()` is deduplication, which ensures that only the 
 Deduplication is controlled using JavaScript Symbols:
 
 ```js
-import { state, enqueue } from '@zeix/cause-effect'
-
-// Create a Symbol for a specific update operation
-const NAME_UPDATE = Symbol('name-update')
+import { state, effect, enqueue } from '@zeix/cause-effect'
 
 // Define a signal and update it in an event handler
 const name = state('')
@@ -211,7 +177,10 @@ document.querySelector('input[name="name"]').addEventListener('input', e => {
 })
 
 // Define an effect to react to signal changes
-name.tap(text => {
+effect(text => {
+  // Create a Symbol for a specific update operation
+  const NAME_UPDATE = Symbol('name-update')
+  const text = name.get()
   const nameSpan = document.querySelector('.greeting .name')
   enqueue(() => {
     nameSpan.textContent = text
@@ -265,24 +234,25 @@ Using Symbols for deduplication provides:
 
 ### Batching Updates
 
-Effects run synchronously as soon as source signals update. If you need to set multiple signals you can batch them together to ensure dependent effects are executed simultanously and only once.
+Use `batch()` to group multiple signal updates, ensuring effects run only once after all changes are applied:
 
 ```js
-import { state, memo, batch } from '@zeix/cause-effect'
+import { state, memo, effect, batch } from '@zeix/cause-effect'
 
 // State: define an array of State<number>
 const signals = [state(2), state(3), state(5)]
 
 // Compute the sum of all signals
-const sum = memo(() => signals.reduce((total, signal) => total + signal.get(), 0))
-  .map(v => {
-    // Validate the result
-    if (!Number.isFinite(v)) throw new Error('Invalid value')
-    return v
-  })
+const sum = memo(() => {
+  const v = signals.reduce((total, signal) => total + signal.get(), 0)
+  // Validate the result
+  if (!Number.isFinite(v)) throw new Error('Invalid value')
+  return v
+})
 
 // Effect: handle the result
-sum.tap({
+effect({
+  signals: [sum],
   ok: v => console.log('Sum:', v),
   err: error => console.error('Error:', error)
 })
@@ -300,15 +270,12 @@ document.querySelector('.double-all').addEventListener('click', () => {
 signals[0].set(NaN)
 ```
 
-This example showcases several powerful features of Cause & Effect:
+The Cause & Effect library is designed around these principles:
 
-1. **Composability and Declarative Computations**: Easily compose multiple signals into a single computed value, declaring how values should be calculated based on other signals.
-2. **Automatic Dependency Tracking and Efficient Updates**: The library tracks dependencies between signals and computed values, ensuring efficient propagation of changes.
-3. **Robust Error Handling**: Built-in error handling at computation level and reactive error management allow for graceful handling of unexpected situations.
-4. **Performance Optimization through Batching**: Group multiple state changes to ensure dependent computations and effects run only once after all changes are applied.
-5. **Flexibility and Integration**: Seamlessly integrates with DOM manipulation and event listeners, fitting into any JavaScript application or framework.
-
-These principles enable developers to create complex, reactive applications with clear data flow, efficient updates, and robust error handling, while promoting code reuse and modularity.
+- **Minimal API**: Core primitives with a small but powerful interface
+- **Automatic Dependency Tracking**: Fine-grained reactivity with minimal boilerplate
+- **Tree-Shakable**: Import only what you need for optimal bundle size
+- **Flexible Integration**: Works with any JavaScript application or framework
 
 ### Cleanup Functions
 
@@ -335,19 +302,20 @@ user.set({ name: 'Bob', age: 28 }) // Won't trigger the effect anymore
 
 ### Automatic Abort Control
 
-For asynchronous operations, the `task()` function automatically manages an `AbortController` to cancel pending promises when dependencies change. The function provides an `abort` signal parameter that you can pass to `fetch()` or other AbortController-aware APIs:
+For asynchronous operations, `task()` automatically manages cancellation when dependencies change, providing an `abort` signal parameter:
 
 ```js
-import { state, task } from '@zeix/cause-effect'
+import { state, task, effect } from '@zeix/cause-effect'
 
 const id = state(42)
-const url = id.map(v => `https://example.com/api/entries/${v}`)
+const url = memo(v => `https://example.com/api/entries/${id.get()}`)
 const data = task(async abort => {
   const response = await fetch(url.get(), { signal: abort })
   if (!response.ok) throw new Error(`Failed to fetch data: ${response.statusText}`)
   return response.json()
 })
-data.tap({
+effect({
+  signals: [data],
   ok: v => console.log('Value:', v),
   nil: () => console.warn('Not ready'),
   err: e => console.error('Error:', e)
@@ -361,6 +329,6 @@ id.set(24) // Cancels the previous fetch request and starts a new one
 
 Feel free to contribute, report issues, or suggest improvements.
 
-Licence: [MIT](LICENCE.md)
+License: [MIT](LICENSE.md)
 
 (c) 2025 [Zeix AG](https://zeix.com)

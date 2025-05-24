@@ -1,5 +1,13 @@
 import { describe, test, expect } from 'bun:test'
-import { state, memo, task, UNSET, isComputed, isState } from '../index.ts'
+import {
+	state,
+	memo,
+	task,
+	UNSET,
+	isComputed,
+	isState,
+	effect,
+} from '../index.ts'
 
 /* === Utility Functions === */
 
@@ -11,7 +19,7 @@ const increment = (n: number) => (Number.isFinite(n) ? n + 1 : UNSET)
 describe('Computed', function () {
 	test('should identify computed signals with isComputed()', () => {
 		const count = state(42)
-		const doubled = count.map(v => v * 2)
+		const doubled = memo(() => count.get() * 2)
 		expect(isComputed(doubled)).toBe(true)
 		expect(isState(doubled)).toBe(false)
 	})
@@ -22,13 +30,14 @@ describe('Computed', function () {
 	})
 
 	test('should compute function dependent on a signal', function () {
-		const derived = state(42).map(v => ++v)
+		const cause = state(42)
+		const derived = memo(() => cause.get() + 1)
 		expect(derived.get()).toBe(43)
 	})
 
 	test('should compute function dependent on an updated signal', function () {
 		const cause = state(42)
-		const derived = cause.map(v => ++v)
+		const derived = memo(() => cause.get() + 1)
 		cause.set(24)
 		expect(derived.get()).toBe(25)
 	})
@@ -40,7 +49,7 @@ describe('Computed', function () {
 			status.set('success')
 			return 42
 		})
-		const derived = promised.map(increment)
+		const derived = memo(() => increment(promised.get()))
 		expect(derived.get()).toBe(UNSET)
 		expect(status.get()).toBe('pending')
 		await wait(110)
@@ -57,7 +66,7 @@ describe('Computed', function () {
 			error.set('error occurred')
 			return 0
 		})
-		const derived = promised.map(increment)
+		const derived = memo(() => increment(promised.get()))
 		expect(derived.get()).toBe(UNSET)
 		expect(status.get()).toBe('pending')
 		await wait(110)
@@ -87,31 +96,30 @@ describe('Computed', function () {
 	})
 
 	test('should compute function dependent on a chain of computed states dependent on a signal', function () {
-		const derived = state(42)
-			.map(v => ++v)
-			.map(v => v * 2)
-			.map(v => ++v)
-		expect(derived.get()).toBe(87)
+		const x = state(42)
+		const a = memo(() => x.get() + 1)
+		const b = memo(() => a.get() * 2)
+		const c = memo(() => b.get() + 1)
+		expect(c.get()).toBe(87)
 	})
 
 	test('should compute function dependent on a chain of computed states dependent on an updated signal', function () {
-		const cause = state(42)
-		const derived = cause
-			.map(v => ++v)
-			.map(v => v * 2)
-			.map(v => ++v)
-		cause.set(24)
-		expect(derived.get()).toBe(51)
+		const x = state(42)
+		const a = memo(() => x.get() + 1)
+		const b = memo(() => a.get() * 2)
+		const c = memo(() => b.get() + 1)
+		x.set(24)
+		expect(c.get()).toBe(51)
 	})
 
 	test('should drop X->B->X updates', function () {
 		let count = 0
 		const x = state(2)
-		const a = x.map(v => --v)
+		const a = memo(() => x.get() - 1)
 		const b = memo(() => x.get() + a.get())
-		const c = b.map(v => {
+		const c = memo(() => {
 			count++
-			return 'c: ' + v
+			return 'c: ' + b.get()
 		})
 		expect(c.get()).toBe('c: 3')
 		expect(count).toBe(1)
@@ -123,8 +131,8 @@ describe('Computed', function () {
 	test('should only update every signal once (diamond graph)', function () {
 		let count = 0
 		const x = state('a')
-		const a = x.map(v => v)
-		const b = x.map(v => v)
+		const a = memo(() => x.get())
+		const b = memo(() => x.get())
 		const c = memo(() => {
 			count++
 			return a.get() + ' ' + b.get()
@@ -140,12 +148,12 @@ describe('Computed', function () {
 	test('should only update every signal once (diamond graph + tail)', function () {
 		let count = 0
 		const x = state('a')
-		const a = x.map(v => v)
-		const b = x.map(v => v)
+		const a = memo(() => x.get())
+		const b = memo(() => x.get())
 		const c = memo(() => a.get() + ' ' + b.get())
-		const d = c.map(v => {
+		const d = memo(() => {
 			count++
-			return v
+			return c.get()
 		})
 		expect(d.get()).toBe('a a')
 		expect(count).toBe(1)
@@ -181,12 +189,14 @@ describe('Computed', function () {
 	test('should bail out if result is the same', function () {
 		let count = 0
 		const x = state('a')
-		const b = x
-			.map(() => 'foo')
-			.map(v => {
-				count++
-				return v
-			})
+		const a = memo(() => {
+			x.get()
+			return 'foo'
+		})
+		const b = memo(() => {
+			count++
+			return a.get()
+		})
 		expect(b.get()).toBe('foo')
 		expect(count).toBe(1)
 		x.set('aa')
@@ -199,13 +209,12 @@ describe('Computed', function () {
 	test('should block if result remains unchanged', function () {
 		let count = 0
 		const x = state(42)
-		const c = x
-			.map(v => v % 2)
-			.map(v => (v ? 'odd' : 'even'))
-			.map(v => {
-				count++
-				return `c: ${v}`
-			})
+		const a = memo(() => x.get() % 2)
+		const b = memo(() => (a.get() ? 'odd' : 'even'))
+		const c = memo(() => {
+			count++
+			return `c: ${b.get()}`
+		})
 		expect(c.get()).toBe('c: even')
 		expect(count).toBe(1)
 		x.set(44)
@@ -229,13 +238,13 @@ describe('Computed', function () {
 		let okCount = 0
 		let errCount = 0
 		const x = state(0)
-		const a = x.map(v => {
-			if (v === 1) throw new Error('Calculation error')
+		const a = memo(() => {
+			if (x.get() === 1) throw new Error('Calculation error')
 			return 1
 		})
 
 		// Replace matcher with try/catch in a computed
-		const c = memo(() => {
+		const b = memo(() => {
 			try {
 				a.get() // just check if it works
 				return `c: success`
@@ -243,9 +252,10 @@ describe('Computed', function () {
 				errCount++
 				return `c: recovered`
 			}
-		}).map(v => {
+		})
+		const c = memo(() => {
 			okCount++
-			return v
+			return b.get()
 		})
 
 		expect(a.get()).toBe(1)
@@ -264,15 +274,7 @@ describe('Computed', function () {
 		}
 	})
 
-	test('should return a computed signal with .map()', function () {
-		const cause = state(42)
-		const derived = cause.map(v => ++v)
-		const double = derived.map(v => v * 2)
-		expect(isComputed(double)).toBe(true)
-		expect(double.get()).toBe(86)
-	})
-
-	test('should create an effect that reacts on async computed changes with .tap()', async function () {
+	test('should create an effect that reacts on async computed changes', async function () {
 		const cause = state(42)
 		const derived = task(async () => {
 			await wait(100)
@@ -281,7 +283,8 @@ describe('Computed', function () {
 		let okCount = 0
 		let nilCount = 0
 		let result: number = 0
-		derived.tap({
+		effect({
+			signals: [derived],
 			ok: v => {
 				result = v
 				okCount++
@@ -303,8 +306,8 @@ describe('Computed', function () {
 
 	test('should handle complex computed signal with error and async dependencies', async function () {
 		const toggleState = state(true)
-		const errorProne = toggleState.map(v => {
-			if (v) throw new Error('Intentional error')
+		const errorProne = memo(() => {
+			if (toggleState.get()) throw new Error('Intentional error')
 			return 42
 		})
 		const asyncValue = task(async () => {
@@ -314,7 +317,7 @@ describe('Computed', function () {
 		let okCount = 0
 		let nilCount = 0
 		let errCount = 0
-		let _result: number = 0
+		// let _result: number = 0
 
 		// Replace matcher with try/catch in a computed
 		const complexComputed = memo(() => {
@@ -340,7 +343,7 @@ describe('Computed', function () {
 		for (let i = 0; i < 10; i++) {
 			toggleState.set(!!(i % 2))
 			await wait(10)
-			_result = complexComputed.get()
+			complexComputed.get()
 		}
 
 		// Adjusted expectations to be more flexible

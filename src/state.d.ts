@@ -1,13 +1,8 @@
-import { type Computed, type MapCallback } from './computed';
-import { type Cleanup } from './scheduler';
-import { type TapMatcher } from './effect';
 type State<T extends {}> = {
     [Symbol.toStringTag]: 'State';
     get(): T;
     set(v: T): void;
     update(fn: (v: T) => T): void;
-    map<U extends {}>(fn: MapCallback<T, U>): Computed<U>;
-    tap(matcher: TapMatcher<T> | ((v: T) => void | Cleanup)): Cleanup;
 };
 /**
  * Create a new state signal

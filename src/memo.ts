@@ -8,13 +8,7 @@ import {
 	subscribe,
 	watch,
 } from './scheduler'
-import { type TapMatcher, type EffectMatcher, effect } from './effect'
-import {
-	type Computed,
-	type MapCallback,
-	TYPE_COMPUTED,
-	toComputed,
-} from './computed'
+import { type Computed, TYPE_COMPUTED } from './computed'
 
 /* === Types === */
 
@@ -88,27 +82,6 @@ const memo = <T extends {}>(fn: MemoCallback<T>): Computed<T> => {
 			if (error) throw error
 			return value
 		},
-
-		/**
-		 * Create a computed signal from the current computed signal
-		 *
-		 * @param {MapCallback<T, U>} mapFn - map callback
-		 * @returns {Computed<U>} - computed signal
-		 */
-		map: <U extends {}>(mapFn: MapCallback<T, U>): Computed<U> =>
-			toComputed(c, mapFn),
-
-		/**
-		 * Case matching for the computed signal with effect callbacks
-		 *
-		 * @param {TapMatcher<T> | ((v: T) => void | Cleanup)} matcher - tap matcher or effect callback
-		 * @returns {Cleanup} - cleanup function for the effect
-		 */
-		tap: (matcher: TapMatcher<T> | ((v: T) => void | Cleanup)): Cleanup =>
-			effect({
-				signals: [c],
-				...(typeof matcher === 'function' ? { ok: matcher } : matcher),
-			} as EffectMatcher<[Computed<T>]>),
 	}
 	return c
 }

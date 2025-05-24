@@ -1,6 +1,5 @@
-import { type State, isState, state } from './state'
+import { isState, state } from './state'
 import {
-	type Computed,
 	type ComputedCallback,
 	isComputed,
 	computed,
@@ -9,7 +8,9 @@ import { isFunction } from './util'
 
 /* === Types === */
 
-type Signal<T extends {}> = State<T> | Computed<T>
+type Signal<T extends {}> = {
+	get(): T
+}
 type MaybeSignal<T extends {}> = T | Signal<T> | ComputedCallback<T>
 
 /* === Constants === */

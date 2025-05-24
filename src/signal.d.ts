@@ -1,6 +1,7 @@
-import { type State } from './state';
-import { type Computed, type ComputedCallback } from './computed';
-type Signal<T extends {}> = State<T> | Computed<T>;
+import { type ComputedCallback } from './computed';
+type Signal<T extends {}> = {
+    get(): T;
+};
 type MaybeSignal<T extends {}> = T | Signal<T> | ComputedCallback<T>;
 declare const UNSET: any;
 /**

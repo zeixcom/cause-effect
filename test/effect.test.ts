@@ -1,5 +1,5 @@
 import { describe, test, expect, mock } from 'bun:test'
-import { state, task, effect, UNSET } from '../'
+import { state, task, effect, UNSET, memo } from '../'
 
 /* === Utility Functions === */
 
@@ -11,7 +11,8 @@ describe('Effect', function () {
 	test('should be triggered after a state change', function () {
 		const cause = state('foo')
 		let count = 0
-		cause.tap(() => {
+		effect(() => {
+			cause.get()
 			count++
 		})
 		expect(count).toBe(1)
@@ -48,8 +49,8 @@ describe('Effect', function () {
 		const cause = state(0)
 		let result = 0
 		let count = 0
-		cause.tap(res => {
-			result = res
+		effect(() => {
+			result = cause.get()
 			count++
 		})
 		for (let i = 0; i < 10; i++) {
@@ -61,13 +62,15 @@ describe('Effect', function () {
 
 	test('should handle errors in effects', function () {
 		const a = state(1)
-		const b = a.map(v => {
+		const b = memo(() => {
+			const v = a.get()
 			if (v > 5) throw new Error('Value too high')
 			return v * 2
 		})
 		let normalCallCount = 0
 		let errorCallCount = 0
-		b.tap({
+		effect({
+			signals: [b],
 			ok: () => {
 				// console.log('Normal effect:', value)
 				normalCallCount++
@@ -102,7 +105,8 @@ describe('Effect', function () {
 		})
 		let normalCallCount = 0
 		let nilCount = 0
-		a.tap({
+		effect({
+			signals: [a],
 			ok: aValue => {
 				normalCallCount++
 				expect(aValue).toBe(42)
@@ -129,13 +133,16 @@ describe('Effect', function () {
 
 		try {
 			const a = state(1)
-			const b = a.map(v => {
+			const b = memo(() => {
+				const v = a.get()
 				if (v > 5) throw new Error('Value too high')
 				return v * 2
 			})
 
 			// Create an effect without explicit error handling
-			b.tap(() => {})
+			effect(() => {
+				b.get()
+			})
 
 			// This should trigger the error
 			a.set(6)
@@ -157,8 +164,8 @@ describe('Effect', function () {
 		const count = state(42)
 		let received = 0
 
-		const cleanup = count.tap(value => {
-			received = value
+		const cleanup = effect(() => {
+			received = count.get()
 		})
 
 		count.set(43)
@@ -174,7 +181,8 @@ describe('Effect', function () {
 		let errCount = 0
 		const count = state(0)
 
-		count.tap({
+		effect({
+			signals: [count],
 			ok: () => {
 				okCount++
 				// This effect updates the signal it depends on, creating a circular dependency

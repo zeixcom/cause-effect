@@ -1,10 +1,5 @@
 import { type Signal } from './signal';
 import { type Cleanup } from './scheduler';
-type TapMatcher<T extends {}> = {
-    ok: (value: T) => void | Cleanup;
-    err?: (error: Error) => void | Cleanup;
-    nil?: () => void | Cleanup;
-};
 type EffectMatcher<S extends Signal<{}>[]> = {
     signals: S;
     ok: (...values: {
@@ -21,4 +16,4 @@ type EffectMatcher<S extends Signal<{}>[]> = {
  * @returns {Cleanup} - cleanup function for the effect
  */
 declare function effect<S extends Signal<{}>[]>(matcher: EffectMatcher<S> | (() => void | Cleanup)): Cleanup;
-export { type TapMatcher, type EffectMatcher, effect };
+export { type EffectMatcher, effect };
