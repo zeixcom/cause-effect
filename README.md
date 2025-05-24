@@ -329,6 +329,6 @@ id.set(24) // Cancels the previous fetch request and starts a new one
 
 Feel free to contribute, report issues, or suggest improvements.
 
-License: [MIT](LICENSE.md)
+License: [MIT](LICENSE)
 
 (c) 2025 [Zeix AG](https://zeix.com)
