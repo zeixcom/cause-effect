@@ -1,13 +1,15 @@
 /* === Types === */
 
-export type EnqueueDedupe = [Element, string]
+type EnqueueDedupe = [Element, string]
 
-export type Watcher = {
+type Cleanup = () => void
+
+type Watcher = {
 	(): void
-	cleanups: Set<() => void>
+	cleanups: Set<Cleanup>
 }
 
-export type Updater = <T>() => T | boolean | void
+type Updater = <T>() => T | boolean | void
 
 /* === Internal === */
 
@@ -19,7 +21,7 @@ const pending = new Set<Watcher>()
 let batchDepth = 0
 
 // Map of DOM elements to update functions
-const updateMap = new Map<EnqueueDedupe, () => void>()
+const updateMap = new Map<EnqueueDedupe, Updater>()
 let requestId: number | undefined
 
 const updateDOM = () => {
@@ -39,14 +41,14 @@ const requestTick = () => {
 // Initial render when the call stack is empty
 queueMicrotask(updateDOM)
 
-/* === Exported Functions === */
+/* === Functions === */
 
 /**
  * Add active watcher to the Set of watchers
  *
  * @param {Set<Watcher>} watchers - watchers of the signal
  */
-export const subscribe = (watchers: Set<Watcher>) => {
+const subscribe = (watchers: Set<Watcher>) => {
 	// if (!active) console.warn('Calling .get() outside of a reactive context')
 	if (active && !watchers.has(active)) {
 		const watcher = active
@@ -62,7 +64,7 @@ export const subscribe = (watchers: Set<Watcher>) => {
  *
  * @param {Set<Watcher>} watchers - watchers of the signal
  */
-export const notify = (watchers: Set<Watcher>) => {
+const notify = (watchers: Set<Watcher>) => {
 	for (const mark of watchers) {
 		if (batchDepth) pending.add(mark)
 		else mark()
@@ -72,7 +74,7 @@ export const notify = (watchers: Set<Watcher>) => {
 /**
  * Flush all pending changes to notify watchers
  */
-export const flush = () => {
+const flush = () => {
 	while (pending.size) {
 		const watchers = Array.from(pending)
 		pending.clear()
@@ -87,7 +89,7 @@ export const flush = () => {
  *
  * @param {() => void} fn - function with multiple signal writes to be batched
  */
-export const batch = (fn: () => void) => {
+const batch = (fn: () => void) => {
 	batchDepth++
 	try {
 		fn()
@@ -103,7 +105,7 @@ export const batch = (fn: () => void) => {
  * @param {() => void} run - function to run the computation or effect
  * @param {Watcher} mark - function to be called when the state changes or undefined for temporary unwatching while inserting auto-hydrating DOM nodes that might read signals (e.g., web components)
  */
-export const watch = (run: () => void, mark?: Watcher): void => {
+const watch = (run: () => void, mark?: Watcher): void => {
 	const prev = active
 	active = mark
 	try {
@@ -119,7 +121,7 @@ export const watch = (run: () => void, mark?: Watcher): void => {
  * @param {Updater} fn - function to be executed on the next animation frame; can return updated value <T>, success <boolean> or void
  * @param {EnqueueDedupe} dedupe - [element, operation] pair for deduplication
  */
-export const enqueue = <T>(fn: Updater, dedupe: EnqueueDedupe) =>
+const enqueue = <T>(fn: Updater, dedupe: EnqueueDedupe) =>
 	new Promise<T | boolean | void>((resolve, reject) => {
 		updateMap.set(dedupe, () => {
 			try {
@@ -130,3 +132,18 @@ export const enqueue = <T>(fn: Updater, dedupe: EnqueueDedupe) =>
 		})
 		requestTick()
 	})
+
+/* === Exports === */
+
+export {
+	type EnqueueDedupe,
+	type Cleanup,
+	type Watcher,
+	type Updater,
+	subscribe,
+	notify,
+	flush,
+	batch,
+	watch,
+	enqueue,
+}

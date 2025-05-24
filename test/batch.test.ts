@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { state, computed, batch } from '../'
+import { state, memo, batch } from '../'
 
 /* === Tests === */
 
@@ -25,7 +25,7 @@ describe('Batch', function () {
 		const a = state(3)
 		const b = state(4)
 		const c = state(5)
-		const sum = computed(() => a.get() + b.get() + c.get())
+		const sum = memo(() => a.get() + b.get() + c.get())
 		let result = 0
 		let count = 0
 		sum.tap({
@@ -49,7 +49,7 @@ describe('Batch', function () {
 		const signals = [state(2), state(3), state(5)]
 
 		// Computed: derive a calculation ...
-		const sum = computed(() =>
+		const sum = memo(() =>
 			signals.reduce((total, v) => total + v.get(), 0),
 		).map(v => {
 			// ... perform validation and handle errors

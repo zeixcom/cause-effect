@@ -1,5 +1,5 @@
 import { describe, test, expect, mock } from 'bun:test'
-import { state, computed, effect, batch } from '../'
+import { state, memo, effect, batch } from '../'
 import { makeGraph, runGraph, Counter } from './util/dependency-graph'
 
 /* === Utility Functions === */
@@ -21,7 +21,7 @@ const framework = {
 		}
 	},
 	computed: <T extends {}>(fn: () => T) => {
-		const c = computed(fn)
+		const c = memo(fn)
 		return {
 			read: () => c.get(),
 		}
@@ -438,39 +438,45 @@ describe('Kairo tests', function () {
 	})
 })
 
-/* describe('$mol_wire tests', function () {
+describe('$mol_wire tests', function () {
 	const name = framework.name
 
-	test(`${name} | $mol_wire benchmark`, function() {
+	test(`${name} | $mol_wire benchmark`, function () {
 		const fib = (n: number) => {
 			if (n < 2) return 1
 			return fib(n - 1) + fib(n - 2)
 		}
-		const hard = (n: number, log: string) => {
+		const hard = (n: number, _log: string) => {
 			return n + fib(16)
 		}
 		const numbers = Array.from({ length: 5 }, (_, i) => i)
-		let res: (() => any)[] = []
-		const iter = framework.withBuild(() => {
+		const res: (() => any)[] = []
+		const _iter = framework.withBuild(() => {
 			const A = framework.signal(0)
 			const B = framework.signal(0)
 			const C = framework.computed(() => (A.read() % 2) + (B.read() % 2))
 			const D = framework.computed(() =>
-				numbers.map((i) => ({ x: i + (A.read() % 2) - (B.read() % 2) }))
+				numbers.map(i => ({ x: i + (A.read() % 2) - (B.read() % 2) })),
 			)
 			const E = framework.computed(() =>
-				hard(C.read() + A.read() + D.read()[0].x, "E")
+				hard(C.read() + A.read() + D.read()[0].x, 'E'),
 			)
-			const F = framework.computed(() => hard(D.read()[2].x || B.read(), "F"))
+			const F = framework.computed(() =>
+				hard(D.read()[2].x || B.read(), 'F'),
+			)
 			const G = framework.computed(
-				() => C.read() + (C.read() || E.read() % 2) + D.read()[4].x + F.read()
+				() =>
+					C.read() +
+					(C.read() || E.read() % 2) +
+					D.read()[4].x +
+					F.read(),
 			)
-			framework.effect(() => res.push(hard(G.read(), "H")))
-			framework.effect(() => res.push(G.read())); // I
-			framework.effect(() => res.push(hard(F.read(), "J")))
-			framework.effect(() => res[0] = hard(G.read(), "H"))
-			framework.effect(() => res[1] = G.read()); // I
-			framework.effect(() => res[2] = hard(F.read(), "J"))
+			framework.effect(() => res.push(hard(G.read(), 'H')))
+			framework.effect(() => res.push(G.read())) // I
+			framework.effect(() => res.push(hard(F.read(), 'J')))
+			framework.effect(() => (res[0] = hard(G.read(), 'H')))
+			framework.effect(() => (res[1] = G.read())) // I
+			framework.effect(() => (res[2] = hard(F.read(), 'J')))
 
 			return (i: number) => {
 				res.length = 0
@@ -489,10 +495,10 @@ describe('Kairo tests', function () {
 	})
 })
 
-describe('CellX tests', function () {
+/* describe('CellX tests', function () {
 	const name = framework.name
 
-	test(`${name} | CellX benchmark`, function() {
+	test(`${name} | CellX benchmark`, function () {
 		const expected = {
 			1000: [
 				[-3, -6, -2, 2],
@@ -505,9 +511,8 @@ describe('CellX tests', function () {
 			5000: [
 				[2, 4, -1, -6],
 				[-2, 1, -4, -4],
-			]
+			],
 		}
-		const results = {}
 
 		const cellx = (framework, layers) => {
 			const start = {
@@ -521,10 +526,14 @@ describe('CellX tests', function () {
 			for (let i = layers; i > 0; i--) {
 				const m = layer
 				const s = {
-				prop1: framework.computed(() => m.prop2.read()),
-				prop2: framework.computed(() => m.prop1.read() - m.prop3.read()),
-				prop3: framework.computed(() => m.prop2.read() + m.prop4.read()),
-				prop4: framework.computed(() => m.prop3.read()),
+					prop1: framework.computed(() => m.prop2.read()),
+					prop2: framework.computed(
+						() => m.prop1.read() - m.prop3.read(),
+					),
+					prop3: framework.computed(
+						() => m.prop2.read() + m.prop4.read(),
+					),
+					prop4: framework.computed(() => m.prop3.read()),
 				}
 
 				framework.effect(() => s.prop1.read())
