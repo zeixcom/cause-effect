@@ -1,9 +1,18 @@
 type Cleanup = () => void;
 type Watcher = {
     (): void;
-    cleanups: Set<Cleanup>;
+    off(cleanup: Cleanup): void;
+    cleanup(): void;
 };
 type Updater = <T>() => T | boolean | void;
+/**
+ * Create a watcher that can be used to observe changes to a signal
+ *
+ * @since 0.14.1
+ * @param {() => void} notice - function to be called when the state changes
+ * @returns {Watcher} - watcher object with off and cleanup methods
+ */
+declare const watch: (notice: () => void) => Watcher;
 /**
  * Add active watcher to the Set of watchers
  *
@@ -30,9 +39,9 @@ declare const batch: (fn: () => void) => void;
  * Run a function in a reactive context
  *
  * @param {() => void} run - function to run the computation or effect
- * @param {Watcher} mark - function to be called when the state changes or undefined for temporary unwatching while inserting auto-hydrating DOM nodes that might read signals (e.g., web components)
+ * @param {Watcher} watcher - function to be called when the state changes or undefined for temporary unwatching while inserting auto-hydrating DOM nodes that might read signals (e.g., web components)
  */
-declare const watch: (run: () => void, mark?: Watcher) => void;
+declare const observe: (run: () => void, watcher?: Watcher) => void;
 /**
  * Enqueue a function to be executed on the next animation frame
  *
@@ -43,4 +52,4 @@ declare const watch: (run: () => void, mark?: Watcher) => void;
  * @param {symbol} dedupe - Symbol for deduplication; if not provided, a unique Symbol is created ensuring the update is always executed
  */
 declare const enqueue: <T>(fn: Updater, dedupe?: symbol) => Promise<boolean | void | T>;
-export { type Cleanup, type Watcher, type Updater, subscribe, notify, flush, batch, watch, enqueue, };
+export { type Cleanup, type Watcher, type Updater, subscribe, notify, flush, batch, watch, observe, enqueue, };

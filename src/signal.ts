@@ -2,9 +2,9 @@ import { isState, state } from './state'
 import {
 	type ComputedCallback,
 	isComputed,
+	isComputedCallback,
 	computed,
 } from './computed'
-import { isFunction } from './util'
 
 /* === Types === */
 
@@ -13,11 +13,15 @@ type Signal<T extends {}> = {
 }
 type MaybeSignal<T extends {}> = T | Signal<T> | ComputedCallback<T>
 
+type SignalValues<S extends Signal<{}>[]> = {
+	[K in keyof S]: S[K] extends Signal<infer T> ? T : never
+}
+
 /* === Constants === */
 
 const UNSET: any = Symbol()
 
-/* === Exported Functions === */
+/* === Functions === */
 
 /**
  * Check whether a value is a Signal or not
@@ -29,17 +33,6 @@ const UNSET: any = Symbol()
 const isSignal = /*#__PURE__*/ <T extends {}>(
 	value: unknown,
 ): value is Signal<T> => isState(value) || isComputed(value)
-
-/**
- * Check if the provided value is a callback that may be used as input for toSignal() to derive a computed state
- *
- * @since 0.12.0
- * @param {unknown} value - value to check
- * @returns {boolean} - true if value is a callback or callbacks object, false otherwise
- */
-const isComputedCallback = /*#__PURE__*/ <T extends {}>(
-	value: unknown,
-): value is ComputedCallback<T> => isFunction(value) && value.length < 2
 
 /**
  * Convert a value to a Signal if it's not already a Signal
@@ -62,6 +55,7 @@ const toSignal = /*#__PURE__*/ <T extends {}>(
 export {
 	type Signal,
 	type MaybeSignal,
+	type SignalValues,
 	UNSET,
 	isSignal,
 	isComputedCallback,

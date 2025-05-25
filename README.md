@@ -1,6 +1,6 @@
 # Cause & Effect
 
-Version 0.14.0
+Version 0.14.1
 
 **Cause & Effect** is a lightweight, reactive state management library for JavaScript applications. It uses fine-grained reactivity with signals to create predictable and efficient data flow in your app.
 
@@ -10,9 +10,9 @@ Version 0.14.0
 
 ### Core Concepts
 
-- **State signals**: Hold values that can be directly modified
-- **Computed signals**: Derive values from other signals (either `memo()` for sync or `task()` for async)
-- **Effects**: Run side effects when signals change
+- **State signals**: Hold values that can be directly modified: `state()`
+- **Computed signals**: Derive memoized values from other signals: `computed()`
+- **Effects**: Run side effects when signals change: `effect()`
 
 ## Key Features
 
@@ -26,13 +26,13 @@ Version 0.14.0
 ## Quick Start
 
 ```js
-import { state, memo, effect } from '@zeix/cause-effect'
+import { state, computed, effect } from '@zeix/cause-effect'
 
 // 1. Create state
 const user = state({ name: 'Alice', age: 30 })
 
 // 2. Create computed values
-const greeting = memo(() => `Hello ${user.get().name}!`)
+const greeting = computed(() => `Hello ${user.get().name}!`)
 
 // 3. React to changes
 effect({
@@ -76,36 +76,54 @@ document.querySelector('.increment').addEventListener('click', () => {
 // Click on button logs '25', '26', and so on
 ```
 
-### Computed Signals: memo() and task()
+### Computed Signals vs. Functions
 
-#### Synchronous Computations with memo()
+#### When to Use Computed Signals
 
-`memo()` creates a read-only computed signal for synchronous calculations. It automatically tracks dependencies and updates when they change.
+`computed()` creates a memoized read-only signal that automatically tracks dependencies and updates only when those dependencies change.
 
 ```js
-import { state, memo, effect } from '@zeix/cause-effect'
+import { state, computed, effect } from '@zeix/cause-effect'
 
 const count = state(42)
-const isOdd = memo(() => count.get() % 2)
-effect(() => console.log(isOdd.get())) // logs 'false'
+const isEven = computed(() => !(count.get() % 2))
+effect(() => console.log(isEven.get())) // logs 'true'
 count.set(24) // logs nothing because 24 is also an even number
 document.querySelector('button.increment').addEventListener('click', () => {
   count.update(v => ++v)
 })
-// Click on button logs 'true', 'false', and so on
+// Click on button logs 'false', 'true', and so on
 ```
 
-#### Asynchronous Computations with task()
+#### When to Use Functions
 
-`task()` creates computed signals for asynchronous operations. It automatically manages promises, tracks dependencies, and handles cancellation through `AbortController`.
-
-**Note**: Task signals return `UNSET` while pending, which you can handle with the `nil` case in effects.
+**Performance tip**: For simple derivations, plain functions often outperform computed signals:
 
 ```js
-import { state, task, effect } from '@zeix/cause-effect'
+// More performant for simple calculations
+const isEven = () => !(count.get() % 2)
+```
+
+**When to use which approach:**
+
+- **Use functions when**: The calculation is simple, inexpensive, or called infrequently
+- **Use computed() when**: 
+  - The calculation is expensive
+  - You need to share the result between multiple consumers
+  - You're working with asynchronous operations
+  - You need to track specific error states
+
+#### Asynchronous Computations
+
+`computed()` also handles asynchronous operations seamlessly. It automatically manages promises, tracks dependencies, and handles cancellation through `AbortController`.
+
+**Note**: Asynchronous computed signals return `UNSET` while pending, which you can handle with the `nil` case in effects. Always use `computed()` (not plain functions) for async operations.
+
+```js
+import { state, computed, effect } from '@zeix/cause-effect'
 
 const entryId = state(42)
-const entryData = task(async abort => {
+const entryData = computed(async abort => {
   const response = await fetch(`/api/entry/${entryId.get()}`, { signal: abort })
   if (!response.ok) throw new Error(`Failed to fetch data: ${response.statusText}`)
   return response.json()
@@ -130,7 +148,7 @@ document.querySelector('button.next').addEventListener('click', () => {
 Cause & Effect provides a robust way to handle side effects and errors through the `effect()` function, with three distinct paths:
 
 1. **Ok**: When values are available
-2. **Nil**: For loading/unset states (primarily with async tasks)
+2. **Nil**: For loading/unset states (with async tasks)
 3. **Err**: When errors occur during computation
 
 This allows for declarative handling of all possible states:
@@ -138,13 +156,13 @@ This allows for declarative handling of all possible states:
 ```js
 effect({
   signals: [data],
-  ok: (value) => /* update UI */,
-  nil: () => /* show loading */,
-  err: (error) => /* show error */
+  ok: (value) => /* update UI when data is available */,
+  nil: () => /* show loading state while pending */,
+  err: (error) => /* show error message when computation fails */
 })
 ```
 
-Instead of using a single callback function, you can provide an object with an `ok` handler (required), plus optional `err` and `nil` handlers. Cause & Effect will automatically route to the appropriate handler based on the state of the signals.
+Instead of using a single callback function, you can provide an object with an `ok` handler (required), plus optional `err` and `nil` handlers. Cause & Effect will automatically route to the appropriate handler based on the state of the signals. If not provided, Cause & Effect will assume `console.error` for `err` and a no-op for `nil`.
 
 ## DOM Updates
 
@@ -237,13 +255,13 @@ Using Symbols for deduplication provides:
 Use `batch()` to group multiple signal updates, ensuring effects run only once after all changes are applied:
 
 ```js
-import { state, memo, effect, batch } from '@zeix/cause-effect'
+import { state, computed, effect, batch } from '@zeix/cause-effect'
 
 // State: define an array of State<number>
 const signals = [state(2), state(3), state(5)]
 
 // Compute the sum of all signals
-const sum = memo(() => {
+const sum = computed(() => {
   const v = signals.reduce((total, signal) => total + signal.get(), 0)
   // Validate the result
   if (!Number.isFinite(v)) throw new Error('Invalid value')
@@ -282,10 +300,10 @@ The Cause & Effect library is designed around these principles:
 Effects return a cleanup function. When executed, it will unsubscribe from signals and run cleanup functions returned by effect callbacks, for example to remove event listeners.
 
 ```js
-import { state, memo, effect } from '@zeix/cause-effect'
+import { state, computed, effect } from '@zeix/cause-effect'
 
 const user = state({ name: 'Alice', age: 30 })
-const greeting = memo(() => `Hello ${user.get().name}!`)
+const greeting = computed(() => `Hello ${user.get().name}!`)
 const cleanup = effect({
   signals: [user, greeting],
   ok: ({ age }, greet) => {
@@ -302,14 +320,14 @@ user.set({ name: 'Bob', age: 28 }) // Won't trigger the effect anymore
 
 ### Automatic Abort Control
 
-For asynchronous operations, `task()` automatically manages cancellation when dependencies change, providing an `abort` signal parameter:
+For asynchronous operations, `computed()` automatically manages cancellation when dependencies change, providing an `abort` signal parameter:
 
 ```js
-import { state, task, effect } from '@zeix/cause-effect'
+import { state, computed, effect } from '@zeix/cause-effect'
 
 const id = state(42)
-const url = memo(v => `https://example.com/api/entries/${id.get()}`)
-const data = task(async abort => {
+const url = computed(v => `https://example.com/api/entries/${id.get()}`)
+const data = computed(async abort => {
   const response = await fetch(url.get(), { signal: abort })
   if (!response.ok) throw new Error(`Failed to fetch data: ${response.statusText}`)
   return response.json()

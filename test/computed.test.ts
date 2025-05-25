@@ -1,8 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import {
 	state,
-	memo,
-	task,
+	computed,
 	UNSET,
 	isComputed,
 	isState,
@@ -19,37 +18,37 @@ const increment = (n: number) => (Number.isFinite(n) ? n + 1 : UNSET)
 describe('Computed', function () {
 	test('should identify computed signals with isComputed()', () => {
 		const count = state(42)
-		const doubled = memo(() => count.get() * 2)
+		const doubled = computed(() => count.get() * 2)
 		expect(isComputed(doubled)).toBe(true)
 		expect(isState(doubled)).toBe(false)
 	})
 
 	test('should compute a function', function () {
-		const derived = memo(() => 1 + 2)
+		const derived = computed(() => 1 + 2)
 		expect(derived.get()).toBe(3)
 	})
 
 	test('should compute function dependent on a signal', function () {
 		const cause = state(42)
-		const derived = memo(() => cause.get() + 1)
+		const derived = computed(() => cause.get() + 1)
 		expect(derived.get()).toBe(43)
 	})
 
 	test('should compute function dependent on an updated signal', function () {
 		const cause = state(42)
-		const derived = memo(() => cause.get() + 1)
+		const derived = computed(() => cause.get() + 1)
 		cause.set(24)
 		expect(derived.get()).toBe(25)
 	})
 
 	test('should compute function dependent on an async signal', async function () {
 		const status = state('pending')
-		const promised = task(async () => {
+		const promised = computed(async () => {
 			await wait(100)
 			status.set('success')
 			return 42
 		})
-		const derived = memo(() => increment(promised.get()))
+		const derived = computed(() => increment(promised.get()))
 		expect(derived.get()).toBe(UNSET)
 		expect(status.get()).toBe('pending')
 		await wait(110)
@@ -60,13 +59,13 @@ describe('Computed', function () {
 	test('should handle errors from an async signal gracefully', async function () {
 		const status = state('pending')
 		const error = state('')
-		const promised = task(async () => {
+		const promised = computed(async () => {
 			await wait(100)
 			status.set('error')
 			error.set('error occurred')
 			return 0
 		})
-		const derived = memo(() => increment(promised.get()))
+		const derived = computed(() => increment(promised.get()))
 		expect(derived.get()).toBe(UNSET)
 		expect(status.get()).toBe('pending')
 		await wait(110)
@@ -75,15 +74,15 @@ describe('Computed', function () {
 	})
 
 	test('should compute task signals in parallel without waterfalls', async function () {
-		const a = task(async () => {
+		const a = computed(async () => {
 			await wait(100)
 			return 10
 		})
-		const b = task(async () => {
+		const b = computed(async () => {
 			await wait(100)
 			return 20
 		})
-		const c = memo(() => {
+		const c = computed(() => {
 			const aValue = a.get()
 			const bValue = b.get()
 			return aValue === UNSET || bValue === UNSET
@@ -97,17 +96,17 @@ describe('Computed', function () {
 
 	test('should compute function dependent on a chain of computed states dependent on a signal', function () {
 		const x = state(42)
-		const a = memo(() => x.get() + 1)
-		const b = memo(() => a.get() * 2)
-		const c = memo(() => b.get() + 1)
+		const a = computed(() => x.get() + 1)
+		const b = computed(() => a.get() * 2)
+		const c = computed(() => b.get() + 1)
 		expect(c.get()).toBe(87)
 	})
 
 	test('should compute function dependent on a chain of computed states dependent on an updated signal', function () {
 		const x = state(42)
-		const a = memo(() => x.get() + 1)
-		const b = memo(() => a.get() * 2)
-		const c = memo(() => b.get() + 1)
+		const a = computed(() => x.get() + 1)
+		const b = computed(() => a.get() * 2)
+		const c = computed(() => b.get() + 1)
 		x.set(24)
 		expect(c.get()).toBe(51)
 	})
@@ -115,9 +114,9 @@ describe('Computed', function () {
 	test('should drop X->B->X updates', function () {
 		let count = 0
 		const x = state(2)
-		const a = memo(() => x.get() - 1)
-		const b = memo(() => x.get() + a.get())
-		const c = memo(() => {
+		const a = computed(() => x.get() - 1)
+		const b = computed(() => x.get() + a.get())
+		const c = computed(() => {
 			count++
 			return 'c: ' + b.get()
 		})
@@ -131,9 +130,9 @@ describe('Computed', function () {
 	test('should only update every signal once (diamond graph)', function () {
 		let count = 0
 		const x = state('a')
-		const a = memo(() => x.get())
-		const b = memo(() => x.get())
-		const c = memo(() => {
+		const a = computed(() => x.get())
+		const b = computed(() => x.get())
+		const c = computed(() => {
 			count++
 			return a.get() + ' ' + b.get()
 		})
@@ -148,10 +147,10 @@ describe('Computed', function () {
 	test('should only update every signal once (diamond graph + tail)', function () {
 		let count = 0
 		const x = state('a')
-		const a = memo(() => x.get())
-		const b = memo(() => x.get())
-		const c = memo(() => a.get() + ' ' + b.get())
-		const d = memo(() => {
+		const a = computed(() => x.get())
+		const b = computed(() => x.get())
+		const c = computed(() => a.get() + ' ' + b.get())
+		const d = computed(() => {
 			count++
 			return c.get()
 		})
@@ -166,7 +165,7 @@ describe('Computed', function () {
 		const a = state(3)
 		const b = state(4)
 		let count = 0
-		const sum = memo(() => {
+		const sum = computed(() => {
 			count++
 			return a.get() + b.get()
 		})
@@ -189,11 +188,11 @@ describe('Computed', function () {
 	test('should bail out if result is the same', function () {
 		let count = 0
 		const x = state('a')
-		const a = memo(() => {
+		const a = computed(() => {
 			x.get()
 			return 'foo'
 		})
-		const b = memo(() => {
+		const b = computed(() => {
 			count++
 			return a.get()
 		})
@@ -209,9 +208,9 @@ describe('Computed', function () {
 	test('should block if result remains unchanged', function () {
 		let count = 0
 		const x = state(42)
-		const a = memo(() => x.get() % 2)
-		const b = memo(() => (a.get() ? 'odd' : 'even'))
-		const c = memo(() => {
+		const a = computed(() => x.get() % 2)
+		const b = computed(() => (a.get() ? 'odd' : 'even'))
+		const c = computed(() => {
 			count++
 			return `c: ${b.get()}`
 		})
@@ -226,11 +225,11 @@ describe('Computed', function () {
 
 	test('should detect and throw error for circular dependencies', function () {
 		const a = state(1)
-		const b = memo(() => c.get() + 1)
-		const c = memo(() => b.get() + a.get())
+		const b = computed(() => c.get() + 1)
+		const c = computed(() => b.get() + a.get())
 		expect(() => {
 			b.get() // This should trigger the circular dependency
-		}).toThrow('Circular dependency in memo detected')
+		}).toThrow('Circular dependency in computed detected')
 		expect(a.get()).toBe(1)
 	})
 
@@ -238,13 +237,13 @@ describe('Computed', function () {
 		let okCount = 0
 		let errCount = 0
 		const x = state(0)
-		const a = memo(() => {
+		const a = computed(() => {
 			if (x.get() === 1) throw new Error('Calculation error')
 			return 1
 		})
 
 		// Replace matcher with try/catch in a computed
-		const b = memo(() => {
+		const b = computed(() => {
 			try {
 				a.get() // just check if it works
 				return `c: success`
@@ -253,7 +252,7 @@ describe('Computed', function () {
 				return `c: recovered`
 			}
 		})
-		const c = memo(() => {
+		const c = computed(() => {
 			okCount++
 			return b.get()
 		})
@@ -276,7 +275,7 @@ describe('Computed', function () {
 
 	test('should create an effect that reacts on async computed changes', async function () {
 		const cause = state(42)
-		const derived = task(async () => {
+		const derived = computed(async () => {
 			await wait(100)
 			return cause.get() + 1
 		})
@@ -306,11 +305,11 @@ describe('Computed', function () {
 
 	test('should handle complex computed signal with error and async dependencies', async function () {
 		const toggleState = state(true)
-		const errorProne = memo(() => {
+		const errorProne = computed(() => {
 			if (toggleState.get()) throw new Error('Intentional error')
 			return 42
 		})
-		const asyncValue = task(async () => {
+		const asyncValue = computed(async () => {
 			await wait(50)
 			return 10
 		})
@@ -319,8 +318,7 @@ describe('Computed', function () {
 		let errCount = 0
 		// let _result: number = 0
 
-		// Replace matcher with try/catch in a computed
-		const complexComputed = memo(() => {
+		const complexComputed = computed(() => {
 			try {
 				const x = errorProne.get()
 				const y = asyncValue.get()
@@ -355,7 +353,7 @@ describe('Computed', function () {
 	test('should handle signal changes during async computation', async function () {
 		const source = state(1)
 		let computationCount = 0
-		const derived = task(async abort => {
+		const derived = computed(async abort => {
 			computationCount++
 			expect(abort?.aborted).toBe(false)
 			await wait(100)
@@ -376,7 +374,7 @@ describe('Computed', function () {
 	test('should handle multiple rapid changes during async computation', async function () {
 		const source = state(1)
 		let computationCount = 0
-		const derived = task(async abort => {
+		const derived = computed(async abort => {
 			computationCount++
 			expect(abort?.aborted).toBe(false)
 			await wait(100)
@@ -400,7 +398,7 @@ describe('Computed', function () {
 
 	test('should handle errors in aborted computations', async function () {
 		const source = state(1)
-		const derived = task(async () => {
+		const derived = computed(async () => {
 			await wait(100)
 			const value = source.get()
 			if (value === 2) throw new Error('Intentional error')

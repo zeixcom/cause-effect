@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { state, memo, batch, effect } from '../'
+import { state, computed, batch, effect } from '../'
 
 /* === Tests === */
 
@@ -25,7 +25,7 @@ describe('Batch', function () {
 		const a = state(3)
 		const b = state(4)
 		const c = state(5)
-		const sum = memo(() => a.get() + b.get() + c.get())
+		const sum = computed(() => a.get() + b.get() + c.get())
 		let result = 0
 		let count = 0
 		effect({
@@ -50,7 +50,7 @@ describe('Batch', function () {
 		const signals = [state(2), state(3), state(5)]
 
 		// Computed: derive a calculation ...
-		const sum = memo(() => {
+		const sum = computed(() => {
 			const v = signals.reduce((total, v) => total + v.get(), 0)
 			if (!Number.isFinite(v)) throw new Error('Invalid value')
 			return v

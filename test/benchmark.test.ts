@@ -1,5 +1,5 @@
 import { describe, test, expect, mock } from 'bun:test'
-import { state, memo, effect, batch } from '../'
+import { state, computed, effect, batch } from '../'
 import { makeGraph, runGraph, Counter } from './util/dependency-graph'
 import {
 	type ReactiveFramework,
@@ -25,7 +25,7 @@ const framework = {
 		}
 	},
 	computed: <T extends {}>(fn: () => T) => {
-		const c = memo(fn)
+		const c = computed(fn)
 		return {
 			read: () => c.get(),
 		}

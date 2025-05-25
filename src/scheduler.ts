@@ -4,7 +4,8 @@ type Cleanup = () => void
 
 type Watcher = {
 	(): void
-	cleanups: Set<Cleanup>
+	off(cleanup: Cleanup): void
+	cleanup(): void
 }
 
 type Updater = <T>() => T | boolean | void
@@ -26,8 +27,8 @@ const updateDOM = () => {
 	requestId = undefined
 	const updates = Array.from(updateMap.values())
 	updateMap.clear()
-	for (const fn of updates) {
-		fn()
+	for (const update of updates) {
+		update()
 	}
 }
 
@@ -42,16 +43,37 @@ queueMicrotask(updateDOM)
 /* === Functions === */
 
 /**
+ * Create a watcher that can be used to observe changes to a signal
+ *
+ * @since 0.14.1
+ * @param {() => void} notice - function to be called when the state changes
+ * @returns {Watcher} - watcher object with off and cleanup methods
+ */
+const watch = (notice: () => void): Watcher => {
+	const cleanups = new Set<Cleanup>()
+	const w = notice as Partial<Watcher>
+	w.off = (on: Cleanup) => {
+		cleanups.add(on)
+	}
+	w.cleanup = () => {
+		for (const cleanup of cleanups) {
+			cleanup()
+		}
+		cleanups.clear()
+	}
+	return w as Watcher
+}
+
+/**
  * Add active watcher to the Set of watchers
  *
  * @param {Set<Watcher>} watchers - watchers of the signal
  */
 const subscribe = (watchers: Set<Watcher>) => {
-	// if (!active) console.warn('Calling .get() outside of a reactive context')
 	if (active && !watchers.has(active)) {
 		const watcher = active
 		watchers.add(watcher)
-		active.cleanups.add(() => {
+		active.off(() => {
 			watchers.delete(watcher)
 		})
 	}
@@ -63,9 +85,9 @@ const subscribe = (watchers: Set<Watcher>) => {
  * @param {Set<Watcher>} watchers - watchers of the signal
  */
 const notify = (watchers: Set<Watcher>) => {
-	for (const mark of watchers) {
-		if (batchDepth) pending.add(mark)
-		else mark()
+	for (const watcher of watchers) {
+		if (batchDepth) pending.add(watcher)
+		else watcher()
 	}
 }
 
@@ -76,8 +98,8 @@ const flush = () => {
 	while (pending.size) {
 		const watchers = Array.from(pending)
 		pending.clear()
-		for (const mark of watchers) {
-			mark()
+		for (const watcher of watchers) {
+			watcher()
 		}
 	}
 }
@@ -101,11 +123,11 @@ const batch = (fn: () => void) => {
  * Run a function in a reactive context
  *
  * @param {() => void} run - function to run the computation or effect
- * @param {Watcher} mark - function to be called when the state changes or undefined for temporary unwatching while inserting auto-hydrating DOM nodes that might read signals (e.g., web components)
+ * @param {Watcher} watcher - function to be called when the state changes or undefined for temporary unwatching while inserting auto-hydrating DOM nodes that might read signals (e.g., web components)
  */
-const watch = (run: () => void, mark?: Watcher): void => {
+const observe = (run: () => void, watcher?: Watcher): void => {
 	const prev = active
-	active = mark
+	active = watcher
 	try {
 		run()
 	} finally {
@@ -145,5 +167,6 @@ export {
 	flush,
 	batch,
 	watch,
+	observe,
 	enqueue,
 }

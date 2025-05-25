@@ -4,6 +4,7 @@ type State<T extends {}> = {
     set(v: T): void;
     update(fn: (v: T) => T): void;
 };
+declare const TYPE_STATE = "State";
 /**
  * Create a new state signal
  *
@@ -20,4 +21,4 @@ declare const state: <T extends {}>(initialValue: T) => State<T>;
  * @returns {boolean} - true if the value is a State instance, false otherwise
  */
 declare const isState: <T extends {}>(value: unknown) => value is State<T>;
-export { type State, state, isState };
+export { type State, TYPE_STATE, state, isState };

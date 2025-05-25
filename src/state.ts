@@ -86,4 +86,4 @@ const isState = /*#__PURE__*/ <T extends {}>(
 
 /* === Exports === */
 
-export { type State, state, isState }
+export { type State, TYPE_STATE, state, isState }

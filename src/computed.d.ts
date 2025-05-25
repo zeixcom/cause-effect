@@ -1,19 +1,13 @@
-import { type MemoCallback } from './memo';
-import { type TaskCallback } from './task';
 type Computed<T extends {}> = {
     [Symbol.toStringTag]: 'Computed';
     get(): T;
 };
 type ComputedCallback<T extends {} & {
     then?: void;
-}> = TaskCallback<T> | MemoCallback<T>;
+}> = ((abort: AbortSignal) => Promise<T>) | (() => T);
 declare const TYPE_COMPUTED = "Computed";
 /**
  * Create a derived signal from existing signals
- *
- * This function delegates to either memo() for synchronous computations
- * or task() for asynchronous computations, providing better performance
- * for each case.
  *
  * @since 0.9.0
  * @param {ComputedCallback<T>} fn - computation callback function
@@ -28,4 +22,12 @@ declare const computed: <T extends {}>(fn: ComputedCallback<T>) => Computed<T>;
  * @returns {boolean} - true if value is a computed state, false otherwise
  */
 declare const isComputed: <T extends {}>(value: unknown) => value is Computed<T>;
-export { type Computed, type ComputedCallback, TYPE_COMPUTED, computed, isComputed, };
+/**
+ * Check if the provided value is a callback that may be used as input for toSignal() to derive a computed state
+ *
+ * @since 0.12.0
+ * @param {unknown} value - value to check
+ * @returns {boolean} - true if value is a callback or callbacks object, false otherwise
+ */
+declare const isComputedCallback: <T extends {}>(value: unknown) => value is ComputedCallback<T>;
+export { type Computed, type ComputedCallback, TYPE_COMPUTED, computed, isComputed, isComputedCallback, };

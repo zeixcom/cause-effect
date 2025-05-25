@@ -1,10 +1,8 @@
-import { type Signal } from './signal';
+import { type Signal, type SignalValues } from './signal';
 import { type Cleanup } from './scheduler';
 type EffectMatcher<S extends Signal<{}>[]> = {
     signals: S;
-    ok: (...values: {
-        [K in keyof S]: S[K] extends Signal<infer T> ? T : never;
-    }) => void | Cleanup;
+    ok: (...values: SignalValues<S>) => void | Cleanup;
     err?: (...errors: Error[]) => void | Cleanup;
     nil?: () => void | Cleanup;
 };

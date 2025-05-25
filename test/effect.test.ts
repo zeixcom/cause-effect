@@ -1,5 +1,5 @@
 import { describe, test, expect, mock } from 'bun:test'
-import { state, task, effect, UNSET, memo } from '../'
+import { state, computed, effect, UNSET } from '../'
 
 /* === Utility Functions === */
 
@@ -21,11 +21,11 @@ describe('Effect', function () {
 	})
 
 	test('should be triggered after computed async signals resolve without waterfalls', async function () {
-		const a = task(async () => {
+		const a = computed(async () => {
 			await wait(100)
 			return 10
 		})
-		const b = task(async () => {
+		const b = computed(async () => {
 			await wait(100)
 			return 20
 		})
@@ -62,7 +62,7 @@ describe('Effect', function () {
 
 	test('should handle errors in effects', function () {
 		const a = state(1)
-		const b = memo(() => {
+		const b = computed(() => {
 			const v = a.get()
 			if (v > 5) throw new Error('Value too high')
 			return v * 2
@@ -99,7 +99,7 @@ describe('Effect', function () {
 	})
 
 	test('should handle UNSET values in effects', async function () {
-		const a = task(async () => {
+		const a = computed(async () => {
 			await wait(100)
 			return 42
 		})
@@ -133,7 +133,7 @@ describe('Effect', function () {
 
 		try {
 			const a = state(1)
-			const b = memo(() => {
+			const b = computed(() => {
 				const v = a.get()
 				if (v > 5) throw new Error('Value too high')
 				return v * 2

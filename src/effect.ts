@@ -1,21 +1,12 @@
-import { type Signal, UNSET } from './signal'
-import {
-	CircularDependencyError,
-	isFunction,
-	toError,
-	isAbortError,
-} from './util'
-import { watch, type Cleanup, type Watcher } from './scheduler'
+import { type Signal, type SignalValues, UNSET } from './signal'
+import { CircularDependencyError, isFunction, toError } from './util'
+import { type Cleanup, watch, observe } from './scheduler'
 
 /* === Types === */
 
 type EffectMatcher<S extends Signal<{}>[]> = {
 	signals: S
-	ok: (
-		...values: {
-			[K in keyof S]: S[K] extends Signal<infer T> ? T : never
-		}
-	) => void | Cleanup
+	ok: (...values: SignalValues<S>) => void | Cleanup
 	err?: (...errors: Error[]) => void | Cleanup
 	nil?: () => void | Cleanup
 }
@@ -40,54 +31,46 @@ function effect<S extends Signal<{}>[]>(
 	} = isFunction(matcher)
 		? { signals: [] as unknown as S, ok: matcher }
 		: matcher
+
 	let running = false
-	const run = (() =>
-		watch(() => {
+	const run = watch(() =>
+		observe(() => {
 			if (running) throw new CircularDependencyError('effect')
 			running = true
+
+			// Pure part
+			const errors: Error[] = []
+			let pending = false
+			const values = signals.map(signal => {
+				try {
+					const value = signal.get()
+					if (value === UNSET) pending = true
+					return value
+				} catch (e) {
+					errors.push(toError(e))
+					return UNSET
+				}
+			}) as SignalValues<S>
+
+			// Effectful part
 			let cleanup: void | Cleanup = undefined
 			try {
-				const errors: Error[] = []
-				let suspense = false
-				const values = signals.map(signal => {
-					try {
-						const value = signal.get()
-						if (value === UNSET) suspense = true
-						return value
-					} catch (e) {
-						if (isAbortError(e)) throw e
-						errors.push(toError(e))
-						return UNSET
-					}
-				}) as {
-					[K in keyof S]: S[K] extends Signal<infer T extends {}>
-						? T
-						: never
-				}
-
-				try {
-					cleanup = suspense
-						? nil()
-						: errors.length
-							? err(...errors)
-							: ok(...values)
-				} catch (e) {
-					if (isAbortError(e)) throw e
-					const error = toError(e)
-					cleanup = err(error)
-				}
+				cleanup = pending
+					? nil()
+					: errors.length
+						? err(...errors)
+						: ok(...values)
 			} catch (e) {
-				err(toError(e))
+				cleanup = err(toError(e))
+			} finally {
+				if (isFunction(cleanup)) run.off(cleanup)
 			}
-			if (isFunction(cleanup)) run.cleanups.add(cleanup)
+
 			running = false
-		}, run)) as Watcher
-	run.cleanups = new Set<Cleanup>()
+		}, run),
+	)
 	run()
-	return () => {
-		run.cleanups.forEach(fn => fn())
-		run.cleanups.clear()
-	}
+	return () => run.cleanup()
 }
 
 /* === Exports === */
