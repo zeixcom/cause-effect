@@ -35,11 +35,8 @@ const user = state({ name: 'Alice', age: 30 })
 const greeting = computed(() => `Hello ${user.get().name}!`)
 
 // 3. React to changes
-effect({
-  signals: [user, greeting],
-  ok: ({ age }, greet) => {
-    console.log(`${greet} You are ${age} years old`)
-  }
+effect(() => {
+  console.log(`${greeting.get()} You are ${user.get().age} years old`)
 })
 
 // 4. Update state
@@ -107,41 +104,47 @@ const isEven = () => !(count.get() % 2)
 **When to use which approach:**
 
 - **Use functions when**: The calculation is simple, inexpensive, or called infrequently
-- **Use computed() when**: 
+- **Use computed() when**:
   - The calculation is expensive
   - You need to share the result between multiple consumers
   - You're working with asynchronous operations
   - You need to track specific error states
 
-#### Asynchronous Computations
+#### Asynchronous Computations with Automatic Cancellation
 
-`computed()` also handles asynchronous operations seamlessly. It automatically manages promises, tracks dependencies, and handles cancellation through `AbortController`.
+`computed()` seamlessly handles asynchronous operations with built-in cancellation support. When used with an async function, it:
 
-**Note**: Asynchronous computed signals return `UNSET` while pending, which you can handle with the `nil` case in effects. Always use `computed()` (not plain functions) for async operations.
+1. Provides an `abort` signal parameter you can pass to fetch or other cancelable APIs
+2. Automatically cancels pending operations when dependencies change
+3. Returns `UNSET` while the Promise is pending
+4. Properly handles errors from failed requests
 
 ```js
 import { state, computed, effect } from '@zeix/cause-effect'
 
-const entryId = state(42)
-const entryData = computed(async abort => {
-  const response = await fetch(`/api/entry/${entryId.get()}`, { signal: abort })
+const id = state(42)
+const data = computed(async abort => {
+  // The abort signal is automatically managed by the computed signal
+  const response = await fetch(`/api/entries/${id.get()}`, { signal: abort })
   if (!response.ok) throw new Error(`Failed to fetch data: ${response.statusText}`)
   return response.json()
 })
 
-// Display data when available
+// Handle all possible states
 effect({
-  signals: [entryData],
-  ok: data => console.log('Data loaded:', data),
+  signals: [data],
+  ok: json => console.log('Data loaded:', json),
   nil: () => console.log('Loading...'),
   err: error => console.error('Error:', error)
 })
 
-// Move to next entry, automatically triggers a new fetch
+// When id changes, the previous request is automatically canceled
 document.querySelector('button.next').addEventListener('click', () => {
-  entryId.update(v => ++v)
+  id.update(v => ++v)
 })
 ```
+
+**Note**: Always use `computed()` (not plain functions) for async operations to benefit from automatic cancellation, memoization, and state management.
 
 ## Effects and Error Handling
 
@@ -278,7 +281,9 @@ effect({
 // Batch: apply changes to all signals in a single transaction
 document.querySelector('.double-all').addEventListener('click', () => {
   batch(() => {
-    signals.forEach(signal => signal.update(v => v * 2))
+    signals.forEach(signal => {
+      signal.update(v => v * 2)
+    })
   })
 })
 // Click on button logs '20' only once
@@ -292,6 +297,7 @@ The Cause & Effect library is designed around these principles:
 
 - **Minimal API**: Core primitives with a small but powerful interface
 - **Automatic Dependency Tracking**: Fine-grained reactivity with minimal boilerplate
+- **Performance-Focused**: Choose the right tool (functions vs computed) for optimal speed
 - **Tree-Shakable**: Import only what you need for optimal bundle size
 - **Flexible Integration**: Works with any JavaScript application or framework
 
@@ -303,44 +309,16 @@ Effects return a cleanup function. When executed, it will unsubscribe from signa
 import { state, computed, effect } from '@zeix/cause-effect'
 
 const user = state({ name: 'Alice', age: 30 })
-const greeting = computed(() => `Hello ${user.get().name}!`)
-const cleanup = effect({
-  signals: [user, greeting],
-  ok: ({ age }, greet) => {
-    console.log(`${greet} You are ${age} years old`)
-    return () => console.log('Cleanup') // Cleanup function
-  }
+const greeting = () => `Hello ${user.get().name}!`
+const cleanup = effect(() => {
+	console.log(`${greeting()} You are ${user.get().age} years old`)
+	return () => console.log('Cleanup') // Cleanup function
 })
 
 // When you no longer need the effect, execute the cleanup function
-cleanup() // Logs: 'Cleanup' and unsubscribes from signals `user` and `greeting`
+cleanup() // Logs: 'Cleanup' and unsubscribes from signal `user`
 
 user.set({ name: 'Bob', age: 28 }) // Won't trigger the effect anymore
-```
-
-### Automatic Abort Control
-
-For asynchronous operations, `computed()` automatically manages cancellation when dependencies change, providing an `abort` signal parameter:
-
-```js
-import { state, computed, effect } from '@zeix/cause-effect'
-
-const id = state(42)
-const url = computed(v => `https://example.com/api/entries/${id.get()}`)
-const data = computed(async abort => {
-  const response = await fetch(url.get(), { signal: abort })
-  if (!response.ok) throw new Error(`Failed to fetch data: ${response.statusText}`)
-  return response.json()
-})
-effect({
-  signals: [data],
-  ok: v => console.log('Value:', v),
-  nil: () => console.warn('Not ready'),
-  err: e => console.error('Error:', e)
-})
-
-// User switches to another entry
-id.set(24) // Cancels the previous fetch request and starts a new one
 ```
 
 ## Contributing & License
