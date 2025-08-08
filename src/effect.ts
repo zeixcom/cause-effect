@@ -1,14 +1,14 @@
+import { type Cleanup, observe, watch } from './scheduler'
 import { type Signal, type SignalValues, UNSET } from './signal'
 import { CircularDependencyError, isFunction, toError } from './util'
-import { type Cleanup, watch, observe } from './scheduler'
 
 /* === Types === */
 
-type EffectMatcher<S extends Signal<{}>[]> = {
+type EffectMatcher<S extends Signal<unknown & {}>[]> = {
 	signals: S
-	ok: (...values: SignalValues<S>) => void | Cleanup
-	err?: (...errors: Error[]) => void | Cleanup
-	nil?: () => void | Cleanup
+	ok: (...values: SignalValues<S>) => Cleanup | undefined
+	err?: (...errors: Error[]) => Cleanup | undefined
+	nil?: () => Cleanup | undefined
 }
 
 /* === Functions === */
@@ -17,17 +17,19 @@ type EffectMatcher<S extends Signal<{}>[]> = {
  * Define what happens when a reactive state changes
  *
  * @since 0.1.0
- * @param {EffectMatcher<S> | (() => void | Cleanup)} matcher - effect matcher or callback
+ * @param {EffectMatcher<S> | (() => Cleanup | undefined)} matcher - effect matcher or callback
  * @returns {Cleanup} - cleanup function for the effect
  */
-function effect<S extends Signal<{}>[]>(
-	matcher: EffectMatcher<S> | (() => void | Cleanup),
+function effect<S extends Signal<unknown & {}>[]>(
+	matcher: EffectMatcher<S> | (() => Cleanup | undefined),
 ): Cleanup {
 	const {
 		signals,
 		ok,
-		err = console.error,
-		nil = () => {},
+		err = (error: Error): undefined => {
+			console.error(error)
+		},
+		nil = (): undefined => {},
 	} = isFunction(matcher)
 		? { signals: [] as unknown as S, ok: matcher }
 		: matcher
@@ -53,7 +55,7 @@ function effect<S extends Signal<{}>[]>(
 			}) as SignalValues<S>
 
 			// Effectful part
-			let cleanup: void | Cleanup = undefined
+			let cleanup: Cleanup | undefined
 			try {
 				cleanup = pending
 					? nil()

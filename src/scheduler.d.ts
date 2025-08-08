@@ -4,7 +4,7 @@ type Watcher = {
     off(cleanup: Cleanup): void;
     cleanup(): void;
 };
-type Updater = <T>() => T | boolean | void;
+type Updater = <T>() => T | boolean | undefined;
 /**
  * Create a watcher that can be used to observe changes to a signal
  *
@@ -51,5 +51,5 @@ declare const observe: (run: () => void, watcher?: Watcher) => void;
  * @param {Updater} fn - function to be executed on the next animation frame; can return updated value <T>, success <boolean> or void
  * @param {symbol} dedupe - Symbol for deduplication; if not provided, a unique Symbol is created ensuring the update is always executed
  */
-declare const enqueue: <T>(fn: Updater, dedupe?: symbol) => Promise<boolean | void | T>;
+declare const enqueue: <T>(fn: Updater, dedupe?: symbol) => Promise<boolean | T | undefined>;
 export { type Cleanup, type Watcher, type Updater, subscribe, notify, flush, batch, watch, observe, enqueue, };

@@ -1,5 +1,5 @@
-import { describe, test, expect, mock } from 'bun:test'
-import { state, computed, effect, UNSET } from '../'
+import { describe, expect, mock, test } from 'bun:test'
+import { computed, effect, state, UNSET } from '../'
 
 /* === Utility Functions === */
 
@@ -7,11 +7,11 @@ const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
 /* === Tests === */
 
-describe('Effect', function () {
-	test('should be triggered after a state change', function () {
+describe('Effect', () => {
+	test('should be triggered after a state change', () => {
 		const cause = state('foo')
 		let count = 0
-		effect(() => {
+		effect((): undefined => {
 			cause.get()
 			count++
 		})
@@ -20,7 +20,7 @@ describe('Effect', function () {
 		expect(count).toBe(2)
 	})
 
-	test('should be triggered after computed async signals resolve without waterfalls', async function () {
+	test('should be triggered after computed async signals resolve without waterfalls', async () => {
 		const a = computed(async () => {
 			await wait(100)
 			return 10
@@ -33,7 +33,7 @@ describe('Effect', function () {
 		let count = 0
 		effect({
 			signals: [a, b],
-			ok: (aValue, bValue) => {
+			ok: (aValue, bValue): undefined => {
 				result = aValue + bValue
 				count++
 			},
@@ -45,11 +45,11 @@ describe('Effect', function () {
 		expect(count).toBe(1)
 	})
 
-	test('should be triggered repeatedly after repeated state change', async function () {
+	test('should be triggered repeatedly after repeated state change', async () => {
 		const cause = state(0)
 		let result = 0
 		let count = 0
-		effect(() => {
+		effect((): undefined => {
 			result = cause.get()
 			count++
 		})
@@ -60,7 +60,7 @@ describe('Effect', function () {
 		}
 	})
 
-	test('should handle errors in effects', function () {
+	test('should handle errors in effects', () => {
 		const a = state(1)
 		const b = computed(() => {
 			const v = a.get()
@@ -71,11 +71,11 @@ describe('Effect', function () {
 		let errorCallCount = 0
 		effect({
 			signals: [b],
-			ok: () => {
+			ok: (): undefined => {
 				// console.log('Normal effect:', value)
 				normalCallCount++
 			},
-			err: error => {
+			err: (error: Error): undefined => {
 				// console.log('Error effect:', error)
 				errorCallCount++
 				expect(error.message).toBe('Value too high')
@@ -98,7 +98,7 @@ describe('Effect', function () {
 		expect(errorCallCount).toBe(1)
 	})
 
-	test('should handle UNSET values in effects', async function () {
+	test('should handle UNSET values in effects', async () => {
 		const a = computed(async () => {
 			await wait(100)
 			return 42
@@ -107,11 +107,11 @@ describe('Effect', function () {
 		let nilCount = 0
 		effect({
 			signals: [a],
-			ok: aValue => {
+			ok: (aValue: number): undefined => {
 				normalCallCount++
 				expect(aValue).toBe(42)
 			},
-			nil: () => {
+			nil: (): undefined => {
 				nilCount++
 			},
 		})
@@ -140,7 +140,7 @@ describe('Effect', function () {
 			})
 
 			// Create an effect without explicit error handling
-			effect(() => {
+			effect((): undefined => {
 				b.get()
 			})
 
@@ -164,7 +164,7 @@ describe('Effect', function () {
 		const count = state(42)
 		let received = 0
 
-		const cleanup = effect(() => {
+		const cleanup = effect((): undefined => {
 			received = count.get()
 		})
 
@@ -183,12 +183,12 @@ describe('Effect', function () {
 
 		effect({
 			signals: [count],
-			ok: () => {
+			ok: (): undefined => {
 				okCount++
 				// This effect updates the signal it depends on, creating a circular dependency
 				count.update(v => ++v)
 			},
-			err: e => {
+			err: (e): undefined => {
 				errCount++
 				expect(e).toBeInstanceOf(Error)
 				expect(e.message).toBe('Circular dependency in effect detected')

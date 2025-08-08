@@ -8,7 +8,7 @@ type Watcher = {
 	cleanup(): void
 }
 
-type Updater = <T>() => T | boolean | void
+type Updater = <T>() => T | boolean | undefined
 
 /* === Internal === */
 
@@ -145,8 +145,8 @@ const observe = (run: () => void, watcher?: Watcher): void => {
  * @param {symbol} dedupe - Symbol for deduplication; if not provided, a unique Symbol is created ensuring the update is always executed
  */
 const enqueue = <T>(fn: Updater, dedupe?: symbol) =>
-	new Promise<T | boolean | void>((resolve, reject) => {
-		updateMap.set(dedupe || Symbol(), () => {
+	new Promise<T | boolean | undefined>((resolve, reject) => {
+		updateMap.set(dedupe || Symbol(), (): undefined => {
 			try {
 				resolve(fn())
 			} catch (error) {

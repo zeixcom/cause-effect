@@ -1,18 +1,18 @@
 import {
+	flush,
+	notify,
+	observe,
+	subscribe,
+	type Watcher,
+	watch,
+} from './scheduler'
+import { UNSET } from './signal'
+import {
 	CircularDependencyError,
 	isFunction,
 	isObjectOfType,
 	toError,
 } from './util'
-import {
-	type Watcher,
-	watch,
-	subscribe,
-	notify,
-	flush,
-	observe,
-} from './scheduler'
-import { UNSET } from './signal'
 
 /* === Types === */
 
@@ -20,7 +20,7 @@ type Computed<T extends {}> = {
 	[Symbol.toStringTag]: 'Computed'
 	get(): T
 }
-type ComputedCallback<T extends {} & { then?: void }> =
+type ComputedCallback<T extends {} & { then?: undefined }> =
 	| ((abort: AbortSignal) => Promise<T>)
 	| (() => T)
 
@@ -49,7 +49,7 @@ const computed = <T extends {}>(fn: ComputedCallback<T>): Computed<T> => {
 	let computing = false
 
 	// Functions to update internal state
-	const ok = (v: T) => {
+	const ok = (v: T): undefined => {
 		if (!Object.is(v, value)) {
 			value = v
 			changed = true
@@ -57,12 +57,12 @@ const computed = <T extends {}>(fn: ComputedCallback<T>): Computed<T> => {
 		error = undefined
 		dirty = false
 	}
-	const nil = () => {
+	const nil = (): undefined => {
 		changed = UNSET !== value
 		value = UNSET
 		error = undefined
 	}
-	const err = (e: unknown) => {
+	const err = (e: unknown): undefined => {
 		const newError = toError(e)
 		changed =
 			!error ||
@@ -169,10 +169,10 @@ const isComputedCallback = /*#__PURE__*/ <T extends {}>(
 /* === Exports === */
 
 export {
-	type Computed,
-	type ComputedCallback,
 	TYPE_COMPUTED,
 	computed,
 	isComputed,
 	isComputedCallback,
+	type Computed,
+	type ComputedCallback,
 }
