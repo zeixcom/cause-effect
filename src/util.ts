@@ -15,7 +15,7 @@ const toError = (reason: unknown): Error =>
 class CircularDependencyError extends Error {
 	constructor(where: string) {
 		super(`Circular dependency in ${where} detected`)
-		return this
+		this.name = 'CircularDependencyError'
 	}
 }
 

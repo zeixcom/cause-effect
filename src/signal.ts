@@ -1,10 +1,10 @@
-import { isState, state } from './state'
 import {
 	type ComputedCallback,
+	computed,
 	isComputed,
 	isComputedCallback,
-	computed,
 } from './computed'
+import { isState, state } from './state'
 
 /* === Types === */
 
@@ -13,12 +13,13 @@ type Signal<T extends {}> = {
 }
 type MaybeSignal<T extends {}> = T | Signal<T> | ComputedCallback<T>
 
-type SignalValues<S extends Signal<{}>[]> = {
+type SignalValues<S extends Signal<unknown & {}>[]> = {
 	[K in keyof S]: S[K] extends Signal<infer T> ? T : never
 }
 
 /* === Constants === */
 
+// biome-ignore lint/suspicious/noExplicitAny: Deliberately using any to be used as a placeholder value in any signal
 const UNSET: any = Symbol()
 
 /* === Functions === */

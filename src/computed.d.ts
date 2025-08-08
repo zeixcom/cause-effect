@@ -3,7 +3,7 @@ type Computed<T extends {}> = {
     get(): T;
 };
 type ComputedCallback<T extends {} & {
-    then?: void;
+    then?: undefined;
 }> = ((abort: AbortSignal) => Promise<T>) | (() => T);
 declare const TYPE_COMPUTED = "Computed";
 /**
@@ -30,4 +30,4 @@ declare const isComputed: <T extends {}>(value: unknown) => value is Computed<T>
  * @returns {boolean} - true if value is a callback or callbacks object, false otherwise
  */
 declare const isComputedCallback: <T extends {}>(value: unknown) => value is ComputedCallback<T>;
-export { type Computed, type ComputedCallback, TYPE_COMPUTED, computed, isComputed, isComputedCallback, };
+export { TYPE_COMPUTED, computed, isComputed, isComputedCallback, type Computed, type ComputedCallback, };

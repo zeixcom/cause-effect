@@ -1,4 +1,4 @@
-import { FrameworkInfo, TestConfig } from './framework-types'
+import type { FrameworkInfo, TestConfig } from './framework-types'
 
 export interface TestResult {
 	sum: number
@@ -25,7 +25,7 @@ export function verifyBenchResult(
 
 	if (expected.sum) {
 		console.assert(
-			result.sum == expected.sum,
+			result.sum === expected.sum,
 			`sum ${framework.name} ${config.name} result:${result.sum} expected:${expected.sum}`,
 		)
 	}

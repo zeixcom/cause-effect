@@ -1,11 +1,11 @@
 /**
  * @name Cause & Effect
- * @version 0.14.1
+ * @version 0.14.2
  * @author Esther Brunner
  */
-export { isFunction, CircularDependencyError } from './src/util';
-export { type Signal, type MaybeSignal, type SignalValues, UNSET, isSignal, isComputedCallback, toSignal, } from './src/signal';
-export { type State, TYPE_STATE, state, isState } from './src/state';
-export { type Computed, type ComputedCallback, TYPE_COMPUTED, computed, isComputed, } from './src/computed';
+export { type Computed, type ComputedCallback, computed, isComputed, TYPE_COMPUTED, } from './src/computed';
 export { type EffectMatcher, effect } from './src/effect';
-export { type Watcher, type Cleanup, type Updater, watch, subscribe, notify, flush, batch, observe, enqueue, } from './src/scheduler';
+export { batch, type Cleanup, enqueue, flush, notify, observe, subscribe, type Updater, type Watcher, watch, } from './src/scheduler';
+export { isComputedCallback, isSignal, type MaybeSignal, type Signal, type SignalValues, toSignal, UNSET, } from './src/signal';
+export { isState, type State, state, TYPE_STATE } from './src/state';
+export { CircularDependencyError, isFunction } from './src/util';

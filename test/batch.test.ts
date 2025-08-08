@@ -1,14 +1,14 @@
-import { describe, test, expect } from 'bun:test'
-import { state, computed, batch, effect } from '../'
+import { describe, expect, test } from 'bun:test'
+import { batch, computed, effect, state } from '../'
 
 /* === Tests === */
 
-describe('Batch', function () {
-	test('should be triggered only once after repeated state change', function () {
+describe('Batch', () => {
+	test('should be triggered only once after repeated state change', () => {
 		const cause = state(0)
 		let result = 0
 		let count = 0
-		effect(() => {
+		effect((): undefined => {
 			result = cause.get()
 			count++
 		})
@@ -21,7 +21,7 @@ describe('Batch', function () {
 		expect(count).toBe(2) // + 1 for effect initialization
 	})
 
-	test('should be triggered only once when multiple signals are set', function () {
+	test('should be triggered only once when multiple signals are set', () => {
 		const a = state(3)
 		const b = state(4)
 		const c = state(5)
@@ -30,11 +30,11 @@ describe('Batch', function () {
 		let count = 0
 		effect({
 			signals: [sum],
-			ok: res => {
+			ok: (res): undefined => {
 				result = res
 				count++
 			},
-			err: () => {},
+			err: (): undefined => {},
 		})
 		batch(() => {
 			a.set(6)
@@ -45,7 +45,7 @@ describe('Batch', function () {
 		expect(count).toBe(2) // + 1 for effect initialization
 	})
 
-	test('should prove example from README works', function () {
+	test('should prove example from README works', () => {
 		// State: define an array of Signal<number>
 		const signals = [state(2), state(3), state(5)]
 
@@ -63,12 +63,12 @@ describe('Batch', function () {
 		// Effect: switch cases for the result
 		effect({
 			signals: [sum],
-			ok: v => {
+			ok: (v): undefined => {
 				result = v
 				okCount++
 				// console.log('Sum:', v)
 			},
-			err: _error => {
+			err: (_error): undefined => {
 				errCount++
 				// console.error('Error:', error)
 			},

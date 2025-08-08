@@ -1,14 +1,13 @@
 {
 	"name": "@zeix/cause-effect",
-	"version": "0.14.1",
+	"version": "0.14.2",
 	"author": "Esther Brunner",
 	"main": "index.js",
 	"module": "index.ts",
 	"devDependencies": {
+		"@biomejs/biome": "2.1.4",
 		"@types/bun": "latest",
-		"eslint": "^9.27.0",
-		"random": "^5.4.0",
-		"typescript-eslint": "^8.32.1"
+		"random": "^5.4.1"
 	},
 	"peerDependencies": {
 		"typescript": "^5.6.3"
@@ -25,9 +24,9 @@
 		"access": "public"
 	},
 	"scripts": {
-		"build": "bun build index.ts --outdir ./ --minify && bunx tsc",
+		"build": "bunx tsc && bun build index.ts --outdir ./ --minify && bun build index.ts --outfile index.dev.js",
 		"test": "bun test",
-		"lint": "bunx eslint src/"
+		"lint": "bunx biome lint --write"
 	},
 	"type": "module",
 	"types": "index.d.ts"

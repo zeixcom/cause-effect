@@ -1,10 +1,7 @@
-import { describe, test, expect, mock } from 'bun:test'
-import { state, computed, effect, batch } from '../'
-import { makeGraph, runGraph, Counter } from './util/dependency-graph'
-import {
-	type ReactiveFramework,
-	type Computed,
-} from './util/reactive-framework'
+import { describe, expect, mock, test } from 'bun:test'
+import { batch, computed, effect, state } from '../'
+import { Counter, makeGraph, runGraph } from './util/dependency-graph'
+import type { Computed, ReactiveFramework } from './util/reactive-framework'
 
 /* === Utility Functions === */
 
@@ -30,8 +27,8 @@ const framework = {
 			read: () => c.get(),
 		}
 	},
-	effect: (fn: () => void) => effect(fn),
-	withBatch: (fn: () => void) => batch(fn),
+	effect: (fn: () => undefined) => effect(fn),
+	withBatch: (fn: () => undefined) => batch(fn),
 	withBuild: <T>(fn: () => T) => fn(),
 }
 const testPullCounts = true
@@ -53,7 +50,7 @@ function makeConfig() {
 /** some basic tests to validate the reactive framework
  * wrapper works and can run performance tests.
  */
-describe('Basic test', function () {
+describe('Basic test', () => {
 	const name = framework.name
 	test(`${name} | simple dependency executes`, () => {
 		framework.withBuild(() => {
@@ -145,11 +142,11 @@ describe('Basic test', function () {
 	})
 
 	test(`${name} | effect`, () => {
-		const spy = _v => {}
+		const spy = (_v: number) => {}
 		const spyMock = mock(spy)
 
 		const s = framework.signal(2)
-		let c: any
+		let c: { read: () => number } = { read: () => 0 }
 
 		framework.withBuild(() => {
 			c = framework.computed(() => s.read() * 2)
@@ -169,18 +166,22 @@ describe('Basic test', function () {
 	})
 })
 
-describe('Kairo tests', function () {
+describe('Kairo tests', () => {
 	const name = framework.name
 
 	test(`${name} | avoidable propagation`, () => {
 		const head = framework.signal(0)
 		const computed1 = framework.computed(() => head.read())
-		const computed2 = framework.computed(() => (computed1.read(), 0))
-		const computed3 = framework.computed(
-			() => (busy(), computed2.read()! + 1),
-		) // heavy computation
-		const computed4 = framework.computed(() => computed3.read()! + 2)
-		const computed5 = framework.computed(() => computed4.read()! + 3)
+		const computed2 = framework.computed(() => {
+			computed1.read()
+			return 0
+		})
+		const computed3 = framework.computed(() => {
+			busy()
+			return computed2.read() + 1
+		}) // heavy computation
+		const computed4 = framework.computed(() => computed3.read() + 2)
+		const computed5 = framework.computed(() => computed4.read() + 3)
 		framework.effect(() => {
 			computed5.read()
 			busy() // heavy side effect
@@ -206,10 +207,10 @@ describe('Kairo tests', function () {
 		const callCounter = new Counter()
 		for (let i = 0; i < 50; i++) {
 			const current = framework.computed(() => {
-				return head.read()! + i
+				return head.read() + i
 			})
 			const current2 = framework.computed(() => {
-				return current.read()! + 1
+				return current.read() + 1
 			})
 			framework.effect(() => {
 				current2.read()
@@ -267,7 +268,7 @@ describe('Kairo tests', function () {
 		}
 	})
 
-	test(`${name} | diamond`, function () {
+	test(`${name} | diamond`, () => {
 		const width = 5
 		const head = framework.signal(0)
 		const current: { read(): number }[] = []
@@ -300,7 +301,7 @@ describe('Kairo tests', function () {
 		}
 	})
 
-	test(`${name} | mux`, function () {
+	test(`${name} | mux`, () => {
 		const heads = new Array(100).fill(null).map(_ => framework.signal(0))
 		const mux = framework.computed(() => {
 			return Object.fromEntries(heads.map(h => h.read()).entries())
@@ -310,7 +311,9 @@ describe('Kairo tests', function () {
 			.map(x => framework.computed(() => x.read() + 1))
 
 		splited.forEach(x => {
-			framework.effect(() => x.read())
+			framework.effect(() => {
+				x.read()
+			})
 		})
 
 		return () => {
@@ -329,7 +332,7 @@ describe('Kairo tests', function () {
 		}
 	})
 
-	test(`${name} | repeated observers`, function () {
+	test(`${name} | repeated observers`, () => {
 		const size = 30
 		const head = framework.signal(0)
 		const current = framework.computed(() => {
@@ -362,7 +365,7 @@ describe('Kairo tests', function () {
 		}
 	})
 
-	test(`${name} | triangle`, function () {
+	test(`${name} | triangle`, () => {
 		const width = 10
 		const head = framework.signal(0)
 		let current = head as { read: () => number }
@@ -407,7 +410,7 @@ describe('Kairo tests', function () {
 		}
 	})
 
-	test(`${name} | unstable`, function () {
+	test(`${name} | unstable`, () => {
 		const head = framework.signal(0)
 		const double = framework.computed(() => head.read() * 2)
 		const inverse = framework.computed(() => -head.read())
@@ -442,10 +445,10 @@ describe('Kairo tests', function () {
 	})
 })
 
-describe('$mol_wire tests', function () {
+describe('$mol_wire tests', () => {
 	const name = framework.name
 
-	test(`${name} | $mol_wire benchmark`, function () {
+	test(`${name} | $mol_wire benchmark`, () => {
 		const fib = (n: number) => {
 			if (n < 2) return 1
 			return fib(n - 1) + fib(n - 2)
@@ -454,7 +457,7 @@ describe('$mol_wire tests', function () {
 			return n + fib(16)
 		}
 		const numbers = Array.from({ length: 5 }, (_, i) => i)
-		const res: (() => any)[] = []
+		const res: (() => unknown)[] = []
 		framework.withBuild(() => {
 			const A = framework.signal(0)
 			const B = framework.signal(0)
@@ -475,12 +478,24 @@ describe('$mol_wire tests', function () {
 					D.read()[4].x +
 					F.read(),
 			)
-			framework.effect(() => res.push(hard(G.read(), 'H')))
-			framework.effect(() => res.push(G.read())) // I
-			framework.effect(() => res.push(hard(F.read(), 'J')))
-			framework.effect(() => (res[0] = hard(G.read(), 'H')))
-			framework.effect(() => (res[1] = G.read())) // I
-			framework.effect(() => (res[2] = hard(F.read(), 'J')))
+			framework.effect(() => {
+				res.push(hard(G.read(), 'H'))
+			})
+			framework.effect(() => {
+				res.push(G.read())
+			}) // I
+			framework.effect(() => {
+				res.push(hard(F.read(), 'J'))
+			})
+			framework.effect(() => {
+				res[0] = hard(G.read(), 'H')
+			})
+			framework.effect(() => {
+				res[1] = G.read()
+			}) // I
+			framework.effect(() => {
+				res[2] = hard(F.read(), 'J')
+			})
 
 			return (i: number) => {
 				res.length = 0
@@ -499,10 +514,10 @@ describe('$mol_wire tests', function () {
 	})
 })
 
-describe('CellX tests', function () {
+describe('CellX tests', () => {
 	const name = framework.name
 
-	test(`${name} | CellX benchmark`, function () {
+	test(`${name} | CellX benchmark`, () => {
 		const expected = {
 			10: [
 				[3, 6, 2, -2],
@@ -540,10 +555,31 @@ describe('CellX tests', function () {
 					prop4: framework.computed(() => m.prop3.read()),
 				}
 
-				framework.effect(() => s.prop1.read())
-				framework.effect(() => s.prop2.read())
-				framework.effect(() => s.prop3.read())
-				framework.effect(() => s.prop4.read())
+				framework.effect(() => {
+					s.prop1.read()
+				})
+				framework.effect(() => {
+					s.prop2.read()
+				})
+				framework.effect(() => {
+					s.prop3.read()
+				})
+				framework.effect(() => {
+					s.prop4.read()
+				})
+
+				framework.effect(() => {
+					s.prop1.read()
+				})
+				framework.effect(() => {
+					s.prop2.read()
+				})
+				framework.effect(() => {
+					s.prop3.read()
+				})
+				framework.effect(() => {
+					s.prop4.read()
+				})
 
 				s.prop1.read()
 				s.prop2.read()
