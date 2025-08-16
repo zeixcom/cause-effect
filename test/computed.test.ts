@@ -134,7 +134,7 @@ describe('Computed', () => {
 		const b = computed(() => x.get())
 		const c = computed(() => {
 			count++
-			return a.get() + ' ' + b.get()
+			return `${a.get()} ${b.get()}`
 		})
 		expect(c.get()).toBe('a a')
 		expect(count).toBe(1)
