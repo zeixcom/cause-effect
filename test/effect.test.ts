@@ -32,8 +32,8 @@ describe('Effect', () => {
 		let result = 0
 		let count = 0
 		effect({
-			signals: [a, b],
-			ok: (aValue, bValue) => {
+			signals: { a, b },
+			ok: ({ a: aValue, b: bValue }) => {
 				result = aValue + bValue
 				count++
 			},
@@ -70,15 +70,15 @@ describe('Effect', () => {
 		let normalCallCount = 0
 		let errorCallCount = 0
 		effect({
-			signals: [b],
+			signals: { b },
 			ok: () => {
 				// console.log('Normal effect:', value)
 				normalCallCount++
 			},
-			err: error => {
+			err: errors => {
 				// console.log('Error effect:', error)
 				errorCallCount++
-				expect(error.message).toBe('Value too high')
+				expect(errors[0].message).toBe('Value too high')
 			},
 		})
 
@@ -106,10 +106,10 @@ describe('Effect', () => {
 		let normalCallCount = 0
 		let nilCount = 0
 		effect({
-			signals: [a],
-			ok: aValue => {
+			signals: { a },
+			ok: values => {
 				normalCallCount++
-				expect(aValue).toBe(42)
+				expect(values.a).toBe(42)
 			},
 			nil: () => {
 				nilCount++
@@ -182,16 +182,18 @@ describe('Effect', () => {
 		const count = state(0)
 
 		effect({
-			signals: [count],
+			signals: { count },
 			ok: () => {
 				okCount++
 				// This effect updates the signal it depends on, creating a circular dependency
 				count.update(v => ++v)
 			},
-			err: e => {
+			err: errors => {
 				errCount++
-				expect(e).toBeInstanceOf(Error)
-				expect(e.message).toBe('Circular dependency in effect detected')
+				expect(errors[0]).toBeInstanceOf(Error)
+				expect(errors[0].message).toBe(
+					'Circular dependency in effect detected',
+				)
 			},
 		})
 
@@ -230,15 +232,15 @@ describe('Effect - Async with AbortSignal', () => {
 		let nilCalled = false
 
 		effect({
-			signals: [testSignal],
-			ok: async (abort, value) => {
+			signals: { testSignal },
+			ok: async ({ testSignal: value }, abort) => {
 				expect(abort).toBeInstanceOf(AbortSignal)
 				expect(value).toBe('test')
 				abortSignalsReceived++
 				okCalled = true
 				await wait(10)
 			},
-			err: async abort => {
+			err: async (_errors, abort) => {
 				expect(abort).toBeInstanceOf(AbortSignal)
 				abortSignalsReceived++
 				errCalled = true
@@ -264,9 +266,9 @@ describe('Effect - Async with AbortSignal', () => {
 		let syncCallbackArgs: unknown[] = []
 
 		effect({
-			signals: [testSignal],
-			ok: (...args: unknown[]) => {
-				syncCallbackArgs = args
+			signals: { testSignal },
+			ok: ({ testSignal: value }) => {
+				syncCallbackArgs = [value]
 			},
 		})
 
@@ -281,8 +283,8 @@ describe('Effect - Async with AbortSignal', () => {
 		let abortReason = ''
 
 		effect({
-			signals: [testSignal],
-			ok: async abort => {
+			signals: { testSignal },
+			ok: async (_values, abort) => {
 				abort.addEventListener('abort', () => {
 					operationAborted = true
 					abortReason = abort.reason || 'No reason'
@@ -339,8 +341,8 @@ describe('Effect - Async with AbortSignal', () => {
 		let abortHandled = false
 
 		effect({
-			signals: [testSignal],
-			ok: async abort => {
+			signals: { testSignal },
+			ok: async (_values, abort) => {
 				try {
 					await new Promise((resolve, reject) => {
 						const timeout = setTimeout(resolve, 100)
@@ -379,7 +381,7 @@ describe('Effect - Async with AbortSignal', () => {
 		const testSignal = state('initial')
 
 		const cleanup = effect({
-			signals: [testSignal],
+			signals: { testSignal },
 			ok: async () => {
 				await wait(30)
 				asyncEffectCompleted = true
@@ -404,8 +406,8 @@ describe('Effect - Async with AbortSignal', () => {
 		let abortedOperations = 0
 
 		effect({
-			signals: [testSignal],
-			ok: async abort => {
+			signals: { testSignal },
+			ok: async (_values, abort) => {
 				try {
 					await wait(30)
 					if (!abort.aborted) {
@@ -446,12 +448,12 @@ describe('Effect - Async with AbortSignal', () => {
 		let asyncAbortSignal: AbortSignal | null = null
 
 		effect({
-			signals: [testSignal],
-			ok: value => {
+			signals: { testSignal },
+			ok: ({ testSignal: value }) => {
 				syncCalled = true
 				expect(value).toBe('test')
 			},
-			err: async abort => {
+			err: async (_errors, abort) => {
 				asyncCalled = true
 				asyncAbortSignal = abort
 				await wait(10)
@@ -475,11 +477,11 @@ describe('Effect - Async with AbortSignal', () => {
 		})
 
 		effect({
-			signals: [errorThrower],
+			signals: { errorThrower },
 			ok: () => {
 				// Normal operation
 			},
-			err: async (abort, error) => {
+			err: async ([error], abort) => {
 				abortSignalInErrorHandler = abort
 				errorReceived = error
 				await wait(10)
@@ -509,7 +511,7 @@ describe('Effect - Async with AbortSignal', () => {
 		})
 
 		effect({
-			signals: [asyncComputed],
+			signals: { asyncComputed },
 			ok: () => {
 				// Will be called when computed resolves
 			},
@@ -532,8 +534,8 @@ describe('Effect - Async with AbortSignal', () => {
 		const testSignal = state('test-value')
 
 		effect({
-			signals: [testSignal],
-			ok: async (abort, value) => {
+			signals: { testSignal },
+			ok: async ({ testSignal: value }, abort) => {
 				// Simulate async work that respects abort signal
 				await new Promise<void>((resolve, reject) => {
 					const timeout = setTimeout(() => {
@@ -576,7 +578,7 @@ describe('Effect - Async with AbortSignal', () => {
 
 		try {
 			effect({
-				signals: [testSignal],
+				signals: { testSignal },
 				ok: () => {
 					syncCallCount++
 				},
@@ -596,8 +598,8 @@ describe('Effect - Async with AbortSignal', () => {
 		let operation1Aborted = false
 
 		effect({
-			signals: [testSignal],
-			ok: async abort => {
+			signals: { testSignal },
+			ok: async (_values, abort) => {
 				try {
 					// Create a promise that can be aborted
 					await new Promise<void>((resolve, reject) => {

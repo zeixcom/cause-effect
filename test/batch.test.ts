@@ -29,12 +29,12 @@ describe('Batch', () => {
 		let result = 0
 		let count = 0
 		effect({
-			signals: [sum],
-			ok: (res): undefined => {
+			signals: { sum },
+			ok: ({ sum: res }) => {
 				result = res
 				count++
 			},
-			err: (): undefined => {},
+			err: () => {},
 		})
 		batch(() => {
 			a.set(6)
@@ -62,13 +62,13 @@ describe('Batch', () => {
 
 		// Effect: switch cases for the result
 		effect({
-			signals: [sum],
-			ok: (v): undefined => {
+			signals: { sum },
+			ok: ({ sum: v }) => {
 				result = v
 				okCount++
 				// console.log('Sum:', v)
 			},
-			err: (_error): undefined => {
+			err: () => {
 				errCount++
 				// console.error('Error:', error)
 			},

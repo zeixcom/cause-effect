@@ -283,12 +283,12 @@ describe('Computed', () => {
 		let nilCount = 0
 		let result: number = 0
 		effect({
-			signals: [derived],
-			ok: (v): undefined => {
+			signals: { derived },
+			ok: ({ derived: v }) => {
 				result = v
 				okCount++
 			},
-			nil: (): undefined => {
+			nil: () => {
 				nilCount++
 			},
 		})

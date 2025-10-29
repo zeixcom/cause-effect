@@ -13,7 +13,7 @@ type Signal<T extends {}> = {
 }
 type MaybeSignal<T extends {}> = T | Signal<T> | ComputedCallback<T>
 
-type SignalValues<S extends Signal<unknown & {}>[]> = {
+type SignalValues<S extends Record<string, Signal<unknown & {}>>> = {
 	[K in keyof S]: S[K] extends Signal<infer T> ? T : never
 }
 

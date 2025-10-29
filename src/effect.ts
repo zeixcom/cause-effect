@@ -14,17 +14,28 @@ import {
 // biome-ignore lint/suspicious/noConfusingVoidType: optional Cleanup return type
 type MaybeCleanup = Cleanup | undefined | void
 
-type SyncCallback<T extends unknown[]> = (...args: T) => MaybeCleanup
-type AsyncCallback<T extends unknown[]> = (
+type SyncOkCallback<S extends Record<string, Signal<unknown & {}>>> = (
+	values: SignalValues<S>,
+) => MaybeCleanup
+type AsyncOkCallback<S extends Record<string, Signal<unknown & {}>>> = (
+	values: SignalValues<S>,
 	abort: AbortSignal,
-	...args: T
 ) => Promise<MaybeCleanup>
 
-type EffectMatcher<S extends Signal<unknown & {}>[]> = {
+type SyncErrCallback = (errors: readonly Error[]) => MaybeCleanup
+type AsyncErrCallback = (
+	errors: readonly Error[],
+	abort: AbortSignal,
+) => Promise<MaybeCleanup>
+
+type SyncNilCallback = () => MaybeCleanup
+type AsyncNilCallback = (abort: AbortSignal) => Promise<MaybeCleanup>
+
+type EffectMatcher<S extends Record<string, Signal<unknown & {}>>> = {
 	signals: S
-	ok: SyncCallback<S> | AsyncCallback<S>
-	err?: SyncCallback<Error[]> | AsyncCallback<Error[]>
-	nil?: SyncCallback<[]> | AsyncCallback<[]>
+	ok?: SyncOkCallback<S> | AsyncOkCallback<S>
+	err?: SyncErrCallback | AsyncErrCallback
+	nil?: SyncNilCallback | AsyncNilCallback
 }
 
 /* === Functions === */
@@ -35,26 +46,46 @@ type EffectMatcher<S extends Signal<unknown & {}>[]> = {
  * Callbacks can be synchronous or asynchronous. Async callbacks that return
  * cleanup functions will have their cleanup registered once the promise resolves.
  *
- * Async callbacks receive an AbortSignal as their first parameter, which is automatically
- * aborted when the effect re-runs or is cleaned up, preventing stale async operations.
+ * Async callbacks receive an AbortSignal as their second parameter,
+ * which is automatically aborted when the effect re-runs or is cleaned up,
+ * preventing stale async operations.
  *
  * @since 0.1.0
- * @param {EffectMatcher<S>} matcher - Effect matcher or callback (sync or async)
+ * @param {EffectMatcher<S>} matcher - Effect matcher with sync callbacks
  * @returns {Cleanup} - Cleanup function for the effect
  */
-function effect<S extends Signal<unknown & {}>[]>(
-	matcher: EffectMatcher<S> | SyncCallback<[]> | AsyncCallback<[]>,
+function effect<S extends Record<string, Signal<unknown & {}>>>(
+	matcher: EffectMatcher<S>,
+): Cleanup
+function effect(callback: () => MaybeCleanup): Cleanup
+function effect(
+	callback: (abort: AbortSignal) => Promise<MaybeCleanup>,
+): Cleanup
+function effect<S extends Record<string, Signal<unknown & {}>>>(
+	matcherOrCallback:
+		| EffectMatcher<S>
+		| (() => MaybeCleanup)
+		| ((abort: AbortSignal) => Promise<MaybeCleanup>),
 ): Cleanup {
-	const {
-		signals,
-		ok,
-		err = console.error,
-		nil = () => {},
-	} = isAsyncCallback<[]>(matcher)
-		? { signals: [], ok: matcher }
-		: isSyncCallback<[]>(matcher)
-			? { signals: [], ok: matcher }
-			: (matcher as EffectMatcher<S>)
+	const isAsyncCallback = isAsyncFunction<MaybeCleanup>(matcherOrCallback),
+		isSyncCallback = isFunction(matcherOrCallback)
+
+	// Extract configuration with proper typing
+	const signals: S =
+		isSyncCallback || isAsyncCallback
+			? ({} as S)
+			: (matcherOrCallback as EffectMatcher<S>).signals
+	const ok = isSyncCallback
+		? (matcherOrCallback as SyncOkCallback<S>)
+		: isAsyncCallback
+			? (matcherOrCallback as AsyncOkCallback<S>)
+			: (matcherOrCallback as EffectMatcher<S>).ok
+	const err = (matcherOrCallback as EffectMatcher<S>).err
+		? (matcherOrCallback as EffectMatcher<S>).err
+		: console.error
+	const nil = (matcherOrCallback as EffectMatcher<S>).nil
+		? (matcherOrCallback as EffectMatcher<S>).nil
+		: () => {}
 
 	let running = false
 	let controller: AbortController | undefined
@@ -71,51 +102,52 @@ function effect<S extends Signal<unknown & {}>[]>(
 			// Pure part
 			const errors: Error[] = []
 			let pending = false
-			const values = signals.map(signal => {
+			const values: Record<string, unknown> = {}
+
+			for (const [key, signal] of Object.entries(signals)) {
 				try {
 					const value = signal.get()
 					if (value === UNSET) pending = true
-					return value
+					values[key] = value
 				} catch (e) {
 					errors.push(toError(e))
-					return UNSET
 				}
-			}) as SignalValues<S>
+			}
 
 			// Effectful part
 			let cleanup: MaybeCleanup | Promise<MaybeCleanup>
-			let abort: AbortSignal | undefined
+			// Create AbortController for async callbacks
+			if ([ok, nil, err].some(isAsyncFunction)) {
+				controller = new AbortController()
+			}
+			const abort = controller?.signal as AbortSignal
 			try {
-				// Create AbortController for async callbacks
-				if ([ok, nil, err].some(isAsyncFunction))
-					controller = new AbortController()
-				abort = controller?.signal
-
 				if (pending) {
-					cleanup = isAsyncCallback<[]>(nil)
-						? nil(abort as AbortSignal)
-						: isSyncCallback<[]>(nil)
+					cleanup = isAsyncFunction<MaybeCleanup>(nil)
+						? nil(abort)
+						: isFunction<MaybeCleanup>(nil)
 							? nil()
 							: undefined
 				} else if (errors.length) {
-					cleanup = isAsyncCallback<Error[]>(err)
-						? err(abort as AbortSignal, ...errors)
-						: isSyncCallback<Error[]>(err)
-							? err(...errors)
+					cleanup = isAsyncFunction<MaybeCleanup>(err)
+						? err(errors as Error[], abort)
+						: isFunction<MaybeCleanup>(err)
+							? err(errors as Error[])
 							: undefined
 				} else {
-					cleanup = isAsyncCallback<SignalValues<S>>(ok)
-						? ok(abort as AbortSignal, ...values)
-						: (ok as SyncCallback<SignalValues<S>>)(...values)
+					cleanup = isAsyncFunction<MaybeCleanup>(ok)
+						? ok(values as SignalValues<S>, abort)
+						: isFunction<MaybeCleanup>(ok)
+							? ok(values as SignalValues<S>)
+							: undefined
 				}
 			} catch (error) {
-				cleanup = isAbortError(error)
-					? undefined
-					: isAsyncCallback<Error[]>(err)
-						? err(abort as AbortSignal, toError(error), ...errors)
-						: isSyncCallback<Error[]>(err)
-							? err(toError(error), ...errors)
-							: undefined
+				cleanup =
+					isAbortError(error) || !err
+						? undefined
+						: isAsyncFunction<MaybeCleanup>(err)
+							? err([...errors, toError(error)] as Error[], abort)
+							: err([...errors, toError(error)] as Error[])
 			} finally {
 				// Handle both sync and async cleanup
 				if (cleanup instanceof Promise) {
@@ -126,18 +158,26 @@ function effect<S extends Signal<unknown & {}>[]>(
 						})
 						.catch(error => {
 							// Use the same error handler as sync errors
-							cleanup = isAsyncCallback<Error[]>(err)
-								? err(
-										abort as AbortSignal,
-										toError(error),
-										...errors,
-									)
-								: isSyncCallback<Error[]>(err)
-									? err(toError(error), ...errors)
-									: undefined
-							if (cleanup instanceof Promise)
-								cleanup.catch(console.error)
-							else if (isFunction(cleanup)) run.off(cleanup)
+							if (!isAbortError(error)) {
+								const errorCleanup = !err
+									? undefined
+									: isAsyncFunction(err)
+										? err(
+												[
+													...errors,
+													toError(error),
+												] as Error[],
+												abort,
+											)
+										: err([
+												...errors,
+												toError(error),
+											] as Error[])
+								if (errorCleanup instanceof Promise)
+									errorCleanup.catch(console.error)
+								else if (isFunction(errorCleanup))
+									run.off(errorCleanup)
+							}
 						})
 				} else if (isFunction(cleanup)) {
 					run.off(cleanup)
@@ -153,15 +193,6 @@ function effect<S extends Signal<unknown & {}>[]>(
 		run.cleanup()
 	}
 }
-
-const isAsyncCallback = <T extends unknown[]>(
-	fn: unknown,
-): fn is (abort: AbortSignal, ...args: T) => Promise<MaybeCleanup> =>
-	isAsyncFunction(fn)
-
-const isSyncCallback = <T extends unknown[]>(
-	fn: unknown,
-): fn is (...args: T) => MaybeCleanup => isFunction(fn)
 
 /* === Exports === */
 

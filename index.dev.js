@@ -235,13 +235,12 @@ var computed = (fn) => {
 var isComputed = (value) => isObjectOfType(value, TYPE_COMPUTED);
 var isComputedCallback = (value) => isFunction(value) && value.length < 2;
 // src/effect.ts
-function effect(matcher) {
-  const {
-    signals,
-    ok,
-    err = console.error,
-    nil = () => {}
-  } = isAsyncFunction(matcher) ? { signals: [], ok: matcher } : isFunction(matcher) ? { signals: [], ok: matcher } : matcher;
+function effect(matcherOrCallback) {
+  const isAsyncCallback = isAsyncFunction(matcherOrCallback), isSyncCallback = isFunction(matcherOrCallback);
+  const signals = isSyncCallback || isAsyncCallback ? {} : matcherOrCallback.signals;
+  const ok = isSyncCallback ? matcherOrCallback : isAsyncCallback ? matcherOrCallback : matcherOrCallback.ok;
+  const err = matcherOrCallback.err ? matcherOrCallback.err : console.error;
+  const nil = matcherOrCallback.nil ? matcherOrCallback.nil : () => {};
   let running = false;
   let controller;
   const run = watch(() => observe(() => {
@@ -252,43 +251,51 @@ function effect(matcher) {
     controller = undefined;
     const errors = [];
     let pending2 = false;
-    const values = signals.map((signal) => {
+    const values = {};
+    for (const [key, signal] of Object.entries(signals)) {
       try {
         const value = signal.get();
         if (value === UNSET)
           pending2 = true;
-        return value;
+        values[key] = value;
       } catch (e) {
         errors.push(toError(e));
-        return UNSET;
       }
-    });
+    }
     let cleanup;
-    let abort;
+    if ([ok, nil, err].some(isAsyncFunction)) {
+      controller = new AbortController;
+    }
+    const abort = controller?.signal;
     try {
-      if ([ok, nil, err].some(isAsyncFunction))
-        controller = new AbortController;
-      abort = controller?.signal;
       if (pending2) {
-        cleanup = isAsyncCallback(nil) ? nil(abort) : isSyncCallback(nil) ? nil() : undefined;
+        cleanup = isAsyncFunction(nil) ? nil(abort) : isFunction(nil) ? nil() : undefined;
       } else if (errors.length) {
-        cleanup = isAsyncCallback(err) ? err(abort, ...errors) : isSyncCallback(err) ? err(...errors) : undefined;
+        cleanup = isAsyncFunction(err) ? err(errors, abort) : isFunction(err) ? err(errors) : undefined;
       } else {
-        cleanup = isAsyncCallback(ok) ? ok(abort, ...values) : ok(...values);
+        cleanup = isAsyncFunction(ok) ? ok(values, abort) : isFunction(ok) ? ok(values) : undefined;
       }
     } catch (error) {
-      cleanup = isAbortError(error) ? undefined : isAsyncCallback(err) ? err(abort, toError(error), ...errors) : isSyncCallback(err) ? err(toError(error), ...errors) : undefined;
+      cleanup = isAbortError(error) || !err ? undefined : isAsyncFunction(err) ? err([...errors, toError(error)], abort) : err([...errors, toError(error)]);
     } finally {
       if (cleanup instanceof Promise) {
         cleanup.then((resolvedCleanup) => {
           if (isFunction(resolvedCleanup))
             run.off(resolvedCleanup);
         }).catch((error) => {
-          cleanup = isAsyncCallback(err) ? err(abort, toError(error), ...errors) : isSyncCallback(err) ? err(toError(error), ...errors) : undefined;
-          if (cleanup instanceof Promise)
-            cleanup.catch(console.error);
-          else if (isFunction(cleanup))
-            run.off(cleanup);
+          if (!isAbortError(error)) {
+            const errorCleanup = !err ? undefined : isAsyncFunction(err) ? err([
+              ...errors,
+              toError(error)
+            ], abort) : err([
+              ...errors,
+              toError(error)
+            ]);
+            if (errorCleanup instanceof Promise)
+              errorCleanup.catch(console.error);
+            else if (isFunction(errorCleanup))
+              run.off(errorCleanup);
+          }
         });
       } else if (isFunction(cleanup)) {
         run.off(cleanup);
@@ -302,8 +309,6 @@ function effect(matcher) {
     run.cleanup();
   };
 }
-var isAsyncCallback = (fn) => isAsyncFunction(fn);
-var isSyncCallback = (fn) => isFunction(fn);
 export {
   watch,
   toSignal,
