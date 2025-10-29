@@ -1,6 +1,6 @@
 /**
  * @name Cause & Effect
- * @version 0.14.2
+ * @version 0.15.0
  * @author Esther Brunner
  */
 
@@ -12,8 +12,8 @@ export {
 	TYPE_COMPUTED,
 } from './src/computed'
 export { effect, type MaybeCleanup } from './src/effect'
-export { match, type MatchHandlers } from './src/match'
-export { resolve, type ResolveResult } from './src/resolve'
+export { type MatchHandlers, match } from './src/match'
+export { type ResolveResult, resolve } from './src/resolve'
 export {
 	batch,
 	type Cleanup,
