@@ -9,6 +9,8 @@ import {
 import { UNSET } from './signal'
 import {
 	CircularDependencyError,
+	isAbortError,
+	isAsyncFunction,
 	isFunction,
 	isObjectOfType,
 	toError,
@@ -27,6 +29,9 @@ type ComputedCallback<T extends {} & { then?: undefined }> =
 /* === Constants === */
 
 const TYPE_COMPUTED = 'Computed'
+
+const ABORT_REASON_DIRTY = 'Aborted because source signal changed'
+const ABORT_REASON_CLEANUP = 'Aborted because cleanup was called'
 
 /* === Functions === */
 
@@ -83,9 +88,12 @@ const computed = <T extends {}>(fn: ComputedCallback<T>): Computed<T> => {
 	// Own watcher: called when notified from sources (push)
 	const mark = watch(() => {
 		dirty = true
-		controller?.abort('Aborted because source signal changed')
+		controller?.abort(ABORT_REASON_DIRTY)
 		if (watchers.size) notify(watchers)
 		else mark.cleanup()
+	})
+	mark.off(() => {
+		controller?.abort(ABORT_REASON_CLEANUP)
 	})
 
 	// Called when requested by dependencies (pull)
@@ -93,7 +101,7 @@ const computed = <T extends {}>(fn: ComputedCallback<T>): Computed<T> => {
 		observe(() => {
 			if (computing) throw new CircularDependencyError('computed')
 			changed = false
-			if (isFunction(fn) && fn.constructor.name === 'AsyncFunction') {
+			if (isAsyncFunction(fn)) {
 				if (controller) return value // return current value until promise resolves
 				controller = new AbortController()
 				controller.signal.addEventListener(
@@ -113,7 +121,7 @@ const computed = <T extends {}>(fn: ComputedCallback<T>): Computed<T> => {
 			try {
 				result = controller ? fn(controller.signal) : (fn as () => T)()
 			} catch (e) {
-				if (e instanceof DOMException && e.name === 'AbortError') nil()
+				if (isAbortError(e)) nil()
 				else err(e)
 				computing = false
 				return
@@ -169,6 +177,8 @@ const isComputedCallback = /*#__PURE__*/ <T extends {}>(
 /* === Exports === */
 
 export {
+	ABORT_REASON_CLEANUP,
+	ABORT_REASON_DIRTY,
 	TYPE_COMPUTED,
 	computed,
 	isComputed,

@@ -21,4 +21,4 @@ declare const state: <T extends {}>(initialValue: T) => State<T>;
  * @returns {boolean} - true if the value is a State instance, false otherwise
  */
 declare const isState: <T extends {}>(value: unknown) => value is State<T>;
-export { type State, TYPE_STATE, state, isState };
+export { TYPE_STATE, isState, state, type State };

@@ -88,8 +88,10 @@ var enqueue = (fn, dedupe) => new Promise((resolve, reject) => {
 });
 
 // src/util.ts
-var isFunction = (value) => typeof value === "function";
+var isFunction = (fn) => typeof fn === "function";
+var isAsyncFunction = (fn) => isFunction(fn) && fn.constructor.name === "AsyncFunction";
 var isObjectOfType = (value, type) => Object.prototype.toString.call(value) === `[object ${type}]`;
+var isAbortError = (error) => error instanceof DOMException && error.name === "AbortError";
 var toError = (reason) => reason instanceof Error ? reason : Error(String(reason));
 
 class CircularDependencyError extends Error {
@@ -133,6 +135,8 @@ var toSignal = (value) => isSignal(value) ? value : isComputedCallback(value) ? 
 
 // src/computed.ts
 var TYPE_COMPUTED = "Computed";
+var ABORT_REASON_DIRTY = "Aborted because source signal changed";
+var ABORT_REASON_CLEANUP = "Aborted because cleanup was called";
 var computed = (fn) => {
   const watchers = new Set;
   let value = UNSET;
@@ -169,17 +173,20 @@ var computed = (fn) => {
   };
   const mark = watch(() => {
     dirty = true;
-    controller?.abort("Aborted because source signal changed");
+    controller?.abort(ABORT_REASON_DIRTY);
     if (watchers.size)
       notify(watchers);
     else
       mark.cleanup();
   });
+  mark.off(() => {
+    controller?.abort(ABORT_REASON_CLEANUP);
+  });
   const compute = () => observe(() => {
     if (computing)
       throw new CircularDependencyError("computed");
     changed = false;
-    if (isFunction(fn) && fn.constructor.name === "AsyncFunction") {
+    if (isAsyncFunction(fn)) {
       if (controller)
         return value;
       controller = new AbortController;
@@ -196,7 +203,7 @@ var computed = (fn) => {
     try {
       result = controller ? fn(controller.signal) : fn();
     } catch (e) {
-      if (e instanceof DOMException && e.name === "AbortError")
+      if (isAbortError(e))
         nil();
       else
         err(e);
@@ -232,17 +239,17 @@ function effect(matcher) {
   const {
     signals,
     ok,
-    err = (error) => {
-      console.error(error);
-    },
-    nil = () => {
-    }
-  } = isFunction(matcher) ? { signals: [], ok: matcher } : matcher;
+    err = console.error,
+    nil = () => {}
+  } = isAsyncFunction(matcher) ? { signals: [], ok: matcher } : isFunction(matcher) ? { signals: [], ok: matcher } : matcher;
   let running = false;
+  let controller;
   const run = watch(() => observe(() => {
     if (running)
       throw new CircularDependencyError("effect");
     running = true;
+    controller?.abort(ABORT_REASON_DIRTY);
+    controller = undefined;
     const errors = [];
     let pending2 = false;
     const values = signals.map((signal) => {
@@ -257,19 +264,46 @@ function effect(matcher) {
       }
     });
     let cleanup;
+    let abort;
     try {
-      cleanup = pending2 ? nil() : errors.length ? err(...errors) : ok(...values);
-    } catch (e) {
-      cleanup = err(toError(e));
+      if ([ok, nil, err].some(isAsyncFunction))
+        controller = new AbortController;
+      abort = controller?.signal;
+      if (pending2) {
+        cleanup = isAsyncCallback(nil) ? nil(abort) : isSyncCallback(nil) ? nil() : undefined;
+      } else if (errors.length) {
+        cleanup = isAsyncCallback(err) ? err(abort, ...errors) : isSyncCallback(err) ? err(...errors) : undefined;
+      } else {
+        cleanup = isAsyncCallback(ok) ? ok(abort, ...values) : ok(...values);
+      }
+    } catch (error) {
+      cleanup = isAbortError(error) ? undefined : isAsyncCallback(err) ? err(abort, toError(error), ...errors) : isSyncCallback(err) ? err(toError(error), ...errors) : undefined;
     } finally {
-      if (isFunction(cleanup))
+      if (cleanup instanceof Promise) {
+        cleanup.then((resolvedCleanup) => {
+          if (isFunction(resolvedCleanup))
+            run.off(resolvedCleanup);
+        }).catch((error) => {
+          cleanup = isAsyncCallback(err) ? err(abort, toError(error), ...errors) : isSyncCallback(err) ? err(toError(error), ...errors) : undefined;
+          if (cleanup instanceof Promise)
+            cleanup.catch(console.error);
+          else if (isFunction(cleanup))
+            run.off(cleanup);
+        });
+      } else if (isFunction(cleanup)) {
         run.off(cleanup);
+      }
     }
     running = false;
   }, run));
   run();
-  return () => run.cleanup();
+  return () => {
+    controller?.abort(ABORT_REASON_CLEANUP);
+    run.cleanup();
+  };
 }
+var isAsyncCallback = (fn) => isAsyncFunction(fn);
+var isSyncCallback = (fn) => isFunction(fn);
 export {
   watch,
   toSignal,
