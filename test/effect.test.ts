@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test'
-import { computed, effect, state, UNSET } from '../'
+import { computed, effect, match, resolve, state, UNSET } from '../'
 
 /* === Utility Functions === */
 
@@ -31,12 +31,14 @@ describe('Effect', () => {
 		})
 		let result = 0
 		let count = 0
-		effect({
-			signals: { a, b },
-			ok: ({ a: aValue, b: bValue }) => {
-				result = aValue + bValue
-				count++
-			},
+		effect(() => {
+			const resolved = resolve({ a, b })
+			match(resolved, {
+				ok: ({ a: aValue, b: bValue }) => {
+					result = aValue + bValue
+					count++
+				},
+			})
 		})
 		expect(result).toBe(0)
 		expect(count).toBe(0)
@@ -60,7 +62,7 @@ describe('Effect', () => {
 		}
 	})
 
-	test('should handle errors in effects', () => {
+	test('should handle errors in effects with resolve handlers', () => {
 		const a = state(1)
 		const b = computed(() => {
 			const v = a.get()
@@ -69,17 +71,17 @@ describe('Effect', () => {
 		})
 		let normalCallCount = 0
 		let errorCallCount = 0
-		effect({
-			signals: { b },
-			ok: () => {
-				// console.log('Normal effect:', value)
-				normalCallCount++
-			},
-			err: errors => {
-				// console.log('Error effect:', error)
-				errorCallCount++
-				expect(errors[0].message).toBe('Value too high')
-			},
+		effect(() => {
+			const resolved = resolve({ b })
+			match(resolved, {
+				ok: () => {
+					normalCallCount++
+				},
+				err: errors => {
+					errorCallCount++
+					expect(errors[0].message).toBe('Value too high')
+				},
+			})
 		})
 
 		// Normal case
@@ -98,22 +100,85 @@ describe('Effect', () => {
 		expect(errorCallCount).toBe(1)
 	})
 
-	test('should handle UNSET values in effects', async () => {
+	test('should handle errors in effects with resolve result', () => {
+		const a = state(1)
+		const b = computed(() => {
+			const v = a.get()
+			if (v > 5) throw new Error('Value too high')
+			return v * 2
+		})
+		let normalCallCount = 0
+		let errorCallCount = 0
+		effect(() => {
+			const result = resolve({ b })
+			if (result.ok) {
+				normalCallCount++
+			} else if (result.errors) {
+				errorCallCount++
+				expect(result.errors[0].message).toBe('Value too high')
+			}
+		})
+
+		// Normal case
+		a.set(2)
+		expect(normalCallCount).toBe(2)
+		expect(errorCallCount).toBe(0)
+
+		// Error case
+		a.set(6)
+		expect(normalCallCount).toBe(2)
+		expect(errorCallCount).toBe(1)
+
+		// Back to normal
+		a.set(3)
+		expect(normalCallCount).toBe(3)
+		expect(errorCallCount).toBe(1)
+	})
+
+	test('should handle UNSET values in effects with resolve handlers', async () => {
 		const a = computed(async () => {
 			await wait(100)
 			return 42
 		})
 		let normalCallCount = 0
 		let nilCount = 0
-		effect({
-			signals: { a },
-			ok: values => {
+		effect(() => {
+			const resolved = resolve({ a })
+			match(resolved, {
+				ok: values => {
+					normalCallCount++
+					expect(values.a).toBe(42)
+				},
+				nil: () => {
+					nilCount++
+				},
+			})
+		})
+
+		expect(normalCallCount).toBe(0)
+		expect(nilCount).toBe(1)
+		expect(a.get()).toBe(UNSET)
+		await wait(110)
+		expect(normalCallCount).toBeGreaterThan(0)
+		expect(nilCount).toBe(1)
+		expect(a.get()).toBe(42)
+	})
+
+	test('should handle UNSET values in effects with resolve result', async () => {
+		const a = computed(async () => {
+			await wait(100)
+			return 42
+		})
+		let normalCallCount = 0
+		let nilCount = 0
+		effect(() => {
+			const result = resolve({ a })
+			if (result.ok) {
 				normalCallCount++
-				expect(values.a).toBe(42)
-			},
-			nil: () => {
+				expect(result.values.a).toBe(42)
+			} else if (result.pending) {
 				nilCount++
-			},
+			}
 		})
 
 		expect(normalCallCount).toBe(0)
@@ -147,13 +212,11 @@ describe('Effect', () => {
 			// This should trigger the error
 			a.set(6)
 
-			// Check if console.error was called with the error
-			expect(mockConsoleError).toHaveBeenCalledWith(expect.any(Error))
-
-			// Check the error message
-			const error = (mockConsoleError as ReturnType<typeof mock>).mock
-				.calls[0][0] as Error
-			expect(error.message).toBe('Value too high')
+			// Check if console.error was called with the error message
+			expect(mockConsoleError).toHaveBeenCalledWith(
+				'Effect callback error:',
+				expect.any(Error),
+			)
 		} finally {
 			// Restore the original console.error
 			console.error = originalConsoleError
@@ -181,20 +244,22 @@ describe('Effect', () => {
 		let errCount = 0
 		const count = state(0)
 
-		effect({
-			signals: { count },
-			ok: () => {
-				okCount++
-				// This effect updates the signal it depends on, creating a circular dependency
-				count.update(v => ++v)
-			},
-			err: errors => {
-				errCount++
-				expect(errors[0]).toBeInstanceOf(Error)
-				expect(errors[0].message).toBe(
-					'Circular dependency in effect detected',
-				)
-			},
+		effect(() => {
+			const resolved = resolve({ count })
+			match(resolved, {
+				ok: () => {
+					okCount++
+					// This effect updates the signal it depends on, creating a circular dependency
+					count.update(v => ++v)
+				},
+				err: errors => {
+					errCount++
+					expect(errors[0]).toBeInstanceOf(Error)
+					expect(errors[0].message).toBe(
+						'Circular dependency in effect detected',
+					)
+				},
+			})
 		})
 
 		// Verify that the count was changed only once due to the circular dependency error
@@ -224,84 +289,32 @@ describe('Effect - Async with AbortSignal', () => {
 		expect(effectCompleted).toBe(true)
 	})
 
-	test('should pass AbortSignal to async callbacks in matcher syntax', async () => {
-		const testSignal = state('test')
-		let abortSignalsReceived = 0
-		let okCalled = false
-		let errCalled = false
-		let nilCalled = false
-
-		effect({
-			signals: { testSignal },
-			ok: async ({ testSignal: value }, abort) => {
-				expect(abort).toBeInstanceOf(AbortSignal)
-				expect(value).toBe('test')
-				abortSignalsReceived++
-				okCalled = true
-				await wait(10)
-			},
-			err: async (_errors, abort) => {
-				expect(abort).toBeInstanceOf(AbortSignal)
-				abortSignalsReceived++
-				errCalled = true
-				await wait(10)
-			},
-			nil: async abort => {
-				expect(abort).toBeInstanceOf(AbortSignal)
-				abortSignalsReceived++
-				nilCalled = true
-				await wait(10)
-			},
-		})
-
-		await wait(20)
-		expect(okCalled).toBe(true)
-		expect(errCalled).toBe(false)
-		expect(nilCalled).toBe(false)
-		expect(abortSignalsReceived).toBe(1)
-	})
-
-	test('should not pass AbortSignal to sync callbacks', () => {
-		const testSignal = state('test')
-		let syncCallbackArgs: unknown[] = []
-
-		effect({
-			signals: { testSignal },
-			ok: ({ testSignal: value }) => {
-				syncCallbackArgs = [value]
-			},
-		})
-
-		expect(syncCallbackArgs).toEqual(['test'])
-		expect(syncCallbackArgs[0]).not.toBeInstanceOf(AbortSignal)
-	})
-
 	test('should abort async operations when signal changes', async () => {
 		const testSignal = state(1)
 		let operationAborted = false
 		let operationCompleted = false
 		let abortReason = ''
 
-		effect({
-			signals: { testSignal },
-			ok: async (_values, abort) => {
-				abort.addEventListener('abort', () => {
-					operationAborted = true
-					abortReason = abort.reason || 'No reason'
-				})
+		effect(async abort => {
+			const result = resolve({ testSignal })
+			if (!result.ok) return
 
-				try {
-					await wait(100)
-					operationCompleted = true
-				} catch (error) {
-					if (
-						error instanceof DOMException &&
-						error.name === 'AbortError'
-					) {
-						operationAborted = true
-					}
+			abort.addEventListener('abort', () => {
+				operationAborted = true
+				abortReason = abort.reason || 'No reason'
+			})
+
+			try {
+				await wait(100)
+				operationCompleted = true
+			} catch (error) {
+				if (
+					error instanceof DOMException &&
+					error.name === 'AbortError'
+				) {
+					operationAborted = true
 				}
-			},
+			}
 		})
 
 		// Change signal quickly to trigger abort
@@ -335,14 +348,18 @@ describe('Effect - Async with AbortSignal', () => {
 		expect(abortReason).toBe('Aborted because cleanup was called')
 	})
 
-	test('should handle AbortError gracefully without calling err handler', async () => {
-		const testSignal = state(1)
-		let errorHandlerCalled = false
-		let abortHandled = false
+	test('should handle AbortError gracefully without logging to console', async () => {
+		const originalConsoleError = console.error
+		const mockConsoleError = mock(() => {})
+		console.error = mockConsoleError
 
-		effect({
-			signals: { testSignal },
-			ok: async (_values, abort) => {
+		try {
+			const testSignal = state(1)
+
+			effect(async abort => {
+				const result = resolve({ testSignal })
+				if (!result.ok) return
+
 				try {
 					await new Promise((resolve, reject) => {
 						const timeout = setTimeout(resolve, 100)
@@ -356,23 +373,26 @@ describe('Effect - Async with AbortSignal', () => {
 						error instanceof DOMException &&
 						error.name === 'AbortError'
 					) {
-						abortHandled = true
+						// This is expected, should not be logged
+						return
 					} else {
 						throw error
 					}
 				}
-			},
-			err: () => {
-				errorHandlerCalled = true
-			},
-		})
+			})
 
-		await wait(20)
-		testSignal.set(2)
-		await wait(50)
+			await wait(20)
+			testSignal.set(2)
+			await wait(50)
 
-		expect(abortHandled).toBe(true)
-		expect(errorHandlerCalled).toBe(false)
+			// Should not have logged the AbortError
+			expect(mockConsoleError).not.toHaveBeenCalledWith(
+				'Effect callback error:',
+				expect.any(DOMException),
+			)
+		} finally {
+			console.error = originalConsoleError
+		}
 	})
 
 	test('should handle async effects that return cleanup functions', async () => {
@@ -380,15 +400,15 @@ describe('Effect - Async with AbortSignal', () => {
 		let cleanupRegistered = false
 		const testSignal = state('initial')
 
-		const cleanup = effect({
-			signals: { testSignal },
-			ok: async () => {
-				await wait(30)
-				asyncEffectCompleted = true
-				return () => {
-					cleanupRegistered = true
-				}
-			},
+		const cleanup = effect(async () => {
+			const result = resolve({ testSignal })
+			if (!result.ok) return
+
+			await wait(30)
+			asyncEffectCompleted = true
+			return () => {
+				cleanupRegistered = true
+			}
 		})
 
 		// Wait for async effect to complete
@@ -405,23 +425,23 @@ describe('Effect - Async with AbortSignal', () => {
 		let completedOperations = 0
 		let abortedOperations = 0
 
-		effect({
-			signals: { testSignal },
-			ok: async (_values, abort) => {
-				try {
-					await wait(30)
-					if (!abort.aborted) {
-						completedOperations++
-					}
-				} catch (error) {
-					if (
-						error instanceof DOMException &&
-						error.name === 'AbortError'
-					) {
-						abortedOperations++
-					}
+		effect(async abort => {
+			const result = resolve({ testSignal })
+			if (!result.ok) return
+
+			try {
+				await wait(30)
+				if (!abort.aborted) {
+					completedOperations++
 				}
-			},
+			} catch (error) {
+				if (
+					error instanceof DOMException &&
+					error.name === 'AbortError'
+				) {
+					abortedOperations++
+				}
+			}
 		})
 
 		// Rapidly change signal multiple times
@@ -441,91 +461,47 @@ describe('Effect - Async with AbortSignal', () => {
 		expect(abortedOperations).toBe(0) // AbortError is handled gracefully, not thrown
 	})
 
-	test('should handle mix of sync and async callbacks in same effect', async () => {
-		const testSignal = state('test')
-		let syncCalled = false
-		let asyncCalled = false
-		let asyncAbortSignal: AbortSignal | null = null
-
-		effect({
-			signals: { testSignal },
-			ok: ({ testSignal: value }) => {
-				syncCalled = true
-				expect(value).toBe('test')
-			},
-			err: async (_errors, abort) => {
-				asyncCalled = true
-				asyncAbortSignal = abort
-				await wait(10)
-			},
-		})
-
-		expect(syncCalled).toBe(true)
-		expect(asyncCalled).toBe(false)
-		expect(asyncAbortSignal).toBe(null)
-	})
-
 	test('should handle async errors that are not AbortError', async () => {
-		const testSignal = state(1)
-		let errorReceived: Error | null = null
-		let abortSignalInErrorHandler: AbortSignal | null = null
+		const originalConsoleError = console.error
+		const mockConsoleError = mock(() => {})
+		console.error = mockConsoleError
 
-		const errorThrower = computed(() => {
-			const value = testSignal.get()
-			if (value > 5) throw new Error('Value too high')
-			return value
-		})
+		try {
+			const testSignal = state(1)
 
-		effect({
-			signals: { errorThrower },
-			ok: () => {
-				// Normal operation
-			},
-			err: async ([error], abort) => {
-				abortSignalInErrorHandler = abort
-				errorReceived = error
-				await wait(10)
-			},
-		})
+			const errorThrower = computed(() => {
+				const value = testSignal.get()
+				if (value > 5) throw new Error('Value too high')
+				return value
+			})
 
-		testSignal.set(10) // This will cause an error
-		await wait(20)
+			effect(async () => {
+				const result = resolve({ errorThrower })
+				if (result.ok) {
+					// Normal operation
+				} else if (result.errors) {
+					// Handle errors from resolve
+					expect(result.errors[0].message).toBe('Value too high')
+					return
+				}
 
-		expect(errorReceived).toBeInstanceOf(Error)
-		expect((errorReceived as unknown as Error).message).toBe(
-			'Value too high',
-		)
-		expect(abortSignalInErrorHandler).toBeInstanceOf(AbortSignal)
-		expect(
-			(abortSignalInErrorHandler as unknown as AbortSignal).aborted,
-		).toBe(false)
-	})
+				// Simulate an async error that's not an AbortError
+				if (result.ok && result.values.errorThrower > 3) {
+					throw new Error('Async processing error')
+				}
+			})
 
-	test('should handle async nil callback with AbortSignal', async () => {
-		let nilCalled = false
-		let nilAbortSignal: AbortSignal | null = null
+			testSignal.set(4) // This will cause an async error
+			await wait(20)
 
-		const asyncComputed = computed(async () => {
-			await wait(50)
-			return 'computed-value'
-		})
-
-		effect({
-			signals: { asyncComputed },
-			ok: () => {
-				// Will be called when computed resolves
-			},
-			nil: async abort => {
-				nilCalled = true
-				nilAbortSignal = abort
-				await wait(10)
-			},
-		})
-
-		// nil should be called initially while computed is pending
-		await wait(20)
-		expect(nilCalled).toBe(true)
-		expect(nilAbortSignal).toBeInstanceOf(AbortSignal)
+			// Should have logged the async error
+			expect(mockConsoleError).toHaveBeenCalledWith(
+				'Async effect error:',
+				expect.any(Error),
+			)
+		} finally {
+			console.error = originalConsoleError
+		}
 	})
 
 	test('should handle promise-based async effects', async () => {
@@ -533,27 +509,27 @@ describe('Effect - Async with AbortSignal', () => {
 		let effectValue = ''
 		const testSignal = state('test-value')
 
-		effect({
-			signals: { testSignal },
-			ok: async ({ testSignal: value }, abort) => {
-				// Simulate async work that respects abort signal
-				await new Promise<void>((resolve, reject) => {
-					const timeout = setTimeout(() => {
-						effectValue = value
-						promiseResolved = true
-						resolve()
-					}, 40)
+		effect(async abort => {
+			const result = resolve({ testSignal })
+			if (!result.ok) return
 
-					abort.addEventListener('abort', () => {
-						clearTimeout(timeout)
-						reject(new DOMException('Aborted', 'AbortError'))
-					})
+			// Simulate async work that respects abort signal
+			await new Promise<void>((resolve, reject) => {
+				const timeout = setTimeout(() => {
+					effectValue = result.values.testSignal
+					promiseResolved = true
+					resolve()
+				}, 40)
+
+				abort.addEventListener('abort', () => {
+					clearTimeout(timeout)
+					reject(new DOMException('Aborted', 'AbortError'))
 				})
+			})
 
-				return () => {
-					// Cleanup function
-				}
-			},
+			return () => {
+				// Cleanup function
+			}
 		})
 
 		await wait(60)
@@ -577,11 +553,11 @@ describe('Effect - Async with AbortSignal', () => {
 		}
 
 		try {
-			effect({
-				signals: { testSignal },
-				ok: () => {
+			effect(() => {
+				const result = resolve({ testSignal })
+				if (result.ok) {
 					syncCallCount++
-				},
+				}
 			})
 
 			testSignal.set('changed')
@@ -597,34 +573,34 @@ describe('Effect - Async with AbortSignal', () => {
 		let operation1Completed = false
 		let operation1Aborted = false
 
-		effect({
-			signals: { testSignal },
-			ok: async (_values, abort) => {
-				try {
-					// Create a promise that can be aborted
-					await new Promise<void>((resolve, reject) => {
-						const timeout = setTimeout(() => {
-							operation1Completed = true
-							resolve()
-						}, 80)
+		effect(async abort => {
+			const result = resolve({ testSignal })
+			if (!result.ok) return
 
-						abort.addEventListener('abort', () => {
-							operation1Aborted = true
-							clearTimeout(timeout)
-							reject(new DOMException('Aborted', 'AbortError'))
-						})
+			try {
+				// Create a promise that can be aborted
+				await new Promise<void>((resolve, reject) => {
+					const timeout = setTimeout(() => {
+						operation1Completed = true
+						resolve()
+					}, 80)
+
+					abort.addEventListener('abort', () => {
+						operation1Aborted = true
+						clearTimeout(timeout)
+						reject(new DOMException('Aborted', 'AbortError'))
 					})
-				} catch (error) {
-					if (
-						error instanceof DOMException &&
-						error.name === 'AbortError'
-					) {
-						// Expected when aborted
-						return
-					}
-					throw error
+				})
+			} catch (error) {
+				if (
+					error instanceof DOMException &&
+					error.name === 'AbortError'
+				) {
+					// Expected when aborted
+					return
 				}
-			},
+				throw error
+			}
 		})
 
 		// Start first operation
@@ -638,5 +614,41 @@ describe('Effect - Async with AbortSignal', () => {
 
 		expect(operation1Aborted).toBe(true)
 		expect(operation1Completed).toBe(false)
+	})
+})
+
+describe('Effect + Resolve Integration', () => {
+	test('should work with resolve discriminated union', () => {
+		const a = state(10)
+		const b = state('hello')
+		let effectRan = false
+
+		effect(() => {
+			const result = resolve({ a, b })
+
+			if (result.ok) {
+				effectRan = true
+				expect(result.values.a).toBe(10)
+				expect(result.values.b).toBe('hello')
+			}
+		})
+
+		expect(effectRan).toBe(true)
+	})
+
+	test('should work with match function', () => {
+		const a = state(42)
+		let matchedValue = 0
+
+		effect(() => {
+			const result = resolve({ a })
+			match(result, {
+				ok: values => {
+					matchedValue = values.a
+				},
+			})
+		})
+
+		expect(matchedValue).toBe(42)
 	})
 })

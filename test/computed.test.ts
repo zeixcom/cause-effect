@@ -4,9 +4,11 @@ import {
 	effect,
 	isComputed,
 	isState,
+	match,
+	resolve,
 	state,
 	UNSET,
-} from '../index.ts'
+} from '../'
 
 /* === Utility Functions === */
 
@@ -282,15 +284,17 @@ describe('Computed', () => {
 		let okCount = 0
 		let nilCount = 0
 		let result: number = 0
-		effect({
-			signals: { derived },
-			ok: ({ derived: v }) => {
-				result = v
-				okCount++
-			},
-			nil: () => {
-				nilCount++
-			},
+		effect(() => {
+			const resolved = resolve({ derived })
+			match(resolved, {
+				ok: ({ derived: v }) => {
+					result = v
+					okCount++
+				},
+				nil: () => {
+					nilCount++
+				},
+			})
 		})
 		cause.set(43)
 		expect(okCount).toBe(0)

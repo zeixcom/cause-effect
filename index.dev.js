@@ -235,12 +235,8 @@ var computed = (fn) => {
 var isComputed = (value) => isObjectOfType(value, TYPE_COMPUTED);
 var isComputedCallback = (value) => isFunction(value) && value.length < 2;
 // src/effect.ts
-function effect(matcherOrCallback) {
-  const isAsyncCallback = isAsyncFunction(matcherOrCallback), isSyncCallback = isFunction(matcherOrCallback);
-  const signals = isSyncCallback || isAsyncCallback ? {} : matcherOrCallback.signals;
-  const ok = isSyncCallback ? matcherOrCallback : isAsyncCallback ? matcherOrCallback : matcherOrCallback.ok;
-  const err = matcherOrCallback.err ? matcherOrCallback.err : console.error;
-  const nil = matcherOrCallback.nil ? matcherOrCallback.nil : () => {};
+function effect(callback) {
+  const isAsync = isAsyncFunction(callback);
   let running = false;
   let controller;
   const run = watch(() => observe(() => {
@@ -249,57 +245,25 @@ function effect(matcherOrCallback) {
     running = true;
     controller?.abort(ABORT_REASON_DIRTY);
     controller = undefined;
-    const errors = [];
-    let pending2 = false;
-    const values = {};
-    for (const [key, signal] of Object.entries(signals)) {
-      try {
-        const value = signal.get();
-        if (value === UNSET)
-          pending2 = true;
-        values[key] = value;
-      } catch (e) {
-        errors.push(toError(e));
-      }
-    }
     let cleanup;
-    if ([ok, nil, err].some(isAsyncFunction)) {
-      controller = new AbortController;
-    }
-    const abort = controller?.signal;
     try {
-      if (pending2) {
-        cleanup = isAsyncFunction(nil) ? nil(abort) : isFunction(nil) ? nil() : undefined;
-      } else if (errors.length) {
-        cleanup = isAsyncFunction(err) ? err(errors, abort) : isFunction(err) ? err(errors) : undefined;
+      if (isAsync) {
+        controller = new AbortController;
+        callback(controller.signal).then((cleanup2) => {
+          if (isFunction(cleanup2))
+            run.off(cleanup2);
+        }).catch((error) => {
+          if (!isAbortError(error))
+            console.error("Async effect error:", error);
+        });
       } else {
-        cleanup = isAsyncFunction(ok) ? ok(values, abort) : isFunction(ok) ? ok(values) : undefined;
+        cleanup = callback();
+        if (isFunction(cleanup))
+          run.off(cleanup);
       }
     } catch (error) {
-      cleanup = isAbortError(error) || !err ? undefined : isAsyncFunction(err) ? err([...errors, toError(error)], abort) : err([...errors, toError(error)]);
-    } finally {
-      if (cleanup instanceof Promise) {
-        cleanup.then((resolvedCleanup) => {
-          if (isFunction(resolvedCleanup))
-            run.off(resolvedCleanup);
-        }).catch((error) => {
-          if (!isAbortError(error)) {
-            const errorCleanup = !err ? undefined : isAsyncFunction(err) ? err([
-              ...errors,
-              toError(error)
-            ], abort) : err([
-              ...errors,
-              toError(error)
-            ]);
-            if (errorCleanup instanceof Promise)
-              errorCleanup.catch(console.error);
-            else if (isFunction(errorCleanup))
-              run.off(errorCleanup);
-          }
-        });
-      } else if (isFunction(cleanup)) {
-        run.off(cleanup);
-      }
+      if (!isAbortError(error))
+        console.error("Effect callback error:", error);
     }
     running = false;
   }, run));
@@ -309,13 +273,59 @@ function effect(matcherOrCallback) {
     run.cleanup();
   };
 }
+// src/match.ts
+function match(result, handlers) {
+  try {
+    if (result.pending) {
+      handlers.nil?.();
+    } else if (result.errors) {
+      handlers.err?.(result.errors);
+    } else {
+      handlers.ok?.(result.values);
+    }
+  } catch (error) {
+    if (handlers.err && (!result.errors || !result.errors.includes(toError(error)))) {
+      const allErrors = result.errors ? [...result.errors, toError(error)] : [toError(error)];
+      handlers.err(allErrors);
+    } else {
+      throw error;
+    }
+  }
+}
+// src/resolve.ts
+function resolve(signals) {
+  const errors = [];
+  let pending2 = false;
+  const values = {};
+  for (const [key, signal] of Object.entries(signals)) {
+    try {
+      const value = signal.get();
+      if (value === UNSET) {
+        pending2 = true;
+      } else {
+        values[key] = value;
+      }
+    } catch (e) {
+      errors.push(toError(e));
+    }
+  }
+  if (pending2) {
+    return { ok: false, pending: true };
+  }
+  if (errors.length > 0) {
+    return { ok: false, errors };
+  }
+  return { ok: true, values };
+}
 export {
   watch,
   toSignal,
   subscribe,
   state,
+  resolve,
   observe,
   notify,
+  match,
   isState,
   isSignal,
   isFunction,

@@ -6,6 +6,10 @@ type MaybeSignal<T extends {}> = T | Signal<T> | ComputedCallback<T>;
 type SignalValues<S extends Record<string, Signal<unknown & {}>>> = {
     [K in keyof S]: S[K] extends Signal<infer T> ? T : never;
 };
+type UnwrapSignal<T> = T extends Signal<infer U> ? U : T;
+type FlattenSignals<T> = {
+    [K in keyof T]: UnwrapSignal<T[K]>;
+};
 declare const UNSET: any;
 /**
  * Check whether a value is a Signal or not
@@ -23,4 +27,4 @@ declare const isSignal: <T extends {}>(value: unknown) => value is Signal<T>;
  * @returns {Signal<T>} - converted Signal
  */
 declare const toSignal: <T extends {}>(value: MaybeSignal<T>) => Signal<T>;
-export { type Signal, type MaybeSignal, type SignalValues, UNSET, isSignal, isComputedCallback, toSignal, };
+export { type Signal, type MaybeSignal, type SignalValues, type UnwrapSignal, type FlattenSignals, UNSET, isSignal, isComputedCallback, toSignal, };

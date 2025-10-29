@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { batch, computed, effect, state } from '../'
+import { batch, computed, effect, match, resolve, state } from '../'
 
 /* === Tests === */
 
@@ -28,13 +28,15 @@ describe('Batch', () => {
 		const sum = computed(() => a.get() + b.get() + c.get())
 		let result = 0
 		let count = 0
-		effect({
-			signals: { sum },
-			ok: ({ sum: res }) => {
-				result = res
-				count++
-			},
-			err: () => {},
+		effect(() => {
+			const resolved = resolve({ sum })
+			match(resolved, {
+				ok: ({ sum: res }) => {
+					result = res
+					count++
+				},
+				err: () => {},
+			})
 		})
 		batch(() => {
 			a.set(6)
@@ -61,17 +63,19 @@ describe('Batch', () => {
 		let errCount = 0
 
 		// Effect: switch cases for the result
-		effect({
-			signals: { sum },
-			ok: ({ sum: v }) => {
-				result = v
-				okCount++
-				// console.log('Sum:', v)
-			},
-			err: () => {
-				errCount++
-				// console.error('Error:', error)
-			},
+		effect(() => {
+			const resolved = resolve({ sum })
+			match(resolved, {
+				ok: ({ sum: v }) => {
+					result = v
+					okCount++
+					// console.log('Sum:', v)
+				},
+				err: () => {
+					errCount++
+					// console.error('Error:', error)
+				},
+			})
 		})
 
 		expect(okCount).toBe(1)

@@ -17,6 +17,10 @@ type SignalValues<S extends Record<string, Signal<unknown & {}>>> = {
 	[K in keyof S]: S[K] extends Signal<infer T> ? T : never
 }
 
+type UnwrapSignal<T> = T extends Signal<infer U> ? U : T
+
+type FlattenSignals<T> = { [K in keyof T]: UnwrapSignal<T[K]> }
+
 /* === Constants === */
 
 // biome-ignore lint/suspicious/noExplicitAny: Deliberately using any to be used as a placeholder value in any signal
@@ -57,6 +61,8 @@ export {
 	type Signal,
 	type MaybeSignal,
 	type SignalValues,
+	type UnwrapSignal,
+	type FlattenSignals,
 	UNSET,
 	isSignal,
 	isComputedCallback,

@@ -11,7 +11,9 @@ export {
 	isComputed,
 	TYPE_COMPUTED,
 } from './src/computed'
-export { type EffectMatcher, effect, type MaybeCleanup } from './src/effect'
+export { effect, type MaybeCleanup } from './src/effect'
+export { match, type MatchHandlers } from './src/match'
+export { resolve, type ResolveResult } from './src/resolve'
 export {
 	batch,
 	type Cleanup,
