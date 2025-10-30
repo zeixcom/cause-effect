@@ -37,6 +37,13 @@ export {
 } from './src/signal'
 export { isState, type State, state, TYPE_STATE } from './src/state'
 export {
+	isStore,
+	type Store,
+	store,
+	TYPE_STORE,
+	type UnknownStore,
+} from './src/store'
+export {
 	CircularDependencyError,
 	isAbortError,
 	isAsyncFunction,

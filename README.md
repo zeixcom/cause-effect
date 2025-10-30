@@ -11,6 +11,7 @@ Version 0.15.0
 ### Core Concepts
 
 - **State signals**: Hold values that can be directly modified: `state()`
+- **Store signals**: Hold objects of nested reactive properties: `store()`
 - **Computed signals**: Derive memoized values from other signals: `computed()`
 - **Effects**: Run side effects when signals change: `effect()`
 
@@ -22,7 +23,7 @@ Version 0.15.0
 - 🛡️ **Error Handling**: Built-in helper functions for declarative error handling
 - 🔧 **Helper Functions**: `resolve()` and `match()` for type-safe value extraction and pattern matching for suspense and error boundaries
 - 🚀 **Performance**: Batching and efficient dependency tracking
-- 📦 **Tiny**: Less than 2kB gzipped, zero dependencies
+- 📦 **Tiny**: Approximately 2kB gzipped, zero dependencies
 
 ## Quick Start
 
@@ -73,6 +74,67 @@ document.querySelector('.increment').addEventListener('click', () => {
 })
 // Click on button logs '25', '26', and so on
 ```
+
+### Store Signals
+
+`store()` creates a mutable signal that holds an object with nested reactive properties. Each property automatically becomes its own signal with `.get()`, `.set()`, and `.update()` methods. Nested objects recursively become nested stores.
+
+```js
+import { store, effect } from '@zeix/cause-effect'
+
+const user = store({ 
+  name: 'Alice', 
+  age: 30,
+  preferences: {
+    theme: 'dark',
+    notifications: true
+  }
+})
+
+// Individual properties are reactive
+effect(() => {
+  console.log(`${user.name.get()} is ${user.age.get()} years old`)
+})
+
+// Nested properties work the same way
+effect(() => {
+  console.log(`Theme: ${user.preferences.theme.get()}`)
+})
+
+// Update individual properties
+user.age.update(v => v + 1) // Logs: "Alice is 31 years old"
+user.preferences.theme.set('light') // Logs: "Theme: light"
+
+// Watch the entire store
+effect(() => {
+  console.log('User data:', user.get()) // Triggers on any nested change
+})
+```
+
+#### Dynamic Properties
+
+Unlike regular objects, stores support dynamic property addition and removal:
+
+```js
+const settings = store({ autoSave: true })
+
+// Add new properties at runtime
+settings.add('timeout', 5000)
+console.log(settings.timeout.get()) // 5000
+
+// Check if properties exist (non-reactive)
+if (settings.has('timeout')) {
+  settings.timeout.set(3000)
+}
+
+// Remove properties
+settings.delete('timeout')
+console.log(settings.has('timeout')) // false
+```
+
+**When to use stores vs state:**
+- **Use `store()`** for objects with reactive properties that you want to access individually
+- **Use `state()`** for primitive values or objects you replace entirely
 
 ### Computed Signals vs. Functions
 

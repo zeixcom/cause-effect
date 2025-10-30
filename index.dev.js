@@ -128,10 +128,97 @@ var state = (initialValue) => {
 };
 var isState = (value) => isObjectOfType(value, TYPE_STATE);
 
+// src/store.ts
+var TYPE_STORE = "Store";
+var store = (initialValue) => {
+  const watchers = new Set;
+  const propertyStores = new Map;
+  const createPropertyStore = (key, value) => {
+    if (typeof value === "function") {
+      throw new Error(`Functions are not allowed as store property values (property: ${String(key)})`);
+    }
+    if (isObjectOfType(value, "Object")) {
+      return store(value);
+    } else {
+      return state(value);
+    }
+  };
+  for (const [key, value] of Object.entries(initialValue)) {
+    propertyStores.set(key, createPropertyStore(key, value));
+  }
+  const proxy = new Proxy({}, {
+    get(_target, prop) {
+      if (prop === Symbol.toStringTag)
+        return TYPE_STORE;
+      if (prop === "get") {
+        return () => {
+          subscribe(watchers);
+          const result = {};
+          for (const [key, store2] of propertyStores) {
+            result[key] = store2.get();
+          }
+          return result;
+        };
+      }
+      if (prop === "has") {
+        return (key) => {
+          return propertyStores.has(key);
+        };
+      }
+      if (prop === "add") {
+        return (key, value) => {
+          if (propertyStores.has(key)) {
+            throw new Error(`Property '${key}' already exists`);
+          }
+          const newStore = createPropertyStore(key, value);
+          propertyStores.set(key, newStore);
+          notify(watchers);
+          return proxy;
+        };
+      }
+      if (prop === "delete") {
+        return (key) => {
+          if (!propertyStores.has(key)) {
+            throw new Error(`Property '${key}' does not exist`);
+          }
+          const childStore = propertyStores.get(key);
+          if (isState(childStore)) {
+            childStore.set(UNSET);
+          }
+          propertyStores.delete(key);
+          notify(watchers);
+          return proxy;
+        };
+      }
+      if (propertyStores.has(prop)) {
+        return propertyStores.get(prop);
+      }
+      throw new Error(`Property '${String(prop)}' does not exist on store`);
+    },
+    has(_target, prop) {
+      return propertyStores.has(prop) || prop === "get" || prop === "has" || prop === "add" || prop === "delete" || prop === Symbol.toStringTag;
+    },
+    ownKeys(_target) {
+      return Array.from(propertyStores.keys());
+    },
+    getOwnPropertyDescriptor(_target, prop) {
+      if (this.has?.(_target, prop)) {
+        return {
+          enumerable: true,
+          configurable: true
+        };
+      }
+      return;
+    }
+  });
+  return proxy;
+};
+var isStore = (value) => isObjectOfType(value, TYPE_STORE);
+
 // src/signal.ts
 var UNSET = Symbol();
-var isSignal = (value) => isState(value) || isComputed(value);
-var toSignal = (value) => isSignal(value) ? value : isComputedCallback(value) ? computed(value) : state(value);
+var isSignal = (value) => isState(value) || isComputed(value) || isStore(value);
+var toSignal = (value) => isSignal(value) ? value : isComputedCallback(value) ? computed(value) : isObjectOfType(value, "Object") ? store(value) : state(value);
 
 // src/computed.ts
 var TYPE_COMPUTED = "Computed";
@@ -322,11 +409,13 @@ export {
   toSignal,
   toError,
   subscribe,
+  store,
   state,
   resolve,
   observe,
   notify,
   match,
+  isStore,
   isState,
   isSignal,
   isFunction,
@@ -340,6 +429,7 @@ export {
   computed,
   batch,
   UNSET,
+  TYPE_STORE,
   TYPE_STATE,
   TYPE_COMPUTED,
   CircularDependencyError
