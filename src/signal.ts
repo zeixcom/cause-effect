@@ -5,6 +5,8 @@ import {
 	isComputedCallback,
 } from './computed'
 import { isState, state } from './state'
+import { isStore, store } from './store'
+import { isObjectOfType } from './util'
 
 /* === Types === */
 
@@ -16,10 +18,6 @@ type MaybeSignal<T extends {}> = T | Signal<T> | ComputedCallback<T>
 type SignalValues<S extends Record<string, Signal<unknown & {}>>> = {
 	[K in keyof S]: S[K] extends Signal<infer T> ? T : never
 }
-
-type UnwrapSignal<T> = T extends Signal<infer U> ? U : T
-
-type FlattenSignals<T> = { [K in keyof T]: UnwrapSignal<T[K]> }
 
 /* === Constants === */
 
@@ -37,7 +35,7 @@ const UNSET: any = Symbol()
  */
 const isSignal = /*#__PURE__*/ <T extends {}>(
 	value: unknown,
-): value is Signal<T> => isState(value) || isComputed(value)
+): value is Signal<T> => isState(value) || isComputed(value) || isStore(value)
 
 /**
  * Convert a value to a Signal if it's not already a Signal
@@ -53,7 +51,9 @@ const toSignal = /*#__PURE__*/ <T extends {}>(
 		? value
 		: isComputedCallback<T>(value)
 			? computed(value)
-			: state(value as T)
+			: isObjectOfType(value, 'Object')
+				? store(value as T)
+				: state(value as T)
 
 /* === Exports === */
 
@@ -61,8 +61,6 @@ export {
 	type Signal,
 	type MaybeSignal,
 	type SignalValues,
-	type UnwrapSignal,
-	type FlattenSignals,
 	UNSET,
 	isSignal,
 	isComputedCallback,
