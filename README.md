@@ -20,9 +20,9 @@ Version 0.15.0
 - 🧩 **Composable**: Create a complex signal graph with a minimal API
 - ⏱️ **Async Ready**: Built-in `Promise` and `AbortController` support
 - 🛡️ **Error Handling**: Built-in helper functions for declarative error handling
-- 🔧 **Helper Functions**: `resolve()` and `match()` for pattern matching and type-safe value extraction
+- 🔧 **Helper Functions**: `resolve()` and `match()` for type-safe value extraction and pattern matching for suspense and error boundaries
 - 🚀 **Performance**: Batching and efficient dependency tracking
-- 📦 **Tiny**: Around 1kB gzipped, zero dependencies
+- 📦 **Tiny**: Less than 2kB gzipped, zero dependencies
 
 ## Quick Start
 

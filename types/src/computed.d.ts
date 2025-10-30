@@ -6,8 +6,6 @@ type ComputedCallback<T extends {} & {
     then?: undefined;
 }> = ((abort: AbortSignal) => Promise<T>) | (() => T);
 declare const TYPE_COMPUTED = "Computed";
-declare const ABORT_REASON_DIRTY = "Aborted because source signal changed";
-declare const ABORT_REASON_CLEANUP = "Aborted because cleanup was called";
 /**
  * Create a derived signal from existing signals
  *
@@ -32,4 +30,4 @@ declare const isComputed: <T extends {}>(value: unknown) => value is Computed<T>
  * @returns {boolean} - true if value is a callback or callbacks object, false otherwise
  */
 declare const isComputedCallback: <T extends {}>(value: unknown) => value is ComputedCallback<T>;
-export { ABORT_REASON_CLEANUP, ABORT_REASON_DIRTY, TYPE_COMPUTED, computed, isComputed, isComputedCallback, type Computed, type ComputedCallback, };
+export { TYPE_COMPUTED, computed, isComputed, isComputedCallback, type Computed, type ComputedCallback, };

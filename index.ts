@@ -11,7 +11,7 @@ export {
 	isComputed,
 	TYPE_COMPUTED,
 } from './src/computed'
-export { effect, type MaybeCleanup } from './src/effect'
+export { type EffectCallback, effect, type MaybeCleanup } from './src/effect'
 export { type MatchHandlers, match } from './src/match'
 export { type ResolveResult, resolve } from './src/resolve'
 export {
@@ -36,4 +36,10 @@ export {
 	UNSET,
 } from './src/signal'
 export { isState, type State, state, TYPE_STATE } from './src/state'
-export { CircularDependencyError, isFunction } from './src/util'
+export {
+	CircularDependencyError,
+	isAbortError,
+	isAsyncFunction,
+	isFunction,
+	toError,
+} from './src/util'

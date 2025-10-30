@@ -135,8 +135,6 @@ var toSignal = (value) => isSignal(value) ? value : isComputedCallback(value) ? 
 
 // src/computed.ts
 var TYPE_COMPUTED = "Computed";
-var ABORT_REASON_DIRTY = "Aborted because source signal changed";
-var ABORT_REASON_CLEANUP = "Aborted because cleanup was called";
 var computed = (fn) => {
   const watchers = new Set;
   let value = UNSET;
@@ -173,14 +171,14 @@ var computed = (fn) => {
   };
   const mark = watch(() => {
     dirty = true;
-    controller?.abort(ABORT_REASON_DIRTY);
+    controller?.abort();
     if (watchers.size)
       notify(watchers);
     else
       mark.cleanup();
   });
   mark.off(() => {
-    controller?.abort(ABORT_REASON_CLEANUP);
+    controller?.abort();
   });
   const compute = () => observe(() => {
     if (computing)
@@ -235,7 +233,7 @@ var computed = (fn) => {
 var isComputed = (value) => isObjectOfType(value, TYPE_COMPUTED);
 var isComputedCallback = (value) => isFunction(value) && value.length < 2;
 // src/effect.ts
-function effect(callback) {
+var effect = (callback) => {
   const isAsync = isAsyncFunction(callback);
   let running = false;
   let controller;
@@ -243,15 +241,17 @@ function effect(callback) {
     if (running)
       throw new CircularDependencyError("effect");
     running = true;
-    controller?.abort(ABORT_REASON_DIRTY);
+    controller?.abort();
     controller = undefined;
     let cleanup;
     try {
       if (isAsync) {
         controller = new AbortController;
+        const currentController = controller;
         callback(controller.signal).then((cleanup2) => {
-          if (isFunction(cleanup2))
+          if (isFunction(cleanup2) && controller === currentController) {
             run.off(cleanup2);
+          }
         }).catch((error) => {
           if (!isAbortError(error))
             console.error("Async effect error:", error);
@@ -269,10 +269,10 @@ function effect(callback) {
   }, run));
   run();
   return () => {
-    controller?.abort(ABORT_REASON_CLEANUP);
+    controller?.abort();
     run.cleanup();
   };
-}
+};
 // src/match.ts
 function match(result, handlers) {
   try {
@@ -320,6 +320,7 @@ function resolve(signals) {
 export {
   watch,
   toSignal,
+  toError,
   subscribe,
   state,
   resolve,
@@ -331,6 +332,8 @@ export {
   isFunction,
   isComputedCallback,
   isComputed,
+  isAsyncFunction,
+  isAbortError,
   flush,
   enqueue,
   effect,

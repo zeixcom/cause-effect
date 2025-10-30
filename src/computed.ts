@@ -30,9 +30,6 @@ type ComputedCallback<T extends {} & { then?: undefined }> =
 
 const TYPE_COMPUTED = 'Computed'
 
-const ABORT_REASON_DIRTY = 'Aborted because source signal changed'
-const ABORT_REASON_CLEANUP = 'Aborted because cleanup was called'
-
 /* === Functions === */
 
 /**
@@ -88,12 +85,12 @@ const computed = <T extends {}>(fn: ComputedCallback<T>): Computed<T> => {
 	// Own watcher: called when notified from sources (push)
 	const mark = watch(() => {
 		dirty = true
-		controller?.abort(ABORT_REASON_DIRTY)
+		controller?.abort()
 		if (watchers.size) notify(watchers)
 		else mark.cleanup()
 	})
 	mark.off(() => {
-		controller?.abort(ABORT_REASON_CLEANUP)
+		controller?.abort()
 	})
 
 	// Called when requested by dependencies (pull)
@@ -109,7 +106,7 @@ const computed = <T extends {}>(fn: ComputedCallback<T>): Computed<T> => {
 					() => {
 						computing = false
 						controller = undefined
-						compute() // retry
+						compute() // retry computation with updated state
 					},
 					{
 						once: true,
@@ -177,8 +174,6 @@ const isComputedCallback = /*#__PURE__*/ <T extends {}>(
 /* === Exports === */
 
 export {
-	ABORT_REASON_CLEANUP,
-	ABORT_REASON_DIRTY,
 	TYPE_COMPUTED,
 	computed,
 	isComputed,

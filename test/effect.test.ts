@@ -1,5 +1,13 @@
 import { describe, expect, mock, test } from 'bun:test'
-import { computed, effect, match, resolve, state, UNSET } from '../'
+import {
+	computed,
+	effect,
+	isAbortError,
+	match,
+	resolve,
+	state,
+	UNSET,
+} from '../'
 
 /* === Utility Functions === */
 
@@ -293,7 +301,7 @@ describe('Effect - Async with AbortSignal', () => {
 		const testSignal = state(1)
 		let operationAborted = false
 		let operationCompleted = false
-		let abortReason = ''
+		let abortReason: DOMException | undefined
 
 		effect(async abort => {
 			const result = resolve({ testSignal })
@@ -301,7 +309,7 @@ describe('Effect - Async with AbortSignal', () => {
 
 			abort.addEventListener('abort', () => {
 				operationAborted = true
-				abortReason = abort.reason || 'No reason'
+				abortReason = abort.reason
 			})
 
 			try {
@@ -324,17 +332,18 @@ describe('Effect - Async with AbortSignal', () => {
 		await wait(50)
 		expect(operationAborted).toBe(true)
 		expect(operationCompleted).toBe(false)
-		expect(abortReason).toBe('Aborted because source signal changed')
+		expect(abortReason instanceof DOMException).toBe(true)
+		expect((abortReason as DOMException).name).toBe('AbortError')
 	})
 
 	test('should abort async operations on effect cleanup', async () => {
 		let operationAborted = false
-		let abortReason = ''
+		let abortReason: DOMException | undefined
 
 		const cleanup = effect(async abort => {
 			abort.addEventListener('abort', () => {
 				operationAborted = true
-				abortReason = abort.reason || 'No reason'
+				abortReason = abort.reason
 			})
 
 			await wait(100)
@@ -345,7 +354,8 @@ describe('Effect - Async with AbortSignal', () => {
 
 		await wait(30)
 		expect(operationAborted).toBe(true)
-		expect(abortReason).toBe('Aborted because cleanup was called')
+		expect(abortReason instanceof DOMException).toBe(true)
+		expect((abortReason as DOMException).name).toBe('AbortError')
 	})
 
 	test('should handle AbortError gracefully without logging to console', async () => {
@@ -650,5 +660,152 @@ describe('Effect + Resolve Integration', () => {
 		})
 
 		expect(matchedValue).toBe(42)
+	})
+})
+
+describe('Effect - Race Conditions and Consistency', () => {
+	test('should handle race conditions between abort and cleanup properly', async () => {
+		// This test explores potential race conditions in effect cleanup
+		const testSignal = state(0)
+		let cleanupCallCount = 0
+		let abortCallCount = 0
+		let operationCount = 0
+
+		effect(async abort => {
+			testSignal.get()
+			++operationCount
+
+			abort.addEventListener('abort', () => {
+				abortCallCount++
+			})
+
+			try {
+				await wait(50)
+				// This cleanup should only be registered if the operation wasn't aborted
+				return () => {
+					cleanupCallCount++
+				}
+			} catch (error) {
+				if (!isAbortError(error)) throw error
+			}
+		})
+
+		// Rapid signal changes to test race conditions
+		testSignal.set(1)
+		await wait(10)
+		testSignal.set(2)
+		await wait(10)
+		testSignal.set(3)
+		await wait(100) // Let all operations complete
+
+		// Without proper abort handling, we might get multiple cleanups
+		expect(cleanupCallCount).toBeLessThanOrEqual(1) // Should be at most 1
+		expect(operationCount).toBeGreaterThan(1) // Should have multiple operations
+		expect(abortCallCount).toBeGreaterThan(0) // Should have some aborts
+	})
+
+	test('should demonstrate difference in abort handling between computed and effect', async () => {
+		// This test shows why computed needs an abort listener but effect might not
+		const source = state(1)
+		let computedRetries = 0
+		let effectRuns = 0
+
+		// Computed with abort listener (current implementation)
+		const comp = computed(async () => {
+			computedRetries++
+			await wait(30)
+			return source.get() * 2
+		})
+
+		// Effect without abort listener (current implementation)
+		effect(async () => {
+			effectRuns++
+			// Must access the source to make effect reactive
+			source.get()
+			await wait(30)
+			resolve({ comp })
+			// Effect doesn't need to return a value immediately
+		})
+
+		// Change source rapidly
+		source.set(2)
+		await wait(10)
+		source.set(3)
+		await wait(50)
+
+		// Computed should retry efficiently due to abort listener
+		// Effect should handle the changes naturally through dependency tracking
+		expect(computedRetries).toBeGreaterThan(0)
+		expect(effectRuns).toBeGreaterThan(0)
+	})
+
+	test('should prevent stale cleanup registration with generation counter approach', async () => {
+		// This test verifies that the currentController check prevents stale cleanups
+		const testSignal = state(0)
+		let cleanupCallCount = 0
+		let effectRunCount = 0
+		let staleCleanupAttempts = 0
+
+		effect(async () => {
+			effectRunCount++
+			const currentRun = effectRunCount
+			testSignal.get() // Make reactive
+
+			try {
+				await wait(60)
+				// This cleanup should only be registered for the latest run
+				return () => {
+					cleanupCallCount++
+					if (currentRun !== effectRunCount) {
+						staleCleanupAttempts++
+					}
+				}
+			} catch (error) {
+				if (!isAbortError(error)) throw error
+				return undefined
+			}
+		})
+
+		// Trigger multiple rapid changes
+		testSignal.set(1)
+		await wait(20)
+		testSignal.set(2)
+		await wait(20)
+		testSignal.set(3)
+		await wait(80) // Let final operation complete
+
+		// Should have multiple runs but only one cleanup (from the last successful run)
+		expect(effectRunCount).toBeGreaterThan(1)
+		expect(cleanupCallCount).toBeLessThanOrEqual(1)
+		expect(staleCleanupAttempts).toBe(0) // No stale cleanups should be registered
+	})
+
+	test('should demonstrate why computed needs immediate retry via abort listener', async () => {
+		// This test shows the performance benefit of immediate retry in computed
+		const source = state(1)
+		let computeAttempts = 0
+		let finalValue: number = 0
+
+		const comp = computed(async () => {
+			computeAttempts++
+			await wait(30)
+			return source.get() * 2
+		})
+
+		// Start computation
+		expect(comp.get()).toBe(UNSET)
+
+		// Change source during computation - this should trigger immediate retry
+		await wait(10)
+		source.set(5)
+
+		// Wait for computation to complete
+		await wait(50)
+		finalValue = comp.get()
+
+		// The abort listener allows immediate retry, so we should get the latest value
+		expect(finalValue).toBe(10) // 5 * 2
+		// Note: The number of attempts can vary due to timing, but should get correct result
+		expect(computeAttempts).toBeGreaterThanOrEqual(1)
 	})
 })

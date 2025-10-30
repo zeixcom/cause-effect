@@ -1,5 +1,6 @@
 import { type Cleanup } from './scheduler';
 type MaybeCleanup = Cleanup | undefined | void;
+type EffectCallback = (() => MaybeCleanup) | ((abort: AbortSignal) => Promise<MaybeCleanup>);
 /**
  * Define what happens when a reactive state changes
  *
@@ -8,9 +9,8 @@ type MaybeCleanup = Cleanup | undefined | void;
  * re-runs or is cleaned up, preventing stale async operations.
  *
  * @since 0.1.0
- * @param {() => MaybeCleanup} callback - Synchronous effect callback
+ * @param {EffectCallback} callback - Synchronous or asynchronous effect callback
  * @returns {Cleanup} - Cleanup function for the effect
  */
-declare function effect(callback: () => MaybeCleanup): Cleanup;
-declare function effect(callback: (abort: AbortSignal) => Promise<MaybeCleanup>): Cleanup;
-export { type MaybeCleanup, effect };
+declare const effect: (callback: EffectCallback) => Cleanup;
+export { type MaybeCleanup, type EffectCallback, effect };
