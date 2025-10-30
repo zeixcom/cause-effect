@@ -1,6 +1,6 @@
 /**
  * @name Cause & Effect
- * @version 0.14.2
+ * @version 0.15.0
  * @author Esther Brunner
  */
 
@@ -11,7 +11,9 @@ export {
 	isComputed,
 	TYPE_COMPUTED,
 } from './src/computed'
-export { type EffectMatcher, effect } from './src/effect'
+export { type EffectCallback, effect, type MaybeCleanup } from './src/effect'
+export { type MatchHandlers, match } from './src/match'
+export { type ResolveResult, resolve } from './src/resolve'
 export {
 	batch,
 	type Cleanup,
@@ -34,4 +36,10 @@ export {
 	UNSET,
 } from './src/signal'
 export { isState, type State, state, TYPE_STATE } from './src/state'
-export { CircularDependencyError, isFunction } from './src/util'
+export {
+	CircularDependencyError,
+	isAbortError,
+	isAsyncFunction,
+	isFunction,
+	toError,
+} from './src/util'

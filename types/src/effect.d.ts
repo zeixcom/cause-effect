@@ -1,17 +1,16 @@
 import { type Cleanup } from './scheduler';
-import { type Signal, type SignalValues } from './signal';
-type EffectMatcher<S extends Signal<unknown & {}>[]> = {
-    signals: S;
-    ok: (...values: SignalValues<S>) => Cleanup | undefined;
-    err?: (...errors: Error[]) => Cleanup | undefined;
-    nil?: () => Cleanup | undefined;
-};
+type MaybeCleanup = Cleanup | undefined | void;
+type EffectCallback = (() => MaybeCleanup) | ((abort: AbortSignal) => Promise<MaybeCleanup>);
 /**
  * Define what happens when a reactive state changes
  *
+ * The callback can be synchronous or asynchronous. Async callbacks receive
+ * an AbortSignal parameter, which is automatically aborted when the effect
+ * re-runs or is cleaned up, preventing stale async operations.
+ *
  * @since 0.1.0
- * @param {EffectMatcher<S> | (() => Cleanup | undefined)} matcher - effect matcher or callback
- * @returns {Cleanup} - cleanup function for the effect
+ * @param {EffectCallback} callback - Synchronous or asynchronous effect callback
+ * @returns {Cleanup} - Cleanup function for the effect
  */
-declare function effect<S extends Signal<unknown & {}>[]>(matcher: EffectMatcher<S> | (() => Cleanup | undefined)): Cleanup;
-export { type EffectMatcher, effect };
+declare const effect: (callback: EffectCallback) => Cleanup;
+export { type MaybeCleanup, type EffectCallback, effect };

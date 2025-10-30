@@ -1,80 +1,88 @@
 import { type Cleanup, observe, watch } from './scheduler'
-import { type Signal, type SignalValues, UNSET } from './signal'
-import { CircularDependencyError, isFunction, toError } from './util'
+import {
+	CircularDependencyError,
+	isAbortError,
+	isAsyncFunction,
+	isFunction,
+} from './util'
 
 /* === Types === */
 
-type EffectMatcher<S extends Signal<unknown & {}>[]> = {
-	signals: S
-	ok: (...values: SignalValues<S>) => Cleanup | undefined
-	err?: (...errors: Error[]) => Cleanup | undefined
-	nil?: () => Cleanup | undefined
-}
+// biome-ignore lint/suspicious/noConfusingVoidType: optional Cleanup return type
+type MaybeCleanup = Cleanup | undefined | void
+
+type EffectCallback =
+	| (() => MaybeCleanup)
+	| ((abort: AbortSignal) => Promise<MaybeCleanup>)
 
 /* === Functions === */
 
 /**
  * Define what happens when a reactive state changes
  *
+ * The callback can be synchronous or asynchronous. Async callbacks receive
+ * an AbortSignal parameter, which is automatically aborted when the effect
+ * re-runs or is cleaned up, preventing stale async operations.
+ *
  * @since 0.1.0
- * @param {EffectMatcher<S> | (() => Cleanup | undefined)} matcher - effect matcher or callback
- * @returns {Cleanup} - cleanup function for the effect
+ * @param {EffectCallback} callback - Synchronous or asynchronous effect callback
+ * @returns {Cleanup} - Cleanup function for the effect
  */
-function effect<S extends Signal<unknown & {}>[]>(
-	matcher: EffectMatcher<S> | (() => Cleanup | undefined),
-): Cleanup {
-	const {
-		signals,
-		ok,
-		err = (error: Error): undefined => {
-			console.error(error)
-		},
-		nil = (): undefined => {},
-	} = isFunction(matcher)
-		? { signals: [] as unknown as S, ok: matcher }
-		: matcher
-
+const effect = (callback: EffectCallback): Cleanup => {
+	const isAsync = isAsyncFunction<MaybeCleanup>(callback)
 	let running = false
+	let controller: AbortController | undefined
+
 	const run = watch(() =>
 		observe(() => {
 			if (running) throw new CircularDependencyError('effect')
 			running = true
 
-			// Pure part
-			const errors: Error[] = []
-			let pending = false
-			const values = signals.map(signal => {
-				try {
-					const value = signal.get()
-					if (value === UNSET) pending = true
-					return value
-				} catch (e) {
-					errors.push(toError(e))
-					return UNSET
-				}
-			}) as SignalValues<S>
+			// Abort any previous async operations
+			controller?.abort()
+			controller = undefined
 
-			// Effectful part
-			let cleanup: Cleanup | undefined
+			let cleanup: MaybeCleanup | Promise<MaybeCleanup>
+
 			try {
-				cleanup = pending
-					? nil()
-					: errors.length
-						? err(...errors)
-						: ok(...values)
-			} catch (e) {
-				cleanup = err(toError(e))
-			} finally {
-				if (isFunction(cleanup)) run.off(cleanup)
+				if (isAsync) {
+					// Create AbortController for async callback
+					controller = new AbortController()
+					const currentController = controller
+					callback(controller.signal)
+						.then(cleanup => {
+							// Only register cleanup if this is still the current controller
+							if (
+								isFunction(cleanup) &&
+								controller === currentController
+							) {
+								run.off(cleanup)
+							}
+						})
+						.catch(error => {
+							if (!isAbortError(error))
+								console.error('Async effect error:', error)
+						})
+				} else {
+					cleanup = (callback as () => MaybeCleanup)()
+					if (isFunction(cleanup)) run.off(cleanup)
+				}
+			} catch (error) {
+				if (!isAbortError(error))
+					console.error('Effect callback error:', error)
 			}
 
 			running = false
 		}, run),
 	)
+
 	run()
-	return () => run.cleanup()
+	return () => {
+		controller?.abort()
+		run.cleanup()
+	}
 }
 
 /* === Exports === */
 
-export { type EffectMatcher, effect }
+export { type MaybeCleanup, type EffectCallback, effect }

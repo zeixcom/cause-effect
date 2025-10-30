@@ -1,6 +1,6 @@
 # Cause & Effect
 
-Version 0.14.2
+Version 0.15.0
 
 **Cause & Effect** is a lightweight, reactive state management library for JavaScript applications. It uses fine-grained reactivity with signals to create predictable and efficient data flow in your app.
 
@@ -19,9 +19,10 @@ Version 0.14.2
 - ⚡ **Reactive States**: Automatic updates when dependencies change
 - 🧩 **Composable**: Create a complex signal graph with a minimal API
 - ⏱️ **Async Ready**: Built-in `Promise` and `AbortController` support
-- 🛡️ **Error Handling**: Declare handlers for errors and unset states in effects
+- 🛡️ **Error Handling**: Built-in helper functions for declarative error handling
+- 🔧 **Helper Functions**: `resolve()` and `match()` for type-safe value extraction and pattern matching for suspense and error boundaries
 - 🚀 **Performance**: Batching and efficient dependency tracking
-- 📦 **Tiny**: Around 1kB gzipped, zero dependencies
+- 📦 **Tiny**: Less than 2kB gzipped, zero dependencies
 
 ## Quick Start
 
@@ -120,7 +121,7 @@ const isEven = () => !(count.get() % 2)
 4. Properly handles errors from failed requests
 
 ```js
-import { state, computed, effect } from '@zeix/cause-effect'
+import { state, computed, effect, resolve, match } from '@zeix/cause-effect'
 
 const id = state(42)
 const data = computed(async abort => {
@@ -130,12 +131,13 @@ const data = computed(async abort => {
   return response.json()
 })
 
-// Handle all possible states
-effect({
-  signals: [data],
-  ok: json => console.log('Data loaded:', json),
-  nil: () => console.log('Loading...'),
-  err: error => console.error('Error:', error)
+// Handle all possible states using resolve and match helpers
+effect(() => {
+  match(resolve({ data }), {
+    ok: ({ data: json }) => console.log('Data loaded:', json),
+    nil: () => console.log('Loading...'),
+    err: errors => console.error('Error:', errors[0])
+  })
 })
 
 // When id changes, the previous request is automatically canceled
@@ -148,24 +150,64 @@ document.querySelector('button.next').addEventListener('click', () => {
 
 ## Effects and Error Handling
 
-Cause & Effect provides a robust way to handle side effects and errors through the `effect()` function, with three distinct paths:
+The `effect()` function supports both synchronous and asynchronous callbacks:
 
-1. **Ok**: When values are available
-2. **Nil**: For loading/unset states (with async tasks)
-3. **Err**: When errors occur during computation
-
-This allows for declarative handling of all possible states:
+### Synchronous Effects
 
 ```js
-effect({
-  signals: [data],
-  ok: (value) => /* update UI when data is available */,
-  nil: () => /* show loading state while pending */,
-  err: (error) => /* show error message when computation fails */
+import { state, effect } from '@zeix/cause-effect'
+
+const count = state(42)
+effect(() => {
+  console.log('Count changed:', count.get())
 })
 ```
 
-Instead of using a single callback function, you can provide an object with an `ok` handler (required), plus optional `err` and `nil` handlers. Cause & Effect will automatically route to the appropriate handler based on the state of the signals. If not provided, Cause & Effect will assume `console.error` for `err` and a no-op for `nil`.
+### Asynchronous Effects with AbortSignal
+
+Async effect callbacks receive an `AbortSignal` parameter that automatically cancels when the effect re-runs or is cleaned up:
+
+```js
+import { state, effect } from '@zeix/cause-effect'
+
+const userId = state(1)
+effect(async (abort) => {
+  try {
+    const response = await fetch(`/api/users/${userId.get()}`, { signal: abort })
+    const user = await response.json()
+    console.log('User loaded:', user)
+  } catch (error) {
+    if (!abort.aborted) {
+      console.error('Failed to load user:', error)
+    }
+  }
+})
+```
+
+### Error Handling with Helper Functions
+
+For more sophisticated error handling, use the `resolve()` and `match()` helper functions:
+
+```js
+import { state, computed, effect, resolve, match } from '@zeix/cause-effect'
+
+const userId = state(1)
+const userData = computed(async (abort) => {
+  const response = await fetch(`/api/users/${userId.get()}`, { signal: abort })
+  if (!response.ok) throw new Error(`HTTP ${response.status}`)
+  return response.json()
+})
+
+effect(() => {
+  match(resolve({ userData }), {
+    ok: ({ userData: user }) => console.log('User loaded:', user),
+    nil: () => console.log('Loading user...'),
+    err: errors => console.error('Error loading user:', errors[0])
+  })
+})
+```
+
+The `resolve()` function extracts values from signals and returns a discriminated union result, while `match()` provides pattern matching for handling different states declaratively.
 
 ## DOM Updates
 
@@ -258,7 +300,7 @@ Using Symbols for deduplication provides:
 Use `batch()` to group multiple signal updates, ensuring effects run only once after all changes are applied:
 
 ```js
-import { state, computed, effect, batch } from '@zeix/cause-effect'
+import { state, computed, effect, batch, resolve, match } from '@zeix/cause-effect'
 
 // State: define an array of State<number>
 const signals = [state(2), state(3), state(5)]
@@ -271,11 +313,12 @@ const sum = computed(() => {
   return v
 })
 
-// Effect: handle the result
-effect({
-  signals: [sum],
-  ok: v => console.log('Sum:', v),
-  err: error => console.error('Error:', error)
+// Effect: handle the result with error handling
+effect(() => {
+  match(resolve({ sum }), {
+    ok: ({ sum: v }) => console.log('Sum:', v),
+    err: errors => console.error('Error:', errors[0])
+  })
 })
 
 // Batch: apply changes to all signals in a single transaction
@@ -319,6 +362,42 @@ const cleanup = effect(() => {
 cleanup() // Logs: 'Cleanup' and unsubscribes from signal `user`
 
 user.set({ name: 'Bob', age: 28 }) // Won't trigger the effect anymore
+```
+
+## Helper Functions
+
+### `resolve()` - Extract Signal Values
+
+The `resolve()` function extracts values from multiple signals and returns a discriminated union result:
+
+```js
+import { state, computed, resolve } from '@zeix/cause-effect'
+
+const name = state('Alice')
+const age = computed(() => 30)
+const result = resolve({ name, age })
+
+if (result.ok) {
+  console.log(result.values.name, result.values.age) // Type-safe access
+} else if (result.pending) {
+  console.log('Loading...')
+} else {
+  console.error('Errors:', result.errors)
+}
+```
+
+### `match()` - Pattern Matching for Side Effects
+
+The `match()` function provides pattern matching on resolve results for side effects:
+
+```js
+import { resolve, match } from '@zeix/cause-effect'
+
+match(resolve({ name, age }), {
+  ok: ({ name, age }) => document.title = `${name} (${age})`,
+  nil: () => document.title = 'Loading...',
+  err: errors => document.title = `Error: ${errors[0].message}`
+})
 ```
 
 ## Contributing & License

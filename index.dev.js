@@ -88,8 +88,10 @@ var enqueue = (fn, dedupe) => new Promise((resolve, reject) => {
 });
 
 // src/util.ts
-var isFunction = (value) => typeof value === "function";
+var isFunction = (fn) => typeof fn === "function";
+var isAsyncFunction = (fn) => isFunction(fn) && fn.constructor.name === "AsyncFunction";
 var isObjectOfType = (value, type) => Object.prototype.toString.call(value) === `[object ${type}]`;
+var isAbortError = (error) => error instanceof DOMException && error.name === "AbortError";
 var toError = (reason) => reason instanceof Error ? reason : Error(String(reason));
 
 class CircularDependencyError extends Error {
@@ -169,17 +171,20 @@ var computed = (fn) => {
   };
   const mark = watch(() => {
     dirty = true;
-    controller?.abort("Aborted because source signal changed");
+    controller?.abort();
     if (watchers.size)
       notify(watchers);
     else
       mark.cleanup();
   });
+  mark.off(() => {
+    controller?.abort();
+  });
   const compute = () => observe(() => {
     if (computing)
       throw new CircularDependencyError("computed");
     changed = false;
-    if (isFunction(fn) && fn.constructor.name === "AsyncFunction") {
+    if (isAsyncFunction(fn)) {
       if (controller)
         return value;
       controller = new AbortController;
@@ -196,7 +201,7 @@ var computed = (fn) => {
     try {
       result = controller ? fn(controller.signal) : fn();
     } catch (e) {
-      if (e instanceof DOMException && e.name === "AbortError")
+      if (isAbortError(e))
         nil();
       else
         err(e);
@@ -228,60 +233,107 @@ var computed = (fn) => {
 var isComputed = (value) => isObjectOfType(value, TYPE_COMPUTED);
 var isComputedCallback = (value) => isFunction(value) && value.length < 2;
 // src/effect.ts
-function effect(matcher) {
-  const {
-    signals,
-    ok,
-    err = (error) => {
-      console.error(error);
-    },
-    nil = () => {
-    }
-  } = isFunction(matcher) ? { signals: [], ok: matcher } : matcher;
+var effect = (callback) => {
+  const isAsync = isAsyncFunction(callback);
   let running = false;
+  let controller;
   const run = watch(() => observe(() => {
     if (running)
       throw new CircularDependencyError("effect");
     running = true;
-    const errors = [];
-    let pending2 = false;
-    const values = signals.map((signal) => {
-      try {
-        const value = signal.get();
-        if (value === UNSET)
-          pending2 = true;
-        return value;
-      } catch (e) {
-        errors.push(toError(e));
-        return UNSET;
-      }
-    });
+    controller?.abort();
+    controller = undefined;
     let cleanup;
     try {
-      cleanup = pending2 ? nil() : errors.length ? err(...errors) : ok(...values);
-    } catch (e) {
-      cleanup = err(toError(e));
-    } finally {
-      if (isFunction(cleanup))
-        run.off(cleanup);
+      if (isAsync) {
+        controller = new AbortController;
+        const currentController = controller;
+        callback(controller.signal).then((cleanup2) => {
+          if (isFunction(cleanup2) && controller === currentController) {
+            run.off(cleanup2);
+          }
+        }).catch((error) => {
+          if (!isAbortError(error))
+            console.error("Async effect error:", error);
+        });
+      } else {
+        cleanup = callback();
+        if (isFunction(cleanup))
+          run.off(cleanup);
+      }
+    } catch (error) {
+      if (!isAbortError(error))
+        console.error("Effect callback error:", error);
     }
     running = false;
   }, run));
   run();
-  return () => run.cleanup();
+  return () => {
+    controller?.abort();
+    run.cleanup();
+  };
+};
+// src/match.ts
+function match(result, handlers) {
+  try {
+    if (result.pending) {
+      handlers.nil?.();
+    } else if (result.errors) {
+      handlers.err?.(result.errors);
+    } else {
+      handlers.ok?.(result.values);
+    }
+  } catch (error) {
+    if (handlers.err && (!result.errors || !result.errors.includes(toError(error)))) {
+      const allErrors = result.errors ? [...result.errors, toError(error)] : [toError(error)];
+      handlers.err(allErrors);
+    } else {
+      throw error;
+    }
+  }
+}
+// src/resolve.ts
+function resolve(signals) {
+  const errors = [];
+  let pending2 = false;
+  const values = {};
+  for (const [key, signal] of Object.entries(signals)) {
+    try {
+      const value = signal.get();
+      if (value === UNSET) {
+        pending2 = true;
+      } else {
+        values[key] = value;
+      }
+    } catch (e) {
+      errors.push(toError(e));
+    }
+  }
+  if (pending2) {
+    return { ok: false, pending: true };
+  }
+  if (errors.length > 0) {
+    return { ok: false, errors };
+  }
+  return { ok: true, values };
 }
 export {
   watch,
   toSignal,
+  toError,
   subscribe,
   state,
+  resolve,
   observe,
   notify,
+  match,
   isState,
   isSignal,
   isFunction,
   isComputedCallback,
   isComputed,
+  isAsyncFunction,
+  isAbortError,
   flush,
   enqueue,
   effect,

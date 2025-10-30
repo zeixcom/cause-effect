@@ -1,6 +1,6 @@
+import { notify, subscribe, type Watcher } from './scheduler'
 import { UNSET } from './signal'
 import { isObjectOfType } from './util'
-import { type Watcher, notify, subscribe } from './scheduler'
 
 /* === Types === */
 
@@ -86,4 +86,4 @@ const isState = /*#__PURE__*/ <T extends {}>(
 
 /* === Exports === */
 
-export { type State, TYPE_STATE, state, isState }
+export { TYPE_STATE, isState, state, type State }

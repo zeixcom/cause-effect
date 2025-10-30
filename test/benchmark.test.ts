@@ -169,7 +169,7 @@ describe('Basic test', () => {
 describe('Kairo tests', () => {
 	const name = framework.name
 
-	test(`${name} | avoidable propagation`, () => {
+	test(`${name} | avoidable propagation`, async () => {
 		const head = framework.signal(0)
 		const computed1 = framework.computed(() => head.read())
 		const computed2 = framework.computed(() => {
@@ -201,7 +201,7 @@ describe('Kairo tests', () => {
 		}
 	})
 
-	test(`${name} | broad propagation`, () => {
+	test(`${name} | broad propagation`, async () => {
 		const head = framework.signal(0)
 		let last = head as { read: () => number }
 		const callCounter = new Counter()
@@ -235,7 +235,7 @@ describe('Kairo tests', () => {
 		}
 	})
 
-	test(`${name} | deep propagation`, () => {
+	test(`${name} | deep propagation`, async () => {
 		const len = 50
 		const head = framework.signal(0)
 		let current = head as { read: () => number }
@@ -268,7 +268,7 @@ describe('Kairo tests', () => {
 		}
 	})
 
-	test(`${name} | diamond`, () => {
+	test(`${name} | diamond`, async () => {
 		const width = 5
 		const head = framework.signal(0)
 		const current: { read(): number }[] = []
@@ -301,7 +301,7 @@ describe('Kairo tests', () => {
 		}
 	})
 
-	test(`${name} | mux`, () => {
+	test(`${name} | mux`, async () => {
 		const heads = new Array(100).fill(null).map(_ => framework.signal(0))
 		const mux = framework.computed(() => {
 			return Object.fromEntries(heads.map(h => h.read()).entries())
@@ -332,7 +332,7 @@ describe('Kairo tests', () => {
 		}
 	})
 
-	test(`${name} | repeated observers`, () => {
+	test(`${name} | repeated observers`, async () => {
 		const size = 30
 		const head = framework.signal(0)
 		const current = framework.computed(() => {
@@ -365,7 +365,7 @@ describe('Kairo tests', () => {
 		}
 	})
 
-	test(`${name} | triangle`, () => {
+	test(`${name} | triangle`, async () => {
 		const width = 10
 		const head = framework.signal(0)
 		let current = head as { read: () => number }
@@ -410,7 +410,7 @@ describe('Kairo tests', () => {
 		}
 	})
 
-	test(`${name} | unstable`, () => {
+	test(`${name} | unstable`, async () => {
 		const head = framework.signal(0)
 		const double = framework.computed(() => head.read() * 2)
 		const inverse = framework.computed(() => -head.read())

@@ -13,9 +13,13 @@ type Signal<T extends {}> = {
 }
 type MaybeSignal<T extends {}> = T | Signal<T> | ComputedCallback<T>
 
-type SignalValues<S extends Signal<unknown & {}>[]> = {
+type SignalValues<S extends Record<string, Signal<unknown & {}>>> = {
 	[K in keyof S]: S[K] extends Signal<infer T> ? T : never
 }
+
+type UnwrapSignal<T> = T extends Signal<infer U> ? U : T
+
+type FlattenSignals<T> = { [K in keyof T]: UnwrapSignal<T[K]> }
 
 /* === Constants === */
 
@@ -57,6 +61,8 @@ export {
 	type Signal,
 	type MaybeSignal,
 	type SignalValues,
+	type UnwrapSignal,
+	type FlattenSignals,
 	UNSET,
 	isSignal,
 	isComputedCallback,
