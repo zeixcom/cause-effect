@@ -91,6 +91,8 @@ var enqueue = (fn, dedupe) => new Promise((resolve, reject) => {
 var isFunction = (fn) => typeof fn === "function";
 var isAsyncFunction = (fn) => isFunction(fn) && fn.constructor.name === "AsyncFunction";
 var isObjectOfType = (value, type) => Object.prototype.toString.call(value) === `[object ${type}]`;
+var isPrimitive = (value) => !isObjectOfType(value, "Object") && !Array.isArray(value) && !isFunction(value);
+var hasMethod = (obj, methodName) => (methodName in obj) && isFunction(obj[methodName]);
 var isAbortError = (error) => error instanceof DOMException && error.name === "AbortError";
 var toError = (reason) => reason instanceof Error ? reason : Error(String(reason));
 
@@ -132,189 +134,192 @@ var isState = (value) => isObjectOfType(value, TYPE_STATE);
 var TYPE_STORE = "Store";
 var store = (initialValue) => {
   const watchers = new Set;
-  const propertyStores = new Map;
-  const additionsSignal = state([]);
-  const mutationsSignal = state([]);
-  const deletionsSignal = state([]);
-  let sizeSignal;
-  const createPropertyStore = (key, value) => {
-    if (typeof value === "function") {
-      throw new Error(`Functions are not allowed as store property values (property: ${key})`);
-    }
-    if (isObjectOfType(value, "Object")) {
-      return store(value);
-    } else {
-      return state(value);
-    }
+  const data = new Map;
+  const tracker = (watcher) => {
+    const trackWatchers = new Set;
+    if (watcher)
+      trackWatchers.add(watcher);
+    let trackRecord = {};
+    return {
+      get: () => {
+        subscribe(trackWatchers);
+        const value = { ...trackRecord };
+        trackRecord = {};
+        return value;
+      },
+      merge: (other) => {
+        trackRecord = { ...trackRecord, ...other };
+        notify(trackWatchers);
+      }
+    };
   };
-  for (const [key, value] of Object.entries(initialValue)) {
-    propertyStores.set(key, createPropertyStore(key, value));
-  }
-  sizeSignal = state(propertyStores.size);
-  const proxy = new Proxy({}, {
+  const additions = tracker();
+  const track = watch(() => {
+    const newKeys = Object.keys(additions.get());
+    console.log("Additions watcher called", newKeys);
+    for (const key of newKeys) {
+      data.get(key);
+    }
+  });
+  const mutations = tracker(track);
+  const removals = tracker();
+  const size = state(0);
+  const current = () => {
+    const record = {};
+    for (const [key, value] of data) {
+      record[key] = value.get();
+    }
+    return record;
+  };
+  const reconcile = (oldValue, newValue) => {
+    const oldKeys = new Set(Object.keys(oldValue));
+    const newKeys = new Set(Object.keys(newValue));
+    const allKeys = new Set([...oldKeys, ...newKeys]);
+    const changes = {
+      additions: {},
+      mutations: {},
+      removals: {}
+    };
+    for (const key of allKeys) {
+      const oldHas = oldKeys.has(key);
+      const newHas = newKeys.has(key);
+      const value = newValue[key];
+      if (oldHas && !newHas) {
+        data.delete(key);
+        changes.removals[key] = UNSET;
+      } else if (!oldHas && newHas) {
+        const signal = toMutableSignal(value);
+        data.set(key, signal);
+        changes.additions[key] = value;
+      } else {
+        console.log(key, oldValue[key], value);
+        const signal = data.get(key);
+        if (isState(signal) && isPrimitive(value) || isStore(signal) && (isObjectOfType(value, "Object") || Array.isArray(value))) {
+          signal.set(value);
+        } else {
+          if (signal && hasMethod(signal, "set"))
+            signal.set(UNSET);
+          data.set(key, toMutableSignal(value));
+        }
+        changes.mutations[key] = value;
+      }
+    }
+    const hasAdditions = Object.keys(changes.additions).length > 0;
+    const hasMutations = Object.keys(changes.mutations).length > 0;
+    const hasRemovals = Object.keys(changes.removals).length > 0;
+    if (hasAdditions)
+      additions.merge(changes.additions);
+    if (hasMutations)
+      mutations.merge(changes.mutations);
+    if (hasRemovals)
+      removals.merge(changes.removals);
+    size.set(data.size);
+    return hasAdditions || hasMutations || hasRemovals;
+  };
+  reconcile({}, initialValue);
+  return new Proxy({}, {
     get(_target, prop) {
+      const key = String(prop);
       if (prop === Symbol.toStringTag)
         return TYPE_STORE;
       if (prop === Symbol.iterator) {
         return function* () {
-          for (const [key, value] of propertyStores.entries()) {
-            yield [key, value];
-          }
-        };
-      }
-      if (prop === "clear") {
-        return () => {
-          const deletions = [];
-          const timestamp = Date.now();
-          for (const [key, store2] of propertyStores.entries()) {
-            deletions.push({
-              key,
-              oldValue: isState(store2) ? store2.get() : store2.toObject?.() || {},
-              timestamp
-            });
-            if (isState(store2)) {
-              store2.set(UNSET);
-            }
-          }
-          propertyStores.clear();
-          sizeSignal.set(0);
-          if (deletions.length > 0) {
-            deletionsSignal.update((current) => [
-              ...current,
-              ...deletions
-            ]);
-          }
-        };
-      }
-      if (prop === "delete") {
-        return (key) => {
-          const childStore = propertyStores.get(key);
-          if (!childStore) {
-            return false;
-          }
-          const oldValue = isState(childStore) ? childStore.get() : childStore.toObject?.() || {};
-          const timestamp = Date.now();
-          if (isState(childStore)) {
-            childStore.set(UNSET);
-          }
-          propertyStores.delete(key);
-          sizeSignal.set(propertyStores.size);
-          deletionsSignal.update((current) => [
-            ...current,
-            { key, oldValue, timestamp }
-          ]);
-          return true;
-        };
-      }
-      if (prop === "entries") {
-        return function* () {
-          for (const [key, value] of propertyStores.entries()) {
-            yield [key, value];
-          }
-        };
-      }
-      if (prop === "forEach") {
-        return (callback) => {
-          for (const [key, value] of propertyStores.entries()) {
-            callback(value, key, proxy);
+          for (const [key2, signal] of data) {
+            yield [key2, signal];
           }
         };
       }
       if (prop === "get") {
-        return (key) => {
-          return propertyStores.get(key);
-        };
-      }
-      if (prop === "has") {
-        return (key) => {
-          return propertyStores.has(key);
-        };
-      }
-      if (prop === "keys") {
-        return function* () {
-          yield* propertyStores.keys();
+        return () => {
+          subscribe(watchers);
+          return current();
         };
       }
       if (prop === "set") {
-        return (key, value) => {
-          const exists = propertyStores.has(key);
-          const timestamp = Date.now();
-          if (exists) {
-            const oldStore = propertyStores.get(key);
-            const oldValue = isState(oldStore) ? oldStore.get() : oldStore.toObject?.() || {};
-            if (isState(oldStore)) {
-              oldStore.set(UNSET);
-            }
-            const newStore = createPropertyStore(key, value);
-            propertyStores.set(key, newStore);
-            mutationsSignal.update((current) => [
-              ...current,
-              { key, value, oldValue, timestamp }
-            ]);
-          } else {
-            const newStore = createPropertyStore(key, value);
-            propertyStores.set(key, newStore);
-            sizeSignal.set(propertyStores.size);
-            additionsSignal.update((current) => [
-              ...current,
-              { key, value, timestamp }
-            ]);
+        return (v) => {
+          if (reconcile(current(), v)) {
+            notify(watchers);
+            if (UNSET === v)
+              watchers.clear();
           }
-          return proxy;
         };
       }
-      if (prop === "values") {
-        return function* () {
-          yield* propertyStores.values();
-        };
-      }
-      if (prop === "size") {
-        return computed(() => sizeSignal.get());
-      }
-      if (prop === "toObject") {
-        return () => {
-          const result = {};
-          for (const [key, store2] of propertyStores) {
-            result[key] = isState(store2) ? store2.get() : store2.toObject();
+      if (prop === "update") {
+        return (fn) => {
+          const oldValue = current();
+          const newValue = fn(oldValue);
+          if (reconcile(oldValue, newValue)) {
+            notify(watchers);
+            if (UNSET === newValue)
+              watchers.clear();
           }
-          return result;
         };
       }
-      if (prop === "additions") {
-        return additionsSignal;
-      }
-      if (prop === "mutations") {
-        return mutationsSignal;
-      }
-      if (prop === "deletions") {
-        return deletionsSignal;
-      }
-      return;
+      if (prop === "additions")
+        return additions;
+      if (prop === "mutations")
+        return mutations;
+      if (prop === "removals")
+        return removals;
+      if (prop === "size")
+        return size;
+      return data.get(key);
     },
     has(_target, prop) {
-      return prop === "clear" || prop === "delete" || prop === "entries" || prop === "forEach" || prop === "get" || prop === "has" || prop === "keys" || prop === "set" || prop === "values" || prop === "size" || prop === "toObject" || prop === "additions" || prop === "mutations" || prop === "deletions" || prop === Symbol.toStringTag || prop === Symbol.iterator;
+      const key = String(prop);
+      return data.has(key) || prop === "get" || prop === "set" || prop === "update" || prop === "additions" || prop === "mutations" || prop === "removals" || prop === "size" || prop === Symbol.toStringTag || prop === Symbol.iterator;
     },
-    ownKeys(_target) {
-      return Array.from(propertyStores.keys());
+    ownKeys() {
+      return Array.from(data.keys());
     },
     getOwnPropertyDescriptor(_target, prop) {
-      if (this.has?.(_target, prop)) {
-        return {
-          enumerable: true,
-          configurable: true
-        };
-      }
-      return;
+      const signal = data.get(String(prop));
+      return signal ? {
+        enumerable: true,
+        configurable: true,
+        writable: true,
+        value: signal
+      } : undefined;
     }
   });
-  return proxy;
 };
 var isStore = (value) => isObjectOfType(value, TYPE_STORE);
 
 // src/signal.ts
 var UNSET = Symbol();
 var isSignal = (value) => isState(value) || isComputed(value) || isStore(value);
-var toSignal = (value) => isSignal(value) ? value : isComputedCallback(value) ? computed(value) : state(value);
+function toSignal(value) {
+  if (isSignal(value))
+    return value;
+  if (isComputedCallback(value))
+    return computed(value);
+  if (Array.isArray(value)) {
+    const record = {};
+    for (let i = 0;i < value.length; i++) {
+      record[String(i)] = value[i];
+    }
+    return store(record);
+  }
+  if (isObjectOfType(value, "Object"))
+    return store(value);
+  return state(value);
+}
+function toMutableSignal(value) {
+  if (isSignal(value))
+    return value;
+  if (isComputedCallback(value))
+    return computed(value);
+  if (Array.isArray(value)) {
+    const record = {};
+    for (let i = 0;i < value.length; i++) {
+      record[String(i)] = value[i];
+    }
+    return store(record);
+  }
+  if (isObjectOfType(value, "Object"))
+    return store(value);
+  return state(value);
+}
 
 // src/computed.ts
 var TYPE_COMPUTED = "Computed";

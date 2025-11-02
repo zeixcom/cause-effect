@@ -1,5 +1,8 @@
 /* === Utility Functions === */
 
+const isNumber = /*#__PURE__*/ (value: unknown): value is number =>
+	typeof value === 'number'
+
 const isString = /*#__PURE__*/ (value: unknown): value is string =>
 	typeof value === 'string'
 
@@ -17,6 +20,19 @@ const isObjectOfType = /*#__PURE__*/ <T>(
 	type: string,
 ): value is T => Object.prototype.toString.call(value) === `[object ${type}]`
 
+const isPrimitive = /*#__PURE__*/ (value: unknown): boolean =>
+	!isObjectOfType(value, 'Object') &&
+	!Array.isArray(value) &&
+	!isFunction(value)
+
+const hasMethod = /*#__PURE__*/ <
+	T extends object & Record<string, (...args: unknown[]) => unknown>,
+>(
+	obj: T,
+	methodName: string,
+): obj is T & Record<string, (...args: unknown[]) => unknown> =>
+	methodName in obj && isFunction(obj[methodName])
+
 const isAbortError = /*#__PURE__*/ (error: unknown): boolean =>
 	error instanceof DOMException && error.name === 'AbortError'
 
@@ -33,10 +49,13 @@ class CircularDependencyError extends Error {
 /* === Exports === */
 
 export {
+	isNumber,
 	isString,
 	isFunction,
 	isAsyncFunction,
 	isObjectOfType,
+	isPrimitive,
+	hasMethod,
 	isAbortError,
 	toError,
 	CircularDependencyError,

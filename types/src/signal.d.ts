@@ -1,4 +1,6 @@
-import { type ComputedCallback, isComputedCallback } from './computed';
+import { type Computed, type ComputedCallback } from './computed';
+import { type State } from './state';
+import { type Store } from './store';
 type Signal<T extends {}> = {
     get(): T;
 };
@@ -19,8 +21,20 @@ declare const isSignal: <T extends {}>(value: unknown) => value is Signal<T>;
  * Convert a value to a Signal if it's not already a Signal
  *
  * @since 0.9.6
- * @param {MaybeSignal<T>} value - value to convert to a Signal
- * @returns {Signal<T>} - converted Signal
  */
-declare const toSignal: <T extends {}>(value: MaybeSignal<T>) => Signal<T>;
-export { type Signal, type MaybeSignal, type SignalValues, UNSET, isSignal, isComputedCallback, toSignal, };
+declare function toSignal<T extends Array<unknown & {}>>(value: T[]): Store<Record<string, T>>;
+declare function toSignal<T extends Record<keyof T, T[keyof T]>>(value: T): Store<T>;
+declare function toSignal<T extends {}>(value: ComputedCallback<T>): Computed<T>;
+declare function toSignal<T extends {}>(value: Signal<T>): Signal<T>;
+declare function toSignal<T extends {}>(value: T): State<T>;
+/**
+ * Convert a value to a mutable Signal if it's not already a Signal
+ *
+ * @since 0.9.6
+ */
+declare function toMutableSignal<T extends Array<unknown & {}>>(value: T[]): Store<Record<string, T>>;
+declare function toMutableSignal<T extends Record<keyof T, T[keyof T]>>(value: T): Store<T>;
+declare function toMutableSignal<T extends State<T>>(value: State<T>): State<T>;
+declare function toMutableSignal<T extends Store<T>>(value: Store<T>): Store<T>;
+declare function toMutableSignal<T extends {}>(value: T): State<T>;
+export { type Signal, type MaybeSignal, type SignalValues, UNSET, isSignal, toSignal, toMutableSignal, };

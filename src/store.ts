@@ -1,7 +1,7 @@
-import { notify, subscribe, type Watcher } from './scheduler'
-import { type Signal, toSignal, UNSET } from './signal'
-import { type State, state } from './state'
-import { isObjectOfType } from './util'
+import { notify, subscribe, watch, type Watcher } from './scheduler'
+import { type Signal, toMutableSignal, UNSET } from './signal'
+import { isState, type State, state } from './state'
+import { hasMethod, isObjectOfType, isPrimitive } from './util'
 
 /* === Constants === */
 
@@ -12,36 +12,30 @@ const TYPE_STORE = 'Store'
 type Store<
 	T extends Record<string, unknown & {}> = Record<string, unknown & {}>,
 > = {
+	[K in keyof T]: T[K] extends Record<string, unknown & {}>
+		? Store<T[K]>
+		: State<T[K]>
+} & {
 	[Symbol.toStringTag]: 'Store'
 	[Symbol.iterator](): IterableIterator<[string, Signal<T[keyof T]>]>
 
-	// Data proxy
-	data: T
-
-	// Methods
-	entries(): IterableIterator<[string, Signal<T[keyof T]>]>
-	forEach(
-		callback: (
-			value: Signal<T[keyof T]>,
-			key: string,
-			store: Store<T>,
-		) => void,
-	): void
+	// Signal methods
 	get(): T
-	keys(): IterableIterator<string>
 	set(value: T): void
 	update(updater: (value: T) => T): void
-	values(): IterableIterator<Signal<T[keyof T]>>
 
 	// Change tracking signals
-	additions: State<Partial<T>>
-	removals: State<Partial<T>>
-	mutations: State<Partial<T>>
-	length: State<number>
+	additions: Signal<Partial<T>>
+	removals: Signal<Partial<T>>
+	mutations: Signal<Partial<T>>
+	size: State<number>
 }
 
-type UnknownStore = Store<Record<string, unknown & {}>>
-
+type StoreChanges = {
+	additions: Partial<Record<string, unknown & {}>>
+	removals: Partial<Record<string, unknown & {}>>
+	mutations: Partial<Record<string, unknown & {}>>
+}
 /* === Functions === */
 
 /**
@@ -57,17 +51,43 @@ const store = <T extends Record<string, unknown & {}>>(
 	const watchers: Set<Watcher> = new Set()
 	const data = new Map<string, Signal<unknown & {}>>()
 
-	const additions = state<Partial<T>>({})
-	const mutations = state<Partial<T>>({})
-	const removals = state<Partial<T>>({})
+	const tracker = (watcher?: Watcher) => {
+		const trackWatchers: Set<Watcher> = new Set()
+		if (watcher) trackWatchers.add(watcher)
+		let trackRecord: Partial<T> = {}
+
+		return {
+			get: (): Partial<T> => {
+				subscribe(trackWatchers)
+				const value = { ...trackRecord }
+				trackRecord = {}
+				return value as Partial<T>
+			},
+			merge: (other: Partial<T>) => {
+				trackRecord = { ...trackRecord, ...other }
+				notify(trackWatchers)
+			},
+		}
+	}
+
+	const additions = tracker()
+	const track = watch(() => {
+		const newKeys = Object.keys(additions.get())
+		console.log('Additions watcher called', newKeys)
+		for (const key of newKeys) {
+			data.get(key) // Subscribe to the signal to track changes
+		}
+	})
+	const mutations = tracker(track)
+	const removals = tracker()
 	const size = state(0)
 
 	const current = (): T => {
-		const result: Record<string, unknown & {}> = {}
+		const record: Record<string, unknown & {}> = {}
 		for (const [key, value] of data) {
-			result[key] = value.get()
+			record[key] = value.get()
 		}
-		return result as T
+		return record as T
 	}
 
 	// Reconcile data
@@ -75,99 +95,133 @@ const store = <T extends Record<string, unknown & {}>>(
 		const oldKeys = new Set(Object.keys(oldValue))
 		const newKeys = new Set(Object.keys(newValue))
 		const allKeys = new Set([...oldKeys, ...newKeys])
-		let changed = false
+		const changes: StoreChanges = {
+			additions: {},
+			mutations: {},
+			removals: {},
+		}
 
 		for (const key of allKeys) {
 			const oldHas = oldKeys.has(key)
 			const newHas = newKeys.has(key)
+			const value = newValue[key]
 
 			if (oldHas && !newHas) {
-				removals.update(prev => ({ ...prev, [key]: UNSET }))
 				data.delete(key)
-				changed = true
+				changes.removals[key] = UNSET
 			} else if (!oldHas && newHas) {
-				additions.update(prev => ({ ...prev, [key]: newValue[key] }))
-				data.set(key, toSignal(newValue[key]))
-				changed = true
+				const signal = toMutableSignal(value)
+				data.set(key, signal)
+				changes.additions[key] = value
 			} else {
-				if (Object.is(oldValue[key], newValue[key])) continue
-				mutations.update(prev => ({ ...prev, [key]: newValue[key] }))
-				data.set(key, toSignal(newValue[key]))
-				changed = true
+				// if (Object.is(oldValue[key], value)) continue
+				console.log(key, oldValue[key], value)
+
+				const signal = data.get(key)
+				if (
+					(isState(signal) && isPrimitive(value)) ||
+					(isStore(signal) &&
+						(isObjectOfType(value, 'Object') ||
+							Array.isArray(value)))
+				) {
+					signal.set(value)
+				} else {
+					if (signal && hasMethod(signal, 'set')) signal.set(UNSET)
+					data.set(key, toMutableSignal(value))
+				}
+
+				changes.mutations[key] = value
 			}
 		}
+		const hasAdditions = Object.keys(changes.additions).length > 0
+		const hasMutations = Object.keys(changes.mutations).length > 0
+		const hasRemovals = Object.keys(changes.removals).length > 0
+		if (hasAdditions) additions.merge(changes.additions as Partial<T>)
+		if (hasMutations) mutations.merge(changes.mutations as Partial<T>)
+		if (hasRemovals) removals.merge(changes.removals as Partial<T>)
 		size.set(data.size)
-		return changed
+		return hasAdditions || hasMutations || hasRemovals
 	}
 
 	// Initialize data
 	reconcile({}, initialValue)
 
-	const proxy = new Proxy({} as T, {
-		get(target, prop, receiver) {
-			return Reflect.get(target, prop, receiver)
+	// Return proxy directly with integrated signal methods
+	return new Proxy({} as Store<T>, {
+		get(_target, prop) {
+			const key = String(prop)
+
+			// Handle signal methods
+			if (prop === Symbol.toStringTag) return TYPE_STORE
+			if (prop === Symbol.iterator) {
+				return function* () {
+					for (const [key, signal] of data) {
+						yield [key, signal as Signal<T[keyof T]>]
+					}
+				}
+			}
+			if (prop === 'get') {
+				return (): T => {
+					subscribe(watchers)
+					return current()
+				}
+			}
+			if (prop === 'set') {
+				return (v: T): void => {
+					if (reconcile(current(), v)) {
+						notify(watchers)
+						if (UNSET === v) watchers.clear()
+					}
+				}
+			}
+			if (prop === 'update') {
+				return (fn: (v: T) => T): void => {
+					const oldValue = current()
+					const newValue = fn(oldValue)
+					if (reconcile(oldValue, newValue)) {
+						notify(watchers)
+						if (UNSET === newValue) watchers.clear()
+					}
+				}
+			}
+			if (prop === 'additions') return additions
+			if (prop === 'mutations') return mutations
+			if (prop === 'removals') return removals
+			if (prop === 'size') return size
+
+			// Handle data properties - return signals
+			return data.get(key)
 		},
-		set(target, prop, value, receiver) {
-			return Reflect.set(target, prop, value, receiver)
+		has(_target, prop) {
+			const key = String(prop)
+			return (
+				data.has(key) ||
+				prop === 'get' ||
+				prop === 'set' ||
+				prop === 'update' ||
+				prop === 'additions' ||
+				prop === 'mutations' ||
+				prop === 'removals' ||
+				prop === 'size' ||
+				prop === Symbol.toStringTag ||
+				prop === Symbol.iterator
+			)
+		},
+		ownKeys() {
+			return Array.from(data.keys())
+		},
+		getOwnPropertyDescriptor(_target, prop) {
+			const signal = data.get(String(prop))
+			return signal
+				? {
+						enumerable: true,
+						configurable: true,
+						writable: true,
+						value: signal,
+					}
+				: undefined
 		},
 	})
-
-	const s: Store<T> = {
-		[Symbol.toStringTag]: TYPE_STORE,
-		[Symbol.iterator]: function* () {
-			for (const [key, value] of data) {
-				yield [key, value.get()]
-			}
-		},
-
-		data: proxy,
-
-		/**
-		 * Get the current value of the store
-		 *
-		 * @since 0.15.0
-		 * @returns {T} - current value of the store
-		 */
-		get: (): T => {
-			subscribe(watchers)
-			return current()
-		},
-
-		/**
-		 * Set a new value of the store
-		 *
-		 * @since 0.15.0
-		 * @param {T} v
-		 * @returns {void}
-		 */
-		set: (v: T): void => {
-			const changed = reconcile(current(), v)
-			if (changed) {
-				notify(watchers)
-
-				// Setting to UNSET clears the watchers so the signal can be garbage collected
-				if (UNSET === v) watchers.clear()
-			}
-		},
-
-		/**
-		 * Update the store with a new value using a function
-		 *
-		 * @since 0.15.0
-		 * @param {(v: T) => T} fn - function to update the store
-		 * @returns {void} - updates the store with the result of the function
-		 */
-		update: (fn: (v: T) => T): void => {
-			s.set(fn(current()))
-		},
-
-		additions,
-		mutations,
-		removals,
-		size,
-	}
-
-	return s
 }
 
 /**
@@ -183,4 +237,4 @@ const isStore = <T extends Record<string, unknown & {}>>(
 
 /* === Exports === */
 
-export { TYPE_STORE, isStore, store, type Store, type UnknownStore }
+export { TYPE_STORE, isStore, store, type Store }

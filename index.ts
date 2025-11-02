@@ -9,6 +9,7 @@ export {
 	type ComputedCallback,
 	computed,
 	isComputed,
+	isComputedCallback,
 	TYPE_COMPUTED,
 } from './src/computed'
 export { type EffectCallback, effect, type MaybeCleanup } from './src/effect'
@@ -27,7 +28,6 @@ export {
 	watch,
 } from './src/scheduler'
 export {
-	isComputedCallback,
 	isSignal,
 	type MaybeSignal,
 	type Signal,
@@ -36,18 +36,11 @@ export {
 	UNSET,
 } from './src/signal'
 export { isState, type State, state, TYPE_STATE } from './src/state'
-export {
-	isStore,
-	type Store,
-	store,
-	TYPE_STORE,
-	type UnknownStore,
-} from './src/store'
+export { isStore, type Store, store, TYPE_STORE } from './src/store'
 export {
 	CircularDependencyError,
 	isAbortError,
 	isAsyncFunction,
 	isFunction,
-	isString,
 	toError,
 } from './src/util'

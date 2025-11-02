@@ -99,14 +99,17 @@ const computed = <T extends {}>(fn: ComputedCallback<T>): Computed<T> => {
 			if (computing) throw new CircularDependencyError('computed')
 			changed = false
 			if (isAsyncFunction(fn)) {
-				if (controller) return value // return current value until promise resolves
+				// Return current value until promise resolves
+				if (controller) return value
 				controller = new AbortController()
 				controller.signal.addEventListener(
 					'abort',
 					() => {
 						computing = false
 						controller = undefined
-						compute() // retry computation with updated state
+
+						// Retry computation with updated state
+						compute()
 					},
 					{
 						once: true,
