@@ -1,5 +1,8 @@
 /* === Utility Functions === */
 
+const isString = /*#__PURE__*/ (value: unknown): value is string =>
+	typeof value === 'string'
+
 const isFunction = /*#__PURE__*/ <T>(
 	fn: unknown,
 ): fn is (...args: unknown[]) => T => typeof fn === 'function'
@@ -30,6 +33,7 @@ class CircularDependencyError extends Error {
 /* === Exports === */
 
 export {
+	isString,
 	isFunction,
 	isAsyncFunction,
 	isObjectOfType,

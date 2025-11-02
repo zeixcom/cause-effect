@@ -48,5 +48,6 @@ export {
 	isAbortError,
 	isAsyncFunction,
 	isFunction,
+	isString,
 	toError,
 } from './src/util'

@@ -1,33 +1,46 @@
 import { notify, subscribe, type Watcher } from './scheduler'
-import { UNSET } from './signal'
-import { isState, type State, state } from './state'
+import { type Signal, toSignal, UNSET } from './signal'
+import { type State, state } from './state'
 import { isObjectOfType } from './util'
 
-/* === Types === */
+/* === Constants === */
 
-type StoreProperty<T> = T extends (...args: unknown[]) => unknown
-	? never // Functions are not allowed as property values
-	: T extends Record<string, unknown & {}>
-		? Store<T>
-		: State<T & {}>
+const TYPE_STORE = 'Store'
+
+/* === Types === */
 
 type Store<
 	T extends Record<string, unknown & {}> = Record<string, unknown & {}>,
 > = {
 	[Symbol.toStringTag]: 'Store'
+	[Symbol.iterator](): IterableIterator<[string, Signal<T[keyof T]>]>
+
+	// Data proxy
+	data: T
+
+	// Methods
+	entries(): IterableIterator<[string, Signal<T[keyof T]>]>
+	forEach(
+		callback: (
+			value: Signal<T[keyof T]>,
+			key: string,
+			store: Store<T>,
+		) => void,
+	): void
 	get(): T
-	has(key: string): boolean // Non-tracking existence check
-	add<K extends string, V>(key: K, value: V): Store<T & Record<K, V>>
-	delete<K extends keyof T>(key: K): Store<Omit<T, K>>
-} & {
-	[K in keyof T]: StoreProperty<T[K]>
+	keys(): IterableIterator<string>
+	set(value: T): void
+	update(updater: (value: T) => T): void
+	values(): IterableIterator<Signal<T[keyof T]>>
+
+	// Change tracking signals
+	additions: State<Partial<T>>
+	removals: State<Partial<T>>
+	mutations: State<Partial<T>>
+	length: State<number>
 }
 
 type UnknownStore = Store<Record<string, unknown & {}>>
-
-/* === Constants === */
-
-const TYPE_STORE = 'Store'
 
 /* === Functions === */
 
@@ -42,117 +55,119 @@ const store = <T extends Record<string, unknown & {}>>(
 	initialValue: T,
 ): Store<T> => {
 	const watchers: Set<Watcher> = new Set()
-	const propertyStores = new Map<
-		string | symbol,
-		Store<Record<string, unknown & {}>> | State<unknown & {}>
-	>()
+	const data = new Map<string, Signal<unknown & {}>>()
 
-	const createPropertyStore = (key: string | symbol, value: unknown & {}) => {
-		if (typeof value === 'function') {
-			throw new Error(
-				`Functions are not allowed as store property values (property: ${String(key)})`,
-			)
-		}
+	const additions = state<Partial<T>>({})
+	const mutations = state<Partial<T>>({})
+	const removals = state<Partial<T>>({})
+	const size = state(0)
 
-		if (isObjectOfType(value, 'Object')) {
-			return store(value as Record<string, unknown & {}>) // Recursive store creation
-		} else {
-			return state(value) // Leaf properties are state signals
+	const current = (): T => {
+		const result: Record<string, unknown & {}> = {}
+		for (const [key, value] of data) {
+			result[key] = value.get()
 		}
+		return result as T
 	}
 
-	// Initialize property stores
-	for (const [key, value] of Object.entries(initialValue)) {
-		propertyStores.set(key, createPropertyStore(key, value))
+	// Reconcile data
+	const reconcile = (oldValue: Partial<T>, newValue: T): boolean => {
+		const oldKeys = new Set(Object.keys(oldValue))
+		const newKeys = new Set(Object.keys(newValue))
+		const allKeys = new Set([...oldKeys, ...newKeys])
+		let changed = false
+
+		for (const key of allKeys) {
+			const oldHas = oldKeys.has(key)
+			const newHas = newKeys.has(key)
+
+			if (oldHas && !newHas) {
+				removals.update(prev => ({ ...prev, [key]: UNSET }))
+				data.delete(key)
+				changed = true
+			} else if (!oldHas && newHas) {
+				additions.update(prev => ({ ...prev, [key]: newValue[key] }))
+				data.set(key, toSignal(newValue[key]))
+				changed = true
+			} else {
+				if (Object.is(oldValue[key], newValue[key])) continue
+				mutations.update(prev => ({ ...prev, [key]: newValue[key] }))
+				data.set(key, toSignal(newValue[key]))
+				changed = true
+			}
+		}
+		size.set(data.size)
+		return changed
 	}
 
-	const proxy = new Proxy({} as Store<T>, {
-		get(_target, prop) {
-			if (prop === Symbol.toStringTag) return TYPE_STORE
-			if (prop === 'get') {
-				return () => {
-					subscribe(watchers)
-					// Subscribe to all children to detect changes
-					const result = {} as T
-					for (const [key, store] of propertyStores) {
-						;(result as Record<string, unknown & {}>)[
-							key as string
-						] = store.get()
-					}
-					return result
-				}
-			}
-			if (prop === 'has') {
-				return (key: string) => {
-					// Non-tracking existence check
-					return propertyStores.has(key)
-				}
-			}
-			if (prop === 'add') {
-				return (key: string, value: unknown & {}) => {
-					if (propertyStores.has(key)) {
-						throw new Error(`Property '${key}' already exists`)
-					}
-					const newStore = createPropertyStore(key, value)
-					propertyStores.set(key, newStore)
-					notify(watchers) // Notify store-level watchers of structure change
-					return proxy // Return self for chaining
-				}
-			}
-			if (prop === 'delete') {
-				return (key: string) => {
-					if (!propertyStores.has(key)) {
-						throw new Error(`Property '${key}' does not exist`)
-					}
-					// Clean up child subscriptions
-					const childStore = propertyStores.get(key)
-					if (isState(childStore)) {
-						childStore.set(UNSET) // Triggers cleanup in state implementation
-					}
-					propertyStores.delete(key)
-					notify(watchers) // Notify store-level watchers of structure change
-					return proxy // Return self for chaining
-				}
-			}
+	// Initialize data
+	reconcile({}, initialValue)
 
-			// Property access
-			if (propertyStores.has(prop)) {
-				return propertyStores.get(prop)
-			}
-
-			// Throw error for non-existent property access
-			throw new Error(
-				`Property '${String(prop)}' does not exist on store`,
-			)
+	const proxy = new Proxy({} as T, {
+		get(target, prop, receiver) {
+			return Reflect.get(target, prop, receiver)
 		},
-
-		has(_target, prop) {
-			return (
-				propertyStores.has(prop) ||
-				prop === 'get' ||
-				prop === 'has' ||
-				prop === 'add' ||
-				prop === 'delete' ||
-				prop === Symbol.toStringTag
-			)
-		},
-
-		ownKeys(_target) {
-			return Array.from(propertyStores.keys())
-		},
-
-		getOwnPropertyDescriptor(_target, prop) {
-			if (this.has?.(_target, prop)) {
-				return {
-					enumerable: true,
-					configurable: true,
-				}
-			}
-			return undefined
+		set(target, prop, value, receiver) {
+			return Reflect.set(target, prop, value, receiver)
 		},
 	})
 
-	return proxy
+	const s: Store<T> = {
+		[Symbol.toStringTag]: TYPE_STORE,
+		[Symbol.iterator]: function* () {
+			for (const [key, value] of data) {
+				yield [key, value.get()]
+			}
+		},
+
+		data: proxy,
+
+		/**
+		 * Get the current value of the store
+		 *
+		 * @since 0.15.0
+		 * @returns {T} - current value of the store
+		 */
+		get: (): T => {
+			subscribe(watchers)
+			return current()
+		},
+
+		/**
+		 * Set a new value of the store
+		 *
+		 * @since 0.15.0
+		 * @param {T} v
+		 * @returns {void}
+		 */
+		set: (v: T): void => {
+			const changed = reconcile(current(), v)
+			if (changed) {
+				notify(watchers)
+
+				// Setting to UNSET clears the watchers so the signal can be garbage collected
+				if (UNSET === v) watchers.clear()
+			}
+		},
+
+		/**
+		 * Update the store with a new value using a function
+		 *
+		 * @since 0.15.0
+		 * @param {(v: T) => T} fn - function to update the store
+		 * @returns {void} - updates the store with the result of the function
+		 */
+		update: (fn: (v: T) => T): void => {
+			s.set(fn(current()))
+		},
+
+		additions,
+		mutations,
+		removals,
+		size,
+	}
+
+	return s
 }
 
 /**

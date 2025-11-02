@@ -133,9 +133,13 @@ var TYPE_STORE = "Store";
 var store = (initialValue) => {
   const watchers = new Set;
   const propertyStores = new Map;
+  const additionsSignal = state([]);
+  const mutationsSignal = state([]);
+  const deletionsSignal = state([]);
+  let sizeSignal;
   const createPropertyStore = (key, value) => {
     if (typeof value === "function") {
-      throw new Error(`Functions are not allowed as store property values (property: ${String(key)})`);
+      throw new Error(`Functions are not allowed as store property values (property: ${key})`);
     }
     if (isObjectOfType(value, "Object")) {
       return store(value);
@@ -146,18 +150,79 @@ var store = (initialValue) => {
   for (const [key, value] of Object.entries(initialValue)) {
     propertyStores.set(key, createPropertyStore(key, value));
   }
+  sizeSignal = state(propertyStores.size);
   const proxy = new Proxy({}, {
     get(_target, prop) {
       if (prop === Symbol.toStringTag)
         return TYPE_STORE;
-      if (prop === "get") {
-        return () => {
-          subscribe(watchers);
-          const result = {};
-          for (const [key, store2] of propertyStores) {
-            result[key] = store2.get();
+      if (prop === Symbol.iterator) {
+        return function* () {
+          for (const [key, value] of propertyStores.entries()) {
+            yield [key, value];
           }
-          return result;
+        };
+      }
+      if (prop === "clear") {
+        return () => {
+          const deletions = [];
+          const timestamp = Date.now();
+          for (const [key, store2] of propertyStores.entries()) {
+            deletions.push({
+              key,
+              oldValue: isState(store2) ? store2.get() : store2.toObject?.() || {},
+              timestamp
+            });
+            if (isState(store2)) {
+              store2.set(UNSET);
+            }
+          }
+          propertyStores.clear();
+          sizeSignal.set(0);
+          if (deletions.length > 0) {
+            deletionsSignal.update((current) => [
+              ...current,
+              ...deletions
+            ]);
+          }
+        };
+      }
+      if (prop === "delete") {
+        return (key) => {
+          const childStore = propertyStores.get(key);
+          if (!childStore) {
+            return false;
+          }
+          const oldValue = isState(childStore) ? childStore.get() : childStore.toObject?.() || {};
+          const timestamp = Date.now();
+          if (isState(childStore)) {
+            childStore.set(UNSET);
+          }
+          propertyStores.delete(key);
+          sizeSignal.set(propertyStores.size);
+          deletionsSignal.update((current) => [
+            ...current,
+            { key, oldValue, timestamp }
+          ]);
+          return true;
+        };
+      }
+      if (prop === "entries") {
+        return function* () {
+          for (const [key, value] of propertyStores.entries()) {
+            yield [key, value];
+          }
+        };
+      }
+      if (prop === "forEach") {
+        return (callback) => {
+          for (const [key, value] of propertyStores.entries()) {
+            callback(value, key, proxy);
+          }
+        };
+      }
+      if (prop === "get") {
+        return (key) => {
+          return propertyStores.get(key);
         };
       }
       if (prop === "has") {
@@ -165,38 +230,69 @@ var store = (initialValue) => {
           return propertyStores.has(key);
         };
       }
-      if (prop === "add") {
+      if (prop === "keys") {
+        return function* () {
+          yield* propertyStores.keys();
+        };
+      }
+      if (prop === "set") {
         return (key, value) => {
-          if (propertyStores.has(key)) {
-            throw new Error(`Property '${key}' already exists`);
+          const exists = propertyStores.has(key);
+          const timestamp = Date.now();
+          if (exists) {
+            const oldStore = propertyStores.get(key);
+            const oldValue = isState(oldStore) ? oldStore.get() : oldStore.toObject?.() || {};
+            if (isState(oldStore)) {
+              oldStore.set(UNSET);
+            }
+            const newStore = createPropertyStore(key, value);
+            propertyStores.set(key, newStore);
+            mutationsSignal.update((current) => [
+              ...current,
+              { key, value, oldValue, timestamp }
+            ]);
+          } else {
+            const newStore = createPropertyStore(key, value);
+            propertyStores.set(key, newStore);
+            sizeSignal.set(propertyStores.size);
+            additionsSignal.update((current) => [
+              ...current,
+              { key, value, timestamp }
+            ]);
           }
-          const newStore = createPropertyStore(key, value);
-          propertyStores.set(key, newStore);
-          notify(watchers);
           return proxy;
         };
       }
-      if (prop === "delete") {
-        return (key) => {
-          if (!propertyStores.has(key)) {
-            throw new Error(`Property '${key}' does not exist`);
-          }
-          const childStore = propertyStores.get(key);
-          if (isState(childStore)) {
-            childStore.set(UNSET);
-          }
-          propertyStores.delete(key);
-          notify(watchers);
-          return proxy;
+      if (prop === "values") {
+        return function* () {
+          yield* propertyStores.values();
         };
       }
-      if (propertyStores.has(prop)) {
-        return propertyStores.get(prop);
+      if (prop === "size") {
+        return computed(() => sizeSignal.get());
       }
-      throw new Error(`Property '${String(prop)}' does not exist on store`);
+      if (prop === "toObject") {
+        return () => {
+          const result = {};
+          for (const [key, store2] of propertyStores) {
+            result[key] = isState(store2) ? store2.get() : store2.toObject();
+          }
+          return result;
+        };
+      }
+      if (prop === "additions") {
+        return additionsSignal;
+      }
+      if (prop === "mutations") {
+        return mutationsSignal;
+      }
+      if (prop === "deletions") {
+        return deletionsSignal;
+      }
+      return;
     },
     has(_target, prop) {
-      return propertyStores.has(prop) || prop === "get" || prop === "has" || prop === "add" || prop === "delete" || prop === Symbol.toStringTag;
+      return prop === "clear" || prop === "delete" || prop === "entries" || prop === "forEach" || prop === "get" || prop === "has" || prop === "keys" || prop === "set" || prop === "values" || prop === "size" || prop === "toObject" || prop === "additions" || prop === "mutations" || prop === "deletions" || prop === Symbol.toStringTag || prop === Symbol.iterator;
     },
     ownKeys(_target) {
       return Array.from(propertyStores.keys());
@@ -218,7 +314,7 @@ var isStore = (value) => isObjectOfType(value, TYPE_STORE);
 // src/signal.ts
 var UNSET = Symbol();
 var isSignal = (value) => isState(value) || isComputed(value) || isStore(value);
-var toSignal = (value) => isSignal(value) ? value : isComputedCallback(value) ? computed(value) : isObjectOfType(value, "Object") ? store(value) : state(value);
+var toSignal = (value) => isSignal(value) ? value : isComputedCallback(value) ? computed(value) : state(value);
 
 // src/computed.ts
 var TYPE_COMPUTED = "Computed";
