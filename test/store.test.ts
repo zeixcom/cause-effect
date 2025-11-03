@@ -79,17 +79,33 @@ describe('store', () => {
 			expect(items['1'].get()).toBe('second')
 		})
 
-		test('can add new properties via update method', () => {
+		test('can add new properties via add method', () => {
 			const user = store<{ name: string; email?: string }>({
 				name: 'Hannah',
 			})
 
-			user.update(v => ({ ...v, email: 'hannah@example.com' }))
+			user.add('email', 'hannah@example.com')
 
 			expect(user.email?.get()).toBe('hannah@example.com')
 			expect(user.get()).toEqual({
 				name: 'Hannah',
 				email: 'hannah@example.com',
+			})
+		})
+
+		test('can remove existing properties via remove method', () => {
+			const user = store<{ name: string; email?: string }>({
+				name: 'Hannah',
+				email: 'hannah@example.com',
+			})
+
+			expect(user.email?.get()).toBe('hannah@example.com')
+
+			user.remove('email')
+
+			expect(user.email).toBeUndefined()
+			expect(user.get()).toEqual({
+				name: 'Hannah',
 			})
 		})
 	})
@@ -184,8 +200,11 @@ describe('store', () => {
 
 			expect(user.size.get()).toBe(1)
 
-			user.update(v => ({ ...v, email: 'hannah@example.com' }))
+			user.add('email', 'hannah@example.com')
 			expect(user.size.get()).toBe(2)
+
+			user.remove('email')
+			expect(user.size.get()).toBe(1)
 		})
 
 		test('dispatches store-add event on initial creation', async () => {
@@ -274,11 +293,33 @@ describe('store', () => {
 				removeEvent = event
 			})
 
-			user.set({ name: 'Alice' }) // Remove email
+			user.remove('email')
 
 			expect(removeEvent).toBeTruthy()
 			// biome-ignore lint/style/noNonNullAssertion: test
 			expect(removeEvent!.detail.email).toBe(UNSET)
+		})
+
+		test('dispatches store-add event when using add method', () => {
+			const user = store<{ name: string; email?: string }>({
+				name: 'Hannah',
+			})
+
+			let addEvent: StoreAddEvent<{
+				name: string
+				email?: string
+			}> | null = null
+			user.addEventListener('store-add', event => {
+				addEvent = event
+			})
+
+			user.add('email', 'hannah@example.com')
+
+			expect(addEvent).toBeTruthy()
+			// biome-ignore lint/style/noNonNullAssertion: test
+			expect(addEvent!.detail).toEqual({
+				email: 'hannah@example.com',
+			})
 		})
 
 		test('can remove event listeners', () => {
@@ -373,22 +414,69 @@ describe('store', () => {
 		})
 
 		test('updates are reactive', () => {
-			const user = store({ name: 'Hannah' })
+			const user = store<{ name: string; email?: string }>({
+				name: 'Hannah',
+			})
 			let lastValue = {}
 			let effectRuns = 0
 
 			effect(() => {
 				lastValue = user.get()
-				console.log(lastValue)
 				effectRuns++
 			})
 
-			user.update(v => ({ ...v, email: 'hannah@example.com' }))
+			user.add('email', 'hannah@example.com')
 			expect(lastValue).toEqual({
 				name: 'Hannah',
 				email: 'hannah@example.com',
 			})
 			expect(effectRuns).toBe(2)
+		})
+
+		test('remove method is reactive', () => {
+			const user = store<{ name: string; email?: string }>({
+				name: 'Hannah',
+				email: 'hannah@example.com',
+			})
+			let lastValue = {}
+			let effectRuns = 0
+
+			effect(() => {
+				lastValue = user.get()
+				effectRuns++
+			})
+
+			expect(effectRuns).toBe(1)
+
+			user.remove('email')
+			expect(lastValue).toEqual({
+				name: 'Hannah',
+			})
+			expect(effectRuns).toBe(2)
+		})
+
+		test('add method does not overwrite existing properties', () => {
+			const user = store<{ name: string; email?: string }>({
+				name: 'Hannah',
+				email: 'original@example.com',
+			})
+
+			const originalSize = user.size.get()
+			user.add('email', 'new@example.com')
+
+			expect(user.email?.get()).toBe('original@example.com')
+			expect(user.size.get()).toBe(originalSize)
+		})
+
+		test('remove method has no effect on non-existent properties', () => {
+			const user = store<{ name: string; email?: string }>({
+				name: 'Hannah',
+			})
+
+			const originalSize = user.size.get()
+			user.remove('email')
+
+			expect(user.size.get()).toBe(originalSize)
 		})
 	})
 

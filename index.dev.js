@@ -187,23 +187,21 @@ var store = (initialValue) => {
   const eventTarget = new EventTarget;
   const signals = new Map;
   const cleanups = new Map;
-  const version = state(0);
-  const current = computed(() => {
-    version.get();
+  const size = state(0);
+  const current = () => {
     const record = {};
     for (const [key, value] of signals) {
       record[key] = value.get();
     }
     return record;
-  });
-  const size = state(0);
+  };
   const emit = (type, detail) => eventTarget.dispatchEvent(new CustomEvent(type, { detail }));
   const addSignalAndEffect = (key, value) => {
     const signal = toMutableSignal(value);
     signals.set(key, signal);
     const cleanup = effect(() => {
       const value2 = signal.get();
-      if (value2)
+      if (value2 != null)
         emit("store-change", { [key]: value2 });
     });
     cleanups.set(key, cleanup);
@@ -241,8 +239,6 @@ var store = (initialValue) => {
         }
         emit("store-remove", changes.remove);
       }
-      if (changes.changed)
-        version.update((v) => ++v);
       size.set(signals.size);
     });
     return changes.changed;
@@ -255,7 +251,9 @@ var store = (initialValue) => {
     eventTarget.dispatchEvent(initialAdditionsEvent);
   }, 0);
   const storeProps = [
+    "add",
     "get",
+    "remove",
     "set",
     "update",
     "addEventListener",
@@ -266,6 +264,59 @@ var store = (initialValue) => {
   return new Proxy({}, {
     get(_target, prop) {
       const key = String(prop);
+      switch (prop) {
+        case "add":
+          return (k, v) => {
+            if (!signals.has(k)) {
+              addSignalAndEffect(k, v);
+              notify(watchers);
+              emit("store-add", {
+                [k]: v
+              });
+              size.set(signals.size);
+            }
+          };
+        case "get":
+          return () => {
+            subscribe(watchers);
+            return current();
+          };
+        case "remove":
+          return (k) => {
+            if (signals.has(k)) {
+              removeSignalAndEffect(k);
+              notify(watchers);
+              emit("store-remove", { [k]: UNSET });
+              size.set(signals.size);
+            }
+          };
+        case "set":
+          return (v) => {
+            if (reconcile(current(), v)) {
+              notify(watchers);
+              if (UNSET === v)
+                watchers.clear();
+            }
+          };
+        case "update":
+          return (fn) => {
+            const oldValue = current();
+            const newValue = fn(oldValue);
+            if (reconcile(oldValue, newValue)) {
+              notify(watchers);
+              if (UNSET === newValue)
+                watchers.clear();
+            }
+          };
+        case "addEventListener":
+          return eventTarget.addEventListener.bind(eventTarget);
+        case "removeEventListener":
+          return eventTarget.removeEventListener.bind(eventTarget);
+        case "dispatchEvent":
+          return eventTarget.dispatchEvent.bind(eventTarget);
+        case "size":
+          return size;
+      }
       if (prop === Symbol.toStringTag)
         return TYPE_STORE;
       if (prop === Symbol.iterator) {
@@ -275,43 +326,6 @@ var store = (initialValue) => {
           }
         };
       }
-      if (prop === "get") {
-        return () => {
-          subscribe(watchers);
-          return current.get();
-        };
-      }
-      if (prop === "set") {
-        return (v) => {
-          if (reconcile(current.get(), v)) {
-            notify(watchers);
-            if (UNSET === v)
-              watchers.clear();
-          }
-        };
-      }
-      if (prop === "update") {
-        return (fn) => {
-          const oldValue = current.get();
-          const newValue = fn(oldValue);
-          if (reconcile(oldValue, newValue)) {
-            notify(watchers);
-            if (UNSET === newValue)
-              watchers.clear();
-          }
-        };
-      }
-      if (prop === "addEventListener") {
-        return eventTarget.addEventListener.bind(eventTarget);
-      }
-      if (prop === "removeEventListener") {
-        return eventTarget.removeEventListener.bind(eventTarget);
-      }
-      if (prop === "dispatchEvent") {
-        return eventTarget.dispatchEvent.bind(eventTarget);
-      }
-      if (prop === "size")
-        return size;
       return signals.get(key);
     },
     has(_target, prop) {

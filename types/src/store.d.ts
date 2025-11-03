@@ -30,11 +30,10 @@ type Store<T extends UnknownRecord = UnknownRecord> = {
     [K in keyof T & string]: T[K] extends UnknownRecord ? Store<T[K]> : State<T[K]>;
 } & StoreEventTarget<T> & {
     [Symbol.toStringTag]: 'Store';
-    [Symbol.iterator](): IterableIterator<[
-        string,
-        Signal<T[keyof T & string]>
-    ]>;
+    [Symbol.iterator](): IterableIterator<[string, Signal<T[keyof T]>]>;
+    add<K extends keyof T & string>(key: K, value: T[K]): void;
     get(): T;
+    remove<K extends keyof T & string>(key: K): void;
     set(value: T): void;
     update(updater: (value: T) => T): void;
     size: State<number>;
