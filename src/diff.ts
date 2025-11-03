@@ -1,16 +1,11 @@
 import { UNSET } from './signal'
-import {
-	arrayToRecord,
-	CircularDependencyError,
-	isPrimitive,
-	isRecord,
-} from './util'
+import { CircularDependencyError, isRecord } from './util'
 
 /* === Types === */
 
-type DiffResult<
-	T extends Record<string, unknown & {}> = Record<string, unknown & {}>,
-> = {
+type UnknownRecord = Record<string, unknown & {}>
+
+type DiffResult<T extends UnknownRecord = UnknownRecord> = {
 	changed: boolean
 	add: Partial<T>
 	change: Partial<T>
@@ -19,70 +14,79 @@ type DiffResult<
 
 /* === Functions === */
 
-const diff = <
-	T extends Record<string, unknown & {}> = Record<string, unknown & {}>,
->(
-	oldObj: T,
-	newObj: T,
-): DiffResult<T> => {
-	const visited = new WeakSet<object>()
+/**
+ * Checks if two values are equal with cycle detection
+ *
+ * @since 0.15.0
+ * @param {T} a - First value to compare
+ * @param {T} b - Second value to compare
+ * @param {WeakSet<object>} visited - Set to track visited objects for cycle detection
+ * @returns {boolean} Whether the two values are equal
+ */
+const isEqual = <T>(a: T, b: T, visited?: WeakSet<object>): boolean => {
+	// Fast paths
+	if (Object.is(a, b)) return true
+	if (typeof a !== typeof b) return false
+	if (typeof a !== 'object' || a === null || b === null) return false
 
-	const diffInternal = (
-		oldValue: unknown & {},
-		newValue: unknown & {},
-		path: string = 'root',
-	): { changed: boolean; value?: unknown & {} } => {
-		if (isPrimitive(oldValue) || isPrimitive(newValue))
-			return { changed: !Object.is(oldValue, newValue), value: newValue }
-		if (Array.isArray(oldValue) !== Array.isArray(newValue))
-			return { changed: true, value: newValue }
+	// Cycle detection
+	if (!visited) visited = new WeakSet()
+	if (visited.has(a as object) || visited.has(b as object))
+		throw new CircularDependencyError('isEqual')
+	visited.add(a as object)
+	visited.add(b as object)
 
-		// Cycle detection
-		if (visited.has(oldValue))
-			throw new CircularDependencyError(`${path} (old value)`)
-		if (visited.has(newValue))
-			throw new CircularDependencyError(`${path} (new value)`)
-
-		// Add to visited set for cycle detection
-		visited.add(oldValue)
-		visited.add(newValue)
-
-		try {
-			// Array comparison
-			if (Array.isArray(oldValue) && Array.isArray(newValue)) {
-				if (oldValue.length !== newValue.length)
-					return { changed: true, value: newValue }
-
-				const nested = diffRecords(
-					arrayToRecord(oldValue),
-					arrayToRecord(newValue),
-					`${path}[array]`,
-				)
-
-				return { changed: nested.changed, value: newValue }
+	try {
+		if (Array.isArray(a) && Array.isArray(b)) {
+			if (a.length !== b.length) return false
+			for (let i = 0; i < a.length; i++) {
+				if (!isEqual(a[i], b[i], visited)) return false
 			}
-
-			// Object comparison
-			if (isRecord(oldValue) && isRecord(newValue)) {
-				const nested = diffRecords(
-					oldValue,
-					newValue,
-					`${path}[object]`,
-				)
-				return { changed: nested.changed, value: newValue }
-			}
-
-			return { changed: !Object.is(oldValue, newValue), value: newValue }
-		} finally {
-			visited.delete(oldValue)
-			visited.delete(newValue)
+			return true
 		}
+
+		if (Array.isArray(a) !== Array.isArray(b)) return false
+
+		if (isRecord(a) && isRecord(b)) {
+			const aKeys = Object.keys(a)
+			const bKeys = Object.keys(b)
+
+			if (aKeys.length !== bKeys.length) return false
+			for (const key of aKeys) {
+				if (!(key in b)) return false
+				if (
+					!isEqual(
+						(a as Record<string, unknown>)[key],
+						(b as Record<string, unknown>)[key],
+						visited,
+					)
+				)
+					return false
+			}
+			return true
+		}
+
+		return false
+	} finally {
+		visited.delete(a as object)
+		visited.delete(b as object)
 	}
+}
+
+/**
+ * Compares two records and returns a result object containing the differences.
+ *
+ * @since 0.15.0
+ * @param {T} oldObj - The old record to compare
+ * @param {T} newObj - The new record to compare
+ * @returns {DiffResult<T>} The result of the comparison
+ */
+const diff = <T extends UnknownRecord>(oldObj: T, newObj: T): DiffResult<T> => {
+	const visited = new WeakSet<object>()
 
 	const diffRecords = (
 		oldRecord: Record<string, unknown>,
 		newRecord: Record<string, unknown>,
-		path: string,
 	): DiffResult<T> => {
 		const add: Partial<T> = {}
 		const change: Partial<T> = {}
@@ -104,14 +108,11 @@ const diff = <
 				continue
 			}
 
-			const result = diffInternal(
-				oldRecord[key] as T[keyof T],
-				newRecord[key] as T[keyof T],
-				`${path}.${key}`,
-			)
+			const oldValue = oldRecord[key] as T[keyof T]
+			const newValue = newRecord[key] as T[keyof T]
 
-			if (result.changed)
-				change[key as keyof T] = result.value as T[keyof T]
+			if (!isEqual(oldValue, newValue, visited))
+				change[key as keyof T] = newValue
 		}
 
 		const changed =
@@ -127,16 +128,9 @@ const diff = <
 		}
 	}
 
-	// Handle edge cases for the main function inputs
-	if (!isRecord(oldObj) || !isRecord(newObj)) {
-		throw new Error(
-			'diff() requires both arguments to be records (plain objects)',
-		)
-	}
-
-	return diffRecords(oldObj, newObj, 'root')
+	return diffRecords(oldObj, newObj)
 }
 
 /* === Exports === */
 
-export { type DiffResult, diff }
+export { type DiffResult, diff, isEqual, type UnknownRecord }

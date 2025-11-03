@@ -1,9 +1,16 @@
 import { computed } from './computed'
-// import { effect } from './effect'
-import { batch, notify, subscribe, type Watcher } from './scheduler'
+import { diff, type UnknownRecord } from './diff'
+import { effect } from './effect'
+import {
+	batch,
+	type Cleanup,
+	notify,
+	subscribe,
+	type Watcher,
+} from './scheduler'
 import { type Signal, toMutableSignal, UNSET } from './signal'
-import { isState, type State, state } from './state'
-import { hasMethod, isObjectOfType, isPrimitive, isRecord } from './util'
+import { type State, state } from './state'
+import { hasMethod, isObjectOfType } from './util'
 
 /* === Constants === */
 
@@ -11,32 +18,28 @@ const TYPE_STORE = 'Store'
 
 /* === Types === */
 
-interface StoreAddEvent<T extends Record<string, unknown & {}>>
-	extends CustomEvent {
+interface StoreAddEvent<T extends UnknownRecord> extends CustomEvent {
 	type: 'store-add'
 	detail: Partial<T>
 }
 
-interface StoreChangeEvent<T extends Record<string, unknown & {}>>
-	extends CustomEvent {
+interface StoreChangeEvent<T extends UnknownRecord> extends CustomEvent {
 	type: 'store-change'
 	detail: Partial<T>
 }
 
-interface StoreRemoveEvent<T extends Record<string, unknown & {}>>
-	extends CustomEvent {
+interface StoreRemoveEvent<T extends UnknownRecord> extends CustomEvent {
 	type: 'store-remove'
 	detail: Partial<T>
 }
 
-type StoreEventMap<T extends Record<string, unknown & {}>> = {
+type StoreEventMap<T extends UnknownRecord> = {
 	'store-add': StoreAddEvent<T>
 	'store-change': StoreChangeEvent<T>
 	'store-remove': StoreRemoveEvent<T>
 }
 
-interface StoreEventTarget<T extends Record<string, unknown & {}>>
-	extends EventTarget {
+interface StoreEventTarget<T extends UnknownRecord> extends EventTarget {
 	addEventListener<K extends keyof StoreEventMap<T>>(
 		type: K,
 		listener: (event: StoreEventMap<T>[K]) => void,
@@ -62,15 +65,15 @@ interface StoreEventTarget<T extends Record<string, unknown & {}>>
 	dispatchEvent(event: Event): boolean
 }
 
-type Store<
-	T extends Record<string, unknown & {}> = Record<string, unknown & {}>,
-> = {
-	[K in keyof T]: T[K] extends Record<string, unknown & {}>
+type Store<T extends UnknownRecord = UnknownRecord> = {
+	[K in keyof T & string]: T[K] extends UnknownRecord
 		? Store<T[K]>
 		: State<T[K]>
 } & StoreEventTarget<T> & {
 		[Symbol.toStringTag]: 'Store'
-		[Symbol.iterator](): IterableIterator<[string, Signal<T[keyof T]>]>
+		[Symbol.iterator](): IterableIterator<
+			[string, Signal<T[keyof T & string]>]
+		>
 
 		// Signal methods
 		get(): T
@@ -81,12 +84,6 @@ type Store<
 		size: State<number>
 	}
 
-type StoreChanges = {
-	add: Partial<Record<string, unknown & {}>>
-	change: Partial<Record<string, unknown & {}>>
-	remove: Partial<Record<string, unknown & {}>>
-}
-
 /* === Functions === */
 
 /**
@@ -96,17 +93,19 @@ type StoreChanges = {
  * @param {T} initialValue - initial object value of the store
  * @returns {Store<T>} - new store with reactive properties
  */
-const store = <T extends Record<string, unknown & {}>>(
-	initialValue: T,
-): Store<T> => {
+const store = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 	const watchers: Set<Watcher> = new Set()
 	const eventTarget = new EventTarget()
-	const data: Map<string, Signal<unknown & {}>> = new Map()
+	const signals: Map<
+		keyof T & string,
+		Store<T[keyof T & string]> | State<T[keyof T & string]>
+	> = new Map()
+	const cleanups = new Map<keyof T & string, Cleanup>()
 	const version = state(0)
 	const current = computed(() => {
 		version.get()
-		const record: Record<string, unknown & {}> = {}
-		for (const [key, value] of data) {
+		const record: Partial<T> = {}
+		for (const [key, value] of signals) {
 			record[key] = value.get()
 		}
 		return record as T
@@ -116,92 +115,68 @@ const store = <T extends Record<string, unknown & {}>>(
 	const emit = (type: keyof StoreEventMap<T>, detail: Partial<T>) =>
 		eventTarget.dispatchEvent(new CustomEvent(type, { detail }))
 
-	/* let oldRecord = initialValue
-	effect(() => {
-		const newRecord = current.get()
-		if (reconcile(oldRecord, newRecord)) oldRecord = newRecord
-	}) */
+	const addSignalAndEffect = <K extends keyof T & string>(
+		key: K,
+		value: T[K],
+	) => {
+		const signal = toMutableSignal<T[keyof T & string]>(value)
+		signals.set(key, signal)
+		const cleanup = effect(() => {
+			const value = signal.get()
+			if (value)
+				emit('store-change', { [key]: value } as unknown as Partial<T>)
+		})
+		cleanups.set(key, cleanup)
+	}
 
-	// Create a wrapped signal that dispatches mutation events
-	/* const createWrappedSignal = (key: string, value: unknown & {}) => {
-		const signal = toMutableSignal(value)
-		if (isState(signal)) {
-			const stateSignal = signal as State<unknown & {}>
-			const originalSet = stateSignal.set.bind(stateSignal)
-			stateSignal.set = (newValue: unknown & {}) => {
-				const oldValue = stateSignal.get()
-				originalSet(newValue)
-				if (!Object.is(oldValue, newValue)) {
-					const event = new CustomEvent('store-change', {
-						detail: { [key]: newValue } as Partial<T>,
-					})
-					eventTarget.dispatchEvent(event)
-				}
-			}
-		}
-		return signal
-	} */
+	const removeSignalAndEffect = <K extends keyof T & string>(key: K) => {
+		signals.delete(key)
+		const cleanup = cleanups.get(key)
+		if (cleanup) cleanup()
+		cleanups.delete(key)
+	}
 
 	// Reconcile data and dispatch events
-	const reconcile = (oldValue: Partial<T>, newValue: T): boolean => {
-		console.log('Reconciling data...', version.get())
-		const oldKeys = new Set(Object.keys(oldValue))
-		const newKeys = new Set(Object.keys(newValue))
-		const allKeys = new Set([...oldKeys, ...newKeys])
-		const changes: StoreChanges = {
-			add: {},
-			change: {},
-			remove: {},
-		}
+	const reconcile = (oldValue: T, newValue: T): boolean => {
+		const changes = diff(oldValue, newValue)
 
-		for (const key of allKeys) {
-			const oldHas = oldKeys.has(key)
-			const newHas = newKeys.has(key)
-			const value = newValue[key]
-
-			if (oldHas && !newHas) {
-				data.delete(key)
-				changes.remove[key] = UNSET
-			} else if (!oldHas && newHas) {
-				const signal = toMutableSignal(value)
-				data.set(key, signal)
-				changes.add[key] = value
-			} else if (oldHas && newHas) {
-				const signal = data.get(key)
-				if (
-					(isState(signal) && isPrimitive(value)) ||
-					(isStore(signal) &&
-						(isRecord(value) || Array.isArray(value)))
-				) {
-					signal.set(value)
-				} else {
-					if (signal && hasMethod(signal, 'set')) signal.set(UNSET)
-					data.set(key, toMutableSignal(value))
-				}
-
-				changes.change[key] = value
-			}
-		}
-
-		const hasAdditions = Object.keys(changes.add).length > 0
-		const hasMutations = Object.keys(changes.change).length > 0
-		const hasRemovals = Object.keys(changes.remove).length > 0
-		const changed = hasAdditions || hasMutations || hasRemovals
 		batch(() => {
-			if (changed) version.update(v => ++v)
-			size.set(data.size)
+			if (Object.keys(changes.add).length) {
+				for (const key in changes.add) {
+					const value = changes.add[key]
+					if (value != null) addSignalAndEffect(key, value)
+				}
+				emit('store-add', changes.add)
+			}
+			if (Object.keys(changes.change).length) {
+				for (const key in changes.change) {
+					const signal = signals.get(key as keyof T & string)
+					const value = changes.change[key]
+					if (
+						signal &&
+						value != null &&
+						hasMethod<Signal<T[keyof T & string]>>(signal, 'set')
+					)
+						signal.set(value)
+				}
+				emit('store-change', changes.change)
+			}
+			if (Object.keys(changes.remove).length) {
+				for (const key in changes.remove) {
+					removeSignalAndEffect(key)
+				}
+				emit('store-remove', changes.remove)
+			}
+
+			if (changes.changed) version.update(v => ++v)
+			size.set(signals.size)
 		})
 
-		// Dispatch events for changes
-		if (hasAdditions) emit('store-add', changes.add as Partial<T>)
-		if (hasMutations) emit('store-change', changes.change as Partial<T>)
-		if (hasRemovals) emit('store-remove', changes.remove as Partial<T>)
-
-		return changed
+		return changes.changed
 	}
 
 	// Initialize data
-	reconcile({}, initialValue)
+	reconcile({} as T, initialValue)
 
 	// Queue initial additions event to allow listeners to be added first
 	setTimeout(() => {
@@ -230,7 +205,7 @@ const store = <T extends Record<string, unknown & {}>>(
 			if (prop === Symbol.toStringTag) return TYPE_STORE
 			if (prop === Symbol.iterator) {
 				return function* () {
-					for (const [key, signal] of data) {
+					for (const [key, signal] of signals) {
 						yield [key, signal as Signal<T[keyof T]>]
 					}
 				}
@@ -277,22 +252,22 @@ const store = <T extends Record<string, unknown & {}>>(
 			if (prop === 'size') return size
 
 			// Handle data properties - return signals
-			return data.get(key)
+			return signals.get(key)
 		},
 		has(_target, prop) {
 			const key = String(prop)
 			return (
-				data.has(key) ||
+				signals.has(key) ||
 				storeProps.includes(key) ||
 				prop === Symbol.toStringTag ||
 				prop === Symbol.iterator
 			)
 		},
 		ownKeys() {
-			return Array.from(data.keys())
+			return Array.from(signals.keys())
 		},
 		getOwnPropertyDescriptor(_target, prop) {
-			const signal = data.get(String(prop))
+			const signal = signals.get(String(prop))
 			return signal
 				? {
 						enumerable: true,
@@ -312,9 +287,8 @@ const store = <T extends Record<string, unknown & {}>>(
  * @param {unknown} value - value to check
  * @returns {boolean} - true if the value is a Store instance, false otherwise
  */
-const isStore = <T extends Record<string, unknown & {}>>(
-	value: unknown,
-): value is Store<T> => isObjectOfType(value, TYPE_STORE)
+const isStore = <T extends UnknownRecord>(value: unknown): value is Store<T> =>
+	isObjectOfType(value, TYPE_STORE)
 
 /* === Exports === */
 

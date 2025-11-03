@@ -200,6 +200,7 @@ describe('store', () => {
 			await new Promise(resolve => setTimeout(resolve, 10))
 
 			expect(addEvent).toBeTruthy()
+			// biome-ignore lint/style/noNonNullAssertion: test
 			expect(addEvent!.detail).toEqual({ name: 'Hannah' })
 		})
 
@@ -219,6 +220,7 @@ describe('store', () => {
 			user.update(v => ({ ...v, email: 'hannah@example.com' }))
 
 			expect(addEvent).toBeTruthy()
+			// biome-ignore lint/style/noNonNullAssertion: test
 			expect(addEvent!.detail).toEqual({
 				email: 'hannah@example.com',
 			})
@@ -235,6 +237,7 @@ describe('store', () => {
 			user.set({ name: 'Alice' })
 
 			expect(changeEvent).toBeTruthy()
+			// biome-ignore lint/style/noNonNullAssertion: test
 			expect(changeEvent!.detail).toEqual({
 				name: 'Alice',
 			})
@@ -251,6 +254,7 @@ describe('store', () => {
 			user.name.set('Bob')
 
 			expect(changeEvent).toBeTruthy()
+			// biome-ignore lint/style/noNonNullAssertion: test
 			expect(changeEvent!.detail).toEqual({
 				name: 'Bob',
 			})
@@ -273,6 +277,7 @@ describe('store', () => {
 			user.set({ name: 'Alice' }) // Remove email
 
 			expect(removeEvent).toBeTruthy()
+			// biome-ignore lint/style/noNonNullAssertion: test
 			expect(removeEvent!.detail.email).toBe(UNSET)
 		})
 

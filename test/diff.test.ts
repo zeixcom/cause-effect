@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import { CircularDependencyError, diff, UNSET } from '..'
-
-type UnknownRecord = Record<string, unknown & {}>
+import {
+	CircularDependencyError,
+	diff,
+	isEqual,
+	UNSET,
+	type UnknownRecord,
+} from '..'
 
 describe('diff', () => {
 	describe('basic object diffing', () => {
@@ -267,21 +271,6 @@ describe('diff', () => {
 	})
 
 	describe('edge cases and error handling', () => {
-		test('should throw error for non-record inputs', () => {
-			// @ts-expect-error deliberate invalid input
-			expect(() => diff('string', {})).toThrow(
-				'diff() requires both arguments to be records (plain objects)',
-			)
-			// @ts-expect-error deliberate invalid input
-			expect(() => diff({}, 'string')).toThrow(
-				'diff() requires both arguments to be records (plain objects)',
-			)
-			// @ts-expect-error deliberate invalid input
-			expect(() => diff(null, {})).toThrow(
-				'diff() requires both arguments to be records (plain objects)',
-			)
-		})
-
 		test('should handle empty objects', () => {
 			const result = diff({}, {})
 			expect(result.changed).toBe(false)
@@ -441,6 +430,209 @@ describe('diff', () => {
 
 			expect(result.changed).toBe(true)
 			expect(result.change).toEqual({ sparse: sparse2 })
+		})
+	})
+
+	describe('isEqual function', () => {
+		describe('primitives and fast paths', () => {
+			test('should handle identical values', () => {
+				expect(isEqual(1, 1)).toBe(true)
+				expect(isEqual('hello', 'hello')).toBe(true)
+				expect(isEqual(true, true)).toBe(true)
+				expect(isEqual(null, null)).toBe(true)
+				expect(isEqual(undefined, undefined)).toBe(true)
+			})
+
+			test('should handle different primitives', () => {
+				expect(isEqual(1, 2)).toBe(false)
+				expect(isEqual('hello', 'world')).toBe(false)
+				expect(isEqual(true, false)).toBe(false)
+				expect(isEqual(null, undefined)).toBe(false)
+			})
+
+			test('should handle special number values', () => {
+				expect(isEqual(NaN, NaN)).toBe(true)
+				expect(isEqual(-0, +0)).toBe(false)
+				expect(isEqual(Infinity, Infinity)).toBe(true)
+				expect(isEqual(-Infinity, Infinity)).toBe(false)
+			})
+
+			test('should handle type mismatches', () => {
+				// @ts-expect-error deliberate type mismatch
+				expect(isEqual(1, '1')).toBe(false)
+				// @ts-expect-error deliberate type mismatch
+				expect(isEqual(true, 1)).toBe(false)
+				expect(isEqual(null, 0)).toBe(false)
+				expect(isEqual(undefined, '')).toBe(false)
+			})
+
+			test('should handle same object reference', () => {
+				const obj = { a: 1 }
+				expect(isEqual(obj, obj)).toBe(true)
+
+				const arr = [1, 2, 3]
+				expect(isEqual(arr, arr)).toBe(true)
+			})
+		})
+
+		describe('objects', () => {
+			test('should compare objects with same content', () => {
+				expect(isEqual({ a: 1, b: 2 }, { a: 1, b: 2 })).toBe(true)
+				expect(isEqual({ a: 1, b: 2 }, { b: 2, a: 1 })).toBe(true)
+			})
+
+			test('should detect different object content', () => {
+				expect(isEqual({ a: 1 }, { a: 2 })).toBe(false)
+				expect(isEqual({ a: 1 }, { b: 1 })).toBe(false)
+				expect(isEqual({ a: 1, b: 2 }, { a: 1 })).toBe(false)
+			})
+
+			test('should handle nested objects', () => {
+				const obj1 = { user: { name: 'John', age: 30 } }
+				const obj2 = { user: { name: 'John', age: 30 } }
+				const obj3 = { user: { name: 'Jane', age: 30 } }
+
+				expect(isEqual(obj1, obj2)).toBe(true)
+				expect(isEqual(obj1, obj3)).toBe(false)
+			})
+
+			test('should handle empty objects', () => {
+				expect(isEqual({}, {})).toBe(true)
+				expect(isEqual({}, { a: 1 })).toBe(false)
+			})
+		})
+
+		describe('arrays', () => {
+			test('should compare arrays with same content', () => {
+				expect(isEqual([1, 2, 3], [1, 2, 3])).toBe(true)
+				expect(isEqual([], [])).toBe(true)
+			})
+
+			test('should detect different array content', () => {
+				expect(isEqual([1, 2, 3], [1, 2, 4])).toBe(false)
+				expect(isEqual([1, 2], [1, 2, 3])).toBe(false)
+				expect(isEqual([1, 2, 3], [3, 2, 1])).toBe(false)
+			})
+
+			test('should handle nested arrays', () => {
+				const arr1 = [
+					[1, 2],
+					[3, 4],
+				]
+				const arr2 = [
+					[1, 2],
+					[3, 4],
+				]
+				const arr3 = [
+					[1, 2],
+					[3, 5],
+				]
+
+				expect(isEqual(arr1, arr2)).toBe(true)
+				expect(isEqual(arr1, arr3)).toBe(false)
+			})
+
+			test('should handle arrays with objects', () => {
+				const arr1 = [{ a: 1 }, { b: 2 }]
+				const arr2 = [{ a: 1 }, { b: 2 }]
+				const arr3 = [{ a: 2 }, { b: 2 }]
+
+				expect(isEqual(arr1, arr2)).toBe(true)
+				expect(isEqual(arr1, arr3)).toBe(false)
+			})
+		})
+
+		describe('mixed types', () => {
+			test('should handle array vs object', () => {
+				expect(isEqual([1, 2], { 0: 1, 1: 2 })).toBe(false)
+				expect(isEqual({ length: 2 }, [1, 2])).toBe(false)
+			})
+
+			test('should handle object vs primitive', () => {
+				// @ts-expect-error deliberate type mismatch
+				expect(isEqual({ a: 1 }, 'object')).toBe(false)
+				// @ts-expect-error deliberate type mismatch
+				expect(isEqual(42, { value: 42 })).toBe(false)
+			})
+
+			test('should handle complex mixed structures', () => {
+				const obj1 = {
+					data: [1, 2, { nested: true }],
+					meta: { count: 3 },
+				}
+				const obj2 = {
+					data: [1, 2, { nested: true }],
+					meta: { count: 3 },
+				}
+				const obj3 = {
+					data: [1, 2, { nested: false }],
+					meta: { count: 3 },
+				}
+
+				expect(isEqual(obj1, obj2)).toBe(true)
+				expect(isEqual(obj1, obj3)).toBe(false)
+			})
+		})
+
+		describe('edge cases', () => {
+			test('should handle circular references', () => {
+				const circular1: UnknownRecord = { a: 1 }
+				circular1.self = circular1
+
+				const circular2: UnknownRecord = { a: 1 }
+				circular2.self = circular2
+
+				expect(() => isEqual(circular1, circular2)).toThrow(
+					CircularDependencyError,
+				)
+			})
+
+			test('should handle special objects', () => {
+				const date1 = new Date('2023-01-01')
+				const date2 = new Date('2023-01-01')
+				const date3 = new Date('2023-01-02')
+
+				// Different Date objects with same time should be false (reference equality for special objects)
+				expect(isEqual(date1, date1)).toBe(true) // same reference
+				expect(isEqual(date1, date2)).toBe(false) // different references
+				expect(isEqual(date1, date3)).toBe(false)
+			})
+
+			test('should handle null and undefined edge cases', () => {
+				expect(isEqual(null, null)).toBe(true)
+				expect(isEqual(undefined, undefined)).toBe(true)
+				expect(isEqual(null, undefined)).toBe(false)
+				expect(isEqual({}, null)).toBe(false)
+				expect(isEqual([], undefined)).toBe(false)
+			})
+		})
+
+		describe('performance comparison', () => {
+			test('should demonstrate isEqual vs Object.is difference', () => {
+				// Objects with same content but different references
+				const obj1 = {
+					user: { name: 'John', age: 30 },
+					items: [1, 2, 3],
+				}
+				const obj2 = {
+					user: { name: 'John', age: 30 },
+					items: [1, 2, 3],
+				}
+
+				// Object.is fails for content equality
+				expect(Object.is(obj1, obj2)).toBe(false)
+
+				// isEqual succeeds for content equality
+				expect(isEqual(obj1, obj2)).toBe(true)
+
+				// Both work for reference equality
+				expect(Object.is(obj1, obj1)).toBe(true)
+				expect(isEqual(obj1, obj1)).toBe(true)
+
+				// Both work for primitive equality
+				expect(Object.is(42, 42)).toBe(true)
+				expect(isEqual(42, 42)).toBe(true)
+			})
 		})
 	})
 })

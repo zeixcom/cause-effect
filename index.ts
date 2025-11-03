@@ -12,7 +12,7 @@ export {
 	isComputedCallback,
 	TYPE_COMPUTED,
 } from './src/computed'
-export { type DiffResult, diff } from './src/diff'
+export { type DiffResult, diff, isEqual, type UnknownRecord } from './src/diff'
 export { type EffectCallback, effect, type MaybeCleanup } from './src/effect'
 export { type MatchHandlers, match } from './src/match'
 export { type ResolveResult, resolve } from './src/resolve'

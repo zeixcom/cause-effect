@@ -1,3 +1,4 @@
+import { isEqual } from './diff'
 import {
 	flush,
 	notify,
@@ -52,7 +53,7 @@ const computed = <T extends {}>(fn: ComputedCallback<T>): Computed<T> => {
 
 	// Functions to update internal state
 	const ok = (v: T): undefined => {
-		if (!Object.is(v, value)) {
+		if (!isEqual(v, value)) {
 			value = v
 			changed = true
 		}

@@ -92,7 +92,6 @@ var isFunction = (fn) => typeof fn === "function";
 var isAsyncFunction = (fn) => isFunction(fn) && fn.constructor.name === "AsyncFunction";
 var isObjectOfType = (value, type) => Object.prototype.toString.call(value) === `[object ${type}]`;
 var isRecord = (value) => isObjectOfType(value, "Object");
-var isPrimitive = (value) => typeof value !== "object" && !isFunction(value);
 var arrayToRecord = (array) => {
   const record = {};
   for (let i = 0;i < array.length; i++) {
@@ -124,7 +123,7 @@ var state = (initialValue) => {
       return value;
     },
     set: (v) => {
-      if (Object.is(value, v))
+      if (isEqual(value, v))
         return;
       value = v;
       notify(watchers);
@@ -139,72 +138,114 @@ var state = (initialValue) => {
 };
 var isState = (value) => isObjectOfType(value, TYPE_STATE);
 
+// src/effect.ts
+var effect = (callback) => {
+  const isAsync = isAsyncFunction(callback);
+  let running = false;
+  let controller;
+  const run = watch(() => observe(() => {
+    if (running)
+      throw new CircularDependencyError("effect");
+    running = true;
+    controller?.abort();
+    controller = undefined;
+    let cleanup;
+    try {
+      if (isAsync) {
+        controller = new AbortController;
+        const currentController = controller;
+        callback(controller.signal).then((cleanup2) => {
+          if (isFunction(cleanup2) && controller === currentController) {
+            run.off(cleanup2);
+          }
+        }).catch((error) => {
+          if (!isAbortError(error))
+            console.error("Async effect error:", error);
+        });
+      } else {
+        cleanup = callback();
+        if (isFunction(cleanup))
+          run.off(cleanup);
+      }
+    } catch (error) {
+      if (!isAbortError(error))
+        console.error("Effect callback error:", error);
+    }
+    running = false;
+  }, run));
+  run();
+  return () => {
+    controller?.abort();
+    run.cleanup();
+  };
+};
+
 // src/store.ts
 var TYPE_STORE = "Store";
 var store = (initialValue) => {
   const watchers = new Set;
   const eventTarget = new EventTarget;
-  const data = new Map;
+  const signals = new Map;
+  const cleanups = new Map;
   const version = state(0);
   const current = computed(() => {
     version.get();
     const record = {};
-    for (const [key, value] of data) {
+    for (const [key, value] of signals) {
       record[key] = value.get();
     }
     return record;
   });
   const size = state(0);
   const emit = (type, detail) => eventTarget.dispatchEvent(new CustomEvent(type, { detail }));
-  const reconcile = (oldValue, newValue) => {
-    console.log("Reconciling data...", version.get());
-    const oldKeys = new Set(Object.keys(oldValue));
-    const newKeys = new Set(Object.keys(newValue));
-    const allKeys = new Set([...oldKeys, ...newKeys]);
-    const changes = {
-      add: {},
-      change: {},
-      remove: {}
-    };
-    for (const key of allKeys) {
-      const oldHas = oldKeys.has(key);
-      const newHas = newKeys.has(key);
-      const value = newValue[key];
-      if (oldHas && !newHas) {
-        data.delete(key);
-        changes.remove[key] = UNSET;
-      } else if (!oldHas && newHas) {
-        const signal = toMutableSignal(value);
-        data.set(key, signal);
-        changes.add[key] = value;
-      } else if (oldHas && newHas) {
-        const signal = data.get(key);
-        if (isState(signal) && isPrimitive(value) || isStore(signal) && (isRecord(value) || Array.isArray(value))) {
-          signal.set(value);
-        } else {
-          if (signal && hasMethod(signal, "set"))
-            signal.set(UNSET);
-          data.set(key, toMutableSignal(value));
-        }
-        changes.change[key] = value;
-      }
-    }
-    const hasAdditions = Object.keys(changes.add).length > 0;
-    const hasMutations = Object.keys(changes.change).length > 0;
-    const hasRemovals = Object.keys(changes.remove).length > 0;
-    const changed = hasAdditions || hasMutations || hasRemovals;
-    batch(() => {
-      if (changed)
-        version.update((v) => ++v);
-      size.set(data.size);
+  const addSignalAndEffect = (key, value) => {
+    const signal = toMutableSignal(value);
+    signals.set(key, signal);
+    const cleanup = effect(() => {
+      const value2 = signal.get();
+      if (value2)
+        emit("store-change", { [key]: value2 });
     });
-    if (hasAdditions)
-      emit("store-add", changes.add);
-    if (hasMutations)
-      emit("store-change", changes.change);
-    if (hasRemovals)
-      emit("store-remove", changes.remove);
-    return changed;
+    cleanups.set(key, cleanup);
+  };
+  const removeSignalAndEffect = (key) => {
+    signals.delete(key);
+    const cleanup = cleanups.get(key);
+    if (cleanup)
+      cleanup();
+    cleanups.delete(key);
+  };
+  const reconcile = (oldValue, newValue) => {
+    const changes = diff(oldValue, newValue);
+    batch(() => {
+      if (Object.keys(changes.add).length) {
+        for (const key in changes.add) {
+          const value = changes.add[key];
+          if (value != null)
+            addSignalAndEffect(key, value);
+        }
+        emit("store-add", changes.add);
+      }
+      if (Object.keys(changes.change).length) {
+        for (const key in changes.change) {
+          const signal = signals.get(key);
+          const value = changes.change[key];
+          if (signal && value != null && hasMethod(signal, "set"))
+            signal.set(value);
+        }
+        emit("store-change", changes.change);
+      }
+      if (Object.keys(changes.remove).length) {
+        for (const key in changes.remove) {
+          removeSignalAndEffect(key);
+        }
+        emit("store-remove", changes.remove);
+      }
+      if (changes.changed)
+        version.update((v) => ++v);
+      size.set(signals.size);
+    });
+    return changes.changed;
   };
   reconcile({}, initialValue);
   setTimeout(() => {
@@ -229,7 +270,7 @@ var store = (initialValue) => {
         return TYPE_STORE;
       if (prop === Symbol.iterator) {
         return function* () {
-          for (const [key2, signal] of data) {
+          for (const [key2, signal] of signals) {
             yield [key2, signal];
           }
         };
@@ -271,17 +312,17 @@ var store = (initialValue) => {
       }
       if (prop === "size")
         return size;
-      return data.get(key);
+      return signals.get(key);
     },
     has(_target, prop) {
       const key = String(prop);
-      return data.has(key) || storeProps.includes(key) || prop === Symbol.toStringTag || prop === Symbol.iterator;
+      return signals.has(key) || storeProps.includes(key) || prop === Symbol.toStringTag || prop === Symbol.iterator;
     },
     ownKeys() {
-      return Array.from(data.keys());
+      return Array.from(signals.keys());
     },
     getOwnPropertyDescriptor(_target, prop) {
-      const signal = data.get(String(prop));
+      const signal = signals.get(String(prop));
       return signal ? {
         enumerable: true,
         configurable: true,
@@ -317,6 +358,86 @@ function toMutableSignal(value) {
   return state(value);
 }
 
+// src/diff.ts
+var isEqual = (a, b, visited) => {
+  if (Object.is(a, b))
+    return true;
+  if (typeof a !== typeof b)
+    return false;
+  if (typeof a !== "object" || a === null || b === null)
+    return false;
+  if (!visited)
+    visited = new WeakSet;
+  if (visited.has(a) || visited.has(b))
+    throw new CircularDependencyError("isEqual");
+  visited.add(a);
+  visited.add(b);
+  try {
+    if (Array.isArray(a) && Array.isArray(b)) {
+      if (a.length !== b.length)
+        return false;
+      for (let i = 0;i < a.length; i++) {
+        if (!isEqual(a[i], b[i], visited))
+          return false;
+      }
+      return true;
+    }
+    if (Array.isArray(a) !== Array.isArray(b))
+      return false;
+    if (isRecord(a) && isRecord(b)) {
+      const aKeys = Object.keys(a);
+      const bKeys = Object.keys(b);
+      if (aKeys.length !== bKeys.length)
+        return false;
+      for (const key of aKeys) {
+        if (!(key in b))
+          return false;
+        if (!isEqual(a[key], b[key], visited))
+          return false;
+      }
+      return true;
+    }
+    return false;
+  } finally {
+    visited.delete(a);
+    visited.delete(b);
+  }
+};
+var diff = (oldObj, newObj) => {
+  const visited = new WeakSet;
+  const diffRecords = (oldRecord, newRecord) => {
+    const add = {};
+    const change = {};
+    const remove = {};
+    const oldKeys = Object.keys(oldRecord);
+    const newKeys = Object.keys(newRecord);
+    const allKeys = new Set([...oldKeys, ...newKeys]);
+    for (const key of allKeys) {
+      const oldHas = key in oldRecord;
+      const newHas = key in newRecord;
+      if (!oldHas && newHas) {
+        add[key] = newRecord[key];
+        continue;
+      } else if (oldHas && !newHas) {
+        remove[key] = UNSET;
+        continue;
+      }
+      const oldValue = oldRecord[key];
+      const newValue = newRecord[key];
+      if (!isEqual(oldValue, newValue, visited))
+        change[key] = newValue;
+    }
+    const changed = Object.keys(add).length > 0 || Object.keys(change).length > 0 || Object.keys(remove).length > 0;
+    return {
+      changed,
+      add,
+      change,
+      remove
+    };
+  };
+  return diffRecords(oldObj, newObj);
+};
+
 // src/computed.ts
 var TYPE_COMPUTED = "Computed";
 var computed = (fn) => {
@@ -328,7 +449,7 @@ var computed = (fn) => {
   let changed = false;
   let computing = false;
   const ok = (v) => {
-    if (!Object.is(v, value)) {
+    if (!isEqual(v, value)) {
       value = v;
       changed = true;
     }
@@ -416,112 +537,6 @@ var computed = (fn) => {
 };
 var isComputed = (value) => isObjectOfType(value, TYPE_COMPUTED);
 var isComputedCallback = (value) => isFunction(value) && value.length < 2;
-// src/diff.ts
-var diff = (oldObj, newObj) => {
-  const visited = new WeakSet;
-  const diffInternal = (oldValue, newValue, path = "root") => {
-    if (isPrimitive(oldValue) || isPrimitive(newValue))
-      return { changed: !Object.is(oldValue, newValue), value: newValue };
-    if (Array.isArray(oldValue) !== Array.isArray(newValue))
-      return { changed: true, value: newValue };
-    if (visited.has(oldValue))
-      throw new CircularDependencyError(`${path} (old value)`);
-    if (visited.has(newValue))
-      throw new CircularDependencyError(`${path} (new value)`);
-    visited.add(oldValue);
-    visited.add(newValue);
-    try {
-      if (Array.isArray(oldValue) && Array.isArray(newValue)) {
-        if (oldValue.length !== newValue.length)
-          return { changed: true, value: newValue };
-        const nested = diffRecords(arrayToRecord(oldValue), arrayToRecord(newValue), `${path}[array]`);
-        return { changed: nested.changed, value: newValue };
-      }
-      if (isRecord(oldValue) && isRecord(newValue)) {
-        const nested = diffRecords(oldValue, newValue, `${path}[object]`);
-        return { changed: nested.changed, value: newValue };
-      }
-      return { changed: !Object.is(oldValue, newValue), value: newValue };
-    } finally {
-      visited.delete(oldValue);
-      visited.delete(newValue);
-    }
-  };
-  const diffRecords = (oldRecord, newRecord, path) => {
-    const add = {};
-    const change = {};
-    const remove = {};
-    const oldKeys = Object.keys(oldRecord);
-    const newKeys = Object.keys(newRecord);
-    const allKeys = new Set([...oldKeys, ...newKeys]);
-    for (const key of allKeys) {
-      const oldHas = key in oldRecord;
-      const newHas = key in newRecord;
-      if (!oldHas && newHas) {
-        add[key] = newRecord[key];
-        continue;
-      } else if (oldHas && !newHas) {
-        remove[key] = UNSET;
-        continue;
-      }
-      const result = diffInternal(oldRecord[key], newRecord[key], `${path}.${key}`);
-      if (result.changed)
-        change[key] = result.value;
-    }
-    const changed = Object.keys(add).length > 0 || Object.keys(change).length > 0 || Object.keys(remove).length > 0;
-    return {
-      changed,
-      add,
-      change,
-      remove
-    };
-  };
-  if (!isRecord(oldObj) || !isRecord(newObj)) {
-    throw new Error("diff() requires both arguments to be records (plain objects)");
-  }
-  return diffRecords(oldObj, newObj, "root");
-};
-// src/effect.ts
-var effect = (callback) => {
-  const isAsync = isAsyncFunction(callback);
-  let running = false;
-  let controller;
-  const run = watch(() => observe(() => {
-    if (running)
-      throw new CircularDependencyError("effect");
-    running = true;
-    controller?.abort();
-    controller = undefined;
-    let cleanup;
-    try {
-      if (isAsync) {
-        controller = new AbortController;
-        const currentController = controller;
-        callback(controller.signal).then((cleanup2) => {
-          if (isFunction(cleanup2) && controller === currentController) {
-            run.off(cleanup2);
-          }
-        }).catch((error) => {
-          if (!isAbortError(error))
-            console.error("Async effect error:", error);
-        });
-      } else {
-        cleanup = callback();
-        if (isFunction(cleanup))
-          run.off(cleanup);
-      }
-    } catch (error) {
-      if (!isAbortError(error))
-        console.error("Effect callback error:", error);
-    }
-    running = false;
-  }, run));
-  run();
-  return () => {
-    controller?.abort();
-    run.cleanup();
-  };
-};
 // src/match.ts
 function match(result, handlers) {
   try {
@@ -581,6 +596,7 @@ export {
   isState,
   isSignal,
   isFunction,
+  isEqual,
   isComputedCallback,
   isComputed,
   isAsyncFunction,
