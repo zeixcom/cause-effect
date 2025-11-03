@@ -1,5 +1,15 @@
 import { describe, expect, test } from 'bun:test'
-import { computed, effect, isStore, state, store, UNSET } from '..'
+import {
+	computed,
+	effect,
+	isStore,
+	type StoreAddEvent,
+	type StoreChangeEvent,
+	type StoreRemoveEvent,
+	state,
+	store,
+	UNSET,
+} from '..'
 
 describe('store', () => {
 	describe('creation and basic operations', () => {
@@ -178,49 +188,129 @@ describe('store', () => {
 			expect(user.size.get()).toBe(2)
 		})
 
-		test('initial additions state is contains initial values', () => {
+		test('dispatches store-add event on initial creation', async () => {
+			let addEvent: StoreAddEvent<{ name: string }> | null = null
 			const user = store({ name: 'Hannah' })
 
-			expect(user.additions.get()).toEqual({ name: 'Hannah' })
+			user.addEventListener('store-add', event => {
+				addEvent = event
+			})
+
+			// Wait for the async initial event
+			await new Promise(resolve => setTimeout(resolve, 10))
+
+			expect(addEvent).toBeTruthy()
+			expect(addEvent!.detail).toEqual({ name: 'Hannah' })
 		})
 
-		test('tracks additions', () => {
+		test('dispatches store-add event for new properties', () => {
 			const user = store<{ name: string; email?: string }>({
 				name: 'Hannah',
+			})
+
+			let addEvent: StoreAddEvent<{
+				name: string
+				email?: string
+			}> | null = null
+			user.addEventListener('store-add', event => {
+				addEvent = event
 			})
 
 			user.update(v => ({ ...v, email: 'hannah@example.com' }))
 
-			expect(user.additions.get()).toEqual({
-				name: 'Hannah',
+			expect(addEvent).toBeTruthy()
+			expect(addEvent!.detail).toEqual({
 				email: 'hannah@example.com',
 			})
 		})
 
-		test('tracks mutations', () => {
+		test('dispatches store-change event for property changes', () => {
 			const user = store({ name: 'Hannah' })
+
+			let changeEvent: StoreChangeEvent<{ name: string }> | null = null
+			user.addEventListener('store-change', event => {
+				changeEvent = event
+			})
 
 			user.set({ name: 'Alice' })
 
-			expect(user.mutations.get()).toEqual({
+			expect(changeEvent).toBeTruthy()
+			expect(changeEvent!.detail).toEqual({
 				name: 'Alice',
+			})
+		})
+
+		test('dispatches store-change event for signal changes', () => {
+			const user = store({ name: 'Hannah' })
+
+			let changeEvent: StoreChangeEvent<{ name: string }> | null = null
+			user.addEventListener('store-change', event => {
+				changeEvent = event
 			})
 
 			user.name.set('Bob')
-			expect(user.mutations.get()).toEqual({
+
+			expect(changeEvent).toBeTruthy()
+			expect(changeEvent!.detail).toEqual({
 				name: 'Bob',
 			})
 		})
 
-		test('tracks removals when using set()', () => {
+		test('dispatches store-remove event for removed properties', () => {
 			const user = store<{ name: string; email?: string }>({
 				name: 'Hannah',
 				email: 'hannah@example.com',
 			})
 
+			let removeEvent: StoreRemoveEvent<{
+				name: string
+				email?: string
+			}> | null = null
+			user.addEventListener('store-remove', event => {
+				removeEvent = event
+			})
+
 			user.set({ name: 'Alice' }) // Remove email
 
-			expect(user.removals.get().email).toBe(UNSET)
+			expect(removeEvent).toBeTruthy()
+			expect(removeEvent!.detail.email).toBe(UNSET)
+		})
+
+		test('can remove event listeners', () => {
+			const user = store({ name: 'Hannah' })
+
+			let eventCount = 0
+			const listener = () => {
+				eventCount++
+			}
+
+			user.addEventListener('store-change', listener)
+			user.name.set('Alice')
+			expect(eventCount).toBe(1)
+
+			user.removeEventListener('store-change', listener)
+			user.name.set('Bob')
+			expect(eventCount).toBe(1) // Should not increment
+		})
+
+		test('supports multiple event listeners for the same event', () => {
+			const user = store({ name: 'Hannah' })
+
+			let listener1Called = false
+			let listener2Called = false
+
+			user.addEventListener('store-change', () => {
+				listener1Called = true
+			})
+
+			user.addEventListener('store-change', () => {
+				listener2Called = true
+			})
+
+			user.name.set('Alice')
+
+			expect(listener1Called).toBe(true)
+			expect(listener2Called).toBe(true)
 		})
 	})
 
@@ -284,6 +374,7 @@ describe('store', () => {
 
 			effect(() => {
 				lastValue = user.get()
+				console.log(lastValue)
 				effectRuns++
 			})
 

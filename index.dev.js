@@ -91,7 +91,16 @@ var enqueue = (fn, dedupe) => new Promise((resolve, reject) => {
 var isFunction = (fn) => typeof fn === "function";
 var isAsyncFunction = (fn) => isFunction(fn) && fn.constructor.name === "AsyncFunction";
 var isObjectOfType = (value, type) => Object.prototype.toString.call(value) === `[object ${type}]`;
-var isPrimitive = (value) => !isObjectOfType(value, "Object") && !Array.isArray(value) && !isFunction(value);
+var isRecord = (value) => isObjectOfType(value, "Object");
+var isPrimitive = (value) => typeof value !== "object" && !isFunction(value);
+var arrayToRecord = (array) => {
+  const record = {};
+  for (let i = 0;i < array.length; i++) {
+    if (i in array)
+      record[String(i)] = array[i];
+  }
+  return record;
+};
 var hasMethod = (obj, methodName) => (methodName in obj) && isFunction(obj[methodName]);
 var isAbortError = (error) => error instanceof DOMException && error.name === "AbortError";
 var toError = (reason) => reason instanceof Error ? reason : Error(String(reason));
@@ -134,51 +143,28 @@ var isState = (value) => isObjectOfType(value, TYPE_STATE);
 var TYPE_STORE = "Store";
 var store = (initialValue) => {
   const watchers = new Set;
+  const eventTarget = new EventTarget;
   const data = new Map;
-  const tracker = (watcher) => {
-    const trackWatchers = new Set;
-    if (watcher)
-      trackWatchers.add(watcher);
-    let trackRecord = {};
-    return {
-      get: () => {
-        subscribe(trackWatchers);
-        const value = { ...trackRecord };
-        trackRecord = {};
-        return value;
-      },
-      merge: (other) => {
-        trackRecord = { ...trackRecord, ...other };
-        notify(trackWatchers);
-      }
-    };
-  };
-  const additions = tracker();
-  const track = watch(() => {
-    const newKeys = Object.keys(additions.get());
-    console.log("Additions watcher called", newKeys);
-    for (const key of newKeys) {
-      data.get(key);
-    }
-  });
-  const mutations = tracker(track);
-  const removals = tracker();
-  const size = state(0);
-  const current = () => {
+  const version = state(0);
+  const current = computed(() => {
+    version.get();
     const record = {};
     for (const [key, value] of data) {
       record[key] = value.get();
     }
     return record;
-  };
+  });
+  const size = state(0);
+  const emit = (type, detail) => eventTarget.dispatchEvent(new CustomEvent(type, { detail }));
   const reconcile = (oldValue, newValue) => {
+    console.log("Reconciling data...", version.get());
     const oldKeys = new Set(Object.keys(oldValue));
     const newKeys = new Set(Object.keys(newValue));
     const allKeys = new Set([...oldKeys, ...newKeys]);
     const changes = {
-      additions: {},
-      mutations: {},
-      removals: {}
+      add: {},
+      change: {},
+      remove: {}
     };
     for (const key of allKeys) {
       const oldHas = oldKeys.has(key);
@@ -186,37 +172,56 @@ var store = (initialValue) => {
       const value = newValue[key];
       if (oldHas && !newHas) {
         data.delete(key);
-        changes.removals[key] = UNSET;
+        changes.remove[key] = UNSET;
       } else if (!oldHas && newHas) {
         const signal = toMutableSignal(value);
         data.set(key, signal);
-        changes.additions[key] = value;
-      } else {
-        console.log(key, oldValue[key], value);
+        changes.add[key] = value;
+      } else if (oldHas && newHas) {
         const signal = data.get(key);
-        if (isState(signal) && isPrimitive(value) || isStore(signal) && (isObjectOfType(value, "Object") || Array.isArray(value))) {
+        if (isState(signal) && isPrimitive(value) || isStore(signal) && (isRecord(value) || Array.isArray(value))) {
           signal.set(value);
         } else {
           if (signal && hasMethod(signal, "set"))
             signal.set(UNSET);
           data.set(key, toMutableSignal(value));
         }
-        changes.mutations[key] = value;
+        changes.change[key] = value;
       }
     }
-    const hasAdditions = Object.keys(changes.additions).length > 0;
-    const hasMutations = Object.keys(changes.mutations).length > 0;
-    const hasRemovals = Object.keys(changes.removals).length > 0;
+    const hasAdditions = Object.keys(changes.add).length > 0;
+    const hasMutations = Object.keys(changes.change).length > 0;
+    const hasRemovals = Object.keys(changes.remove).length > 0;
+    const changed = hasAdditions || hasMutations || hasRemovals;
+    batch(() => {
+      if (changed)
+        version.update((v) => ++v);
+      size.set(data.size);
+    });
     if (hasAdditions)
-      additions.merge(changes.additions);
+      emit("store-add", changes.add);
     if (hasMutations)
-      mutations.merge(changes.mutations);
+      emit("store-change", changes.change);
     if (hasRemovals)
-      removals.merge(changes.removals);
-    size.set(data.size);
-    return hasAdditions || hasMutations || hasRemovals;
+      emit("store-remove", changes.remove);
+    return changed;
   };
   reconcile({}, initialValue);
+  setTimeout(() => {
+    const initialAdditionsEvent = new CustomEvent("store-add", {
+      detail: initialValue
+    });
+    eventTarget.dispatchEvent(initialAdditionsEvent);
+  }, 0);
+  const storeProps = [
+    "get",
+    "set",
+    "update",
+    "addEventListener",
+    "removeEventListener",
+    "dispatchEvent",
+    "size"
+  ];
   return new Proxy({}, {
     get(_target, prop) {
       const key = String(prop);
@@ -232,12 +237,12 @@ var store = (initialValue) => {
       if (prop === "get") {
         return () => {
           subscribe(watchers);
-          return current();
+          return current.get();
         };
       }
       if (prop === "set") {
         return (v) => {
-          if (reconcile(current(), v)) {
+          if (reconcile(current.get(), v)) {
             notify(watchers);
             if (UNSET === v)
               watchers.clear();
@@ -246,7 +251,7 @@ var store = (initialValue) => {
       }
       if (prop === "update") {
         return (fn) => {
-          const oldValue = current();
+          const oldValue = current.get();
           const newValue = fn(oldValue);
           if (reconcile(oldValue, newValue)) {
             notify(watchers);
@@ -255,19 +260,22 @@ var store = (initialValue) => {
           }
         };
       }
-      if (prop === "additions")
-        return additions;
-      if (prop === "mutations")
-        return mutations;
-      if (prop === "removals")
-        return removals;
+      if (prop === "addEventListener") {
+        return eventTarget.addEventListener.bind(eventTarget);
+      }
+      if (prop === "removeEventListener") {
+        return eventTarget.removeEventListener.bind(eventTarget);
+      }
+      if (prop === "dispatchEvent") {
+        return eventTarget.dispatchEvent.bind(eventTarget);
+      }
       if (prop === "size")
         return size;
       return data.get(key);
     },
     has(_target, prop) {
       const key = String(prop);
-      return data.has(key) || prop === "get" || prop === "set" || prop === "update" || prop === "additions" || prop === "mutations" || prop === "removals" || prop === "size" || prop === Symbol.toStringTag || prop === Symbol.iterator;
+      return data.has(key) || storeProps.includes(key) || prop === Symbol.toStringTag || prop === Symbol.iterator;
     },
     ownKeys() {
       return Array.from(data.keys());
@@ -293,30 +301,18 @@ function toSignal(value) {
     return value;
   if (isComputedCallback(value))
     return computed(value);
-  if (Array.isArray(value)) {
-    const record = {};
-    for (let i = 0;i < value.length; i++) {
-      record[String(i)] = value[i];
-    }
-    return store(record);
-  }
-  if (isObjectOfType(value, "Object"))
+  if (Array.isArray(value))
+    return store(arrayToRecord(value));
+  if (isRecord(value))
     return store(value);
   return state(value);
 }
 function toMutableSignal(value) {
-  if (isSignal(value))
+  if (isState(value) || isStore(value))
     return value;
-  if (isComputedCallback(value))
-    return computed(value);
-  if (Array.isArray(value)) {
-    const record = {};
-    for (let i = 0;i < value.length; i++) {
-      record[String(i)] = value[i];
-    }
-    return store(record);
-  }
-  if (isObjectOfType(value, "Object"))
+  if (Array.isArray(value))
+    return store(arrayToRecord(value));
+  if (isRecord(value))
     return store(value);
   return state(value);
 }
@@ -420,6 +416,71 @@ var computed = (fn) => {
 };
 var isComputed = (value) => isObjectOfType(value, TYPE_COMPUTED);
 var isComputedCallback = (value) => isFunction(value) && value.length < 2;
+// src/diff.ts
+var diff = (oldObj, newObj) => {
+  const visited = new WeakSet;
+  const diffInternal = (oldValue, newValue, path = "root") => {
+    if (isPrimitive(oldValue) || isPrimitive(newValue))
+      return { changed: !Object.is(oldValue, newValue), value: newValue };
+    if (Array.isArray(oldValue) !== Array.isArray(newValue))
+      return { changed: true, value: newValue };
+    if (visited.has(oldValue))
+      throw new CircularDependencyError(`${path} (old value)`);
+    if (visited.has(newValue))
+      throw new CircularDependencyError(`${path} (new value)`);
+    visited.add(oldValue);
+    visited.add(newValue);
+    try {
+      if (Array.isArray(oldValue) && Array.isArray(newValue)) {
+        if (oldValue.length !== newValue.length)
+          return { changed: true, value: newValue };
+        const nested = diffRecords(arrayToRecord(oldValue), arrayToRecord(newValue), `${path}[array]`);
+        return { changed: nested.changed, value: newValue };
+      }
+      if (isRecord(oldValue) && isRecord(newValue)) {
+        const nested = diffRecords(oldValue, newValue, `${path}[object]`);
+        return { changed: nested.changed, value: newValue };
+      }
+      return { changed: !Object.is(oldValue, newValue), value: newValue };
+    } finally {
+      visited.delete(oldValue);
+      visited.delete(newValue);
+    }
+  };
+  const diffRecords = (oldRecord, newRecord, path) => {
+    const add = {};
+    const change = {};
+    const remove = {};
+    const oldKeys = Object.keys(oldRecord);
+    const newKeys = Object.keys(newRecord);
+    const allKeys = new Set([...oldKeys, ...newKeys]);
+    for (const key of allKeys) {
+      const oldHas = key in oldRecord;
+      const newHas = key in newRecord;
+      if (!oldHas && newHas) {
+        add[key] = newRecord[key];
+        continue;
+      } else if (oldHas && !newHas) {
+        remove[key] = UNSET;
+        continue;
+      }
+      const result = diffInternal(oldRecord[key], newRecord[key], `${path}.${key}`);
+      if (result.changed)
+        change[key] = result.value;
+    }
+    const changed = Object.keys(add).length > 0 || Object.keys(change).length > 0 || Object.keys(remove).length > 0;
+    return {
+      changed,
+      add,
+      change,
+      remove
+    };
+  };
+  if (!isRecord(oldObj) || !isRecord(newObj)) {
+    throw new Error("diff() requires both arguments to be records (plain objects)");
+  }
+  return diffRecords(oldObj, newObj, "root");
+};
 // src/effect.ts
 var effect = (callback) => {
   const isAsync = isAsyncFunction(callback);
@@ -527,6 +588,7 @@ export {
   flush,
   enqueue,
   effect,
+  diff,
   computed,
   batch,
   UNSET,

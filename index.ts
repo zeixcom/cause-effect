@@ -12,6 +12,7 @@ export {
 	isComputedCallback,
 	TYPE_COMPUTED,
 } from './src/computed'
+export { type DiffResult, diff } from './src/diff'
 export { type EffectCallback, effect, type MaybeCleanup } from './src/effect'
 export { type MatchHandlers, match } from './src/match'
 export { type ResolveResult, resolve } from './src/resolve'
@@ -36,7 +37,16 @@ export {
 	UNSET,
 } from './src/signal'
 export { isState, type State, state, TYPE_STATE } from './src/state'
-export { isStore, type Store, store, TYPE_STORE } from './src/store'
+export {
+	isStore,
+	type Store,
+	type StoreAddEvent,
+	type StoreChangeEvent,
+	type StoreEventMap,
+	type StoreRemoveEvent,
+	store,
+	TYPE_STORE,
+} from './src/store'
 export {
 	CircularDependencyError,
 	isAbortError,

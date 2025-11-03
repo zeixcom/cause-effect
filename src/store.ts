@@ -1,7 +1,9 @@
-import { notify, subscribe, watch, type Watcher } from './scheduler'
+import { computed } from './computed'
+// import { effect } from './effect'
+import { batch, notify, subscribe, type Watcher } from './scheduler'
 import { type Signal, toMutableSignal, UNSET } from './signal'
 import { isState, type State, state } from './state'
-import { hasMethod, isObjectOfType, isPrimitive } from './util'
+import { hasMethod, isObjectOfType, isPrimitive, isRecord } from './util'
 
 /* === Constants === */
 
@@ -9,33 +11,82 @@ const TYPE_STORE = 'Store'
 
 /* === Types === */
 
+interface StoreAddEvent<T extends Record<string, unknown & {}>>
+	extends CustomEvent {
+	type: 'store-add'
+	detail: Partial<T>
+}
+
+interface StoreChangeEvent<T extends Record<string, unknown & {}>>
+	extends CustomEvent {
+	type: 'store-change'
+	detail: Partial<T>
+}
+
+interface StoreRemoveEvent<T extends Record<string, unknown & {}>>
+	extends CustomEvent {
+	type: 'store-remove'
+	detail: Partial<T>
+}
+
+type StoreEventMap<T extends Record<string, unknown & {}>> = {
+	'store-add': StoreAddEvent<T>
+	'store-change': StoreChangeEvent<T>
+	'store-remove': StoreRemoveEvent<T>
+}
+
+interface StoreEventTarget<T extends Record<string, unknown & {}>>
+	extends EventTarget {
+	addEventListener<K extends keyof StoreEventMap<T>>(
+		type: K,
+		listener: (event: StoreEventMap<T>[K]) => void,
+		options?: boolean | AddEventListenerOptions,
+	): void
+	addEventListener(
+		type: string,
+		listener: EventListenerOrEventListenerObject,
+		options?: boolean | AddEventListenerOptions,
+	): void
+
+	removeEventListener<K extends keyof StoreEventMap<T>>(
+		type: K,
+		listener: (event: StoreEventMap<T>[K]) => void,
+		options?: boolean | EventListenerOptions,
+	): void
+	removeEventListener(
+		type: string,
+		listener: EventListenerOrEventListenerObject,
+		options?: boolean | EventListenerOptions,
+	): void
+
+	dispatchEvent(event: Event): boolean
+}
+
 type Store<
 	T extends Record<string, unknown & {}> = Record<string, unknown & {}>,
 > = {
 	[K in keyof T]: T[K] extends Record<string, unknown & {}>
 		? Store<T[K]>
 		: State<T[K]>
-} & {
-	[Symbol.toStringTag]: 'Store'
-	[Symbol.iterator](): IterableIterator<[string, Signal<T[keyof T]>]>
+} & StoreEventTarget<T> & {
+		[Symbol.toStringTag]: 'Store'
+		[Symbol.iterator](): IterableIterator<[string, Signal<T[keyof T]>]>
 
-	// Signal methods
-	get(): T
-	set(value: T): void
-	update(updater: (value: T) => T): void
+		// Signal methods
+		get(): T
+		set(value: T): void
+		update(updater: (value: T) => T): void
 
-	// Change tracking signals
-	additions: Signal<Partial<T>>
-	removals: Signal<Partial<T>>
-	mutations: Signal<Partial<T>>
-	size: State<number>
-}
+		// Interals signals
+		size: State<number>
+	}
 
 type StoreChanges = {
-	additions: Partial<Record<string, unknown & {}>>
-	removals: Partial<Record<string, unknown & {}>>
-	mutations: Partial<Record<string, unknown & {}>>
+	add: Partial<Record<string, unknown & {}>>
+	change: Partial<Record<string, unknown & {}>>
+	remove: Partial<Record<string, unknown & {}>>
 }
+
 /* === Functions === */
 
 /**
@@ -49,56 +100,58 @@ const store = <T extends Record<string, unknown & {}>>(
 	initialValue: T,
 ): Store<T> => {
 	const watchers: Set<Watcher> = new Set()
-	const data = new Map<string, Signal<unknown & {}>>()
-
-	const tracker = (watcher?: Watcher) => {
-		const trackWatchers: Set<Watcher> = new Set()
-		if (watcher) trackWatchers.add(watcher)
-		let trackRecord: Partial<T> = {}
-
-		return {
-			get: (): Partial<T> => {
-				subscribe(trackWatchers)
-				const value = { ...trackRecord }
-				trackRecord = {}
-				return value as Partial<T>
-			},
-			merge: (other: Partial<T>) => {
-				trackRecord = { ...trackRecord, ...other }
-				notify(trackWatchers)
-			},
-		}
-	}
-
-	const additions = tracker()
-	const track = watch(() => {
-		const newKeys = Object.keys(additions.get())
-		console.log('Additions watcher called', newKeys)
-		for (const key of newKeys) {
-			data.get(key) // Subscribe to the signal to track changes
-		}
-	})
-	const mutations = tracker(track)
-	const removals = tracker()
-	const size = state(0)
-
-	const current = (): T => {
+	const eventTarget = new EventTarget()
+	const data: Map<string, Signal<unknown & {}>> = new Map()
+	const version = state(0)
+	const current = computed(() => {
+		version.get()
 		const record: Record<string, unknown & {}> = {}
 		for (const [key, value] of data) {
 			record[key] = value.get()
 		}
 		return record as T
-	}
+	})
+	const size = state(0)
 
-	// Reconcile data
+	const emit = (type: keyof StoreEventMap<T>, detail: Partial<T>) =>
+		eventTarget.dispatchEvent(new CustomEvent(type, { detail }))
+
+	/* let oldRecord = initialValue
+	effect(() => {
+		const newRecord = current.get()
+		if (reconcile(oldRecord, newRecord)) oldRecord = newRecord
+	}) */
+
+	// Create a wrapped signal that dispatches mutation events
+	/* const createWrappedSignal = (key: string, value: unknown & {}) => {
+		const signal = toMutableSignal(value)
+		if (isState(signal)) {
+			const stateSignal = signal as State<unknown & {}>
+			const originalSet = stateSignal.set.bind(stateSignal)
+			stateSignal.set = (newValue: unknown & {}) => {
+				const oldValue = stateSignal.get()
+				originalSet(newValue)
+				if (!Object.is(oldValue, newValue)) {
+					const event = new CustomEvent('store-change', {
+						detail: { [key]: newValue } as Partial<T>,
+					})
+					eventTarget.dispatchEvent(event)
+				}
+			}
+		}
+		return signal
+	} */
+
+	// Reconcile data and dispatch events
 	const reconcile = (oldValue: Partial<T>, newValue: T): boolean => {
+		console.log('Reconciling data...', version.get())
 		const oldKeys = new Set(Object.keys(oldValue))
 		const newKeys = new Set(Object.keys(newValue))
 		const allKeys = new Set([...oldKeys, ...newKeys])
 		const changes: StoreChanges = {
-			additions: {},
-			mutations: {},
-			removals: {},
+			add: {},
+			change: {},
+			remove: {},
 		}
 
 		for (const key of allKeys) {
@@ -108,21 +161,17 @@ const store = <T extends Record<string, unknown & {}>>(
 
 			if (oldHas && !newHas) {
 				data.delete(key)
-				changes.removals[key] = UNSET
+				changes.remove[key] = UNSET
 			} else if (!oldHas && newHas) {
 				const signal = toMutableSignal(value)
 				data.set(key, signal)
-				changes.additions[key] = value
-			} else {
-				// if (Object.is(oldValue[key], value)) continue
-				console.log(key, oldValue[key], value)
-
+				changes.add[key] = value
+			} else if (oldHas && newHas) {
 				const signal = data.get(key)
 				if (
 					(isState(signal) && isPrimitive(value)) ||
 					(isStore(signal) &&
-						(isObjectOfType(value, 'Object') ||
-							Array.isArray(value)))
+						(isRecord(value) || Array.isArray(value)))
 				) {
 					signal.set(value)
 				} else {
@@ -130,28 +179,54 @@ const store = <T extends Record<string, unknown & {}>>(
 					data.set(key, toMutableSignal(value))
 				}
 
-				changes.mutations[key] = value
+				changes.change[key] = value
 			}
 		}
-		const hasAdditions = Object.keys(changes.additions).length > 0
-		const hasMutations = Object.keys(changes.mutations).length > 0
-		const hasRemovals = Object.keys(changes.removals).length > 0
-		if (hasAdditions) additions.merge(changes.additions as Partial<T>)
-		if (hasMutations) mutations.merge(changes.mutations as Partial<T>)
-		if (hasRemovals) removals.merge(changes.removals as Partial<T>)
-		size.set(data.size)
-		return hasAdditions || hasMutations || hasRemovals
+
+		const hasAdditions = Object.keys(changes.add).length > 0
+		const hasMutations = Object.keys(changes.change).length > 0
+		const hasRemovals = Object.keys(changes.remove).length > 0
+		const changed = hasAdditions || hasMutations || hasRemovals
+		batch(() => {
+			if (changed) version.update(v => ++v)
+			size.set(data.size)
+		})
+
+		// Dispatch events for changes
+		if (hasAdditions) emit('store-add', changes.add as Partial<T>)
+		if (hasMutations) emit('store-change', changes.change as Partial<T>)
+		if (hasRemovals) emit('store-remove', changes.remove as Partial<T>)
+
+		return changed
 	}
 
 	// Initialize data
 	reconcile({}, initialValue)
+
+	// Queue initial additions event to allow listeners to be added first
+	setTimeout(() => {
+		const initialAdditionsEvent = new CustomEvent('store-add', {
+			detail: initialValue as Partial<T>,
+		}) as StoreAddEvent<T>
+		eventTarget.dispatchEvent(initialAdditionsEvent)
+	}, 0)
+
+	const storeProps = [
+		'get',
+		'set',
+		'update',
+		'addEventListener',
+		'removeEventListener',
+		'dispatchEvent',
+		'size',
+	]
 
 	// Return proxy directly with integrated signal methods
 	return new Proxy({} as Store<T>, {
 		get(_target, prop) {
 			const key = String(prop)
 
-			// Handle signal methods
+			// Handle symbol properties
 			if (prop === Symbol.toStringTag) return TYPE_STORE
 			if (prop === Symbol.iterator) {
 				return function* () {
@@ -160,15 +235,17 @@ const store = <T extends Record<string, unknown & {}>>(
 					}
 				}
 			}
+
+			// Handle signal methods
 			if (prop === 'get') {
 				return (): T => {
 					subscribe(watchers)
-					return current()
+					return current.get()
 				}
 			}
 			if (prop === 'set') {
 				return (v: T): void => {
-					if (reconcile(current(), v)) {
+					if (reconcile(current.get(), v)) {
 						notify(watchers)
 						if (UNSET === v) watchers.clear()
 					}
@@ -176,7 +253,7 @@ const store = <T extends Record<string, unknown & {}>>(
 			}
 			if (prop === 'update') {
 				return (fn: (v: T) => T): void => {
-					const oldValue = current()
+					const oldValue = current.get()
 					const newValue = fn(oldValue)
 					if (reconcile(oldValue, newValue)) {
 						notify(watchers)
@@ -184,9 +261,19 @@ const store = <T extends Record<string, unknown & {}>>(
 					}
 				}
 			}
-			if (prop === 'additions') return additions
-			if (prop === 'mutations') return mutations
-			if (prop === 'removals') return removals
+
+			// Handle EventTarget methods
+			if (prop === 'addEventListener') {
+				return eventTarget.addEventListener.bind(eventTarget)
+			}
+			if (prop === 'removeEventListener') {
+				return eventTarget.removeEventListener.bind(eventTarget)
+			}
+			if (prop === 'dispatchEvent') {
+				return eventTarget.dispatchEvent.bind(eventTarget)
+			}
+
+			// Handle size property
 			if (prop === 'size') return size
 
 			// Handle data properties - return signals
@@ -196,13 +283,7 @@ const store = <T extends Record<string, unknown & {}>>(
 			const key = String(prop)
 			return (
 				data.has(key) ||
-				prop === 'get' ||
-				prop === 'set' ||
-				prop === 'update' ||
-				prop === 'additions' ||
-				prop === 'mutations' ||
-				prop === 'removals' ||
-				prop === 'size' ||
+				storeProps.includes(key) ||
 				prop === Symbol.toStringTag ||
 				prop === Symbol.iterator
 			)
@@ -237,4 +318,13 @@ const isStore = <T extends Record<string, unknown & {}>>(
 
 /* === Exports === */
 
-export { TYPE_STORE, isStore, store, type Store }
+export {
+	TYPE_STORE,
+	isStore,
+	store,
+	type Store,
+	type StoreAddEvent,
+	type StoreChangeEvent,
+	type StoreRemoveEvent,
+	type StoreEventMap,
+}

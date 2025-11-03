@@ -7,7 +7,7 @@ import {
 } from './computed'
 import { isState, type State, state } from './state'
 import { isStore, type Store, store } from './store'
-import { isObjectOfType } from './util'
+import { arrayToRecord, isRecord } from './util'
 
 /* === Types === */
 
@@ -55,14 +55,8 @@ function toSignal<T extends {}>(
 ): Signal<T> | Store<Record<string, T>> {
 	if (isSignal<T>(value)) return value
 	if (isComputedCallback<T>(value)) return computed(value)
-	if (Array.isArray(value)) {
-		const record: Record<string, T> = {}
-		for (let i = 0; i < value.length; i++) {
-			record[String(i)] = value[i]
-		}
-		return store(record)
-	}
-	if (isObjectOfType(value, 'Object')) return store(value as T)
+	if (Array.isArray(value)) return store(arrayToRecord(value))
+	if (isRecord(value)) return store(value as T)
 	return state(value as T)
 }
 
@@ -83,16 +77,9 @@ function toMutableSignal<T extends {}>(value: T): State<T>
 function toMutableSignal<T extends {}>(
 	value: T | State<T> | Store<T> | T[],
 ): Signal<T> | Store<Record<string, T>> {
-	if (isSignal<T>(value)) return value
-	if (isComputedCallback<T>(value)) return computed(value)
-	if (Array.isArray(value)) {
-		const record: Record<string, T> = {}
-		for (let i = 0; i < value.length; i++) {
-			record[String(i)] = value[i]
-		}
-		return store(record)
-	}
-	if (isObjectOfType(value, 'Object')) return store(value as T)
+	if (isState<T>(value) || isStore<T>(value)) return value
+	if (Array.isArray(value)) return store(arrayToRecord(value))
+	if (isRecord(value)) return store(value as T)
 	return state(value as T)
 }
 

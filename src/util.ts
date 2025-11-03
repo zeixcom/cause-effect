@@ -20,10 +20,22 @@ const isObjectOfType = /*#__PURE__*/ <T>(
 	type: string,
 ): value is T => Object.prototype.toString.call(value) === `[object ${type}]`
 
+const isRecord = /*#__PURE__*/ <T extends Record<string, unknown>>(
+	value: unknown,
+): value is T => isObjectOfType(value, 'Object')
+
 const isPrimitive = /*#__PURE__*/ (value: unknown): boolean =>
-	!isObjectOfType(value, 'Object') &&
-	!Array.isArray(value) &&
-	!isFunction(value)
+	typeof value !== 'object' && !isFunction(value)
+
+const arrayToRecord = /*#__PURE__*/ <T extends unknown & {}>(
+	array: T[],
+): Record<string, T> => {
+	const record: Record<string, T> = {}
+	for (let i = 0; i < array.length; i++) {
+		if (i in array) record[String(i)] = array[i]
+	}
+	return record
+}
 
 const hasMethod = /*#__PURE__*/ <
 	T extends object & Record<string, (...args: unknown[]) => unknown>,
@@ -54,7 +66,9 @@ export {
 	isFunction,
 	isAsyncFunction,
 	isObjectOfType,
+	isRecord,
 	isPrimitive,
+	arrayToRecord,
 	hasMethod,
 	isAbortError,
 	toError,
