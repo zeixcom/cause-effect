@@ -1,3 +1,4 @@
+import { isEqual } from './diff'
 import { notify, subscribe, type Watcher } from './scheduler'
 import { UNSET } from './signal'
 import { isObjectOfType } from './util'
@@ -50,7 +51,7 @@ const state = /*#__PURE__*/ <T extends {}>(initialValue: T): State<T> => {
 		 * @returns {void}
 		 */
 		set: (v: T): void => {
-			if (Object.is(value, v)) return
+			if (isEqual(value, v)) return
 			value = v
 			notify(watchers)
 

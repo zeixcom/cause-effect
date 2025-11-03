@@ -1,5 +1,11 @@
 /* === Utility Functions === */
 
+const isNumber = /*#__PURE__*/ (value: unknown): value is number =>
+	typeof value === 'number'
+
+const isString = /*#__PURE__*/ (value: unknown): value is string =>
+	typeof value === 'string'
+
 const isFunction = /*#__PURE__*/ <T>(
 	fn: unknown,
 ): fn is (...args: unknown[]) => T => typeof fn === 'function'
@@ -13,6 +19,31 @@ const isObjectOfType = /*#__PURE__*/ <T>(
 	value: unknown,
 	type: string,
 ): value is T => Object.prototype.toString.call(value) === `[object ${type}]`
+
+const isRecord = /*#__PURE__*/ <T extends Record<string, unknown>>(
+	value: unknown,
+): value is T => isObjectOfType(value, 'Object')
+
+const isPrimitive = /*#__PURE__*/ (value: unknown): boolean =>
+	typeof value !== 'object' && !isFunction(value)
+
+const arrayToRecord = /*#__PURE__*/ <T extends unknown & {}>(
+	array: T[],
+): Record<string, T> => {
+	const record: Record<string, T> = {}
+	for (let i = 0; i < array.length; i++) {
+		if (i in array) record[String(i)] = array[i]
+	}
+	return record
+}
+
+const hasMethod = /*#__PURE__*/ <
+	T extends object & Record<string, (...args: unknown[]) => unknown>,
+>(
+	obj: T,
+	methodName: string,
+): obj is T & Record<string, (...args: unknown[]) => unknown> =>
+	methodName in obj && isFunction(obj[methodName])
 
 const isAbortError = /*#__PURE__*/ (error: unknown): boolean =>
 	error instanceof DOMException && error.name === 'AbortError'
@@ -30,9 +61,15 @@ class CircularDependencyError extends Error {
 /* === Exports === */
 
 export {
+	isNumber,
+	isString,
 	isFunction,
 	isAsyncFunction,
 	isObjectOfType,
+	isRecord,
+	isPrimitive,
+	arrayToRecord,
+	hasMethod,
 	isAbortError,
 	toError,
 	CircularDependencyError,

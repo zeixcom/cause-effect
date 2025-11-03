@@ -1,10 +1,13 @@
 import {
+	type Computed,
 	type ComputedCallback,
 	computed,
 	isComputed,
 	isComputedCallback,
 } from './computed'
-import { isState, state } from './state'
+import { isState, type State, state } from './state'
+import { isStore, type Store, store } from './store'
+import { arrayToRecord, isRecord } from './util'
 
 /* === Types === */
 
@@ -16,10 +19,6 @@ type MaybeSignal<T extends {}> = T | Signal<T> | ComputedCallback<T>
 type SignalValues<S extends Record<string, Signal<unknown & {}>>> = {
 	[K in keyof S]: S[K] extends Signal<infer T> ? T : never
 }
-
-type UnwrapSignal<T> = T extends Signal<infer U> ? U : T
-
-type FlattenSignals<T> = { [K in keyof T]: UnwrapSignal<T[K]> }
 
 /* === Constants === */
 
@@ -37,23 +36,52 @@ const UNSET: any = Symbol()
  */
 const isSignal = /*#__PURE__*/ <T extends {}>(
 	value: unknown,
-): value is Signal<T> => isState(value) || isComputed(value)
+): value is Signal<T> => isState(value) || isComputed(value) || isStore(value)
 
 /**
  * Convert a value to a Signal if it's not already a Signal
  *
  * @since 0.9.6
- * @param {MaybeSignal<T>} value - value to convert to a Signal
- * @returns {Signal<T>} - converted Signal
  */
-const toSignal = /*#__PURE__*/ <T extends {}>(
-	value: MaybeSignal<T>,
-): Signal<T> =>
-	isSignal<T>(value)
-		? value
-		: isComputedCallback<T>(value)
-			? computed(value)
-			: state(value as T)
+function toSignal<T extends Array<unknown & {}>>(
+	value: T[],
+): Store<Record<string, T>>
+function toSignal<T extends Record<keyof T, T[keyof T]>>(value: T): Store<T>
+function toSignal<T extends {}>(value: ComputedCallback<T>): Computed<T>
+function toSignal<T extends {}>(value: Signal<T>): Signal<T>
+function toSignal<T extends {}>(value: T): State<T>
+function toSignal<T extends {}>(
+	value: MaybeSignal<T> | T[],
+): Signal<T> | Store<Record<string, T>> {
+	if (isSignal<T>(value)) return value
+	if (isComputedCallback<T>(value)) return computed(value)
+	if (Array.isArray(value)) return store(arrayToRecord(value))
+	if (isRecord(value)) return store(value as T)
+	return state(value as T)
+}
+
+/**
+ * Convert a value to a mutable Signal if it's not already a Signal
+ *
+ * @since 0.9.6
+ */
+function toMutableSignal<T extends Array<unknown & {}>>(
+	value: T[],
+): Store<Record<string, T>>
+function toMutableSignal<T extends Record<keyof T, T[keyof T]>>(
+	value: T,
+): Store<T>
+function toMutableSignal<T extends State<T>>(value: State<T>): State<T>
+function toMutableSignal<T extends Store<T>>(value: Store<T>): Store<T>
+function toMutableSignal<T extends {}>(value: T): State<T>
+function toMutableSignal<T extends {}>(
+	value: T | State<T> | Store<T> | T[],
+): Signal<T> | Store<Record<string, T>> {
+	if (isState<T>(value) || isStore<T>(value)) return value
+	if (Array.isArray(value)) return store(arrayToRecord(value))
+	if (isRecord(value)) return store(value as T)
+	return state(value as T)
+}
 
 /* === Exports === */
 
@@ -61,10 +89,8 @@ export {
 	type Signal,
 	type MaybeSignal,
 	type SignalValues,
-	type UnwrapSignal,
-	type FlattenSignals,
 	UNSET,
 	isSignal,
-	isComputedCallback,
 	toSignal,
+	toMutableSignal,
 }

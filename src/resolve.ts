@@ -1,3 +1,4 @@
+import type { UnknownRecord } from './diff'
 import { type Signal, type SignalValues, UNSET } from './signal'
 import { toError } from './util'
 
@@ -25,7 +26,7 @@ function resolve<S extends Record<string, Signal<unknown & {}>>>(
 ): ResolveResult<S> {
 	const errors: Error[] = []
 	let pending = false
-	const values: Record<string, unknown & {}> = {}
+	const values: UnknownRecord = {}
 
 	// Collect values and errors
 	for (const [key, signal] of Object.entries(signals)) {

@@ -11,6 +11,7 @@ Version 0.15.0
 ### Core Concepts
 
 - **State signals**: Hold values that can be directly modified: `state()`
+- **Store signals**: Hold objects of nested reactive properties: `store()`
 - **Computed signals**: Derive memoized values from other signals: `computed()`
 - **Effects**: Run side effects when signals change: `effect()`
 
@@ -22,7 +23,7 @@ Version 0.15.0
 - 🛡️ **Error Handling**: Built-in helper functions for declarative error handling
 - 🔧 **Helper Functions**: `resolve()` and `match()` for type-safe value extraction and pattern matching for suspense and error boundaries
 - 🚀 **Performance**: Batching and efficient dependency tracking
-- 📦 **Tiny**: Less than 2kB gzipped, zero dependencies
+- 📦 **Tiny**: Less than 3kB gzipped, zero dependencies
 
 ## Quick Start
 
@@ -73,6 +74,114 @@ document.querySelector('.increment').addEventListener('click', () => {
 })
 // Click on button logs '25', '26', and so on
 ```
+
+### Store Signals
+
+`store()` creates a mutable signal that holds an object with nested reactive properties. Each property automatically becomes its own signal with `.get()`, `.set()`, and `.update()` methods. Nested objects recursively become nested stores.
+
+```js
+import { store, effect } from '@zeix/cause-effect'
+
+const user = store({
+  name: 'Alice',
+  age: 30,
+  preferences: {
+    theme: 'dark',
+    notifications: true
+  }
+})
+
+// Individual properties are reactive
+effect(() => {
+  console.log(`${user.name.get()} is ${user.age.get()} years old`)
+})
+
+// Nested properties work the same way
+effect(() => {
+  console.log(`Theme: ${user.preferences.theme.get()}`)
+})
+
+// Update individual properties
+user.age.update(v => v + 1) // Logs: "Alice is 31 years old"
+user.preferences.theme.set('light') // Logs: "Theme: light"
+
+// Watch the entire store
+effect(() => {
+  console.log('User data:', user.get()) // Triggers on any nested change
+})
+```
+
+#### Dynamic Properties
+
+Stores support dynamic property addition and removal at runtime using the `add()` and `remove()` methods:
+
+```js
+import { store, effect } from '@zeix/cause-effect'
+
+const settings = store({ autoSave: true })
+
+// Add new properties at runtime
+settings.add('timeout', 5000)
+console.log(settings.timeout.get()) // 5000
+
+// Adding an existing property has no effect
+settings.add('autoSave', false) // Ignored - autoSave remains true
+
+// Remove properties
+settings.remove('timeout')
+console.log(settings.timeout) // undefined
+
+// Removing non-existent properties has no effect
+settings.remove('nonExistent') // Safe - no error thrown
+```
+
+The `add()` and `remove()` methods are optimized for performance:
+- They bypass the full reconciliation process used by `set()` and `update()`
+- They're perfect for frequent single-property additions/removals
+- They trigger the same events and reactivity as other store operations
+
+#### Store Events
+
+Stores emit events when properties are added, changed, or removed. You can listen to these events using standard `addEventListener()`:
+
+```js
+import { store } from '@zeix/cause-effect'
+
+const user = store({ name: 'Alice', age: 30 })
+
+// Listen for property additions
+user.addEventListener('store-add', (event) => {
+  console.log('Added properties:', event.detail)
+})
+
+// Listen for property changes
+user.addEventListener('store-change', (event) => {
+  console.log('Changed properties:', event.detail)
+})
+
+// Listen for property removals
+user.addEventListener('store-remove', (event) => {
+  console.log('Removed properties:', event.detail)
+})
+
+// These will trigger the respective events:
+user.add('email', 'alice@example.com') // Logs: "Added properties: { email: 'alice@example.com' }"
+user.age.set(31)                       // Logs: "Changed properties: { age: 31 }"
+user.remove('email')                   // Logs: "Removed properties: { email: UNSET }"
+```
+
+Events are also fired when using `set()` or `update()` methods on the entire store:
+
+```js
+// This will fire multiple events based on what changed
+user.update(u => ({ ...u, name: 'Bob', city: 'New York' }))
+// Logs: "Changed properties: { name: 'Bob' }"
+// Logs: "Added properties: { city: 'New York' }"
+```
+
+**When to use stores vs state:**
+- **Use `store()`** for objects with reactive properties that you want to access individually
+- **Use `state()`** for primitive values or objects you replace entirely
 
 ### Computed Signals vs. Functions
 
@@ -399,6 +508,47 @@ match(resolve({ name, age }), {
   err: errors => document.title = `Error: ${errors[0].message}`
 })
 ```
+
+### `diff()` - Compare Object Changes
+
+The `diff()` function compares two objects and returns detailed information about what changed:
+
+```js
+import { diff } from '@zeix/cause-effect'
+
+const oldUser = { name: 'Alice', age: 30, city: 'Boston' }
+const newUser = { name: 'Alice', age: 31, email: 'alice@example.com' }
+
+const changes = diff(oldUser, newUser)
+console.log(changes.changed)  // true - something changed
+console.log(changes.add)      // { email: 'alice@example.com' }
+console.log(changes.change)   // { age: 31 }
+console.log(changes.remove)   // { city: UNSET }
+```
+
+This function is used internally by stores to efficiently determine what changed and emit appropriate events.
+
+### `isEqual()` - Deep Equality Comparison
+
+The `isEqual()` function performs deep equality comparison with circular reference detection:
+
+```js
+import { isEqual } from '@zeix/cause-effect'
+
+const obj1 = { name: 'Alice', preferences: { theme: 'dark' } }
+const obj2 = { name: 'Alice', preferences: { theme: 'dark' } }
+const obj3 = { name: 'Bob', preferences: { theme: 'dark' } }
+
+console.log(isEqual(obj1, obj2)) // true - deep equality
+console.log(isEqual(obj1, obj3)) // false - names differ
+
+// Handles arrays, primitives, and complex nested structures
+console.log(isEqual([1, 2, 3], [1, 2, 3]))           // true
+console.log(isEqual('hello', 'hello'))               // true
+console.log(isEqual({ a: [1, 2] }, { a: [1, 2] }))   // true
+```
+
+Both `diff()` and `isEqual()` include built-in protection against circular references and will throw a `CircularDependencyError` if cycles are detected.
 
 ## Contributing & License
 
