@@ -1,11 +1,5 @@
 /* === Utility Functions === */
 
-const isNumber = /*#__PURE__*/ (value: unknown): value is number =>
-	typeof value === 'number'
-
-const isString = /*#__PURE__*/ (value: unknown): value is string =>
-	typeof value === 'string'
-
 const isFunction = /*#__PURE__*/ <T>(
 	fn: unknown,
 ): fn is (...args: unknown[]) => T => typeof fn === 'function'
@@ -24,10 +18,7 @@ const isRecord = /*#__PURE__*/ <T extends Record<string, unknown>>(
 	value: unknown,
 ): value is T => isObjectOfType(value, 'Object')
 
-const isPrimitive = /*#__PURE__*/ (value: unknown): boolean =>
-	typeof value !== 'object' && !isFunction(value)
-
-const arrayToRecord = /*#__PURE__*/ <T extends unknown & {}>(
+const arrayToRecord = /*#__PURE__*/ <T extends {}>(
 	array: T[],
 ): Record<string, T> => {
 	const record: Record<string, T> = {}
@@ -61,13 +52,10 @@ class CircularDependencyError extends Error {
 /* === Exports === */
 
 export {
-	isNumber,
-	isString,
 	isFunction,
 	isAsyncFunction,
 	isObjectOfType,
 	isRecord,
-	isPrimitive,
 	arrayToRecord,
 	hasMethod,
 	isAbortError,

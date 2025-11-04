@@ -1,10 +1,10 @@
 import type { UnknownRecord } from './diff'
-import { type Signal, type SignalValues, UNSET } from './signal'
+import { type SignalValues, UNSET, type UnknownSignalRecord } from './signal'
 import { toError } from './util'
 
 /* === Types === */
 
-type ResolveResult<S extends Record<string, Signal<unknown & {}>>> =
+type ResolveResult<S extends UnknownSignalRecord> =
 	| { ok: true; values: SignalValues<S>; errors?: never; pending?: never }
 	| { ok: false; errors: readonly Error[]; values?: never; pending?: never }
 	| { ok: false; pending: true; values?: never; errors?: never }
@@ -21,9 +21,7 @@ type ResolveResult<S extends Record<string, Signal<unknown & {}>>> =
  * @param {S} signals - Signals to resolve
  * @returns {ResolveResult<S>} - Discriminated union result
  */
-function resolve<S extends Record<string, Signal<unknown & {}>>>(
-	signals: S,
-): ResolveResult<S> {
+function resolve<S extends UnknownSignalRecord>(signals: S): ResolveResult<S> {
 	const errors: Error[] = []
 	let pending = false
 	const values: UnknownRecord = {}
@@ -32,24 +30,16 @@ function resolve<S extends Record<string, Signal<unknown & {}>>>(
 	for (const [key, signal] of Object.entries(signals)) {
 		try {
 			const value = signal.get()
-
-			if (value === UNSET) {
-				pending = true
-			} else {
-				values[key] = value
-			}
+			if (value === UNSET) pending = true
+			else values[key] = value
 		} catch (e) {
 			errors.push(toError(e))
 		}
 	}
 
 	// Return discriminated union
-	if (pending) {
-		return { ok: false, pending: true }
-	}
-	if (errors.length > 0) {
-		return { ok: false, errors }
-	}
+	if (pending) return { ok: false, pending: true }
+	if (errors.length > 0) return { ok: false, errors }
 	return { ok: true, values: values as SignalValues<S> }
 }
 

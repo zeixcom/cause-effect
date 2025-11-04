@@ -70,12 +70,12 @@ type Store<T extends UnknownRecord = UnknownRecord> = {
 		: State<T[K]>
 } & StoreEventTarget<T> & {
 		[Symbol.toStringTag]: 'Store'
-		[Symbol.iterator](): IterableIterator<[string, Signal<T[keyof T]>]>
+		[Symbol.iterator](): IterableIterator<[keyof T, Signal<T[keyof T]>]>
 
 		// Signal methods
-		add<K extends keyof T & string>(key: K, value: T[K]): void
+		add<K extends keyof T>(key: K, value: T[K]): void
 		get(): T
-		remove<K extends keyof T & string>(key: K): void
+		remove<K extends keyof T>(key: K): void
 		set(value: T): void
 		update(updater: (value: T) => T): void
 
@@ -122,8 +122,11 @@ const store = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 		key: K,
 		value: T[K],
 	) => {
-		const signal = toMutableSignal<T[keyof T & string]>(value)
-		signals.set(key, signal)
+		const signal = toMutableSignal(value)
+		signals.set(
+			key,
+			signal as Store<T[keyof T & string]> | State<T[keyof T & string]>,
+		)
 		const cleanup = effect(() => {
 			const value = signal.get()
 			if (value != null)
@@ -154,12 +157,12 @@ const store = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 			}
 			if (Object.keys(changes.change).length) {
 				for (const key in changes.change) {
-					const signal = signals.get(key as keyof T & string)
+					const signal = signals.get(key)
 					const value = changes.change[key]
 					if (
 						signal &&
 						value != null &&
-						hasMethod<Signal<T[keyof T & string]>>(signal, 'set')
+						hasMethod<Signal<T[keyof T]>>(signal, 'set')
 					)
 						signal.set(value)
 				}
@@ -204,8 +207,6 @@ const store = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 	// Return proxy directly with integrated signal methods
 	return new Proxy({} as Store<T>, {
 		get(_target, prop) {
-			const key = String(prop)
-
 			// Handle signal methods and size property
 			switch (prop) {
 				case 'add':
@@ -273,7 +274,7 @@ const store = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 			}
 
 			// Handle data properties - return signals
-			return signals.get(key)
+			return signals.get(String(prop))
 		},
 		has(_target, prop) {
 			const key = String(prop)

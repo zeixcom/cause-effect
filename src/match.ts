@@ -1,10 +1,10 @@
 import type { ResolveResult } from './resolve'
-import type { Signal, SignalValues } from './signal'
+import type { SignalValues, UnknownSignalRecord } from './signal'
 import { toError } from './util'
 
 /* === Types === */
 
-type MatchHandlers<S extends Record<string, Signal<unknown & {}>>> = {
+type MatchHandlers<S extends UnknownSignalRecord> = {
 	ok?: (values: SignalValues<S>) => void
 	err?: (errors: readonly Error[]) => void
 	nil?: () => void
@@ -24,31 +24,26 @@ type MatchHandlers<S extends Record<string, Signal<unknown & {}>>> = {
  * @param {MatchHandlers<S>} handlers - Handlers for different states (side effects only)
  * @returns {void} - Always returns void
  */
-function match<S extends Record<string, Signal<unknown & {}>>>(
+function match<S extends UnknownSignalRecord>(
 	result: ResolveResult<S>,
 	handlers: MatchHandlers<S>,
 ): void {
 	try {
-		if (result.pending) {
-			handlers.nil?.()
-		} else if (result.errors) {
-			handlers.err?.(result.errors)
-		} else {
-			handlers.ok?.(result.values as SignalValues<S>)
-		}
+		if (result.pending) handlers.nil?.()
+		else if (result.errors) handlers.err?.(result.errors)
+		else handlers.ok?.(result.values as SignalValues<S>)
 	} catch (error) {
 		// If handler throws, try error handler, otherwise rethrow
 		if (
 			handlers.err &&
 			(!result.errors || !result.errors.includes(toError(error)))
-		) {
-			const allErrors = result.errors
-				? [...result.errors, toError(error)]
-				: [toError(error)]
-			handlers.err(allErrors)
-		} else {
-			throw error
-		}
+		)
+			handlers.err(
+				result.errors
+					? [...result.errors, toError(error)]
+					: [toError(error)],
+			)
+		else throw error
 	}
 }
 

@@ -155,9 +155,8 @@ var effect = (callback) => {
         controller = new AbortController;
         const currentController = controller;
         callback(controller.signal).then((cleanup2) => {
-          if (isFunction(cleanup2) && controller === currentController) {
+          if (isFunction(cleanup2) && controller === currentController)
             run.off(cleanup2);
-          }
         }).catch((error) => {
           if (!isAbortError(error))
             console.error("Async effect error:", error);
@@ -263,7 +262,6 @@ var store = (initialValue) => {
   ];
   return new Proxy({}, {
     get(_target, prop) {
-      const key = String(prop);
       switch (prop) {
         case "add":
           return (k, v) => {
@@ -321,12 +319,12 @@ var store = (initialValue) => {
         return TYPE_STORE;
       if (prop === Symbol.iterator) {
         return function* () {
-          for (const [key2, signal] of signals) {
-            yield [key2, signal];
+          for (const [key, signal] of signals) {
+            yield [key, signal];
           }
         };
       }
-      return signals.get(key);
+      return signals.get(String(prop));
     },
     has(_target, prop) {
       const key = String(prop);
@@ -554,20 +552,17 @@ var isComputedCallback = (value) => isFunction(value) && value.length < 2;
 // src/match.ts
 function match(result, handlers) {
   try {
-    if (result.pending) {
+    if (result.pending)
       handlers.nil?.();
-    } else if (result.errors) {
+    else if (result.errors)
       handlers.err?.(result.errors);
-    } else {
+    else
       handlers.ok?.(result.values);
-    }
   } catch (error) {
-    if (handlers.err && (!result.errors || !result.errors.includes(toError(error)))) {
-      const allErrors = result.errors ? [...result.errors, toError(error)] : [toError(error)];
-      handlers.err(allErrors);
-    } else {
+    if (handlers.err && (!result.errors || !result.errors.includes(toError(error))))
+      handlers.err(result.errors ? [...result.errors, toError(error)] : [toError(error)]);
+    else
       throw error;
-    }
   }
 }
 // src/resolve.ts
@@ -578,26 +573,24 @@ function resolve(signals) {
   for (const [key, signal] of Object.entries(signals)) {
     try {
       const value = signal.get();
-      if (value === UNSET) {
+      if (value === UNSET)
         pending2 = true;
-      } else {
+      else
         values[key] = value;
-      }
     } catch (e) {
       errors.push(toError(e));
     }
   }
-  if (pending2) {
+  if (pending2)
     return { ok: false, pending: true };
-  }
-  if (errors.length > 0) {
+  if (errors.length > 0)
     return { ok: false, errors };
-  }
   return { ok: true, values };
 }
 export {
   watch,
   toSignal,
+  toMutableSignal,
   toError,
   subscribe,
   store,

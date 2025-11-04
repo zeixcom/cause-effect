@@ -55,9 +55,8 @@ const effect = (callback: EffectCallback): Cleanup => {
 							if (
 								isFunction(cleanup) &&
 								controller === currentController
-							) {
+							)
 								run.off(cleanup)
-							}
 						})
 						.catch(error => {
 							if (!isAbortError(error))
