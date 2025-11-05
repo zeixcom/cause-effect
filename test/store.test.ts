@@ -8,8 +8,8 @@ import {
 	type StoreRemoveEvent,
 	state,
 	store,
+	toSignal,
 	UNSET,
-	arrayToRecord,
 } from '..'
 
 describe('store', () => {
@@ -46,13 +46,20 @@ describe('store', () => {
 				email: 'hannah@example.com',
 			})
 
-			const participants = store(
-				arrayToRecord([
-					{ name: 'Alice', tags: ['friends', 'mates'] },
-					{ name: 'Bob', tags: ['friends'] },
-				]),
-			)
+			const participants = store<{ name: string; tags: string[] }[]>([
+				{ name: 'Alice', tags: ['friends', 'mates'] },
+				{ name: 'Bob', tags: ['friends'] },
+			])
 			expect(participants.get()).toEqual([
+				{ name: 'Alice', tags: ['friends', 'mates'] },
+				{ name: 'Bob', tags: ['friends'] },
+			])
+
+			const participants2 = toSignal<{ name: string; tags: string[] }[]>([
+				{ name: 'Alice', tags: ['friends', 'mates'] },
+				{ name: 'Bob', tags: ['friends'] },
+			])
+			expect(participants2.get()).toEqual([
 				{ name: 'Alice', tags: ['friends', 'mates'] },
 				{ name: 'Bob', tags: ['friends'] },
 			])

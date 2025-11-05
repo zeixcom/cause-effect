@@ -88,6 +88,8 @@ var enqueue = (fn, dedupe) => new Promise((resolve, reject) => {
 });
 
 // src/util.ts
+var isString = (value) => typeof value === "string";
+var isNumber = (value) => typeof value === "number";
 var isFunction = (fn) => typeof fn === "function";
 var isAsyncFunction = (fn) => isFunction(fn) && fn.constructor.name === "AsyncFunction";
 var isObjectOfType = (value, type) => Object.prototype.toString.call(value) === `[object ${type}]`;
@@ -103,7 +105,7 @@ var arrayToRecord = (array) => {
 var validArrayIndexes = (keys) => {
   if (!keys.length)
     return null;
-  const indexes = keys.map((k) => parseInt(k, 10));
+  const indexes = keys.map((k) => isString(k) ? parseInt(k, 10) : isNumber(k) ? k : NaN);
   return indexes.every((index) => Number.isFinite(index) && index >= 0) ? indexes.sort((a, b) => a - b) : null;
 };
 var hasMethod = (obj, methodName) => (methodName in obj) && isFunction(obj[methodName]);
@@ -187,16 +189,16 @@ var effect = (callback) => {
 
 // src/store.ts
 var TYPE_STORE = "Store";
-var store = (initialValue) => {
+function store(initialValue) {
   const watchers = new Set;
   const eventTarget = new EventTarget;
+  const recordValue = Array.isArray(initialValue) ? arrayToRecord(initialValue) : initialValue;
   const signals = new Map;
   const cleanups = new Map;
   const size = state(0);
   const current = () => {
     const keys = Array.from(signals.keys());
     const arrayIndexes = validArrayIndexes(keys);
-    console.log(keys, arrayIndexes);
     if (arrayIndexes)
       return arrayIndexes.map((index) => signals.get(String(index))?.get());
     const record = {};
@@ -207,21 +209,23 @@ var store = (initialValue) => {
   };
   const emit = (type, detail) => eventTarget.dispatchEvent(new CustomEvent(type, { detail }));
   const addProperty = (key, value) => {
+    const stringKey = String(key);
     const signal = toMutableSignal(value);
-    signals.set(key, signal);
+    signals.set(stringKey, signal);
     const cleanup = effect(() => {
-      const value2 = signal.get();
-      if (value2 != null)
-        emit("store-change", { [key]: value2 });
+      const currentValue = signal.get();
+      if (currentValue != null)
+        emit("store-change", { [key]: currentValue });
     });
-    cleanups.set(key, cleanup);
+    cleanups.set(stringKey, cleanup);
   };
   const removeProperty = (key) => {
-    signals.delete(key);
-    const cleanup = cleanups.get(key);
+    const stringKey = String(key);
+    signals.delete(stringKey);
+    const cleanup = cleanups.get(stringKey);
     if (cleanup)
       cleanup();
-    cleanups.delete(key);
+    cleanups.delete(stringKey);
   };
   const reconcile = (oldValue, newValue) => {
     const changes = diff(oldValue, newValue);
@@ -256,7 +260,7 @@ var store = (initialValue) => {
   reconcile({}, initialValue);
   setTimeout(() => {
     const initialAdditionsEvent = new CustomEvent("store-add", {
-      detail: initialValue
+      detail: recordValue
     });
     eventTarget.dispatchEvent(initialAdditionsEvent);
   }, 0);
@@ -342,7 +346,7 @@ var store = (initialValue) => {
       return signals.has(key) || storeProps.includes(key) || prop === Symbol.toStringTag || prop === Symbol.iterator;
     },
     ownKeys() {
-      return Array.from(signals.keys());
+      return Array.from(signals.keys()).map((key) => String(key));
     },
     getOwnPropertyDescriptor(_target, prop) {
       const signal = signals.get(String(prop));
@@ -354,7 +358,7 @@ var store = (initialValue) => {
       } : undefined;
     }
   });
-};
+}
 var isStore = (value) => isObjectOfType(value, TYPE_STORE);
 
 // src/signal.ts

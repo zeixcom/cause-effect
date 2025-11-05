@@ -4,8 +4,11 @@ import { CircularDependencyError, isRecord } from './util'
 /* === Types === */
 
 type UnknownRecord = Record<string, unknown & {}>
+type UnknownRecordOrArray = {
+	[x: string | number]: unknown & {}
+}
 
-type DiffResult<T extends UnknownRecord = UnknownRecord> = {
+type DiffResult<T extends UnknownRecordOrArray = UnknownRecord> = {
 	changed: boolean
 	add: Partial<T>
 	change: Partial<T>
@@ -81,7 +84,10 @@ const isEqual = <T>(a: T, b: T, visited?: WeakSet<object>): boolean => {
  * @param {T} newObj - The new record to compare
  * @returns {DiffResult<T>} The result of the comparison
  */
-const diff = <T extends UnknownRecord>(oldObj: T, newObj: T): DiffResult<T> => {
+const diff = <T extends UnknownRecordOrArray>(
+	oldObj: T,
+	newObj: T,
+): DiffResult<T> => {
 	const visited = new WeakSet<object>()
 
 	const diffRecords = (
@@ -133,4 +139,10 @@ const diff = <T extends UnknownRecord>(oldObj: T, newObj: T): DiffResult<T> => {
 
 /* === Exports === */
 
-export { type DiffResult, diff, isEqual, type UnknownRecord }
+export {
+	type DiffResult,
+	diff,
+	isEqual,
+	type UnknownRecord,
+	type UnknownRecordOrArray,
+}

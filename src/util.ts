@@ -1,5 +1,11 @@
 /* === Utility Functions === */
 
+const isString = /*#__PURE__*/ (value: unknown): value is string =>
+	typeof value === 'string'
+
+const isNumber = /*#__PURE__*/ (value: unknown): value is number =>
+	typeof value === 'number'
+
 const isFunction = /*#__PURE__*/ <T>(
 	fn: unknown,
 ): fn is (...args: unknown[]) => T => typeof fn === 'function'
@@ -28,9 +34,13 @@ const arrayToRecord = /*#__PURE__*/ <T extends {}>(
 	return record
 }
 
-const validArrayIndexes = /*#__PURE__*/ (keys: string[]): number[] | null => {
+const validArrayIndexes = /*#__PURE__*/ (
+	keys: Array<PropertyKey>,
+): number[] | null => {
 	if (!keys.length) return null
-	const indexes = keys.map(k => parseInt(k, 10))
+	const indexes = keys.map(k =>
+		isString(k) ? parseInt(k, 10) : isNumber(k) ? k : NaN,
+	)
 	return indexes.every(index => Number.isFinite(index) && index >= 0)
 		? indexes.sort((a, b) => a - b)
 		: null
@@ -60,6 +70,8 @@ class CircularDependencyError extends Error {
 /* === Exports === */
 
 export {
+	isString,
+	isNumber,
 	isFunction,
 	isAsyncFunction,
 	isObjectOfType,
