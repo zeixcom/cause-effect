@@ -88,17 +88,17 @@ var enqueue = (fn, dedupe) => new Promise((resolve, reject) => {
 });
 
 // src/util.ts
+var isString = (value) => typeof value === "string";
+var isNumber = (value) => typeof value === "number";
 var isFunction = (fn) => typeof fn === "function";
 var isAsyncFunction = (fn) => isFunction(fn) && fn.constructor.name === "AsyncFunction";
 var isObjectOfType = (value, type) => Object.prototype.toString.call(value) === `[object ${type}]`;
 var isRecord = (value) => isObjectOfType(value, "Object");
-var arrayToRecord = (array) => {
-  const record = {};
-  for (let i = 0;i < array.length; i++) {
-    if (i in array)
-      record[String(i)] = array[i];
-  }
-  return record;
+var validArrayIndexes = (keys) => {
+  if (!keys.length)
+    return null;
+  const indexes = keys.map((k) => isString(k) ? parseInt(k, 10) : isNumber(k) ? k : NaN);
+  return indexes.every((index) => Number.isFinite(index) && index >= 0) ? indexes.sort((a, b) => a - b) : null;
 };
 var hasMethod = (obj, methodName) => (methodName in obj) && isFunction(obj[methodName]);
 var isAbortError = (error) => error instanceof DOMException && error.name === "AbortError";
@@ -155,9 +155,8 @@ var effect = (callback) => {
         controller = new AbortController;
         const currentController = controller;
         callback(controller.signal).then((cleanup2) => {
-          if (isFunction(cleanup2) && controller === currentController) {
+          if (isFunction(cleanup2) && controller === currentController)
             run.off(cleanup2);
-          }
         }).catch((error) => {
           if (!isAbortError(error))
             console.error("Async effect error:", error);
@@ -189,29 +188,35 @@ var store = (initialValue) => {
   const cleanups = new Map;
   const size = state(0);
   const current = () => {
+    const keys = Array.from(signals.keys());
+    const arrayIndexes = validArrayIndexes(keys);
+    if (arrayIndexes)
+      return arrayIndexes.map((index) => signals.get(String(index))?.get());
     const record = {};
-    for (const [key, value] of signals) {
-      record[key] = value.get();
+    for (const [key, signal] of signals) {
+      record[key] = signal.get();
     }
     return record;
   };
   const emit = (type, detail) => eventTarget.dispatchEvent(new CustomEvent(type, { detail }));
-  const addSignalAndEffect = (key, value) => {
+  const addProperty = (key, value) => {
+    const stringKey = String(key);
     const signal = toMutableSignal(value);
-    signals.set(key, signal);
+    signals.set(stringKey, signal);
     const cleanup = effect(() => {
-      const value2 = signal.get();
-      if (value2 != null)
-        emit("store-change", { [key]: value2 });
+      const currentValue = signal.get();
+      if (currentValue != null)
+        emit("store-change", { [key]: currentValue });
     });
-    cleanups.set(key, cleanup);
+    cleanups.set(stringKey, cleanup);
   };
-  const removeSignalAndEffect = (key) => {
-    signals.delete(key);
-    const cleanup = cleanups.get(key);
+  const removeProperty = (key) => {
+    const stringKey = String(key);
+    signals.delete(stringKey);
+    const cleanup = cleanups.get(stringKey);
     if (cleanup)
       cleanup();
-    cleanups.delete(key);
+    cleanups.delete(stringKey);
   };
   const reconcile = (oldValue, newValue) => {
     const changes = diff(oldValue, newValue);
@@ -220,7 +225,7 @@ var store = (initialValue) => {
         for (const key in changes.add) {
           const value = changes.add[key];
           if (value != null)
-            addSignalAndEffect(key, value);
+            addProperty(key, value);
         }
         emit("store-add", changes.add);
       }
@@ -235,7 +240,7 @@ var store = (initialValue) => {
       }
       if (Object.keys(changes.remove).length) {
         for (const key in changes.remove) {
-          removeSignalAndEffect(key);
+          removeProperty(key);
         }
         emit("store-remove", changes.remove);
       }
@@ -263,12 +268,11 @@ var store = (initialValue) => {
   ];
   return new Proxy({}, {
     get(_target, prop) {
-      const key = String(prop);
       switch (prop) {
         case "add":
           return (k, v) => {
             if (!signals.has(k)) {
-              addSignalAndEffect(k, v);
+              addProperty(k, v);
               notify(watchers);
               emit("store-add", {
                 [k]: v
@@ -284,7 +288,7 @@ var store = (initialValue) => {
         case "remove":
           return (k) => {
             if (signals.has(k)) {
-              removeSignalAndEffect(k);
+              removeProperty(k);
               notify(watchers);
               emit("store-remove", { [k]: UNSET });
               size.set(signals.size);
@@ -321,19 +325,19 @@ var store = (initialValue) => {
         return TYPE_STORE;
       if (prop === Symbol.iterator) {
         return function* () {
-          for (const [key2, signal] of signals) {
-            yield [key2, signal];
+          for (const [key, signal] of signals) {
+            yield [key, signal];
           }
         };
       }
-      return signals.get(key);
+      return signals.get(String(prop));
     },
     has(_target, prop) {
       const key = String(prop);
       return signals.has(key) || storeProps.includes(key) || prop === Symbol.toStringTag || prop === Symbol.iterator;
     },
     ownKeys() {
-      return Array.from(signals.keys());
+      return Array.from(signals.keys()).map((key) => String(key));
     },
     getOwnPropertyDescriptor(_target, prop) {
       const signal = signals.get(String(prop));
@@ -357,8 +361,8 @@ function toSignal(value) {
   if (isComputedCallback(value))
     return computed(value);
   if (Array.isArray(value))
-    return store(arrayToRecord(value));
-  if (isRecord(value))
+    return store(value);
+  if (Array.isArray(value) || isRecord(value))
     return store(value);
   return state(value);
 }
@@ -366,7 +370,7 @@ function toMutableSignal(value) {
   if (isState(value) || isStore(value))
     return value;
   if (Array.isArray(value))
-    return store(arrayToRecord(value));
+    return store(value);
   if (isRecord(value))
     return store(value);
   return state(value);
@@ -554,20 +558,17 @@ var isComputedCallback = (value) => isFunction(value) && value.length < 2;
 // src/match.ts
 function match(result, handlers) {
   try {
-    if (result.pending) {
+    if (result.pending)
       handlers.nil?.();
-    } else if (result.errors) {
+    else if (result.errors)
       handlers.err?.(result.errors);
-    } else {
+    else
       handlers.ok?.(result.values);
-    }
   } catch (error) {
-    if (handlers.err && (!result.errors || !result.errors.includes(toError(error)))) {
-      const allErrors = result.errors ? [...result.errors, toError(error)] : [toError(error)];
-      handlers.err(allErrors);
-    } else {
+    if (handlers.err && (!result.errors || !result.errors.includes(toError(error))))
+      handlers.err(result.errors ? [...result.errors, toError(error)] : [toError(error)]);
+    else
       throw error;
-    }
   }
 }
 // src/resolve.ts
@@ -578,26 +579,24 @@ function resolve(signals) {
   for (const [key, signal] of Object.entries(signals)) {
     try {
       const value = signal.get();
-      if (value === UNSET) {
+      if (value === UNSET)
         pending2 = true;
-      } else {
+      else
         values[key] = value;
-      }
     } catch (e) {
       errors.push(toError(e));
     }
   }
-  if (pending2) {
+  if (pending2)
     return { ok: false, pending: true };
-  }
-  if (errors.length > 0) {
+  if (errors.length > 0)
     return { ok: false, errors };
-  }
   return { ok: true, values };
 }
 export {
   watch,
   toSignal,
+  toMutableSignal,
   toError,
   subscribe,
   store,
@@ -606,9 +605,11 @@ export {
   observe,
   notify,
   match,
+  isString,
   isStore,
   isState,
   isSignal,
+  isNumber,
   isFunction,
   isEqual,
   isComputedCallback,

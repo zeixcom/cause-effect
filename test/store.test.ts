@@ -8,6 +8,7 @@ import {
 	type StoreRemoveEvent,
 	state,
 	store,
+	toSignal,
 	UNSET,
 } from '..'
 
@@ -44,6 +45,32 @@ describe('store', () => {
 				name: 'Hannah',
 				email: 'hannah@example.com',
 			})
+
+			/**
+			 * store() only accepts object map types for arrays
+			 */
+			const participants = store<{
+				[x: number]: { name: string; tags: string[] }
+			}>([
+				{ name: 'Alice', tags: ['friends', 'mates'] },
+				{ name: 'Bob', tags: ['friends'] },
+			])
+			expect(participants.get()).toEqual([
+				{ name: 'Alice', tags: ['friends', 'mates'] },
+				{ name: 'Bob', tags: ['friends'] },
+			])
+
+			/**
+			 * toSignal() converts arrays to object map types when creating stores
+			 */
+			const participants2 = toSignal<{ name: string; tags: string[] }[]>([
+				{ name: 'Alice', tags: ['friends', 'mates'] },
+				{ name: 'Bob', tags: ['friends'] },
+			])
+			expect(participants2.get()).toEqual([
+				{ name: 'Alice', tags: ['friends', 'mates'] },
+				{ name: 'Bob', tags: ['friends'] },
+			])
 		})
 	})
 

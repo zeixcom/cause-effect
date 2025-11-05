@@ -7,7 +7,7 @@ import {
 } from './computed'
 import { isState, type State, state } from './state'
 import { isStore, type Store, store } from './store'
-import { arrayToRecord, isRecord } from './util'
+import { isRecord } from './util'
 
 /* === Types === */
 
@@ -16,7 +16,9 @@ type Signal<T extends {}> = {
 }
 type MaybeSignal<T extends {}> = T | Signal<T> | ComputedCallback<T>
 
-type SignalValues<S extends Record<string, Signal<unknown & {}>>> = {
+type UnknownSignalRecord = Record<string, Signal<unknown & {}>>
+
+type SignalValues<S extends UnknownSignalRecord> = {
 	[K in keyof S]: S[K] extends Signal<infer T> ? T : never
 }
 
@@ -42,45 +44,56 @@ const isSignal = /*#__PURE__*/ <T extends {}>(
  * Convert a value to a Signal if it's not already a Signal
  *
  * @since 0.9.6
+ * @param {T} value - value to convert
+ * @returns {Signal<T>} - Signal instance
  */
-function toSignal<T extends Array<unknown & {}>>(
-	value: T[],
-): Store<Record<string, T>>
-function toSignal<T extends Record<keyof T, T[keyof T]>>(value: T): Store<T>
-function toSignal<T extends {}>(value: ComputedCallback<T>): Computed<T>
-function toSignal<T extends {}>(value: Signal<T>): Signal<T>
-function toSignal<T extends {}>(value: T): State<T>
+function toSignal<T extends {}>(value: T[]): Store<Record<string, T>>
 function toSignal<T extends {}>(
-	value: MaybeSignal<T> | T[],
-): Signal<T> | Store<Record<string, T>> {
+	value: (() => T) | ((abort: AbortSignal) => Promise<T>),
+): Computed<T>
+function toSignal<T extends {}>(
+	value: T,
+): T extends Store<infer U>
+	? Store<U>
+	: T extends State<infer U>
+		? State<U>
+		: T extends Computed<infer U>
+			? Computed<U>
+			: T extends Signal<infer U>
+				? Signal<U>
+				: T extends Record<string, unknown & {}>
+					? Store<{ [K in keyof T]: T[K] }>
+					: State<T>
+function toSignal<T extends {}>(value: MaybeSignal<T>): Signal<T> {
 	if (isSignal<T>(value)) return value
-	if (isComputedCallback<T>(value)) return computed(value)
-	if (Array.isArray(value)) return store(arrayToRecord(value))
-	if (isRecord(value)) return store(value as T)
-	return state(value as T)
+	if (isComputedCallback(value)) return computed(value)
+	if (Array.isArray(value)) return store(value as T)
+	if (Array.isArray(value) || isRecord(value)) return store(value)
+	return state(value)
 }
 
 /**
  * Convert a value to a mutable Signal if it's not already a Signal
  *
- * @since 0.9.6
+ * @since 0.15.0
+ * @param {T} value - value to convert
+ * @returns {State<T> | Store<T>} - Signal instance
  */
-function toMutableSignal<T extends Array<unknown & {}>>(
-	value: T[],
-): Store<Record<string, T>>
-function toMutableSignal<T extends Record<keyof T, T[keyof T]>>(
-	value: T,
-): Store<T>
-function toMutableSignal<T extends State<T>>(value: State<T>): State<T>
-function toMutableSignal<T extends Store<T>>(value: Store<T>): Store<T>
-function toMutableSignal<T extends {}>(value: T): State<T>
+function toMutableSignal<T extends {}>(value: T[]): Store<Record<string, T>>
 function toMutableSignal<T extends {}>(
-	value: T | State<T> | Store<T> | T[],
-): Signal<T> | Store<Record<string, T>> {
+	value: T,
+): T extends Store<infer U>
+	? Store<U>
+	: T extends State<infer U>
+		? State<U>
+		: T extends Record<string, unknown & {}>
+			? Store<{ [K in keyof T]: T[K] }>
+			: State<T>
+function toMutableSignal<T extends {}>(value: T): State<T> | Store<T> {
 	if (isState<T>(value) || isStore<T>(value)) return value
-	if (Array.isArray(value)) return store(arrayToRecord(value))
-	if (isRecord(value)) return store(value as T)
-	return state(value as T)
+	if (Array.isArray(value)) return store(value as T)
+	if (isRecord(value)) return store(value)
+	return state(value)
 }
 
 /* === Exports === */
@@ -88,6 +101,7 @@ function toMutableSignal<T extends {}>(
 export {
 	type Signal,
 	type MaybeSignal,
+	type UnknownSignalRecord,
 	type SignalValues,
 	UNSET,
 	isSignal,

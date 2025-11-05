@@ -1,6 +1,6 @@
 import type { ResolveResult } from './resolve';
-import type { Signal, SignalValues } from './signal';
-type MatchHandlers<S extends Record<string, Signal<unknown & {}>>> = {
+import type { SignalValues, UnknownSignalRecord } from './signal';
+type MatchHandlers<S extends UnknownSignalRecord> = {
     ok?: (values: SignalValues<S>) => void;
     err?: (errors: readonly Error[]) => void;
     nil?: () => void;
@@ -17,5 +17,5 @@ type MatchHandlers<S extends Record<string, Signal<unknown & {}>>> = {
  * @param {MatchHandlers<S>} handlers - Handlers for different states (side effects only)
  * @returns {void} - Always returns void
  */
-declare function match<S extends Record<string, Signal<unknown & {}>>>(result: ResolveResult<S>, handlers: MatchHandlers<S>): void;
+declare function match<S extends UnknownSignalRecord>(result: ResolveResult<S>, handlers: MatchHandlers<S>): void;
 export { match, type MatchHandlers };

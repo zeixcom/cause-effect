@@ -1,6 +1,6 @@
 # Cause & Effect
 
-Version 0.15.0
+Version 0.15.1
 
 **Cause & Effect** is a lightweight, reactive state management library for JavaScript applications. It uses fine-grained reactivity with signals to create predictable and efficient data flow in your app.
 
@@ -23,7 +23,7 @@ Version 0.15.0
 - 🛡️ **Error Handling**: Built-in helper functions for declarative error handling
 - 🔧 **Helper Functions**: `resolve()` and `match()` for type-safe value extraction and pattern matching for suspense and error boundaries
 - 🚀 **Performance**: Batching and efficient dependency tracking
-- 📦 **Tiny**: Less than 3kB gzipped, zero dependencies
+- 📦 **Tiny**: Less than 3kB gzipped, tree-shakable, zero dependencies
 
 ## Quick Start
 
@@ -444,14 +444,6 @@ document.querySelector('.double-all').addEventListener('click', () => {
 // Provoke an error - but no worries: it will be handled fine
 signals[0].set(NaN)
 ```
-
-The Cause & Effect library is designed around these principles:
-
-- **Minimal API**: Core primitives with a small but powerful interface
-- **Automatic Dependency Tracking**: Fine-grained reactivity with minimal boilerplate
-- **Performance-Focused**: Choose the right tool (functions vs computed) for optimal speed
-- **Tree-Shakable**: Import only what you need for optimal bundle size
-- **Flexible Integration**: Works with any JavaScript application or framework
 
 ### Cleanup Functions
 

@@ -1,6 +1,6 @@
 /**
  * @name Cause & Effect
- * @version 0.15.0
+ * @version 0.15.1
  * @author Esther Brunner
  */
 
@@ -12,7 +12,13 @@ export {
 	isComputedCallback,
 	TYPE_COMPUTED,
 } from './src/computed'
-export { type DiffResult, diff, isEqual, type UnknownRecord } from './src/diff'
+export {
+	type DiffResult,
+	diff,
+	isEqual,
+	type UnknownRecord,
+	type UnknownRecordOrArray,
+} from './src/diff'
 export { type EffectCallback, effect, type MaybeCleanup } from './src/effect'
 export { type MatchHandlers, match } from './src/match'
 export { type ResolveResult, resolve } from './src/resolve'
@@ -33,8 +39,10 @@ export {
 	type MaybeSignal,
 	type Signal,
 	type SignalValues,
+	toMutableSignal,
 	toSignal,
 	UNSET,
+	type UnknownSignalRecord,
 } from './src/signal'
 export { isState, type State, state, TYPE_STATE } from './src/state'
 export {
@@ -52,5 +60,7 @@ export {
 	isAbortError,
 	isAsyncFunction,
 	isFunction,
+	isNumber,
+	isString,
 	toError,
 } from './src/util'

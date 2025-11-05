@@ -1,10 +1,10 @@
 /* === Utility Functions === */
 
-const isNumber = /*#__PURE__*/ (value: unknown): value is number =>
-	typeof value === 'number'
-
 const isString = /*#__PURE__*/ (value: unknown): value is string =>
 	typeof value === 'string'
+
+const isNumber = /*#__PURE__*/ (value: unknown): value is number =>
+	typeof value === 'number'
 
 const isFunction = /*#__PURE__*/ <T>(
 	fn: unknown,
@@ -24,17 +24,16 @@ const isRecord = /*#__PURE__*/ <T extends Record<string, unknown>>(
 	value: unknown,
 ): value is T => isObjectOfType(value, 'Object')
 
-const isPrimitive = /*#__PURE__*/ (value: unknown): boolean =>
-	typeof value !== 'object' && !isFunction(value)
-
-const arrayToRecord = /*#__PURE__*/ <T extends unknown & {}>(
-	array: T[],
-): Record<string, T> => {
-	const record: Record<string, T> = {}
-	for (let i = 0; i < array.length; i++) {
-		if (i in array) record[String(i)] = array[i]
-	}
-	return record
+const validArrayIndexes = /*#__PURE__*/ (
+	keys: Array<PropertyKey>,
+): number[] | null => {
+	if (!keys.length) return null
+	const indexes = keys.map(k =>
+		isString(k) ? parseInt(k, 10) : isNumber(k) ? k : NaN,
+	)
+	return indexes.every(index => Number.isFinite(index) && index >= 0)
+		? indexes.sort((a, b) => a - b)
+		: null
 }
 
 const hasMethod = /*#__PURE__*/ <
@@ -61,14 +60,13 @@ class CircularDependencyError extends Error {
 /* === Exports === */
 
 export {
-	isNumber,
 	isString,
+	isNumber,
 	isFunction,
 	isAsyncFunction,
 	isObjectOfType,
 	isRecord,
-	isPrimitive,
-	arrayToRecord,
+	validArrayIndexes,
 	hasMethod,
 	isAbortError,
 	toError,

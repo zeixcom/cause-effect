@@ -1,5 +1,5 @@
-import { type Signal, type SignalValues } from './signal';
-type ResolveResult<S extends Record<string, Signal<unknown & {}>>> = {
+import { type SignalValues, type UnknownSignalRecord } from './signal';
+type ResolveResult<S extends UnknownSignalRecord> = {
     ok: true;
     values: SignalValues<S>;
     errors?: never;
@@ -25,5 +25,5 @@ type ResolveResult<S extends Record<string, Signal<unknown & {}>>> = {
  * @param {S} signals - Signals to resolve
  * @returns {ResolveResult<S>} - Discriminated union result
  */
-declare function resolve<S extends Record<string, Signal<unknown & {}>>>(signals: S): ResolveResult<S>;
+declare function resolve<S extends UnknownSignalRecord>(signals: S): ResolveResult<S>;
 export { resolve, type ResolveResult };
