@@ -100,6 +100,12 @@ var arrayToRecord = (array) => {
   }
   return record;
 };
+var validArrayIndexes = (keys) => {
+  if (!keys.length)
+    return null;
+  const indexes = keys.map((k) => parseInt(k, 10));
+  return indexes.every((index) => Number.isFinite(index) && index >= 0) ? indexes.sort((a, b) => a - b) : null;
+};
 var hasMethod = (obj, methodName) => (methodName in obj) && isFunction(obj[methodName]);
 var isAbortError = (error) => error instanceof DOMException && error.name === "AbortError";
 var toError = (reason) => reason instanceof Error ? reason : Error(String(reason));
@@ -188,14 +194,19 @@ var store = (initialValue) => {
   const cleanups = new Map;
   const size = state(0);
   const current = () => {
+    const keys = Array.from(signals.keys());
+    const arrayIndexes = validArrayIndexes(keys);
+    console.log(keys, arrayIndexes);
+    if (arrayIndexes)
+      return arrayIndexes.map((index) => signals.get(String(index))?.get());
     const record = {};
-    for (const [key, value] of signals) {
-      record[key] = value.get();
+    for (const [key, signal] of signals) {
+      record[key] = signal.get();
     }
     return record;
   };
   const emit = (type, detail) => eventTarget.dispatchEvent(new CustomEvent(type, { detail }));
-  const addSignalAndEffect = (key, value) => {
+  const addProperty = (key, value) => {
     const signal = toMutableSignal(value);
     signals.set(key, signal);
     const cleanup = effect(() => {
@@ -205,7 +216,7 @@ var store = (initialValue) => {
     });
     cleanups.set(key, cleanup);
   };
-  const removeSignalAndEffect = (key) => {
+  const removeProperty = (key) => {
     signals.delete(key);
     const cleanup = cleanups.get(key);
     if (cleanup)
@@ -219,7 +230,7 @@ var store = (initialValue) => {
         for (const key in changes.add) {
           const value = changes.add[key];
           if (value != null)
-            addSignalAndEffect(key, value);
+            addProperty(key, value);
         }
         emit("store-add", changes.add);
       }
@@ -234,7 +245,7 @@ var store = (initialValue) => {
       }
       if (Object.keys(changes.remove).length) {
         for (const key in changes.remove) {
-          removeSignalAndEffect(key);
+          removeProperty(key);
         }
         emit("store-remove", changes.remove);
       }
@@ -266,7 +277,7 @@ var store = (initialValue) => {
         case "add":
           return (k, v) => {
             if (!signals.has(k)) {
-              addSignalAndEffect(k, v);
+              addProperty(k, v);
               notify(watchers);
               emit("store-add", {
                 [k]: v
@@ -282,7 +293,7 @@ var store = (initialValue) => {
         case "remove":
           return (k) => {
             if (signals.has(k)) {
-              removeSignalAndEffect(k);
+              removeProperty(k);
               notify(watchers);
               emit("store-remove", { [k]: UNSET });
               size.set(signals.size);
@@ -614,6 +625,7 @@ export {
   diff,
   computed,
   batch,
+  arrayToRecord,
   UNSET,
   TYPE_STORE,
   TYPE_STATE,

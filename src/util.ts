@@ -28,6 +28,14 @@ const arrayToRecord = /*#__PURE__*/ <T extends {}>(
 	return record
 }
 
+const validArrayIndexes = /*#__PURE__*/ (keys: string[]): number[] | null => {
+	if (!keys.length) return null
+	const indexes = keys.map(k => parseInt(k, 10))
+	return indexes.every(index => Number.isFinite(index) && index >= 0)
+		? indexes.sort((a, b) => a - b)
+		: null
+}
+
 const hasMethod = /*#__PURE__*/ <
 	T extends object & Record<string, (...args: unknown[]) => unknown>,
 >(
@@ -57,6 +65,7 @@ export {
 	isObjectOfType,
 	isRecord,
 	arrayToRecord,
+	validArrayIndexes,
 	hasMethod,
 	isAbortError,
 	toError,

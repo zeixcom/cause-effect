@@ -9,6 +9,7 @@ import {
 	state,
 	store,
 	UNSET,
+	arrayToRecord,
 } from '..'
 
 describe('store', () => {
@@ -44,6 +45,17 @@ describe('store', () => {
 				name: 'Hannah',
 				email: 'hannah@example.com',
 			})
+
+			const participants = store(
+				arrayToRecord([
+					{ name: 'Alice', tags: ['friends', 'mates'] },
+					{ name: 'Bob', tags: ['friends'] },
+				]),
+			)
+			expect(participants.get()).toEqual([
+				{ name: 'Alice', tags: ['friends', 'mates'] },
+				{ name: 'Bob', tags: ['friends'] },
+			])
 		})
 	})
 

@@ -12,7 +12,8 @@ import {
 	store,
 	toMutableSignal,
 	toSignal,
-} from '../'
+	type UnknownRecord,
+} from '..'
 
 /* === Tests === */
 
@@ -151,13 +152,13 @@ describe('toSignal', () => {
 			const result = toSignal(nestedArr)
 
 			expect(isStore(result)).toBe(true)
-			// With current incorrect behavior, nested arrays are treated as array values
-			const firstElement = result['0'].get()
-			const secondElement = result['1'].get()
+			// With the fixed behavior, nested arrays should be recovered as arrays
+			const firstElement = result[0].get()
+			const secondElement = result[1].get()
 
-			// The actual behavior - nested arrays become plain objects
-			expect(firstElement).toEqual({ '0': 1, '1': 2 })
-			expect(secondElement).toEqual({ '0': 3, '1': 4 })
+			// The expected behavior - nested arrays are recovered as arrays
+			expect(firstElement).toEqual([1, 2])
+			expect(secondElement).toEqual([3, 4])
 		})
 
 		test('handles arrays with mixed types', () => {
@@ -374,7 +375,7 @@ describe('Type precision tests', () => {
 			expect(typedResult).toBeDefined()
 
 			// Simulate external library usage where P[K] represents element type
-			interface ExternalLibraryConstraint<P extends Record<string, any>> {
+			interface ExternalLibraryConstraint<P extends UnknownRecord> {
 				process<K extends keyof P>(signal: Signal<P[K]>): void
 			}
 
@@ -425,7 +426,7 @@ describe('Type precision tests', () => {
 
 			// These should work without type errors in external libraries
 			// that expect Signal<P[K]> where P[K] is the individual element type
-			interface ExternalAPI<P extends Record<string, unknown & {}>> {
+			interface ExternalAPI<P extends UnknownRecord> {
 				process<K extends keyof P>(key: K, signal: Signal<P[K]>): P[K]
 			}
 

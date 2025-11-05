@@ -12,4 +12,4 @@ export { batch, type Cleanup, enqueue, flush, notify, observe, subscribe, type U
 export { isSignal, type MaybeSignal, type Signal, type SignalValues, toMutableSignal, toSignal, UNSET, type UnknownSignalRecord, } from './src/signal';
 export { isState, type State, state, TYPE_STATE } from './src/state';
 export { isStore, type Store, type StoreAddEvent, type StoreChangeEvent, type StoreEventMap, type StoreRemoveEvent, store, TYPE_STORE, } from './src/store';
-export { CircularDependencyError, isAbortError, isAsyncFunction, isFunction, toError, } from './src/util';
+export { arrayToRecord, CircularDependencyError, isAbortError, isAsyncFunction, isFunction, toError, } from './src/util';

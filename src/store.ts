@@ -9,7 +9,7 @@ import {
 } from './scheduler'
 import { type Signal, toMutableSignal, UNSET } from './signal'
 import { type State, state } from './state'
-import { hasMethod, isObjectOfType } from './util'
+import { hasMethod, isObjectOfType, validArrayIndexes } from './util'
 
 /* === Constants === */
 
@@ -104,11 +104,18 @@ const store = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 	// Internal state
 	const size = state(0)
 
-	// Get current record
-	const current = () => {
+	// Get current record or array
+	const current = (): T => {
+		const keys = Array.from(signals.keys())
+		const arrayIndexes = validArrayIndexes(keys)
+		console.log(keys, arrayIndexes)
+		if (arrayIndexes)
+			return arrayIndexes.map(index =>
+				signals.get(String(index))?.get(),
+			) as unknown as T
 		const record: Partial<T> = {}
-		for (const [key, value] of signals) {
-			record[key] = value.get()
+		for (const [key, signal] of signals) {
+			record[key] = signal.get()
 		}
 		return record as T
 	}
@@ -118,10 +125,7 @@ const store = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 		eventTarget.dispatchEvent(new CustomEvent(type, { detail }))
 
 	// Add nested signal and effect
-	const addSignalAndEffect = <K extends keyof T & string>(
-		key: K,
-		value: T[K],
-	) => {
+	const addProperty = <K extends keyof T & string>(key: K, value: T[K]) => {
 		const signal = toMutableSignal(value)
 		signals.set(
 			key,
@@ -136,7 +140,7 @@ const store = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 	}
 
 	// Remove nested signal and effect
-	const removeSignalAndEffect = <K extends keyof T & string>(key: K) => {
+	const removeProperty = <K extends keyof T & string>(key: K) => {
 		signals.delete(key)
 		const cleanup = cleanups.get(key)
 		if (cleanup) cleanup()
@@ -151,7 +155,7 @@ const store = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 			if (Object.keys(changes.add).length) {
 				for (const key in changes.add) {
 					const value = changes.add[key]
-					if (value != null) addSignalAndEffect(key, value)
+					if (value != null) addProperty(key, value)
 				}
 				emit('store-add', changes.add)
 			}
@@ -170,7 +174,7 @@ const store = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 			}
 			if (Object.keys(changes.remove).length) {
 				for (const key in changes.remove) {
-					removeSignalAndEffect(key)
+					removeProperty(key)
 				}
 				emit('store-remove', changes.remove)
 			}
@@ -215,7 +219,7 @@ const store = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 						v: T[K],
 					): void => {
 						if (!signals.has(k)) {
-							addSignalAndEffect(k, v)
+							addProperty(k, v)
 							notify(watchers)
 							emit('store-add', {
 								[k]: v,
@@ -231,7 +235,7 @@ const store = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 				case 'remove':
 					return <K extends keyof T & string>(k: K): void => {
 						if (signals.has(k)) {
-							removeSignalAndEffect(k)
+							removeProperty(k)
 							notify(watchers)
 							emit('store-remove', { [k]: UNSET } as Partial<T>)
 							size.set(signals.size)

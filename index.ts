@@ -50,6 +50,7 @@ export {
 	TYPE_STORE,
 } from './src/store'
 export {
+	arrayToRecord,
 	CircularDependencyError,
 	isAbortError,
 	isAsyncFunction,
