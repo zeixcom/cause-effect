@@ -26,19 +26,9 @@ interface StoreEventTarget<T extends UnknownRecordOrArray> extends EventTarget {
     removeEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions): void;
     dispatchEvent(event: Event): boolean;
 }
-type UnknownArray = {
-    [x: number]: unknown & {};
-};
-type ArrayToRecord<T extends UnknownArray> = {
-    [K in keyof T as K extends `${number}` ? K : never]: T[K];
-};
-type Store<T extends {
-    [x: string | number]: unknown & {};
-} = UnknownRecord> = (T extends UnknownArray ? {
-    [K in keyof ArrayToRecord<T>]: ArrayToRecord<T>[K] extends UnknownRecord ? Store<ArrayToRecord<T>[K]> : State<ArrayToRecord<T>[K]>;
-} : {
+type Store<T extends UnknownRecordOrArray = UnknownRecord> = {
     [K in keyof T]: T[K] extends UnknownRecord ? Store<T[K]> : State<T[K]>;
-}) & StoreEventTarget<T> & {
+} & StoreEventTarget<T> & {
     [Symbol.toStringTag]: 'Store';
     [Symbol.iterator](): IterableIterator<[keyof T, Signal<T[keyof T]>]>;
     add<K extends keyof T>(key: K, value: T[K]): void;
@@ -60,9 +50,7 @@ type Store<T extends {
  * @param {T} initialValue - initial object or array value of the store
  * @returns {Store<T>} - new store with reactive properties that preserves the original type T
  */
-declare function store<T extends {
-    [x: string | number]: unknown & {};
-}>(initialValue: T): Store<T>;
+declare const store: <T extends UnknownRecordOrArray>(initialValue: T) => Store<T>;
 /**
  * Check if the provided value is a Store instance
  *

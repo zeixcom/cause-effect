@@ -46,7 +46,12 @@ describe('store', () => {
 				email: 'hannah@example.com',
 			})
 
-			const participants = store<{ name: string; tags: string[] }[]>([
+			/**
+			 * store() only accepts object map types for arrays
+			 */
+			const participants = store<{
+				[x: number]: { name: string; tags: string[] }
+			}>([
 				{ name: 'Alice', tags: ['friends', 'mates'] },
 				{ name: 'Bob', tags: ['friends'] },
 			])
@@ -55,6 +60,9 @@ describe('store', () => {
 				{ name: 'Bob', tags: ['friends'] },
 			])
 
+			/**
+			 * toSignal() converts arrays to object map types when creating stores
+			 */
 			const participants2 = toSignal<{ name: string; tags: string[] }[]>([
 				{ name: 'Alice', tags: ['friends', 'mates'] },
 				{ name: 'Bob', tags: ['friends'] },

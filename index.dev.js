@@ -94,14 +94,6 @@ var isFunction = (fn) => typeof fn === "function";
 var isAsyncFunction = (fn) => isFunction(fn) && fn.constructor.name === "AsyncFunction";
 var isObjectOfType = (value, type) => Object.prototype.toString.call(value) === `[object ${type}]`;
 var isRecord = (value) => isObjectOfType(value, "Object");
-var arrayToRecord = (array) => {
-  const record = {};
-  for (let i = 0;i < array.length; i++) {
-    if (i in array)
-      record[String(i)] = array[i];
-  }
-  return record;
-};
 var validArrayIndexes = (keys) => {
   if (!keys.length)
     return null;
@@ -189,10 +181,9 @@ var effect = (callback) => {
 
 // src/store.ts
 var TYPE_STORE = "Store";
-function store(initialValue) {
+var store = (initialValue) => {
   const watchers = new Set;
   const eventTarget = new EventTarget;
-  const recordValue = Array.isArray(initialValue) ? arrayToRecord(initialValue) : initialValue;
   const signals = new Map;
   const cleanups = new Map;
   const size = state(0);
@@ -260,7 +251,7 @@ function store(initialValue) {
   reconcile({}, initialValue);
   setTimeout(() => {
     const initialAdditionsEvent = new CustomEvent("store-add", {
-      detail: recordValue
+      detail: initialValue
     });
     eventTarget.dispatchEvent(initialAdditionsEvent);
   }, 0);
@@ -358,7 +349,7 @@ function store(initialValue) {
       } : undefined;
     }
   });
-}
+};
 var isStore = (value) => isObjectOfType(value, TYPE_STORE);
 
 // src/signal.ts
@@ -370,8 +361,8 @@ function toSignal(value) {
   if (isComputedCallback(value))
     return computed(value);
   if (Array.isArray(value))
-    return store(arrayToRecord(value));
-  if (isRecord(value))
+    return store(value);
+  if (Array.isArray(value) || isRecord(value))
     return store(value);
   return state(value);
 }
@@ -379,7 +370,7 @@ function toMutableSignal(value) {
   if (isState(value) || isStore(value))
     return value;
   if (Array.isArray(value))
-    return store(arrayToRecord(value));
+    return store(value);
   if (isRecord(value))
     return store(value);
   return state(value);
@@ -614,9 +605,11 @@ export {
   observe,
   notify,
   match,
+  isString,
   isStore,
   isState,
   isSignal,
+  isNumber,
   isFunction,
   isEqual,
   isComputedCallback,
@@ -629,7 +622,6 @@ export {
   diff,
   computed,
   batch,
-  arrayToRecord,
   UNSET,
   TYPE_STORE,
   TYPE_STATE,

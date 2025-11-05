@@ -24,16 +24,6 @@ const isRecord = /*#__PURE__*/ <T extends Record<string, unknown>>(
 	value: unknown,
 ): value is T => isObjectOfType(value, 'Object')
 
-const arrayToRecord = /*#__PURE__*/ <T extends {}>(
-	array: T[],
-): Record<string, T> => {
-	const record: Record<string, T> = {}
-	for (let i = 0; i < array.length; i++) {
-		if (i in array) record[String(i)] = array[i]
-	}
-	return record
-}
-
 const validArrayIndexes = /*#__PURE__*/ (
 	keys: Array<PropertyKey>,
 ): number[] | null => {
@@ -76,7 +66,6 @@ export {
 	isAsyncFunction,
 	isObjectOfType,
 	isRecord,
-	arrayToRecord,
 	validArrayIndexes,
 	hasMethod,
 	isAbortError,

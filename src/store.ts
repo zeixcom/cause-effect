@@ -9,12 +9,7 @@ import {
 } from './scheduler'
 import { type Signal, toMutableSignal, UNSET } from './signal'
 import { type State, state } from './state'
-import {
-	arrayToRecord,
-	hasMethod,
-	isObjectOfType,
-	validArrayIndexes,
-} from './util'
+import { hasMethod, isObjectOfType, validArrayIndexes } from './util'
 
 /* === Constants === */
 
@@ -69,30 +64,9 @@ interface StoreEventTarget<T extends UnknownRecordOrArray> extends EventTarget {
 	dispatchEvent(event: Event): boolean
 }
 
-type UnknownArray = {
-	[x: number]: unknown & {}
-}
-
-type ArrayToRecord<T extends UnknownArray> = {
-	[K in keyof T as K extends `${number}` ? K : never]: T[K]
-}
-
-type Store<
-	T extends {
-		[x: string | number]: unknown & {}
-	} = UnknownRecord,
-> = (T extends UnknownArray
-	? {
-			[K in keyof ArrayToRecord<T>]: ArrayToRecord<T>[K] extends UnknownRecord
-				? Store<ArrayToRecord<T>[K]>
-				: State<ArrayToRecord<T>[K]>
-		}
-	: {
-			[K in keyof T]: T[K] extends UnknownRecord
-				? Store<T[K]>
-				: State<T[K]>
-		}) &
-	StoreEventTarget<T> & {
+type Store<T extends UnknownRecordOrArray = UnknownRecord> = {
+	[K in keyof T]: T[K] extends UnknownRecord ? Store<T[K]> : State<T[K]>
+} & StoreEventTarget<T> & {
 		[Symbol.toStringTag]: 'Store'
 		[Symbol.iterator](): IterableIterator<[keyof T, Signal<T[keyof T]>]>
 
@@ -118,18 +92,9 @@ type Store<
  * @param {T} initialValue - initial object or array value of the store
  * @returns {Store<T>} - new store with reactive properties that preserves the original type T
  */
-function store<
-	T extends {
-		[x: string | number]: unknown & {}
-	},
->(initialValue: T): Store<T> {
+const store = <T extends UnknownRecordOrArray>(initialValue: T): Store<T> => {
 	const watchers: Set<Watcher> = new Set()
 	const eventTarget = new EventTarget()
-
-	const recordValue = Array.isArray(initialValue)
-		? arrayToRecord(initialValue)
-		: initialValue
-
 	const signals: Map<keyof T, Store<T[keyof T]> | State<T[keyof T]>> =
 		new Map()
 	const cleanups = new Map<keyof T, Cleanup>()
@@ -222,7 +187,7 @@ function store<
 	// Queue initial additions event to allow listeners to be added first
 	setTimeout(() => {
 		const initialAdditionsEvent = new CustomEvent('store-add', {
-			detail: recordValue,
+			detail: initialValue,
 		})
 		eventTarget.dispatchEvent(initialAdditionsEvent)
 	}, 0)

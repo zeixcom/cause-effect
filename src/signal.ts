@@ -7,7 +7,7 @@ import {
 } from './computed'
 import { isState, type State, state } from './state'
 import { isStore, type Store, store } from './store'
-import { arrayToRecord, isRecord } from './util'
+import { isRecord } from './util'
 
 /* === Types === */
 
@@ -67,8 +67,8 @@ function toSignal<T extends {}>(
 function toSignal<T extends {}>(value: MaybeSignal<T>): Signal<T> {
 	if (isSignal<T>(value)) return value
 	if (isComputedCallback(value)) return computed(value)
-	if (Array.isArray(value)) return store(arrayToRecord(value) as T)
-	if (isRecord(value)) return store(value)
+	if (Array.isArray(value)) return store(value as T)
+	if (Array.isArray(value) || isRecord(value)) return store(value)
 	return state(value)
 }
 
@@ -91,7 +91,7 @@ function toMutableSignal<T extends {}>(
 			: State<T>
 function toMutableSignal<T extends {}>(value: T): State<T> | Store<T> {
 	if (isState<T>(value) || isStore<T>(value)) return value
-	if (Array.isArray(value)) return store(arrayToRecord(value) as T)
+	if (Array.isArray(value)) return store(value as T)
 	if (isRecord(value)) return store(value)
 	return state(value)
 }
