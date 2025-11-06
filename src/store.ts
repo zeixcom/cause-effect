@@ -11,10 +11,6 @@ import { type Signal, toMutableSignal, UNSET } from './signal'
 import { type State, state } from './state'
 import { hasMethod, isObjectOfType, validArrayIndexes } from './util'
 
-/* === Constants === */
-
-const TYPE_STORE = 'Store'
-
 /* === Types === */
 
 interface StoreAddEvent<T extends UnknownRecordOrArray> extends CustomEvent {
@@ -78,6 +74,26 @@ type Store<T extends UnknownRecordOrArray = UnknownRecord> = {
 		size: State<number>
 	}
 
+/* === Constants === */
+
+const TYPE_STORE = 'Store'
+
+const STORE_EVENT_ADD = 'store-add'
+const STORE_EVENT_CHANGE = 'store-change'
+const STORE_EVENT_REMOVE = 'store-remove'
+
+const STORE_PROPS = [
+	'add',
+	'get',
+	'remove',
+	'set',
+	'update',
+	'addEventListener',
+	'removeEventListener',
+	'dispatchEvent',
+	'size',
+]
+
 /* === Functions === */
 
 /**
@@ -129,7 +145,7 @@ const store = <T extends UnknownRecordOrArray>(initialValue: T): Store<T> => {
 		const cleanup = effect(() => {
 			const currentValue = signal.get()
 			if (currentValue != null)
-				emit('store-change', { [key]: currentValue } as Partial<T>)
+				emit(STORE_EVENT_CHANGE, { [key]: currentValue } as Partial<T>)
 		})
 		cleanups.set(stringKey, cleanup)
 	}
@@ -144,7 +160,11 @@ const store = <T extends UnknownRecordOrArray>(initialValue: T): Store<T> => {
 	}
 
 	// Reconcile data and dispatch events
-	const reconcile = (oldValue: T, newValue: T): boolean => {
+	const reconcile = (
+		oldValue: T,
+		newValue: T,
+		initialRun?: boolean,
+	): boolean => {
 		const changes = diff(oldValue, newValue)
 
 		batch(() => {
@@ -153,7 +173,15 @@ const store = <T extends UnknownRecordOrArray>(initialValue: T): Store<T> => {
 					const value = changes.add[key]
 					if (value != null) addProperty(key, value as T[keyof T])
 				}
-				emit('store-add', changes.add)
+
+				// Queue initial additions event to allow listeners to be added first
+				if (initialRun) {
+					setTimeout(() => {
+						emit(STORE_EVENT_ADD, initialValue)
+					}, 0)
+				} else {
+					emit(STORE_EVENT_ADD, changes.add)
+				}
 			}
 			if (Object.keys(changes.change).length) {
 				for (const key in changes.change) {
@@ -166,13 +194,13 @@ const store = <T extends UnknownRecordOrArray>(initialValue: T): Store<T> => {
 					)
 						signal.set(value)
 				}
-				emit('store-change', changes.change)
+				emit(STORE_EVENT_CHANGE, changes.change)
 			}
 			if (Object.keys(changes.remove).length) {
 				for (const key in changes.remove) {
 					removeProperty(key)
 				}
-				emit('store-remove', changes.remove)
+				emit(STORE_EVENT_REMOVE, changes.remove)
 			}
 
 			size.set(signals.size)
@@ -182,27 +210,7 @@ const store = <T extends UnknownRecordOrArray>(initialValue: T): Store<T> => {
 	}
 
 	// Initialize data
-	reconcile({} as T, initialValue)
-
-	// Queue initial additions event to allow listeners to be added first
-	setTimeout(() => {
-		const initialAdditionsEvent = new CustomEvent('store-add', {
-			detail: initialValue,
-		})
-		eventTarget.dispatchEvent(initialAdditionsEvent)
-	}, 0)
-
-	const storeProps = [
-		'add',
-		'get',
-		'remove',
-		'set',
-		'update',
-		'addEventListener',
-		'removeEventListener',
-		'dispatchEvent',
-		'size',
-	]
+	reconcile({} as T, initialValue, true)
 
 	// Return proxy directly with integrated signal methods
 	return new Proxy({} as Store<T>, {
@@ -214,7 +222,7 @@ const store = <T extends UnknownRecordOrArray>(initialValue: T): Store<T> => {
 						if (!signals.has(k)) {
 							addProperty(k, v)
 							notify(watchers)
-							emit('store-add', {
+							emit(STORE_EVENT_ADD, {
 								[k]: v,
 							} as unknown as Partial<T>)
 							size.set(signals.size)
@@ -230,7 +238,9 @@ const store = <T extends UnknownRecordOrArray>(initialValue: T): Store<T> => {
 						if (signals.has(k)) {
 							removeProperty(k)
 							notify(watchers)
-							emit('store-remove', { [k]: UNSET } as Partial<T>)
+							emit(STORE_EVENT_REMOVE, {
+								[k]: UNSET,
+							} as Partial<T>)
 							size.set(signals.size)
 						}
 					}
@@ -277,7 +287,7 @@ const store = <T extends UnknownRecordOrArray>(initialValue: T): Store<T> => {
 			const key = String(prop)
 			return (
 				signals.has(key) ||
-				storeProps.includes(key) ||
+				STORE_PROPS.includes(key) ||
 				prop === Symbol.toStringTag ||
 				prop === Symbol.iterator
 			)

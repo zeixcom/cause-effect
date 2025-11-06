@@ -182,6 +182,20 @@ var effect = (callback) => {
 
 // src/store.ts
 var TYPE_STORE = "Store";
+var STORE_EVENT_ADD = "store-add";
+var STORE_EVENT_CHANGE = "store-change";
+var STORE_EVENT_REMOVE = "store-remove";
+var STORE_PROPS = [
+  "add",
+  "get",
+  "remove",
+  "set",
+  "update",
+  "addEventListener",
+  "removeEventListener",
+  "dispatchEvent",
+  "size"
+];
 var store = (initialValue) => {
   const watchers = new Set;
   const eventTarget = new EventTarget;
@@ -207,7 +221,7 @@ var store = (initialValue) => {
     const cleanup = effect(() => {
       const currentValue = signal.get();
       if (currentValue != null)
-        emit("store-change", { [key]: currentValue });
+        emit(STORE_EVENT_CHANGE, { [key]: currentValue });
     });
     cleanups.set(stringKey, cleanup);
   };
@@ -219,7 +233,7 @@ var store = (initialValue) => {
       cleanup();
     cleanups.delete(stringKey);
   };
-  const reconcile = (oldValue, newValue) => {
+  const reconcile = (oldValue, newValue, initialRun) => {
     const changes = diff(oldValue, newValue);
     batch(() => {
       if (Object.keys(changes.add).length) {
@@ -228,7 +242,13 @@ var store = (initialValue) => {
           if (value != null)
             addProperty(key, value);
         }
-        emit("store-add", changes.add);
+        if (initialRun) {
+          setTimeout(() => {
+            emit(STORE_EVENT_ADD, initialValue);
+          }, 0);
+        } else {
+          emit(STORE_EVENT_ADD, changes.add);
+        }
       }
       if (Object.keys(changes.change).length) {
         for (const key in changes.change) {
@@ -237,36 +257,19 @@ var store = (initialValue) => {
           if (signal && value != null && hasMethod(signal, "set"))
             signal.set(value);
         }
-        emit("store-change", changes.change);
+        emit(STORE_EVENT_CHANGE, changes.change);
       }
       if (Object.keys(changes.remove).length) {
         for (const key in changes.remove) {
           removeProperty(key);
         }
-        emit("store-remove", changes.remove);
+        emit(STORE_EVENT_REMOVE, changes.remove);
       }
       size.set(signals.size);
     });
     return changes.changed;
   };
-  reconcile({}, initialValue);
-  setTimeout(() => {
-    const initialAdditionsEvent = new CustomEvent("store-add", {
-      detail: initialValue
-    });
-    eventTarget.dispatchEvent(initialAdditionsEvent);
-  }, 0);
-  const storeProps = [
-    "add",
-    "get",
-    "remove",
-    "set",
-    "update",
-    "addEventListener",
-    "removeEventListener",
-    "dispatchEvent",
-    "size"
-  ];
+  reconcile({}, initialValue, true);
   return new Proxy({}, {
     get(_target, prop) {
       switch (prop) {
@@ -275,7 +278,7 @@ var store = (initialValue) => {
             if (!signals.has(k)) {
               addProperty(k, v);
               notify(watchers);
-              emit("store-add", {
+              emit(STORE_EVENT_ADD, {
                 [k]: v
               });
               size.set(signals.size);
@@ -291,7 +294,9 @@ var store = (initialValue) => {
             if (signals.has(k)) {
               removeProperty(k);
               notify(watchers);
-              emit("store-remove", { [k]: UNSET });
+              emit(STORE_EVENT_REMOVE, {
+                [k]: UNSET
+              });
               size.set(signals.size);
             }
           };
@@ -335,7 +340,7 @@ var store = (initialValue) => {
     },
     has(_target, prop) {
       const key = String(prop);
-      return signals.has(key) || storeProps.includes(key) || prop === Symbol.toStringTag || prop === Symbol.iterator;
+      return signals.has(key) || STORE_PROPS.includes(key) || prop === Symbol.toStringTag || prop === Symbol.iterator;
     },
     ownKeys() {
       return Array.from(signals.keys()).map((key) => String(key));
@@ -571,8 +576,8 @@ function match(result, handlers) {
       handlers.nil?.();
     else if (result.errors)
       handlers.err?.(result.errors);
-    else
-      handlers.ok?.(result.values);
+    else if (result.ok)
+      handlers.ok(result.values);
   } catch (error) {
     if (handlers.err && (!result.errors || !result.errors.includes(toError(error))))
       handlers.err(result.errors ? [...result.errors, toError(error)] : [toError(error)]);

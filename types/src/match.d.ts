@@ -1,7 +1,7 @@
 import type { ResolveResult } from './resolve';
 import type { SignalValues, UnknownSignalRecord } from './signal';
 type MatchHandlers<S extends UnknownSignalRecord> = {
-    ok?: (values: SignalValues<S>) => void;
+    ok: (values: SignalValues<S>) => void;
     err?: (errors: readonly Error[]) => void;
     nil?: () => void;
 };

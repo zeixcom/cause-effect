@@ -1,7 +1,6 @@
 import { type UnknownRecord, type UnknownRecordOrArray } from './diff';
 import { type Signal } from './signal';
 import { type State } from './state';
-declare const TYPE_STORE = "Store";
 interface StoreAddEvent<T extends UnknownRecordOrArray> extends CustomEvent {
     type: 'store-add';
     detail: Partial<T>;
@@ -38,6 +37,7 @@ type Store<T extends UnknownRecordOrArray = UnknownRecord> = {
     update(updater: (value: T) => T): void;
     size: State<number>;
 };
+declare const TYPE_STORE = "Store";
 /**
  * Create a new store with deeply nested reactive properties
  *
