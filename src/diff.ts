@@ -1,5 +1,5 @@
 import { UNSET } from './signal'
-import { CircularDependencyError, isRecord } from './util'
+import { CircularDependencyError, isRecord, isRecordOrArray } from './util'
 
 /* === Types === */
 
@@ -69,6 +69,8 @@ const isEqual = <T>(a: T, b: T, visited?: WeakSet<object>): boolean => {
 			return true
 		}
 
+		// For non-records/non-arrays, they are only equal if they are the same reference
+		// (which would have been caught by Object.is at the beginning)
 		return false
 	} finally {
 		visited.delete(a as object)
@@ -88,53 +90,60 @@ const diff = <T extends UnknownRecordOrArray>(
 	oldObj: T,
 	newObj: T,
 ): DiffResult<T> => {
-	const visited = new WeakSet<object>()
-
-	const diffRecords = (
-		oldRecord: Record<string, unknown>,
-		newRecord: Record<string, unknown>,
-	): DiffResult<T> => {
-		const add: Partial<T> = {}
-		const change: Partial<T> = {}
-		const remove: Partial<T> = {}
-
-		const oldKeys = Object.keys(oldRecord)
-		const newKeys = Object.keys(newRecord)
-		const allKeys = new Set([...oldKeys, ...newKeys])
-
-		for (const key of allKeys) {
-			const oldHas = key in oldRecord
-			const newHas = key in newRecord
-
-			if (!oldHas && newHas) {
-				add[key as keyof T] = newRecord[key] as T[keyof T]
-				continue
-			} else if (oldHas && !newHas) {
-				remove[key as keyof T] = UNSET
-				continue
-			}
-
-			const oldValue = oldRecord[key] as T[keyof T]
-			const newValue = newRecord[key] as T[keyof T]
-
-			if (!isEqual(oldValue, newValue, visited))
-				change[key as keyof T] = newValue
-		}
-
-		const changed =
-			Object.keys(add).length > 0 ||
-			Object.keys(change).length > 0 ||
-			Object.keys(remove).length > 0
-
+	// Guard against non-objects that can't be diffed properly with Object.keys and 'in' operator
+	const oldValid = isRecordOrArray(oldObj)
+	const newValid = isRecordOrArray(newObj)
+	if (!oldValid || !newValid) {
+		// For non-objects or non-plain objects, treat as complete change if different
+		const changed = !Object.is(oldObj, newObj)
 		return {
 			changed,
-			add,
-			change,
-			remove,
+			add: changed && newValid ? newObj : {},
+			change: {},
+			remove: changed && oldValid ? oldObj : {},
 		}
 	}
 
-	return diffRecords(oldObj, newObj)
+	const visited = new WeakSet<object>()
+
+	const add: Partial<T> = {}
+	const change: Partial<T> = {}
+	const remove: Partial<T> = {}
+
+	const oldKeys = Object.keys(oldObj)
+	const newKeys = Object.keys(newObj)
+	const allKeys = new Set([...oldKeys, ...newKeys])
+
+	for (const key of allKeys) {
+		const oldHas = key in oldObj
+		const newHas = key in newObj
+
+		if (!oldHas && newHas) {
+			add[key as keyof T] = newObj[key] as T[keyof T]
+			continue
+		} else if (oldHas && !newHas) {
+			remove[key as keyof T] = UNSET
+			continue
+		}
+
+		const oldValue = oldObj[key] as T[keyof T]
+		const newValue = newObj[key] as T[keyof T]
+
+		if (!isEqual(oldValue, newValue, visited))
+			change[key as keyof T] = newValue
+	}
+
+	const changed =
+		Object.keys(add).length > 0 ||
+		Object.keys(change).length > 0 ||
+		Object.keys(remove).length > 0
+
+	return {
+		changed,
+		add,
+		change,
+		remove,
+	}
 }
 
 /* === Exports === */

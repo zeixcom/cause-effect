@@ -77,13 +77,17 @@ describe('Match Function', () => {
 		expect((errValue as unknown as Error).message).toBe('Test error')
 	})
 
-	test('should handle missing handlers gracefully', () => {
+	test('should handle missing optional handlers gracefully', () => {
 		const a = state(10)
 		const result = resolve({ a })
 
-		// Should not throw even with no handlers
+		// Should not throw even with only required ok handler (err and nil are optional)
 		expect(() => {
-			match(result, {})
+			match(result, {
+				ok: () => {
+					// This handler is required, but err and nil are optional
+				},
+			})
 		}).not.toThrow()
 	})
 
@@ -139,6 +143,9 @@ describe('Match Function', () => {
 		let allErrors: readonly Error[] | null = null
 
 		match(resolve({ a }), {
+			ok: () => {
+				// This won't be called since there are errors, but it's required
+			},
 			err: errors => {
 				// First call with signal error
 				if (errors.length === 1) {
@@ -216,6 +223,9 @@ describe('Match Function', () => {
 		let errorMessages: string[] = []
 
 		match(resolve({ error1, error2 }), {
+			ok: () => {
+				// This won't be called since there are errors, but it's required
+			},
 			err: errors => {
 				errorMessages = errors.map(e => e.message)
 			},

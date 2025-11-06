@@ -5,7 +5,7 @@ import { toError } from './util'
 /* === Types === */
 
 type MatchHandlers<S extends UnknownSignalRecord> = {
-	ok?: (values: SignalValues<S>) => void
+	ok: (values: SignalValues<S>) => void
 	err?: (errors: readonly Error[]) => void
 	nil?: () => void
 }
@@ -31,7 +31,7 @@ function match<S extends UnknownSignalRecord>(
 	try {
 		if (result.pending) handlers.nil?.()
 		else if (result.errors) handlers.err?.(result.errors)
-		else handlers.ok?.(result.values as SignalValues<S>)
+		else if (result.ok) handlers.ok(result.values)
 	} catch (error) {
 		// If handler throws, try error handler, otherwise rethrow
 		if (

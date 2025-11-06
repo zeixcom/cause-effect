@@ -61,6 +61,8 @@ export {
 	isAsyncFunction,
 	isFunction,
 	isNumber,
+	isRecord,
+	isRecordOrArray,
 	isString,
 	toError,
 } from './src/util'

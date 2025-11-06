@@ -635,4 +635,268 @@ describe('diff', () => {
 			})
 		})
 	})
+
+	describe('non-plain object type safety', () => {
+		test('should handle Symbol objects without throwing TypeError', () => {
+			const symbol = Symbol('test')
+			const obj = { a: 1 }
+
+			// These should not throw after we fix the bug
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			expect(() => diff(symbol, obj)).not.toThrow()
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			expect(() => diff(obj, symbol)).not.toThrow()
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			expect(() => isEqual(symbol, obj)).not.toThrow()
+		})
+
+		test('should report additions when diffing from Symbol to valid object', () => {
+			const symbol = Symbol('test')
+			const obj = { a: 1, b: 'hello' }
+
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			const result = diff(symbol, obj)
+
+			expect(result.changed).toBe(true)
+			expect(result.add).toEqual({ a: 1, b: 'hello' })
+			expect(result.change).toEqual({})
+			expect(result.remove).toEqual({})
+		})
+
+		test('should report removals when diffing from valid object to Symbol', () => {
+			const obj = { a: 1, b: 'hello' }
+			const symbol = Symbol('test')
+
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			const result = diff(obj, symbol)
+
+			expect(result.changed).toBe(true)
+			expect(result.add).toEqual({})
+			expect(result.change).toEqual({})
+			expect(result.remove).toEqual({ a: 1, b: 'hello' })
+		})
+
+		test('should handle Symbol to Symbol diff with no changes', () => {
+			const symbol = Symbol('test')
+
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			const result = diff(symbol, symbol)
+
+			expect(result.changed).toBe(false)
+			expect(result.add).toEqual({})
+			expect(result.change).toEqual({})
+			expect(result.remove).toEqual({})
+		})
+
+		test('should handle different Symbols as changed', () => {
+			const symbol1 = Symbol('test1')
+			const symbol2 = Symbol('test2')
+
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			const result = diff(symbol1, symbol2)
+
+			expect(result.changed).toBe(true)
+			expect(result.add).toEqual({})
+			expect(result.change).toEqual({})
+			expect(result.remove).toEqual({})
+		})
+
+		test('should handle Date objects without throwing TypeError', () => {
+			const date = new Date('2023-01-01')
+			const obj = { a: 1 }
+
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			expect(() => diff(date, obj)).not.toThrow()
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			expect(() => diff(obj, date)).not.toThrow()
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			expect(() => isEqual(date, obj)).not.toThrow()
+		})
+
+		test('should report additions when diffing from Date to valid object', () => {
+			const date = new Date('2023-01-01')
+			const obj = { a: 1, b: 'hello' }
+
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			const result = diff(date, obj)
+
+			expect(result.changed).toBe(true)
+			expect(result.add).toEqual({ a: 1, b: 'hello' })
+			expect(result.change).toEqual({})
+			expect(result.remove).toEqual({})
+		})
+
+		test('should report removals when diffing from valid object to Date', () => {
+			const obj = { a: 1, b: 'hello' }
+			const date = new Date('2023-01-01')
+
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			const result = diff(obj, date)
+
+			expect(result.changed).toBe(true)
+			expect(result.add).toEqual({})
+			expect(result.change).toEqual({})
+			expect(result.remove).toEqual({ a: 1, b: 'hello' })
+		})
+
+		test('should handle Map objects without throwing TypeError', () => {
+			const map = new Map([['key', 'value']])
+			const obj = { a: 1 }
+
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			expect(() => diff(map, obj)).not.toThrow()
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			expect(() => diff(obj, map)).not.toThrow()
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			expect(() => isEqual(map, obj)).not.toThrow()
+		})
+
+		test('should report additions when diffing from Map to valid object', () => {
+			const map = new Map([['key', 'value']])
+			const obj = { x: 10, y: 20 }
+
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			const result = diff(map, obj)
+
+			expect(result.changed).toBe(true)
+			expect(result.add).toEqual({ x: 10, y: 20 })
+			expect(result.change).toEqual({})
+			expect(result.remove).toEqual({})
+		})
+
+		test('should handle Set objects without throwing TypeError', () => {
+			const set = new Set([1, 2, 3])
+			const obj = { a: 1 }
+
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			expect(() => diff(set, obj)).not.toThrow()
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			expect(() => diff(obj, set)).not.toThrow()
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			expect(() => isEqual(set, obj)).not.toThrow()
+		})
+
+		test('should handle Promise objects without throwing TypeError', () => {
+			const promise = Promise.resolve('test')
+			const obj = { a: 1 }
+
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			expect(() => diff(promise, obj)).not.toThrow()
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			expect(() => diff(obj, promise)).not.toThrow()
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			expect(() => isEqual(promise, obj)).not.toThrow()
+		})
+
+		test('should handle RegExp objects without throwing TypeError', () => {
+			const regex = /test/g
+			const obj = { a: 1 }
+
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			expect(() => diff(regex, obj)).not.toThrow()
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			expect(() => diff(obj, regex)).not.toThrow()
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			expect(() => isEqual(regex, obj)).not.toThrow()
+		})
+
+		test('should handle Function objects without throwing TypeError', () => {
+			const func = () => 'test'
+			const obj = { a: 1 }
+
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			expect(() => diff(func, obj)).not.toThrow()
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			expect(() => diff(obj, func)).not.toThrow()
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			expect(() => isEqual(func, obj)).not.toThrow()
+		})
+
+		test('should handle Error objects without throwing TypeError', () => {
+			const error = new Error('test error')
+			const obj = { a: 1 }
+
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			expect(() => diff(error, obj)).not.toThrow()
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			expect(() => diff(obj, error)).not.toThrow()
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			expect(() => isEqual(error, obj)).not.toThrow()
+		})
+
+		test('should handle WeakMap objects without throwing TypeError', () => {
+			const weakMap = new WeakMap()
+			const obj = { a: 1 }
+
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			expect(() => diff(weakMap, obj)).not.toThrow()
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			expect(() => diff(obj, weakMap)).not.toThrow()
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			expect(() => isEqual(weakMap, obj)).not.toThrow()
+		})
+
+		test('should handle WeakSet objects without throwing TypeError', () => {
+			const weakSet = new WeakSet()
+			const obj = { a: 1 }
+
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			expect(() => diff(weakSet, obj)).not.toThrow()
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			expect(() => diff(obj, weakSet)).not.toThrow()
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			expect(() => isEqual(weakSet, obj)).not.toThrow()
+		})
+
+		test('should handle ArrayBuffer objects without throwing TypeError', () => {
+			const buffer = new ArrayBuffer(8)
+			const obj = { a: 1 }
+
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			expect(() => diff(buffer, obj)).not.toThrow()
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			expect(() => diff(obj, buffer)).not.toThrow()
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			expect(() => isEqual(buffer, obj)).not.toThrow()
+		})
+
+		test('should handle class instances without throwing TypeError', () => {
+			class TestClass {
+				constructor(public value: string) {}
+			}
+			const instance = new TestClass('test')
+			const obj = { a: 1 }
+
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			expect(() => diff(instance, obj)).not.toThrow()
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			expect(() => diff(obj, instance)).not.toThrow()
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			expect(() => isEqual(instance, obj)).not.toThrow()
+		})
+
+		test('should report additions/removals with mixed valid and invalid objects', () => {
+			const func = () => 'test'
+			const obj1 = { a: 1 }
+			const obj2 = { b: 2 }
+
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			const result1 = diff(func, obj1)
+			expect(result1.changed).toBe(true)
+			expect(result1.add).toEqual({ a: 1 })
+			expect(result1.remove).toEqual({})
+
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			const result2 = diff(obj2, func)
+			expect(result2.changed).toBe(true)
+			expect(result2.add).toEqual({})
+			expect(result2.remove).toEqual({ b: 2 })
+
+			// @ts-expect-error Testing runtime behavior with non-plain object types
+			const result3 = diff(func, func)
+			expect(result3.changed).toBe(false)
+			expect(result3.add).toEqual({})
+			expect(result3.remove).toEqual({})
+		})
+	})
 })

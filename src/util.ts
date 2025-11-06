@@ -24,6 +24,14 @@ const isRecord = /*#__PURE__*/ <T extends Record<string, unknown>>(
 	value: unknown,
 ): value is T => isObjectOfType(value, 'Object')
 
+const isRecordOrArray = /*#__PURE__*/ <
+	T extends {
+		[x: string | number]: unknown
+	},
+>(
+	value: unknown,
+): value is T => isRecord(value) || Array.isArray(value)
+
 const validArrayIndexes = /*#__PURE__*/ (
 	keys: Array<PropertyKey>,
 ): number[] | null => {
@@ -66,6 +74,7 @@ export {
 	isAsyncFunction,
 	isObjectOfType,
 	isRecord,
+	isRecordOrArray,
 	validArrayIndexes,
 	hasMethod,
 	isAbortError,

@@ -94,6 +94,7 @@ var isFunction = (fn) => typeof fn === "function";
 var isAsyncFunction = (fn) => isFunction(fn) && fn.constructor.name === "AsyncFunction";
 var isObjectOfType = (value, type) => Object.prototype.toString.call(value) === `[object ${type}]`;
 var isRecord = (value) => isObjectOfType(value, "Object");
+var isRecordOrArray = (value) => isRecord(value) || Array.isArray(value);
 var validArrayIndexes = (keys) => {
   if (!keys.length)
     return null;
@@ -181,6 +182,20 @@ var effect = (callback) => {
 
 // src/store.ts
 var TYPE_STORE = "Store";
+var STORE_EVENT_ADD = "store-add";
+var STORE_EVENT_CHANGE = "store-change";
+var STORE_EVENT_REMOVE = "store-remove";
+var STORE_PROPS = [
+  "add",
+  "get",
+  "remove",
+  "set",
+  "update",
+  "addEventListener",
+  "removeEventListener",
+  "dispatchEvent",
+  "size"
+];
 var store = (initialValue) => {
   const watchers = new Set;
   const eventTarget = new EventTarget;
@@ -206,7 +221,7 @@ var store = (initialValue) => {
     const cleanup = effect(() => {
       const currentValue = signal.get();
       if (currentValue != null)
-        emit("store-change", { [key]: currentValue });
+        emit(STORE_EVENT_CHANGE, { [key]: currentValue });
     });
     cleanups.set(stringKey, cleanup);
   };
@@ -218,7 +233,7 @@ var store = (initialValue) => {
       cleanup();
     cleanups.delete(stringKey);
   };
-  const reconcile = (oldValue, newValue) => {
+  const reconcile = (oldValue, newValue, initialRun) => {
     const changes = diff(oldValue, newValue);
     batch(() => {
       if (Object.keys(changes.add).length) {
@@ -227,7 +242,13 @@ var store = (initialValue) => {
           if (value != null)
             addProperty(key, value);
         }
-        emit("store-add", changes.add);
+        if (initialRun) {
+          setTimeout(() => {
+            emit(STORE_EVENT_ADD, initialValue);
+          }, 0);
+        } else {
+          emit(STORE_EVENT_ADD, changes.add);
+        }
       }
       if (Object.keys(changes.change).length) {
         for (const key in changes.change) {
@@ -236,36 +257,19 @@ var store = (initialValue) => {
           if (signal && value != null && hasMethod(signal, "set"))
             signal.set(value);
         }
-        emit("store-change", changes.change);
+        emit(STORE_EVENT_CHANGE, changes.change);
       }
       if (Object.keys(changes.remove).length) {
         for (const key in changes.remove) {
           removeProperty(key);
         }
-        emit("store-remove", changes.remove);
+        emit(STORE_EVENT_REMOVE, changes.remove);
       }
       size.set(signals.size);
     });
     return changes.changed;
   };
-  reconcile({}, initialValue);
-  setTimeout(() => {
-    const initialAdditionsEvent = new CustomEvent("store-add", {
-      detail: initialValue
-    });
-    eventTarget.dispatchEvent(initialAdditionsEvent);
-  }, 0);
-  const storeProps = [
-    "add",
-    "get",
-    "remove",
-    "set",
-    "update",
-    "addEventListener",
-    "removeEventListener",
-    "dispatchEvent",
-    "size"
-  ];
+  reconcile({}, initialValue, true);
   return new Proxy({}, {
     get(_target, prop) {
       switch (prop) {
@@ -274,7 +278,7 @@ var store = (initialValue) => {
             if (!signals.has(k)) {
               addProperty(k, v);
               notify(watchers);
-              emit("store-add", {
+              emit(STORE_EVENT_ADD, {
                 [k]: v
               });
               size.set(signals.size);
@@ -290,7 +294,9 @@ var store = (initialValue) => {
             if (signals.has(k)) {
               removeProperty(k);
               notify(watchers);
-              emit("store-remove", { [k]: UNSET });
+              emit(STORE_EVENT_REMOVE, {
+                [k]: UNSET
+              });
               size.set(signals.size);
             }
           };
@@ -334,7 +340,7 @@ var store = (initialValue) => {
     },
     has(_target, prop) {
       const key = String(prop);
-      return signals.has(key) || storeProps.includes(key) || prop === Symbol.toStringTag || prop === Symbol.iterator;
+      return signals.has(key) || STORE_PROPS.includes(key) || prop === Symbol.toStringTag || prop === Symbol.iterator;
     },
     ownKeys() {
       return Array.from(signals.keys()).map((key) => String(key));
@@ -422,38 +428,46 @@ var isEqual = (a, b, visited) => {
   }
 };
 var diff = (oldObj, newObj) => {
-  const visited = new WeakSet;
-  const diffRecords = (oldRecord, newRecord) => {
-    const add = {};
-    const change = {};
-    const remove = {};
-    const oldKeys = Object.keys(oldRecord);
-    const newKeys = Object.keys(newRecord);
-    const allKeys = new Set([...oldKeys, ...newKeys]);
-    for (const key of allKeys) {
-      const oldHas = key in oldRecord;
-      const newHas = key in newRecord;
-      if (!oldHas && newHas) {
-        add[key] = newRecord[key];
-        continue;
-      } else if (oldHas && !newHas) {
-        remove[key] = UNSET;
-        continue;
-      }
-      const oldValue = oldRecord[key];
-      const newValue = newRecord[key];
-      if (!isEqual(oldValue, newValue, visited))
-        change[key] = newValue;
-    }
-    const changed = Object.keys(add).length > 0 || Object.keys(change).length > 0 || Object.keys(remove).length > 0;
+  const oldValid = isRecordOrArray(oldObj);
+  const newValid = isRecordOrArray(newObj);
+  if (!oldValid || !newValid) {
+    const changed2 = !Object.is(oldObj, newObj);
     return {
-      changed,
-      add,
-      change,
-      remove
+      changed: changed2,
+      add: changed2 && newValid ? newObj : {},
+      change: {},
+      remove: changed2 && oldValid ? oldObj : {}
     };
+  }
+  const visited = new WeakSet;
+  const add = {};
+  const change = {};
+  const remove = {};
+  const oldKeys = Object.keys(oldObj);
+  const newKeys = Object.keys(newObj);
+  const allKeys = new Set([...oldKeys, ...newKeys]);
+  for (const key of allKeys) {
+    const oldHas = key in oldObj;
+    const newHas = key in newObj;
+    if (!oldHas && newHas) {
+      add[key] = newObj[key];
+      continue;
+    } else if (oldHas && !newHas) {
+      remove[key] = UNSET;
+      continue;
+    }
+    const oldValue = oldObj[key];
+    const newValue = newObj[key];
+    if (!isEqual(oldValue, newValue, visited))
+      change[key] = newValue;
+  }
+  const changed = Object.keys(add).length > 0 || Object.keys(change).length > 0 || Object.keys(remove).length > 0;
+  return {
+    changed,
+    add,
+    change,
+    remove
   };
-  return diffRecords(oldObj, newObj);
 };
 
 // src/computed.ts
@@ -562,8 +576,8 @@ function match(result, handlers) {
       handlers.nil?.();
     else if (result.errors)
       handlers.err?.(result.errors);
-    else
-      handlers.ok?.(result.values);
+    else if (result.ok)
+      handlers.ok(result.values);
   } catch (error) {
     if (handlers.err && (!result.errors || !result.errors.includes(toError(error))))
       handlers.err(result.errors ? [...result.errors, toError(error)] : [toError(error)]);
@@ -609,6 +623,8 @@ export {
   isStore,
   isState,
   isSignal,
+  isRecordOrArray,
+  isRecord,
   isNumber,
   isFunction,
   isEqual,
