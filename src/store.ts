@@ -40,20 +40,10 @@ interface StoreEventTarget<T extends UnknownRecordOrArray> extends EventTarget {
 		listener: (event: StoreEventMap<T>[K]) => void,
 		options?: boolean | AddEventListenerOptions,
 	): void
-	addEventListener(
-		type: string,
-		listener: EventListenerOrEventListenerObject,
-		options?: boolean | AddEventListenerOptions,
-	): void
 
 	removeEventListener<K extends keyof StoreEventMap<T>>(
 		type: K,
 		listener: (event: StoreEventMap<T>[K]) => void,
-		options?: boolean | EventListenerOptions,
-	): void
-	removeEventListener(
-		type: string,
-		listener: EventListenerOrEventListenerObject,
 		options?: boolean | EventListenerOptions,
 	): void
 
