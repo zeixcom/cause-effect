@@ -420,17 +420,6 @@ var TYPE_STORE = "Store";
 var STORE_EVENT_ADD = "store-add";
 var STORE_EVENT_CHANGE = "store-change";
 var STORE_EVENT_REMOVE = "store-remove";
-var STORE_PROPS = [
-  "add",
-  "get",
-  "remove",
-  "set",
-  "update",
-  "addEventListener",
-  "removeEventListener",
-  "dispatchEvent",
-  "size"
-];
 var store = (initialValue) => {
   const watchers = new Set;
   const eventTarget = new EventTarget;
@@ -501,77 +490,71 @@ var store = (initialValue) => {
     return changes.changed;
   };
   reconcile({}, initialValue, true);
+  const s = {
+    add: (k, v) => {
+      const indexes = validArrayIndexes(Array.from(signals.keys()));
+      const key = indexes ? indexes.length ? Math.max(...indexes) + 1 : 0 : k;
+      if (!signals.has(String(key))) {
+        addProperty(key, v);
+        notify(watchers);
+        emit(STORE_EVENT_ADD, {
+          [key]: v
+        });
+        size.set(signals.size);
+      }
+    },
+    get: () => {
+      subscribe(watchers);
+      return recordToArray(current());
+    },
+    remove: (k) => {
+      if (signals.has(String(k))) {
+        removeProperty(k);
+        notify(watchers);
+        emit(STORE_EVENT_REMOVE, {
+          [k]: UNSET
+        });
+        size.set(signals.size);
+      }
+    },
+    set: (v) => {
+      if (reconcile(current(), v)) {
+        notify(watchers);
+        if (UNSET === v)
+          watchers.clear();
+      }
+    },
+    update: (fn) => {
+      const oldValue = current();
+      const newValue = fn(recordToArray(oldValue));
+      if (reconcile(oldValue, newValue)) {
+        notify(watchers);
+        if (UNSET === newValue)
+          watchers.clear();
+      }
+    },
+    addEventListener: eventTarget.addEventListener.bind(eventTarget),
+    removeEventListener: eventTarget.removeEventListener.bind(eventTarget),
+    dispatchEvent: eventTarget.dispatchEvent.bind(eventTarget),
+    size
+  };
   return new Proxy({}, {
     get(_target, prop) {
-      switch (prop) {
-        case "add":
-          return (k, v) => {
-            if (!signals.has(String(k))) {
-              addProperty(k, v);
-              notify(watchers);
-              emit(STORE_EVENT_ADD, {
-                [k]: v
-              });
-              size.set(signals.size);
-            }
-          };
-        case "get":
-          return () => {
-            subscribe(watchers);
-            return recordToArray(current());
-          };
-        case "remove":
-          return (k) => {
-            if (signals.has(String(k))) {
-              removeProperty(k);
-              notify(watchers);
-              emit(STORE_EVENT_REMOVE, {
-                [k]: UNSET
-              });
-              size.set(signals.size);
-            }
-          };
-        case "set":
-          return (v) => {
-            if (reconcile(current(), v)) {
-              notify(watchers);
-              if (UNSET === v)
-                watchers.clear();
-            }
-          };
-        case "update":
-          return (fn) => {
-            const oldValue = current();
-            const newValue = fn(recordToArray(oldValue));
-            if (reconcile(oldValue, newValue)) {
-              notify(watchers);
-              if (UNSET === newValue)
-                watchers.clear();
-            }
-          };
-        case "addEventListener":
-          return eventTarget.addEventListener.bind(eventTarget);
-        case "removeEventListener":
-          return eventTarget.removeEventListener.bind(eventTarget);
-        case "dispatchEvent":
-          return eventTarget.dispatchEvent.bind(eventTarget);
-        case "size":
-          return size;
-      }
+      if (isString(prop) && prop in s)
+        return s[prop];
       if (prop === Symbol.toStringTag)
         return TYPE_STORE;
-      if (prop === Symbol.iterator) {
+      if (prop === Symbol.iterator)
         return function* () {
           for (const [key, signal] of signals) {
             yield [key, signal];
           }
         };
-      }
       return signals.get(String(prop));
     },
     has(_target, prop) {
       const key = String(prop);
-      return signals.has(key) || STORE_PROPS.includes(key) || prop === Symbol.toStringTag || prop === Symbol.iterator;
+      return signals.has(key) || Object.keys(s).includes(key) || prop === Symbol.toStringTag || prop === Symbol.iterator;
     },
     ownKeys() {
       return Array.from(signals.keys()).map((key) => String(key));

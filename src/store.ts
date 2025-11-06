@@ -9,7 +9,14 @@ import {
 } from './scheduler'
 import { type Signal, toMutableSignal } from './signal'
 import { type State, state } from './state'
-import { hasMethod, isObjectOfType, recordToArray, UNSET } from './util'
+import {
+	hasMethod,
+	isObjectOfType,
+	isString,
+	recordToArray,
+	UNSET,
+	validArrayIndexes,
+} from './util'
 
 /* === Types === */
 
@@ -72,18 +79,6 @@ const STORE_EVENT_ADD = 'store-add'
 const STORE_EVENT_CHANGE = 'store-change'
 const STORE_EVENT_REMOVE = 'store-remove'
 
-const STORE_PROPS = [
-	'add',
-	'get',
-	'remove',
-	'set',
-	'update',
-	'addEventListener',
-	'removeEventListener',
-	'dispatchEvent',
-	'size',
-]
-
 /* === Functions === */
 
 /**
@@ -104,7 +99,6 @@ const store = <T extends UnknownRecordOrArray>(initialValue: T): Store<T> => {
 	const signals: Map<keyof T, Store<T[keyof T]> | State<T[keyof T]>> =
 		new Map()
 	const cleanups = new Map<keyof T, Cleanup>()
-	// const numericKeys = Array.isArray(initialValue)
 
 	// Internal state
 	const size = state(0)
@@ -197,73 +191,71 @@ const store = <T extends UnknownRecordOrArray>(initialValue: T): Store<T> => {
 	// Initialize data
 	reconcile({} as T, initialValue, true)
 
+	// Methods and Properties
+	const s: Record<string, unknown> = {
+		add: <K extends keyof T>(k: K, v: T[K]): void => {
+			const indexes = validArrayIndexes(Array.from(signals.keys()))
+			const key = indexes
+				? indexes.length
+					? Math.max(...indexes) + 1
+					: 0
+				: k
+			if (!signals.has(String(key))) {
+				addProperty(key, v)
+				notify(watchers)
+				emit(STORE_EVENT_ADD, {
+					[key]: v,
+				} as unknown as Partial<T>)
+				size.set(signals.size)
+			}
+		},
+		get: (): T => {
+			subscribe(watchers)
+			return recordToArray(current()) as T
+		},
+		remove: <K extends keyof T>(k: K): void => {
+			if (signals.has(String(k))) {
+				removeProperty(k)
+				notify(watchers)
+				emit(STORE_EVENT_REMOVE, {
+					[k]: UNSET,
+				} as Partial<T>)
+				size.set(signals.size)
+			}
+		},
+		set: (v: T): void => {
+			if (reconcile(current() as T, v)) {
+				notify(watchers)
+				if (UNSET === v) watchers.clear()
+			}
+		},
+		update: (fn: (v: T) => T): void => {
+			const oldValue = current()
+			const newValue = fn(recordToArray(oldValue) as T)
+			if (reconcile(oldValue as T, newValue)) {
+				notify(watchers)
+				if (UNSET === newValue) watchers.clear()
+			}
+		},
+		addEventListener: eventTarget.addEventListener.bind(eventTarget),
+		removeEventListener: eventTarget.removeEventListener.bind(eventTarget),
+		dispatchEvent: eventTarget.dispatchEvent.bind(eventTarget),
+		size,
+	}
+
 	// Return proxy directly with integrated signal methods
 	return new Proxy({} as Store<T>, {
 		get(_target, prop) {
-			// Handle signal methods and size property
-			switch (prop) {
-				case 'add':
-					return <K extends keyof T>(k: K, v: T[K]): void => {
-						if (!signals.has(String(k))) {
-							addProperty(k, v)
-							notify(watchers)
-							emit(STORE_EVENT_ADD, {
-								[k]: v,
-							} as unknown as Partial<T>)
-							size.set(signals.size)
-						}
-					}
-				case 'get':
-					return (): T => {
-						subscribe(watchers)
-						return recordToArray(current()) as T
-					}
-				case 'remove':
-					return <K extends keyof T>(k: K): void => {
-						if (signals.has(String(k))) {
-							removeProperty(k)
-							notify(watchers)
-							emit(STORE_EVENT_REMOVE, {
-								[k]: UNSET,
-							} as Partial<T>)
-							size.set(signals.size)
-						}
-					}
-				case 'set':
-					return (v: T): void => {
-						if (reconcile(current() as T, v)) {
-							notify(watchers)
-							if (UNSET === v) watchers.clear()
-						}
-					}
-				case 'update':
-					return (fn: (v: T) => T): void => {
-						const oldValue = current()
-						const newValue = fn(recordToArray(oldValue) as T)
-						if (reconcile(oldValue as T, newValue)) {
-							notify(watchers)
-							if (UNSET === newValue) watchers.clear()
-						}
-					}
-				case 'addEventListener':
-					return eventTarget.addEventListener.bind(eventTarget)
-				case 'removeEventListener':
-					return eventTarget.removeEventListener.bind(eventTarget)
-				case 'dispatchEvent':
-					return eventTarget.dispatchEvent.bind(eventTarget)
-				case 'size':
-					return size
-			}
+			if (isString(prop) && prop in s) return s[prop]
 
-			// Handle symbol properties
+			// Symbols
 			if (prop === Symbol.toStringTag) return TYPE_STORE
-			if (prop === Symbol.iterator) {
+			if (prop === Symbol.iterator)
 				return function* () {
 					for (const [key, signal] of signals) {
 						yield [key, signal]
 					}
 				}
-			}
 
 			// Handle data properties - return signals
 			return signals.get(String(prop))
@@ -272,7 +264,7 @@ const store = <T extends UnknownRecordOrArray>(initialValue: T): Store<T> => {
 			const key = String(prop)
 			return (
 				signals.has(key) ||
-				STORE_PROPS.includes(key) ||
+				Object.keys(s).includes(key) ||
 				prop === Symbol.toStringTag ||
 				prop === Symbol.iterator
 			)

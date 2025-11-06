@@ -557,11 +557,11 @@ describe('store', () => {
 			expect(numbers.size.get()).toBe(5)
 
 			// Test adding items
-			numbers.add(5, 6) // Add 6 at index 5
+			numbers.add(0, 6) // Add 6 at index 5
 			expect(sum.get()).toBe(21) // 15 + 6 = 21
 			expect(numbers.size.get()).toBe(6)
 
-			numbers.add(6, 7) // Add 7 at index 6
+			numbers.add(0, 7) // Add 7 at index 6
 			expect(sum.get()).toBe(28) // 21 + 7 = 28
 			expect(numbers.size.get()).toBe(7)
 
@@ -634,7 +634,7 @@ describe('store', () => {
 			expect(sum.get()).toBe(60)
 
 			// Add more numbers
-			numbers.add(3, 40)
+			numbers.add(0, 40)
 			expect(sum.get()).toBe(100)
 
 			// Modify existing values

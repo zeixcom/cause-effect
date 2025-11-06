@@ -10,9 +10,8 @@ declare const validArrayIndexes: (keys: Array<PropertyKey>) => number[] | null;
 declare const hasMethod: <T extends object & Record<string, (...args: unknown[]) => unknown>>(obj: T, methodName: string) => obj is T & Record<string, (...args: unknown[]) => unknown>;
 declare const isAbortError: (error: unknown) => boolean;
 declare const toError: (reason: unknown) => Error;
-declare const arrayToRecord: <T>(array: T[]) => Record<string, T>;
 declare const recordToArray: <T>(record: Record<string | number, T>) => Record<string, T> | T[];
 declare class CircularDependencyError extends Error {
     constructor(where: string);
 }
-export { UNSET, isString, isNumber, isFunction, isAsyncFunction, isObjectOfType, isRecord, isRecordOrArray, validArrayIndexes, hasMethod, isAbortError, toError, arrayToRecord, recordToArray, CircularDependencyError, };
+export { UNSET, isString, isNumber, isFunction, isAsyncFunction, isObjectOfType, isRecord, isRecordOrArray, validArrayIndexes, hasMethod, isAbortError, toError, recordToArray, CircularDependencyError, };
