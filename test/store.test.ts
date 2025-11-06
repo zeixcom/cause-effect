@@ -931,4 +931,310 @@ describe('store', () => {
 			expect(spread.app.name.get()).toBe('UpdatedApp')
 		})
 	})
+
+	describe('JSON integration', () => {
+		test('seamless integration with JSON.parse() and JSON.stringify() for API workflows', async () => {
+			// Simulate loading data from a JSON API response
+			const jsonResponse = `{
+				"user": {
+					"id": 123,
+					"name": "John Doe",
+					"email": "john@example.com",
+					"preferences": {
+						"theme": "dark",
+						"notifications": true,
+						"language": "en"
+					}
+				},
+				"settings": {
+					"autoSave": true,
+					"timeout": 5000
+				},
+				"tags": ["developer", "javascript", "typescript"]
+			}`
+
+			// Parse JSON and create store - works seamlessly
+			const apiData = JSON.parse(jsonResponse)
+			const userStore = store<{
+				user: {
+					id: number
+					name: string
+					email: string
+					preferences: {
+						theme: string
+						notifications: boolean
+						language: string
+						fontSize?: number
+					}
+				}
+				settings: {
+					autoSave: boolean
+					timeout: number
+				}
+				tags: string[]
+				lastLogin?: Date
+			}>(apiData)
+
+			// Verify initial data is accessible and reactive
+			expect(userStore.user.name.get()).toBe('John Doe')
+			expect(userStore.user.preferences.theme.get()).toBe('dark')
+			expect(userStore.settings.autoSave.get()).toBe(true)
+			expect(userStore.get().tags).toEqual([
+				'developer',
+				'javascript',
+				'typescript',
+			])
+
+			// Simulate user interactions - update preferences
+			userStore.user.preferences.theme.set('light')
+			userStore.user.preferences.notifications.set(false)
+
+			// Add new preference
+			userStore.user.preferences.add('fontSize', 14)
+
+			// Update settings
+			userStore.settings.timeout.set(10000)
+
+			// Add new top-level property
+			userStore.add('lastLogin', new Date('2024-01-15T10:30:00Z'))
+
+			// Verify changes are reflected
+			expect(userStore.user.preferences.theme.get()).toBe('light')
+			expect(userStore.user.preferences.notifications.get()).toBe(false)
+			expect(userStore.settings.timeout.get()).toBe(10000)
+
+			// Get current state and verify it's JSON-serializable
+			const currentState = userStore.get()
+			expect(currentState.user.preferences.theme).toBe('light')
+			expect(currentState.user.preferences.notifications).toBe(false)
+			expect(currentState.settings.timeout).toBe(10000)
+			expect(currentState.tags).toEqual([
+				'developer',
+				'javascript',
+				'typescript',
+			])
+
+			// Convert back to JSON - seamless serialization
+			const jsonPayload = JSON.stringify(currentState)
+
+			// Verify the JSON contains our updates
+			const parsedBack = JSON.parse(jsonPayload)
+			expect(parsedBack.user.preferences.theme).toBe('light')
+			expect(parsedBack.user.preferences.notifications).toBe(false)
+			expect(parsedBack.user.preferences.fontSize).toBe(14)
+			expect(parsedBack.settings.timeout).toBe(10000)
+			expect(parsedBack.lastLogin).toBe('2024-01-15T10:30:00.000Z')
+
+			// Demonstrate update() for bulk changes
+			userStore.update(data => ({
+				...data,
+				user: {
+					...data.user,
+					email: 'john.doe@newcompany.com',
+					preferences: {
+						...data.user.preferences,
+						theme: 'auto',
+						language: 'fr',
+					},
+				},
+				settings: {
+					...data.settings,
+					autoSave: false,
+				},
+			}))
+
+			// Verify bulk update worked
+			expect(userStore.user.email.get()).toBe('john.doe@newcompany.com')
+			expect(userStore.user.preferences.theme.get()).toBe('auto')
+			expect(userStore.user.preferences.language.get()).toBe('fr')
+			expect(userStore.settings.autoSave.get()).toBe(false)
+
+			// Final JSON serialization for sending to server
+			const finalPayload = JSON.stringify(userStore.get())
+			expect(typeof finalPayload).toBe('string')
+			expect(finalPayload).toContain('john.doe@newcompany.com')
+			expect(finalPayload).toContain('"theme":"auto"')
+		})
+
+		test('handles complex nested structures and arrays from JSON', () => {
+			const complexJson = `{
+				"dashboard": {
+					"widgets": [
+						{"id": 1, "type": "chart", "config": {"color": "blue"}},
+						{"id": 2, "type": "table", "config": {"rows": 10}}
+					],
+					"layout": {
+						"columns": 3,
+						"responsive": true
+					}
+				},
+				"metadata": {
+					"version": "1.0.0",
+					"created": "2024-01-01T00:00:00Z",
+					"tags": null
+				}
+			}`
+
+			const data = JSON.parse(complexJson)
+			const dashboardStore = store<{
+				dashboard: {
+					widgets: {
+						id: number
+						type: string
+						config: Record<string, string | number | boolean>
+					}[]
+					layout: {
+						columns: number
+						responsive: boolean
+					}
+				}
+				metadata: {
+					version: string
+					created: string
+					tags?: string[]
+				}
+			}>(data)
+
+			// Access nested array elements
+			expect(dashboardStore.dashboard.widgets.get()).toHaveLength(2)
+			expect(dashboardStore.dashboard.widgets[0].type.get()).toBe('chart')
+			expect(dashboardStore.dashboard.widgets[1].config.rows.get()).toBe(
+				10,
+			)
+
+			// Update array element
+			dashboardStore.set({
+				...dashboardStore.get(),
+				dashboard: {
+					...dashboardStore.dashboard.get(),
+					widgets: [
+						...dashboardStore.dashboard.widgets.get(),
+						{ id: 3, type: 'graph', config: { animate: true } },
+					],
+				},
+			})
+
+			// Verify array update
+			expect(dashboardStore.get().dashboard.widgets).toHaveLength(3)
+			expect(dashboardStore.get().dashboard.widgets[2].type).toBe('graph')
+
+			// Handle null values (note: null values may become undefined in store processing)
+			expect(dashboardStore.get().metadata.tags).toBeUndefined()
+
+			// Update null to actual value
+			dashboardStore.update(data => ({
+				...data,
+				metadata: {
+					...data.metadata,
+					tags: ['production', 'v1'],
+				},
+			}))
+
+			expect(dashboardStore.get().metadata.tags).toEqual([
+				'production',
+				'v1',
+			])
+
+			// Verify JSON round-trip
+			const serialized = JSON.stringify(dashboardStore.get())
+			const reparsed = JSON.parse(serialized)
+			expect(reparsed.dashboard.widgets).toHaveLength(3)
+			expect(reparsed.metadata.tags).toEqual(['production', 'v1'])
+		})
+
+		test('demonstrates real-world form data management', () => {
+			// Simulate form data loaded from API
+			const formData = {
+				profile: {
+					firstName: '',
+					lastName: '',
+					email: '',
+					bio: '',
+				},
+				preferences: {
+					emailNotifications: true,
+					pushNotifications: false,
+					marketing: false,
+				},
+				address: {
+					street: '',
+					city: '',
+					country: 'US',
+					zipCode: '',
+				},
+			}
+
+			const formStore = store<{
+				profile: {
+					id?: number
+					createdAt?: string
+					firstName: string
+					lastName: string
+					email: string
+					bio: string
+				}
+				preferences: {
+					emailNotifications: boolean
+					pushNotifications: boolean
+					marketing: boolean
+				}
+				address: {
+					street: string
+					city: string
+					country: string
+					zipCode: string
+				}
+			}>(formData)
+
+			// Simulate user filling out form
+			formStore.profile.firstName.set('Jane')
+			formStore.profile.lastName.set('Smith')
+			formStore.profile.email.set('jane.smith@example.com')
+			formStore.profile.bio.set(
+				'Full-stack developer with 5 years experience',
+			)
+
+			// Update address
+			formStore.address.street.set('123 Main St')
+			formStore.address.city.set('San Francisco')
+			formStore.address.zipCode.set('94105')
+
+			// Toggle preferences
+			formStore.preferences.pushNotifications.set(true)
+			formStore.preferences.marketing.set(true)
+
+			// Get form data for submission - ready for JSON.stringify
+			const submissionData = formStore.get()
+
+			expect(submissionData.profile.firstName).toBe('Jane')
+			expect(submissionData.profile.email).toBe('jane.smith@example.com')
+			expect(submissionData.address.city).toBe('San Francisco')
+			expect(submissionData.preferences.pushNotifications).toBe(true)
+
+			// Simulate sending to API
+			const jsonPayload = JSON.stringify(submissionData)
+			expect(jsonPayload).toContain('jane.smith@example.com')
+			expect(jsonPayload).toContain('San Francisco')
+
+			// Simulate receiving updated data back from server
+			const serverResponse = {
+				...submissionData,
+				profile: {
+					...submissionData.profile,
+					id: 456,
+					createdAt: '2024-01-15T12:00:00Z',
+				},
+			}
+
+			// Update store with server response
+			formStore.set(serverResponse)
+
+			// Verify server data is integrated
+			expect(formStore.profile.id?.get()).toBe(456)
+			expect(formStore.profile.createdAt?.get()).toBe(
+				'2024-01-15T12:00:00Z',
+			)
+			expect(formStore.get().profile.firstName).toBe('Jane') // Original data preserved
+		})
+	})
 })
