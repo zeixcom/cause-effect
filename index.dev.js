@@ -94,6 +94,7 @@ var isFunction = (fn) => typeof fn === "function";
 var isAsyncFunction = (fn) => isFunction(fn) && fn.constructor.name === "AsyncFunction";
 var isObjectOfType = (value, type) => Object.prototype.toString.call(value) === `[object ${type}]`;
 var isRecord = (value) => isObjectOfType(value, "Object");
+var isRecordOrArray = (value) => isRecord(value) || Array.isArray(value);
 var validArrayIndexes = (keys) => {
   if (!keys.length)
     return null;
@@ -422,38 +423,46 @@ var isEqual = (a, b, visited) => {
   }
 };
 var diff = (oldObj, newObj) => {
-  const visited = new WeakSet;
-  const diffRecords = (oldRecord, newRecord) => {
-    const add = {};
-    const change = {};
-    const remove = {};
-    const oldKeys = Object.keys(oldRecord);
-    const newKeys = Object.keys(newRecord);
-    const allKeys = new Set([...oldKeys, ...newKeys]);
-    for (const key of allKeys) {
-      const oldHas = key in oldRecord;
-      const newHas = key in newRecord;
-      if (!oldHas && newHas) {
-        add[key] = newRecord[key];
-        continue;
-      } else if (oldHas && !newHas) {
-        remove[key] = UNSET;
-        continue;
-      }
-      const oldValue = oldRecord[key];
-      const newValue = newRecord[key];
-      if (!isEqual(oldValue, newValue, visited))
-        change[key] = newValue;
-    }
-    const changed = Object.keys(add).length > 0 || Object.keys(change).length > 0 || Object.keys(remove).length > 0;
+  const oldValid = isRecordOrArray(oldObj);
+  const newValid = isRecordOrArray(newObj);
+  if (!oldValid || !newValid) {
+    const changed2 = !Object.is(oldObj, newObj);
     return {
-      changed,
-      add,
-      change,
-      remove
+      changed: changed2,
+      add: changed2 && newValid ? newObj : {},
+      change: {},
+      remove: changed2 && oldValid ? oldObj : {}
     };
+  }
+  const visited = new WeakSet;
+  const add = {};
+  const change = {};
+  const remove = {};
+  const oldKeys = Object.keys(oldObj);
+  const newKeys = Object.keys(newObj);
+  const allKeys = new Set([...oldKeys, ...newKeys]);
+  for (const key of allKeys) {
+    const oldHas = key in oldObj;
+    const newHas = key in newObj;
+    if (!oldHas && newHas) {
+      add[key] = newObj[key];
+      continue;
+    } else if (oldHas && !newHas) {
+      remove[key] = UNSET;
+      continue;
+    }
+    const oldValue = oldObj[key];
+    const newValue = newObj[key];
+    if (!isEqual(oldValue, newValue, visited))
+      change[key] = newValue;
+  }
+  const changed = Object.keys(add).length > 0 || Object.keys(change).length > 0 || Object.keys(remove).length > 0;
+  return {
+    changed,
+    add,
+    change,
+    remove
   };
-  return diffRecords(oldObj, newObj);
 };
 
 // src/computed.ts
@@ -609,6 +618,8 @@ export {
   isStore,
   isState,
   isSignal,
+  isRecordOrArray,
+  isRecord,
   isNumber,
   isFunction,
   isEqual,
