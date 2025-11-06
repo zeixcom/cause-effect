@@ -47,11 +47,11 @@ describe('store', () => {
 			})
 
 			/**
-			 * store() only accepts object map types for arrays
+			 * store() only accepts records with numeric keys for arrays
 			 */
-			const participants = store<{
-				[x: number]: { name: string; tags: string[] }
-			}>([
+			const participants = store<
+				Record<number, { name: string; tags: string[] }>
+			>([
 				{ name: 'Alice', tags: ['friends', 'mates'] },
 				{ name: 'Bob', tags: ['friends'] },
 			])
@@ -61,7 +61,7 @@ describe('store', () => {
 			])
 
 			/**
-			 * toSignal() converts arrays to object map types when creating stores
+			 * toSignal() converts arrays to records when creating stores
 			 */
 			const participants2 = toSignal<{ name: string; tags: string[] }[]>([
 				{ name: 'Alice', tags: ['friends', 'mates'] },
@@ -536,6 +536,194 @@ describe('store', () => {
 
 			config.ui.theme.set('light')
 			expect(themeDisplay.get()).toBe('Theme: light')
+		})
+	})
+
+	describe('array-derived stores with computed sum', () => {
+		test('computes sum correctly and updates when items are added, removed, or changed', () => {
+			// Create a store with an array of numbers
+			const numbers = store<Record<number, number>>([1, 2, 3, 4, 5])
+
+			// Create a computed that calculates the sum by accessing the array via .get()
+			// This ensures reactivity to both value changes and structural changes
+			const sum = computed(() => {
+				const array = numbers.get()
+				if (!Array.isArray(array)) return 0
+				return array.reduce((acc, num) => acc + num, 0)
+			})
+
+			// Initial sum should be 15 (1+2+3+4+5)
+			expect(sum.get()).toBe(15)
+			expect(numbers.size.get()).toBe(5)
+
+			// Test adding items
+			numbers.add(5, 6) // Add 6 at index 5
+			expect(sum.get()).toBe(21) // 15 + 6 = 21
+			expect(numbers.size.get()).toBe(6)
+
+			numbers.add(6, 7) // Add 7 at index 6
+			expect(sum.get()).toBe(28) // 21 + 7 = 28
+			expect(numbers.size.get()).toBe(7)
+
+			// Test changing a single value
+			numbers[2].set(10) // Change index 2 from 3 to 10
+			expect(sum.get()).toBe(35) // 28 - 3 + 10 = 35
+
+			// Test another value change
+			numbers[0].set(5) // Change index 0 from 1 to 5
+			expect(sum.get()).toBe(39) // 35 - 1 + 5 = 39
+
+			// Test removing items
+			numbers.remove(6) // Remove index 6 (value 7)
+			expect(sum.get()).toBe(32) // 39 - 7 = 32
+			expect(numbers.size.get()).toBe(6)
+
+			numbers.remove(0) // Remove index 0 (value 5)
+			expect(sum.get()).toBe(27) // 32 - 5 = 27
+			expect(numbers.size.get()).toBe(5)
+
+			// Verify the final array structure using .get()
+			const finalArray = numbers.get()
+			expect(Array.isArray(finalArray)).toBe(true)
+			expect(finalArray).toEqual([2, 10, 4, 5, 6])
+		})
+
+		test('handles empty array and single element operations', () => {
+			// Start with empty array
+			const numbers = store<Record<number, number>>([])
+
+			const sum = computed(() => {
+				const array = numbers.get()
+				if (!Array.isArray(array)) return 0
+				return array.reduce((acc, num) => acc + num, 0)
+			})
+
+			// Empty array sum should be 0
+			expect(sum.get()).toBe(0)
+			expect(numbers.size.get()).toBe(0)
+
+			// Add first element
+			numbers.add(0, 42)
+			expect(sum.get()).toBe(42)
+			expect(numbers.size.get()).toBe(1)
+
+			// Change the only element
+			numbers[0].set(100)
+			expect(sum.get()).toBe(100)
+
+			// Remove the only element
+			numbers.remove(0)
+			expect(sum.get()).toBe(0)
+			expect(numbers.size.get()).toBe(0)
+		})
+
+		test('computed sum using store iteration with size tracking', () => {
+			const numbers = store<Record<number, number>>([10, 20, 30])
+
+			// Use iteration but also track size to ensure reactivity to additions/removals
+			const sum = computed(() => {
+				// Access size to subscribe to structural changes
+				numbers.size.get()
+				let total = 0
+				for (const [_index, signal] of numbers) {
+					total += signal.get()
+				}
+				return total
+			})
+
+			expect(sum.get()).toBe(60)
+
+			// Add more numbers
+			numbers.add(3, 40)
+			expect(sum.get()).toBe(100)
+
+			// Modify existing values
+			numbers[1].set(25) // Change 20 to 25
+			expect(sum.get()).toBe(105) // 10 + 25 + 30 + 40
+
+			// Remove a value
+			numbers.remove(2) // Remove 30
+			expect(sum.get()).toBe(75) // 10 + 25 + 40
+		})
+
+		test('demonstrates edge case: computed with iteration fails when size unchanged but keys change', () => {
+			// Create a store with an array
+			const numbers = store<Record<number, number>>([10, 20, 30, 40, 50])
+
+			// Create a computed using iteration approach with size tracking
+			const sumWithIteration = computed(() => {
+				// Access size to subscribe to structural changes
+				numbers.size.get()
+				let total = 0
+				for (const [_index, signal] of numbers) {
+					total += signal.get()
+				}
+				return total
+			})
+
+			// Create a computed using .get() approach for comparison
+			const sumWithGet = computed(() => {
+				const array = numbers.get()
+				if (!Array.isArray(array)) return 0
+				return array.reduce((acc, num) => acc + num, 0)
+			})
+
+			// Initial state: [10, 20, 30, 40, 50], keys [0,1,2,3,4]
+			expect(sumWithIteration.get()).toBe(150)
+			expect(sumWithGet.get()).toBe(150)
+			expect(numbers.size.get()).toBe(5)
+
+			// Remove items to create holes: remove indices 1 and 3
+			numbers.remove(1) // Remove 20
+			numbers.remove(3) // Remove 40
+			// Now we have: [10, 30, 50] with sparse keys [0, 2, 4]
+			expect(numbers.size.get()).toBe(3)
+			expect(sumWithIteration.get()).toBe(90) // 10 + 30 + 50
+			expect(sumWithGet.get()).toBe(90)
+
+			// EDGE CASE: Set a new array of SAME SIZE (3 elements)
+			// The .set() operation doesn't properly replace sparse keys
+			// Expected: [100, 200, 300] with keys [0, 1, 2]
+			// Actual: [100, 300, 50] with keys [0, 2, 4] (only existing keys updated)
+			numbers.set([100, 200, 300])
+
+			// Size is still 3, so size-based reactivity doesn't trigger
+			expect(numbers.size.get()).toBe(3)
+
+			// With the fix: both approaches now work correctly!
+			expect(sumWithGet.get()).toBe(600) // 100 + 200 + 300 - fixed!
+
+			// The iteration approach also works now because the diff fix
+			// triggers proper add/remove events which cause size.get() to notify
+			expect(sumWithIteration.get()).toBe(600) // Now works correctly!
+
+			// This demonstrates the fix works for both .get() and iteration approaches
+			// when diff() properly handles sparse-to-dense array conversion
+		})
+
+		test('verifies root cause: diff works on array representation but reconcile uses sparse keys', () => {
+			// Create a sparse array scenario
+			const numbers = store<Record<number, number>>([10, 20, 30])
+
+			// Remove middle element to create sparse structure
+			numbers.remove(1) // Now has keys ["0", "2"] with values [10, 30]
+
+			// Verify the sparse structure
+			expect(numbers.get()).toEqual([10, 30])
+			expect(numbers.size.get()).toBe(2)
+
+			// Now set a new array of same length
+			// The diff should see [10, 30] -> [100, 200] as:
+			// - index 0: 10 -> 100 (change)
+			// - index 1: 30 -> 200 (change)
+			// But internally the keys are ["0", "2"], not ["0", "1"]
+			numbers.set([100, 200])
+
+			// With the fix: sparse array replacement now works correctly
+			const result = numbers.get()
+
+			// The fix ensures proper sparse array replacement
+			expect(result).toEqual([100, 200]) // This now passes with the diff fix!
 		})
 	})
 

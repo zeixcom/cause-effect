@@ -9,7 +9,6 @@ type UnknownSignalRecord = Record<string, Signal<unknown & {}>>;
 type SignalValues<S extends UnknownSignalRecord> = {
     [K in keyof S]: S[K] extends Signal<infer T> ? T : never;
 };
-declare const UNSET: any;
 /**
  * Check whether a value is a Signal or not
  *
@@ -25,9 +24,9 @@ declare const isSignal: <T extends {}>(value: unknown) => value is Signal<T>;
  * @param {T} value - value to convert
  * @returns {Signal<T>} - Signal instance
  */
-declare function toSignal<T extends {}>(value: T[]): Store<Record<string, T>>;
+declare function toSignal<T extends {}>(value: T[]): Store<Record<number, T>>;
 declare function toSignal<T extends {}>(value: (() => T) | ((abort: AbortSignal) => Promise<T>)): Computed<T>;
-declare function toSignal<T extends {}>(value: T): T extends Store<infer U> ? Store<U> : T extends State<infer U> ? State<U> : T extends Computed<infer U> ? Computed<U> : T extends Signal<infer U> ? Signal<U> : T extends Record<string, unknown & {}> ? Store<{
+declare function toSignal<T extends {}>(value: T): T extends Store<infer U> ? Store<U> : T extends State<infer U> ? State<U> : T extends Computed<infer U> ? Computed<U> : T extends Signal<infer U> ? Signal<U> : T extends Record<string | number, unknown & {}> ? Store<{
     [K in keyof T]: T[K];
 }> : State<T>;
 /**
@@ -38,7 +37,7 @@ declare function toSignal<T extends {}>(value: T): T extends Store<infer U> ? St
  * @returns {State<T> | Store<T>} - Signal instance
  */
 declare function toMutableSignal<T extends {}>(value: T[]): Store<Record<string, T>>;
-declare function toMutableSignal<T extends {}>(value: T): T extends Store<infer U> ? Store<U> : T extends State<infer U> ? State<U> : T extends Record<string, unknown & {}> ? Store<{
+declare function toMutableSignal<T extends {}>(value: T): T extends Store<infer U> ? Store<U> : T extends State<infer U> ? State<U> : T extends Record<string | number, unknown & {}> ? Store<{
     [K in keyof T]: T[K];
 }> : State<T>;
-export { type Signal, type MaybeSignal, type UnknownSignalRecord, type SignalValues, UNSET, isSignal, toSignal, toMutableSignal, };
+export { type Signal, type MaybeSignal, type UnknownSignalRecord, type SignalValues, isSignal, toSignal, toMutableSignal, };

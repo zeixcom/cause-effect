@@ -41,7 +41,6 @@ export {
 	type SignalValues,
 	toMutableSignal,
 	toSignal,
-	UNSET,
 	type UnknownSignalRecord,
 } from './src/signal'
 export { isState, type State, state, TYPE_STATE } from './src/state'
@@ -65,4 +64,5 @@ export {
 	isRecordOrArray,
 	isString,
 	toError,
+	UNSET,
 } from './src/util'

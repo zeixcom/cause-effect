@@ -1,7 +1,5 @@
 type UnknownRecord = Record<string, unknown & {}>;
-type UnknownRecordOrArray = {
-    [x: string | number]: unknown & {};
-};
+type UnknownRecordOrArray = Record<string | number, unknown & {}>;
 type DiffResult<T extends UnknownRecordOrArray = UnknownRecord> = {
     changed: boolean;
     add: Partial<T>;

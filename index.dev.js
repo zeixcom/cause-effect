@@ -1,93 +1,5 @@
-// src/scheduler.ts
-var active;
-var pending = new Set;
-var batchDepth = 0;
-var updateMap = new Map;
-var requestId;
-var updateDOM = () => {
-  requestId = undefined;
-  const updates = Array.from(updateMap.values());
-  updateMap.clear();
-  for (const update of updates) {
-    update();
-  }
-};
-var requestTick = () => {
-  if (requestId)
-    cancelAnimationFrame(requestId);
-  requestId = requestAnimationFrame(updateDOM);
-};
-queueMicrotask(updateDOM);
-var watch = (notice) => {
-  const cleanups = new Set;
-  const w = notice;
-  w.off = (on) => {
-    cleanups.add(on);
-  };
-  w.cleanup = () => {
-    for (const cleanup of cleanups) {
-      cleanup();
-    }
-    cleanups.clear();
-  };
-  return w;
-};
-var subscribe = (watchers) => {
-  if (active && !watchers.has(active)) {
-    const watcher = active;
-    watchers.add(watcher);
-    active.off(() => {
-      watchers.delete(watcher);
-    });
-  }
-};
-var notify = (watchers) => {
-  for (const watcher of watchers) {
-    if (batchDepth)
-      pending.add(watcher);
-    else
-      watcher();
-  }
-};
-var flush = () => {
-  while (pending.size) {
-    const watchers = Array.from(pending);
-    pending.clear();
-    for (const watcher of watchers) {
-      watcher();
-    }
-  }
-};
-var batch = (fn) => {
-  batchDepth++;
-  try {
-    fn();
-  } finally {
-    flush();
-    batchDepth--;
-  }
-};
-var observe = (run, watcher) => {
-  const prev = active;
-  active = watcher;
-  try {
-    run();
-  } finally {
-    active = prev;
-  }
-};
-var enqueue = (fn, dedupe) => new Promise((resolve, reject) => {
-  updateMap.set(dedupe || Symbol(), () => {
-    try {
-      resolve(fn());
-    } catch (error) {
-      reject(error);
-    }
-  });
-  requestTick();
-});
-
 // src/util.ts
+var UNSET = Symbol();
 var isString = (value) => typeof value === "string";
 var isNumber = (value) => typeof value === "number";
 var isFunction = (fn) => typeof fn === "function";
@@ -104,282 +16,22 @@ var validArrayIndexes = (keys) => {
 var hasMethod = (obj, methodName) => (methodName in obj) && isFunction(obj[methodName]);
 var isAbortError = (error) => error instanceof DOMException && error.name === "AbortError";
 var toError = (reason) => reason instanceof Error ? reason : Error(String(reason));
+var recordToArray = (record) => {
+  const indexes = validArrayIndexes(Object.keys(record));
+  if (indexes === null)
+    return record;
+  const array = [];
+  for (const index of indexes) {
+    array.push(record[String(index)]);
+  }
+  return array;
+};
 
 class CircularDependencyError extends Error {
   constructor(where) {
     super(`Circular dependency in ${where} detected`);
     this.name = "CircularDependencyError";
   }
-}
-
-// src/state.ts
-var TYPE_STATE = "State";
-var state = (initialValue) => {
-  const watchers = new Set;
-  let value = initialValue;
-  const s = {
-    [Symbol.toStringTag]: TYPE_STATE,
-    get: () => {
-      subscribe(watchers);
-      return value;
-    },
-    set: (v) => {
-      if (isEqual(value, v))
-        return;
-      value = v;
-      notify(watchers);
-      if (UNSET === value)
-        watchers.clear();
-    },
-    update: (fn) => {
-      s.set(fn(value));
-    }
-  };
-  return s;
-};
-var isState = (value) => isObjectOfType(value, TYPE_STATE);
-
-// src/effect.ts
-var effect = (callback) => {
-  const isAsync = isAsyncFunction(callback);
-  let running = false;
-  let controller;
-  const run = watch(() => observe(() => {
-    if (running)
-      throw new CircularDependencyError("effect");
-    running = true;
-    controller?.abort();
-    controller = undefined;
-    let cleanup;
-    try {
-      if (isAsync) {
-        controller = new AbortController;
-        const currentController = controller;
-        callback(controller.signal).then((cleanup2) => {
-          if (isFunction(cleanup2) && controller === currentController)
-            run.off(cleanup2);
-        }).catch((error) => {
-          if (!isAbortError(error))
-            console.error("Async effect error:", error);
-        });
-      } else {
-        cleanup = callback();
-        if (isFunction(cleanup))
-          run.off(cleanup);
-      }
-    } catch (error) {
-      if (!isAbortError(error))
-        console.error("Effect callback error:", error);
-    }
-    running = false;
-  }, run));
-  run();
-  return () => {
-    controller?.abort();
-    run.cleanup();
-  };
-};
-
-// src/store.ts
-var TYPE_STORE = "Store";
-var STORE_EVENT_ADD = "store-add";
-var STORE_EVENT_CHANGE = "store-change";
-var STORE_EVENT_REMOVE = "store-remove";
-var STORE_PROPS = [
-  "add",
-  "get",
-  "remove",
-  "set",
-  "update",
-  "addEventListener",
-  "removeEventListener",
-  "dispatchEvent",
-  "size"
-];
-var store = (initialValue) => {
-  const watchers = new Set;
-  const eventTarget = new EventTarget;
-  const signals = new Map;
-  const cleanups = new Map;
-  const size = state(0);
-  const current = () => {
-    const keys = Array.from(signals.keys());
-    const arrayIndexes = validArrayIndexes(keys);
-    if (arrayIndexes)
-      return arrayIndexes.map((index) => signals.get(String(index))?.get());
-    const record = {};
-    for (const [key, signal] of signals) {
-      record[key] = signal.get();
-    }
-    return record;
-  };
-  const emit = (type, detail) => eventTarget.dispatchEvent(new CustomEvent(type, { detail }));
-  const addProperty = (key, value) => {
-    const stringKey = String(key);
-    const signal = toMutableSignal(value);
-    signals.set(stringKey, signal);
-    const cleanup = effect(() => {
-      const currentValue = signal.get();
-      if (currentValue != null)
-        emit(STORE_EVENT_CHANGE, { [key]: currentValue });
-    });
-    cleanups.set(stringKey, cleanup);
-  };
-  const removeProperty = (key) => {
-    const stringKey = String(key);
-    signals.delete(stringKey);
-    const cleanup = cleanups.get(stringKey);
-    if (cleanup)
-      cleanup();
-    cleanups.delete(stringKey);
-  };
-  const reconcile = (oldValue, newValue, initialRun) => {
-    const changes = diff(oldValue, newValue);
-    batch(() => {
-      if (Object.keys(changes.add).length) {
-        for (const key in changes.add) {
-          const value = changes.add[key];
-          if (value != null)
-            addProperty(key, value);
-        }
-        if (initialRun) {
-          setTimeout(() => {
-            emit(STORE_EVENT_ADD, initialValue);
-          }, 0);
-        } else {
-          emit(STORE_EVENT_ADD, changes.add);
-        }
-      }
-      if (Object.keys(changes.change).length) {
-        for (const key in changes.change) {
-          const signal = signals.get(key);
-          const value = changes.change[key];
-          if (signal && value != null && hasMethod(signal, "set"))
-            signal.set(value);
-        }
-        emit(STORE_EVENT_CHANGE, changes.change);
-      }
-      if (Object.keys(changes.remove).length) {
-        for (const key in changes.remove) {
-          removeProperty(key);
-        }
-        emit(STORE_EVENT_REMOVE, changes.remove);
-      }
-      size.set(signals.size);
-    });
-    return changes.changed;
-  };
-  reconcile({}, initialValue, true);
-  return new Proxy({}, {
-    get(_target, prop) {
-      switch (prop) {
-        case "add":
-          return (k, v) => {
-            if (!signals.has(k)) {
-              addProperty(k, v);
-              notify(watchers);
-              emit(STORE_EVENT_ADD, {
-                [k]: v
-              });
-              size.set(signals.size);
-            }
-          };
-        case "get":
-          return () => {
-            subscribe(watchers);
-            return current();
-          };
-        case "remove":
-          return (k) => {
-            if (signals.has(k)) {
-              removeProperty(k);
-              notify(watchers);
-              emit(STORE_EVENT_REMOVE, {
-                [k]: UNSET
-              });
-              size.set(signals.size);
-            }
-          };
-        case "set":
-          return (v) => {
-            if (reconcile(current(), v)) {
-              notify(watchers);
-              if (UNSET === v)
-                watchers.clear();
-            }
-          };
-        case "update":
-          return (fn) => {
-            const oldValue = current();
-            const newValue = fn(oldValue);
-            if (reconcile(oldValue, newValue)) {
-              notify(watchers);
-              if (UNSET === newValue)
-                watchers.clear();
-            }
-          };
-        case "addEventListener":
-          return eventTarget.addEventListener.bind(eventTarget);
-        case "removeEventListener":
-          return eventTarget.removeEventListener.bind(eventTarget);
-        case "dispatchEvent":
-          return eventTarget.dispatchEvent.bind(eventTarget);
-        case "size":
-          return size;
-      }
-      if (prop === Symbol.toStringTag)
-        return TYPE_STORE;
-      if (prop === Symbol.iterator) {
-        return function* () {
-          for (const [key, signal] of signals) {
-            yield [key, signal];
-          }
-        };
-      }
-      return signals.get(String(prop));
-    },
-    has(_target, prop) {
-      const key = String(prop);
-      return signals.has(key) || STORE_PROPS.includes(key) || prop === Symbol.toStringTag || prop === Symbol.iterator;
-    },
-    ownKeys() {
-      return Array.from(signals.keys()).map((key) => String(key));
-    },
-    getOwnPropertyDescriptor(_target, prop) {
-      const signal = signals.get(String(prop));
-      return signal ? {
-        enumerable: true,
-        configurable: true,
-        writable: true,
-        value: signal
-      } : undefined;
-    }
-  });
-};
-var isStore = (value) => isObjectOfType(value, TYPE_STORE);
-
-// src/signal.ts
-var UNSET = Symbol();
-var isSignal = (value) => isState(value) || isComputed(value) || isStore(value);
-function toSignal(value) {
-  if (isSignal(value))
-    return value;
-  if (isComputedCallback(value))
-    return computed(value);
-  if (Array.isArray(value))
-    return store(value);
-  if (Array.isArray(value) || isRecord(value))
-    return store(value);
-  return state(value);
-}
-function toMutableSignal(value) {
-  if (isState(value) || isStore(value))
-    return value;
-  if (Array.isArray(value))
-    return store(value);
-  if (isRecord(value))
-    return store(value);
-  return state(value);
 }
 
 // src/diff.ts
@@ -469,6 +121,95 @@ var diff = (oldObj, newObj) => {
     remove
   };
 };
+
+// src/scheduler.ts
+var active;
+var pending = new Set;
+var batchDepth = 0;
+var updateMap = new Map;
+var requestId;
+var updateDOM = () => {
+  requestId = undefined;
+  const updates = Array.from(updateMap.values());
+  updateMap.clear();
+  for (const update of updates) {
+    update();
+  }
+};
+var requestTick = () => {
+  if (requestId)
+    cancelAnimationFrame(requestId);
+  requestId = requestAnimationFrame(updateDOM);
+};
+queueMicrotask(updateDOM);
+var watch = (notice) => {
+  const cleanups = new Set;
+  const w = notice;
+  w.off = (on) => {
+    cleanups.add(on);
+  };
+  w.cleanup = () => {
+    for (const cleanup of cleanups) {
+      cleanup();
+    }
+    cleanups.clear();
+  };
+  return w;
+};
+var subscribe = (watchers) => {
+  if (active && !watchers.has(active)) {
+    const watcher = active;
+    watchers.add(watcher);
+    active.off(() => {
+      watchers.delete(watcher);
+    });
+  }
+};
+var notify = (watchers) => {
+  for (const watcher of watchers) {
+    if (batchDepth)
+      pending.add(watcher);
+    else
+      watcher();
+  }
+};
+var flush = () => {
+  while (pending.size) {
+    const watchers = Array.from(pending);
+    pending.clear();
+    for (const watcher of watchers) {
+      watcher();
+    }
+  }
+};
+var batch = (fn) => {
+  batchDepth++;
+  try {
+    fn();
+  } finally {
+    flush();
+    batchDepth--;
+  }
+};
+var observe = (run, watcher) => {
+  const prev = active;
+  active = watcher;
+  try {
+    run();
+  } finally {
+    active = prev;
+  }
+};
+var enqueue = (fn, dedupe) => new Promise((resolve, reject) => {
+  updateMap.set(dedupe || Symbol(), () => {
+    try {
+      resolve(fn());
+    } catch (error) {
+      reject(error);
+    }
+  });
+  requestTick();
+});
 
 // src/computed.ts
 var TYPE_COMPUTED = "Computed";
@@ -569,6 +310,46 @@ var computed = (fn) => {
 };
 var isComputed = (value) => isObjectOfType(value, TYPE_COMPUTED);
 var isComputedCallback = (value) => isFunction(value) && value.length < 2;
+// src/effect.ts
+var effect = (callback) => {
+  const isAsync = isAsyncFunction(callback);
+  let running = false;
+  let controller;
+  const run = watch(() => observe(() => {
+    if (running)
+      throw new CircularDependencyError("effect");
+    running = true;
+    controller?.abort();
+    controller = undefined;
+    let cleanup;
+    try {
+      if (isAsync) {
+        controller = new AbortController;
+        const currentController = controller;
+        callback(controller.signal).then((cleanup2) => {
+          if (isFunction(cleanup2) && controller === currentController)
+            run.off(cleanup2);
+        }).catch((error) => {
+          if (!isAbortError(error))
+            console.error("Async effect error:", error);
+        });
+      } else {
+        cleanup = callback();
+        if (isFunction(cleanup))
+          run.off(cleanup);
+      }
+    } catch (error) {
+      if (!isAbortError(error))
+        console.error("Effect callback error:", error);
+    }
+    running = false;
+  }, run));
+  run();
+  return () => {
+    controller?.abort();
+    run.cleanup();
+  };
+};
 // src/match.ts
 function match(result, handlers) {
   try {
@@ -606,6 +387,229 @@ function resolve(signals) {
   if (errors.length > 0)
     return { ok: false, errors };
   return { ok: true, values };
+}
+// src/state.ts
+var TYPE_STATE = "State";
+var state = (initialValue) => {
+  const watchers = new Set;
+  let value = initialValue;
+  const s = {
+    [Symbol.toStringTag]: TYPE_STATE,
+    get: () => {
+      subscribe(watchers);
+      return value;
+    },
+    set: (v) => {
+      if (isEqual(value, v))
+        return;
+      value = v;
+      notify(watchers);
+      if (UNSET === value)
+        watchers.clear();
+    },
+    update: (fn) => {
+      s.set(fn(value));
+    }
+  };
+  return s;
+};
+var isState = (value) => isObjectOfType(value, TYPE_STATE);
+
+// src/store.ts
+var TYPE_STORE = "Store";
+var STORE_EVENT_ADD = "store-add";
+var STORE_EVENT_CHANGE = "store-change";
+var STORE_EVENT_REMOVE = "store-remove";
+var STORE_PROPS = [
+  "add",
+  "get",
+  "remove",
+  "set",
+  "update",
+  "addEventListener",
+  "removeEventListener",
+  "dispatchEvent",
+  "size"
+];
+var store = (initialValue) => {
+  const watchers = new Set;
+  const eventTarget = new EventTarget;
+  const signals = new Map;
+  const cleanups = new Map;
+  const size = state(0);
+  const current = () => {
+    const record = {};
+    for (const [key, signal] of signals) {
+      record[String(key)] = signal.get();
+    }
+    return record;
+  };
+  const emit = (type, detail) => eventTarget.dispatchEvent(new CustomEvent(type, { detail }));
+  const addProperty = (key, value) => {
+    const stringKey = String(key);
+    const signal = toMutableSignal(value);
+    signals.set(stringKey, signal);
+    const cleanup = effect(() => {
+      const currentValue = signal.get();
+      if (currentValue != null)
+        emit(STORE_EVENT_CHANGE, { [key]: currentValue });
+    });
+    cleanups.set(stringKey, cleanup);
+  };
+  const removeProperty = (key) => {
+    const stringKey = String(key);
+    signals.delete(stringKey);
+    const cleanup = cleanups.get(stringKey);
+    if (cleanup)
+      cleanup();
+    cleanups.delete(stringKey);
+  };
+  const reconcile = (oldValue, newValue, initialRun) => {
+    const changes = diff(oldValue, newValue);
+    batch(() => {
+      if (Object.keys(changes.add).length) {
+        for (const key in changes.add) {
+          const value = changes.add[key];
+          if (value != null)
+            addProperty(key, value);
+        }
+        if (initialRun) {
+          setTimeout(() => {
+            emit(STORE_EVENT_ADD, changes.add);
+          }, 0);
+        } else {
+          emit(STORE_EVENT_ADD, changes.add);
+        }
+      }
+      if (Object.keys(changes.change).length) {
+        for (const key in changes.change) {
+          const signal = signals.get(key);
+          const value = changes.change[key];
+          if (signal && value != null && hasMethod(signal, "set"))
+            signal.set(value);
+        }
+        emit(STORE_EVENT_CHANGE, changes.change);
+      }
+      if (Object.keys(changes.remove).length) {
+        for (const key in changes.remove) {
+          removeProperty(key);
+        }
+        emit(STORE_EVENT_REMOVE, changes.remove);
+      }
+      size.set(signals.size);
+    });
+    return changes.changed;
+  };
+  reconcile({}, initialValue, true);
+  return new Proxy({}, {
+    get(_target, prop) {
+      switch (prop) {
+        case "add":
+          return (k, v) => {
+            if (!signals.has(String(k))) {
+              addProperty(k, v);
+              notify(watchers);
+              emit(STORE_EVENT_ADD, {
+                [k]: v
+              });
+              size.set(signals.size);
+            }
+          };
+        case "get":
+          return () => {
+            subscribe(watchers);
+            return recordToArray(current());
+          };
+        case "remove":
+          return (k) => {
+            if (signals.has(String(k))) {
+              removeProperty(k);
+              notify(watchers);
+              emit(STORE_EVENT_REMOVE, {
+                [k]: UNSET
+              });
+              size.set(signals.size);
+            }
+          };
+        case "set":
+          return (v) => {
+            if (reconcile(current(), v)) {
+              notify(watchers);
+              if (UNSET === v)
+                watchers.clear();
+            }
+          };
+        case "update":
+          return (fn) => {
+            const oldValue = current();
+            const newValue = fn(recordToArray(oldValue));
+            if (reconcile(oldValue, newValue)) {
+              notify(watchers);
+              if (UNSET === newValue)
+                watchers.clear();
+            }
+          };
+        case "addEventListener":
+          return eventTarget.addEventListener.bind(eventTarget);
+        case "removeEventListener":
+          return eventTarget.removeEventListener.bind(eventTarget);
+        case "dispatchEvent":
+          return eventTarget.dispatchEvent.bind(eventTarget);
+        case "size":
+          return size;
+      }
+      if (prop === Symbol.toStringTag)
+        return TYPE_STORE;
+      if (prop === Symbol.iterator) {
+        return function* () {
+          for (const [key, signal] of signals) {
+            yield [key, signal];
+          }
+        };
+      }
+      return signals.get(String(prop));
+    },
+    has(_target, prop) {
+      const key = String(prop);
+      return signals.has(key) || STORE_PROPS.includes(key) || prop === Symbol.toStringTag || prop === Symbol.iterator;
+    },
+    ownKeys() {
+      return Array.from(signals.keys()).map((key) => String(key));
+    },
+    getOwnPropertyDescriptor(_target, prop) {
+      const signal = signals.get(String(prop));
+      return signal ? {
+        enumerable: true,
+        configurable: true,
+        writable: true,
+        value: signal
+      } : undefined;
+    }
+  });
+};
+var isStore = (value) => isObjectOfType(value, TYPE_STORE);
+
+// src/signal.ts
+var isSignal = (value) => isState(value) || isComputed(value) || isStore(value);
+function toSignal(value) {
+  if (isSignal(value))
+    return value;
+  if (isComputedCallback(value))
+    return computed(value);
+  if (Array.isArray(value))
+    return store(value);
+  if (Array.isArray(value) || isRecord(value))
+    return store(value);
+  return state(value);
+}
+function toMutableSignal(value) {
+  if (isState(value) || isStore(value))
+    return value;
+  if (Array.isArray(value))
+    return store(value);
+  if (isRecord(value))
+    return store(value);
+  return state(value);
 }
 export {
   watch,

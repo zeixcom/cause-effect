@@ -1,7 +1,6 @@
 import { isEqual } from './diff'
 import { notify, subscribe, type Watcher } from './scheduler'
-import { UNSET } from './signal'
-import { isObjectOfType } from './util'
+import { isObjectOfType, UNSET } from './util'
 
 /* === Types === */
 

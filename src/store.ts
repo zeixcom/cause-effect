@@ -7,9 +7,9 @@ import {
 	subscribe,
 	type Watcher,
 } from './scheduler'
-import { type Signal, toMutableSignal, UNSET } from './signal'
+import { type Signal, toMutableSignal } from './signal'
 import { type State, state } from './state'
-import { hasMethod, isObjectOfType, validArrayIndexes } from './util'
+import { hasMethod, isObjectOfType, recordToArray, UNSET } from './util'
 
 /* === Types === */
 
@@ -104,23 +104,18 @@ const store = <T extends UnknownRecordOrArray>(initialValue: T): Store<T> => {
 	const signals: Map<keyof T, Store<T[keyof T]> | State<T[keyof T]>> =
 		new Map()
 	const cleanups = new Map<keyof T, Cleanup>()
+	// const numericKeys = Array.isArray(initialValue)
 
 	// Internal state
 	const size = state(0)
 
-	// Get current record or array
-	const current = (): T => {
-		const keys = Array.from(signals.keys())
-		const arrayIndexes = validArrayIndexes(keys)
-		if (arrayIndexes)
-			return arrayIndexes.map(index =>
-				signals.get(String(index))?.get(),
-			) as unknown as T
-		const record: Partial<T> = {}
+	// Get current record
+	const current = () => {
+		const record: Record<string, unknown> = {}
 		for (const [key, signal] of signals) {
-			record[key] = signal.get()
+			record[String(key)] = signal.get()
 		}
-		return record as T
+		return record
 	}
 
 	// Emit event
@@ -167,7 +162,7 @@ const store = <T extends UnknownRecordOrArray>(initialValue: T): Store<T> => {
 				// Queue initial additions event to allow listeners to be added first
 				if (initialRun) {
 					setTimeout(() => {
-						emit(STORE_EVENT_ADD, initialValue)
+						emit(STORE_EVENT_ADD, changes.add)
 					}, 0)
 				} else {
 					emit(STORE_EVENT_ADD, changes.add)
@@ -209,7 +204,7 @@ const store = <T extends UnknownRecordOrArray>(initialValue: T): Store<T> => {
 			switch (prop) {
 				case 'add':
 					return <K extends keyof T>(k: K, v: T[K]): void => {
-						if (!signals.has(k)) {
+						if (!signals.has(String(k))) {
 							addProperty(k, v)
 							notify(watchers)
 							emit(STORE_EVENT_ADD, {
@@ -221,11 +216,11 @@ const store = <T extends UnknownRecordOrArray>(initialValue: T): Store<T> => {
 				case 'get':
 					return (): T => {
 						subscribe(watchers)
-						return current()
+						return recordToArray(current()) as T
 					}
 				case 'remove':
 					return <K extends keyof T>(k: K): void => {
-						if (signals.has(k)) {
+						if (signals.has(String(k))) {
 							removeProperty(k)
 							notify(watchers)
 							emit(STORE_EVENT_REMOVE, {
@@ -236,7 +231,7 @@ const store = <T extends UnknownRecordOrArray>(initialValue: T): Store<T> => {
 					}
 				case 'set':
 					return (v: T): void => {
-						if (reconcile(current(), v)) {
+						if (reconcile(current() as T, v)) {
 							notify(watchers)
 							if (UNSET === v) watchers.clear()
 						}
@@ -244,8 +239,8 @@ const store = <T extends UnknownRecordOrArray>(initialValue: T): Store<T> => {
 				case 'update':
 					return (fn: (v: T) => T): void => {
 						const oldValue = current()
-						const newValue = fn(oldValue)
-						if (reconcile(oldValue, newValue)) {
+						const newValue = fn(recordToArray(oldValue) as T)
+						if (reconcile(oldValue as T, newValue)) {
 							notify(watchers)
 							if (UNSET === newValue) watchers.clear()
 						}

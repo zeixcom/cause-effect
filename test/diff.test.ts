@@ -900,3 +900,48 @@ describe('diff', () => {
 		})
 	})
 })
+
+describe('sparse array handling', () => {
+	test('should properly diff sparse array representations', () => {
+		// Simulate what happens in store: sparse array [10, 30, 50] with keys ["0", "2", "4"]
+		// is represented as a regular array [10, 30, 50] when passed to diff()
+		const oldSparseArray: Record<number, number> = [10, 30, 50] // What current() returns for sparse store
+		const newDenseArray: Record<number, number> = [100, 200, 300] // What user wants to set
+
+		const result = diff(oldSparseArray, newDenseArray)
+
+		// The problem: diff sees this as simple value changes at indices 0, 1, 2
+		// But the store actually has sparse keys "0", "2", "4"
+		// So when reconcile tries to apply changes, only indices 0 and 2 work
+		expect(result.change).toEqual({
+			'0': 100, // This works (key "0" exists)
+			'1': 200, // This fails (key "1" doesn't exist in sparse structure)
+			'2': 300, // This works (key "2" exists)
+		})
+		expect(result.add).toEqual({})
+		expect(result.remove).toEqual({})
+		expect(result.changed).toBe(true)
+	})
+
+	test('should handle array-to-object conversion when context suggests sparse structure', () => {
+		// This test demonstrates the core issue: we need context about the original structure
+		// to properly handle sparse array replacement
+		const oldSparseAsObject = { '0': 10, '2': 30, '4': 50 } // Actual sparse structure
+		const newDenseArray: Record<number, number> = [100, 200, 300] // User input
+
+		const result = diff(oldSparseAsObject, newDenseArray)
+
+		// This should remove old sparse keys and add new dense keys
+		expect(result.remove).toEqual({
+			'4': UNSET, // Key "4" should be removed (key "2" gets reused)
+		})
+		expect(result.add).toEqual({
+			'1': 200, // Key "1" should be added
+		})
+		expect(result.change).toEqual({
+			'0': 100, // Key "0" changes value from 10 to 100
+			'2': 300, // Key "2" changes value from 30 to 300
+		})
+		expect(result.changed).toBe(true)
+	})
+})

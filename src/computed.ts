@@ -7,7 +7,6 @@ import {
 	type Watcher,
 	watch,
 } from './scheduler'
-import { UNSET } from './signal'
 import {
 	CircularDependencyError,
 	isAbortError,
@@ -15,6 +14,7 @@ import {
 	isFunction,
 	isObjectOfType,
 	toError,
+	UNSET,
 } from './util'
 
 /* === Types === */

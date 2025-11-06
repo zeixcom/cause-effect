@@ -22,11 +22,6 @@ type SignalValues<S extends UnknownSignalRecord> = {
 	[K in keyof S]: S[K] extends Signal<infer T> ? T : never
 }
 
-/* === Constants === */
-
-// biome-ignore lint/suspicious/noExplicitAny: Deliberately using any to be used as a placeholder value in any signal
-const UNSET: any = Symbol()
-
 /* === Functions === */
 
 /**
@@ -47,7 +42,7 @@ const isSignal = /*#__PURE__*/ <T extends {}>(
  * @param {T} value - value to convert
  * @returns {Signal<T>} - Signal instance
  */
-function toSignal<T extends {}>(value: T[]): Store<Record<string, T>>
+function toSignal<T extends {}>(value: T[]): Store<Record<number, T>>
 function toSignal<T extends {}>(
 	value: (() => T) | ((abort: AbortSignal) => Promise<T>),
 ): Computed<T>
@@ -61,10 +56,10 @@ function toSignal<T extends {}>(
 			? Computed<U>
 			: T extends Signal<infer U>
 				? Signal<U>
-				: T extends Record<string, unknown & {}>
+				: T extends Record<string | number, unknown & {}>
 					? Store<{ [K in keyof T]: T[K] }>
 					: State<T>
-function toSignal<T extends {}>(value: MaybeSignal<T>): Signal<T> {
+function toSignal<T extends {}>(value: MaybeSignal<T>) {
 	if (isSignal<T>(value)) return value
 	if (isComputedCallback(value)) return computed(value)
 	if (Array.isArray(value)) return store(value as T)
@@ -86,7 +81,7 @@ function toMutableSignal<T extends {}>(
 	? Store<U>
 	: T extends State<infer U>
 		? State<U>
-		: T extends Record<string, unknown & {}>
+		: T extends Record<string | number, unknown & {}>
 			? Store<{ [K in keyof T]: T[K] }>
 			: State<T>
 function toMutableSignal<T extends {}>(value: T): State<T> | Store<T> {
@@ -103,7 +98,6 @@ export {
 	type MaybeSignal,
 	type UnknownSignalRecord,
 	type SignalValues,
-	UNSET,
 	isSignal,
 	toSignal,
 	toMutableSignal,

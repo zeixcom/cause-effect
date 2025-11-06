@@ -1,12 +1,14 @@
-import { UNSET } from './signal'
-import { CircularDependencyError, isRecord, isRecordOrArray } from './util'
+import {
+	CircularDependencyError,
+	isRecord,
+	isRecordOrArray,
+	UNSET,
+} from './util'
 
 /* === Types === */
 
 type UnknownRecord = Record<string, unknown & {}>
-type UnknownRecordOrArray = {
-	[x: string | number]: unknown & {}
-}
+type UnknownRecordOrArray = Record<string | number, unknown & {}>
 
 type DiffResult<T extends UnknownRecordOrArray = UnknownRecord> = {
 	changed: boolean
@@ -104,7 +106,7 @@ const diff = <T extends UnknownRecordOrArray>(
 		}
 	}
 
-	const visited = new WeakSet<object>()
+	const visited = new WeakSet()
 
 	const add: Partial<T> = {}
 	const change: Partial<T> = {}

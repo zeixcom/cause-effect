@@ -31,9 +31,9 @@ describe('toSignal', () => {
 			expect(result['0'].get()).toEqual({ id: 1, name: 'Alice' })
 			expect(result['1'].get()).toEqual({ id: 2, name: 'Bob' })
 
-			// Type inference test - now correctly returns Store<Record<string, {id: number, name: string}>>
+			// Type inference test - now correctly returns Store<Record<number, {id: number, name: string}>>
 			const typedResult: Store<
-				Record<string, { id: number; name: string }>
+				Record<number, { id: number; name: string }>
 			> = result
 			expect(typedResult).toBeDefined()
 		})
@@ -371,7 +371,7 @@ describe('Type precision tests', () => {
 			expect(result['1'].get()).toEqual({ id: 2 })
 
 			// Type assertion test - this should now work with correct typing
-			const typedResult: Store<Record<string, { id: number }>> = result
+			const typedResult: Store<Record<number, { id: number }>> = result
 			expect(typedResult).toBeDefined()
 
 			// Simulate external library usage where P[K] represents element type
@@ -420,7 +420,7 @@ describe('Type precision tests', () => {
 
 			// Type inference should now work correctly:
 			const properlyTyped: Store<
-				Record<string, { id: number; name: string }>
+				Record<number, { id: number; name: string }>
 			> = signal
 			expect(properlyTyped).toBeDefined()
 
