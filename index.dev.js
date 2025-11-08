@@ -460,6 +460,7 @@ var TYPE_STORE = "Store";
 var STORE_EVENT_ADD = "store-add";
 var STORE_EVENT_CHANGE = "store-change";
 var STORE_EVENT_REMOVE = "store-remove";
+var STORE_EVENT_SORT = "store-sort";
 var store = (initialValue) => {
   const watchers = new Set;
   const eventTarget = new EventTarget;
@@ -606,6 +607,22 @@ var store = (initialValue) => {
         if (UNSET === newValue)
           watchers.clear();
       }
+    },
+    sort: (compareFn) => {
+      const entries = Array.from(signals.entries()).map(([key, signal]) => [key, signal.get()]).sort(compareFn ? (a, b) => compareFn(a[1], b[1]) : (a, b) => String(a[1]).localeCompare(String(b[1])));
+      const newOrder = entries.map(([key]) => String(key));
+      const newSignals = new Map;
+      entries.forEach(([key], newIndex) => {
+        const oldKey = String(key);
+        const newKey = isArrayLike ? String(newIndex) : String(key);
+        const signal = signals.get(oldKey);
+        if (signal)
+          newSignals.set(newKey, signal);
+      });
+      signals.clear();
+      newSignals.forEach((signal, key) => signals.set(key, signal));
+      notify(watchers);
+      emit(STORE_EVENT_SORT, newOrder);
     },
     addEventListener: eventTarget.addEventListener.bind(eventTarget),
     removeEventListener: eventTarget.removeEventListener.bind(eventTarget),

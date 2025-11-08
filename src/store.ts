@@ -21,7 +21,7 @@ import {
 	subscribe,
 	type Watcher,
 } from './scheduler'
-import { isMutableSignal } from './signal'
+import { isMutableSignal, type Signal } from './signal'
 import { isState, type State, state } from './state'
 import {
 	isFunction,
@@ -41,6 +41,7 @@ type StoreEventMap<T extends UnknownRecord | UnknownArray> = {
 	'store-add': StoreAddEvent<T>
 	'store-change': StoreChangeEvent<T>
 	'store-remove': StoreRemoveEvent<T>
+	'store-sort': StoreSortEvent
 }
 
 interface StoreEventTarget<T extends UnknownRecord | UnknownArray>
@@ -66,15 +67,18 @@ interface BaseStore<T extends UnknownRecord | UnknownArray>
 	get(): T
 	set(value: T): void
 	update(fn: (value: T) => T): void
+	sort<
+		U = T extends UnknownArray ? ArrayItem<T> : T[Extract<keyof T, string>],
+	>(
+		compareFn?: (a: U, b: U) => number,
+	): void
 	readonly size: State<number>
 }
 
 type RecordStore<T extends UnknownRecord> = BaseStore<T> & {
 	[K in keyof T]: T[K] extends readonly unknown[] | Record<string, unknown>
 		? Store<T[K]>
-		: T[K] extends unknown
-			? State<T[K]>
-			: never
+		: State<T[K]>
 } & {
 	add<K extends Extract<keyof T, string>>(key: K, value: T[K]): void
 	remove<K extends Extract<keyof T, string>>(key: K): void
@@ -85,9 +89,7 @@ type RecordStore<T extends UnknownRecord> = BaseStore<T> & {
 				| readonly unknown[]
 				| Record<string, unknown>
 				? Store<T[Extract<keyof T, string>]>
-				: T[Extract<keyof T, string>] extends unknown
-					? State<T[Extract<keyof T, string>]>
-					: never,
+				: State<T[Extract<keyof T, string>]>,
 		]
 	>
 }
@@ -98,17 +100,13 @@ type ArrayStore<T extends UnknownArray> = BaseStore<T> & {
 		| readonly unknown[]
 		| Record<string, unknown>
 		? Store<ArrayItem<T>>
-		: ArrayItem<T> extends unknown
-			? State<ArrayItem<T>>
-			: never
+		: State<ArrayItem<T>>
 	add(value: ArrayItem<T>): void
 	remove(index: number): void
 	[Symbol.iterator](): IterableIterator<
 		ArrayItem<T> extends readonly unknown[] | Record<string, unknown>
 			? Store<ArrayItem<T>>
-			: ArrayItem<T> extends unknown
-				? State<ArrayItem<T>>
-				: never
+			: State<ArrayItem<T>>
 	>
 	readonly [Symbol.isConcatSpreadable]: boolean
 }
@@ -131,6 +129,11 @@ interface StoreRemoveEvent<T extends UnknownRecord | UnknownArray>
 	detail: Partial<T>
 }
 
+interface StoreSortEvent extends CustomEvent {
+	type: 'store-sort'
+	detail: string[]
+}
+
 type Store<T> = T extends UnknownRecord
 	? RecordStore<T>
 	: T extends UnknownArray
@@ -144,6 +147,7 @@ const TYPE_STORE = 'Store'
 const STORE_EVENT_ADD = 'store-add'
 const STORE_EVENT_CHANGE = 'store-change'
 const STORE_EVENT_REMOVE = 'store-remove'
+const STORE_EVENT_SORT = 'store-sort'
 
 /* === Functions === */
 
@@ -164,15 +168,8 @@ const store = <T extends UnknownRecord | UnknownArray>(
 ): Store<T> => {
 	const watchers = new Set<Watcher>()
 	const eventTarget = new EventTarget()
-	const signals = new Map<
-		Extract<keyof T, string>,
-		T[Extract<keyof T, string>] extends UnknownRecord | UnknownArray
-			? Store<T[Extract<keyof T, string>]>
-			: T[Extract<keyof T, string>] extends unknown & {}
-				? State<T[Extract<keyof T, string>]>
-				: never
-	>()
-	const cleanups = new Map<Extract<keyof T, string>, Cleanup>()
+	const signals = new Map<string, Signal<T[Extract<keyof T, string>] & {}>>()
+	const cleanups = new Map<string, Cleanup>()
 
 	// Determine if this is an array-like store at creation time
 	const isArrayLike = Array.isArray(initialValue)
@@ -190,7 +187,7 @@ const store = <T extends UnknownRecord | UnknownArray>(
 	}
 
 	// Emit event
-	const emit = (type: keyof StoreEventMap<T>, detail: Partial<T>) =>
+	const emit = <R>(type: keyof StoreEventMap<T>, detail: R) =>
 		eventTarget.dispatchEvent(new CustomEvent(type, { detail }))
 
 	// Get sorted indexes
@@ -302,7 +299,7 @@ const store = <T extends UnknownRecord | UnknownArray>(
 						emit(STORE_EVENT_ADD, changes.add as Partial<T>)
 					}, 0)
 				} else {
-					emit(STORE_EVENT_ADD, changes.add as Partial<T>)
+					emit<Partial<T>>(STORE_EVENT_ADD, changes.add as Partial<T>)
 				}
 			}
 
@@ -384,6 +381,52 @@ const store = <T extends UnknownRecord | UnknownArray>(
 				notify(watchers)
 				if (UNSET === newValue) watchers.clear()
 			}
+		},
+		sort: (
+			compareFn?: <
+				U = T extends UnknownArray
+					? ArrayItem<T>
+					: T[Extract<keyof T, string>],
+			>(
+				a: U,
+				b: U,
+			) => number,
+		): void => {
+			// Get all entries as [key, value] pairs
+			const entries = Array.from(signals.entries())
+				.map(
+					([key, signal]) =>
+						[key, signal.get()] as [
+							string,
+							T[Extract<keyof T, string>],
+						],
+				)
+				.sort(
+					compareFn
+						? (a, b) => compareFn(a[1], b[1])
+						: (a, b) => String(a[1]).localeCompare(String(b[1])),
+				)
+
+			// Create array of original keys in their new sorted order
+			const newOrder: string[] = entries.map(([key]) => String(key))
+			const newSignals = new Map<
+				string,
+				Signal<T[Extract<keyof T, string>] & {}>
+			>()
+
+			entries.forEach(([key], newIndex) => {
+				const oldKey = String(key)
+				const newKey = isArrayLike ? String(newIndex) : String(key)
+
+				const signal = signals.get(oldKey)
+				if (signal) newSignals.set(newKey, signal)
+			})
+
+			// Replace signals map
+			signals.clear()
+			newSignals.forEach((signal, key) => signals.set(key, signal))
+			notify(watchers)
+			emit(STORE_EVENT_SORT, newOrder)
 		},
 		addEventListener: eventTarget.addEventListener.bind(eventTarget),
 		removeEventListener: eventTarget.removeEventListener.bind(eventTarget),
@@ -499,5 +542,6 @@ export {
 	type StoreAddEvent,
 	type StoreChangeEvent,
 	type StoreRemoveEvent,
+	type StoreSortEvent,
 	type StoreEventMap,
 }

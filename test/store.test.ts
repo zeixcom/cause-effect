@@ -7,6 +7,7 @@ import {
 	type StoreAddEvent,
 	type StoreChangeEvent,
 	type StoreRemoveEvent,
+	type StoreSortEvent,
 	state,
 	store,
 	UNSET,
@@ -1448,6 +1449,241 @@ describe('store', () => {
 			// Test if length property is actually reactive
 			expect(numbers.length).toBe(4)
 			expect(lengthComputed.get()).toBe(4)
+		})
+	})
+
+	describe('sort() method', () => {
+		test('sorts array-like store with numeric compareFn', () => {
+			const numbers = store([3, 1, 4, 1, 5])
+
+			// Capture old signal references
+			const oldSignals = [
+				numbers[0],
+				numbers[1],
+				numbers[2],
+				numbers[3],
+				numbers[4],
+			]
+
+			numbers.sort((a, b) => a - b)
+
+			// Check sorted order
+			expect(numbers.get()).toEqual([1, 1, 3, 4, 5])
+
+			// Verify signal references are preserved (moved, not recreated)
+			expect(numbers[0]).toBe(oldSignals[1]) // first 1 was at index 1
+			expect(numbers[1]).toBe(oldSignals[3]) // second 1 was at index 3
+			expect(numbers[2]).toBe(oldSignals[0]) // 3 was at index 0
+			expect(numbers[3]).toBe(oldSignals[2]) // 4 was at index 2
+			expect(numbers[4]).toBe(oldSignals[4]) // 5 was at index 4
+		})
+
+		test('sorts array-like store with string compareFn', () => {
+			const names = store(['Charlie', 'Alice', 'Bob'])
+
+			names.sort((a, b) => a.localeCompare(b))
+
+			expect(names.get()).toEqual(['Alice', 'Bob', 'Charlie'])
+		})
+
+		test('sorts record-like store by value', () => {
+			const users = store({
+				user1: { name: 'Charlie', age: 25 },
+				user2: { name: 'Alice', age: 30 },
+				user3: { name: 'Bob', age: 20 },
+			})
+
+			// Capture old signal references
+			const oldSignals = {
+				user1: users.user1,
+				user2: users.user2,
+				user3: users.user3,
+			}
+
+			// Sort by age
+			users.sort((a, b) => a.age - b.age)
+
+			// Check order via iteration
+			const keys = Array.from(users, ([key]) => key)
+			expect(keys).toEqual(['user3', 'user1', 'user2'])
+
+			// Verify signal references are preserved
+			expect(users.user1).toBe(oldSignals.user1)
+			expect(users.user2).toBe(oldSignals.user2)
+			expect(users.user3).toBe(oldSignals.user3)
+		})
+
+		test('emits store-sort event with new order', () => {
+			const numbers = store([30, 10, 20])
+			let sortEvent: StoreSortEvent | null = null
+
+			numbers.addEventListener('store-sort', event => {
+				sortEvent = event
+			})
+
+			numbers.sort((a, b) => a - b)
+
+			expect(sortEvent).not.toBeNull()
+			// biome-ignore lint/style/noNonNullAssertion: test
+			expect(sortEvent!.type).toBe('store-sort')
+			// Keys in new sorted order: [10, 20, 30] came from indices [1, 2, 0]
+			// biome-ignore lint/style/noNonNullAssertion: test
+			expect(sortEvent!.detail).toEqual(['1', '2', '0'])
+		})
+
+		test('sort is reactive - watchers are notified', () => {
+			const numbers = store([3, 1, 2])
+			let effectCount = 0
+			let lastValue: number[] = []
+
+			effect(() => {
+				lastValue = numbers.get()
+				effectCount++
+			})
+
+			// Initial effect run
+			expect(effectCount).toBe(1)
+			expect(lastValue).toEqual([3, 1, 2])
+
+			numbers.sort((a, b) => a - b)
+
+			// Effect should run again after sort
+			expect(effectCount).toBe(2)
+			expect(lastValue).toEqual([1, 2, 3])
+		})
+
+		test('nested signals remain reactive after sorting', () => {
+			const items = store([
+				{ name: 'Charlie', score: 85 },
+				{ name: 'Alice', score: 95 },
+				{ name: 'Bob', score: 75 },
+			])
+
+			// Sort by score
+			items.sort((a, b) => b.score - a.score) // descending
+
+			// Verify order
+			expect(items.get().map(item => item.name)).toEqual([
+				'Alice',
+				'Charlie',
+				'Bob',
+			])
+
+			// Modify a nested property
+			items[1].score.set(100) // Charlie's score
+
+			// Verify the change is reflected
+			expect(items.get()[1].score).toBe(100)
+			expect(items[1].name.get()).toBe('Charlie')
+		})
+
+		test('sort with complex nested structures', () => {
+			const posts = store([
+				{
+					id: 'post1',
+					title: 'Hello World',
+					meta: { views: 100, likes: 5 },
+				},
+				{
+					id: 'post2',
+					title: 'Getting Started',
+					meta: { views: 50, likes: 10 },
+				},
+				{
+					id: 'post3',
+					title: 'Advanced Topics',
+					meta: { views: 200, likes: 3 },
+				},
+			])
+
+			// Sort by likes (ascending)
+			posts.sort((a, b) => a.meta.likes - b.meta.likes)
+
+			const sortedTitles = posts.get().map(post => post.title)
+			expect(sortedTitles).toEqual([
+				'Advanced Topics',
+				'Hello World',
+				'Getting Started',
+			])
+
+			// Verify nested reactivity still works
+			posts[0].meta.likes.set(15)
+			expect(posts.get()[0].meta.likes).toBe(15)
+		})
+
+		test('sort preserves array length and size', () => {
+			const arr = store([5, 2, 8, 1])
+
+			expect(arr.length).toBe(4)
+			expect(arr.size.get()).toBe(4)
+
+			arr.sort((a, b) => a - b)
+
+			expect(arr.length).toBe(4)
+			expect(arr.size.get()).toBe(4)
+			expect(arr.get()).toEqual([1, 2, 5, 8])
+		})
+
+		test('sort with no compareFn uses default string sorting like Array.prototype.sort()', () => {
+			const items = store(['banana', 'cherry', 'apple', '10', '2'])
+
+			items.sort()
+
+			// Default sorting converts to strings and compares in UTF-16 order
+			expect(items.get()).toEqual(
+				['banana', 'cherry', 'apple', '10', '2'].sort(),
+			)
+		})
+
+		test('default sort handles numbers as strings like Array.prototype.sort()', () => {
+			const numbers = store([80, 9, 100])
+
+			numbers.sort()
+
+			// Numbers are converted to strings: "100", "80", "9"
+			// In UTF-16 order: "100" < "80" < "9"
+			expect(numbers.get()).toEqual([80, 9, 100].sort())
+		})
+
+		test('default sort handles mixed values with proper string conversion', () => {
+			const mixed = store(['b', 0, 'a', '', 'c'])
+
+			mixed.sort()
+
+			// String conversion: '' < '0' < 'a' < 'b' < 'c'
+			expect(mixed.get()).toEqual(['', 0, 'a', 'b', 'c'])
+		})
+
+		test('multiple sorts work correctly', () => {
+			const numbers = store([3, 1, 4, 1, 5])
+
+			// Sort ascending
+			numbers.sort((a, b) => a - b)
+			expect(numbers.get()).toEqual([1, 1, 3, 4, 5])
+
+			// Sort descending
+			numbers.sort((a, b) => b - a)
+			expect(numbers.get()).toEqual([5, 4, 3, 1, 1])
+		})
+
+		test('sort event contains correct movement mapping for records', () => {
+			const users = store({
+				alice: { age: 30 },
+				bob: { age: 20 },
+				charlie: { age: 25 },
+			})
+
+			let sortEvent: StoreSortEvent | null = null
+			users.addEventListener('store-sort', event => {
+				sortEvent = event
+			})
+
+			// Sort by age
+			users.sort((a, b) => b.age - a.age)
+
+			expect(sortEvent).not.toBeNull()
+			// biome-ignore lint/style/noNonNullAssertion: test
+			expect(sortEvent!.detail).toEqual(['alice', 'charlie', 'bob'])
 		})
 	})
 })

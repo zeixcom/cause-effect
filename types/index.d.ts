@@ -12,5 +12,5 @@ export { type ResolveResult, resolve } from './src/resolve';
 export { batch, type Cleanup, enqueue, flush, notify, observe, subscribe, type Updater, type Watcher, watch, } from './src/scheduler';
 export { isMutableSignal, isSignal, type Signal, type SignalValues, toSignal, type UnknownSignalRecord, } from './src/signal';
 export { isState, type State, state, TYPE_STATE } from './src/state';
-export { isStore, type Store, type StoreAddEvent, type StoreChangeEvent, type StoreEventMap, type StoreRemoveEvent, store, TYPE_STORE, } from './src/store';
+export { isStore, type Store, type StoreAddEvent, type StoreChangeEvent, type StoreEventMap, type StoreRemoveEvent, type StoreSortEvent, store, TYPE_STORE, } from './src/store';
 export { isAbortError, isAsyncFunction, isFunction, isNumber, isRecord, isRecordOrArray, isString, isSymbol, toError, UNSET, } from './src/util';
