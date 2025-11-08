@@ -1,40 +1,54 @@
-import { type UnknownRecord, type UnknownRecordOrArray } from './diff';
-import { type Signal } from './signal';
+import { type UnknownArray, type UnknownRecord, type UnknownRecordOrArray } from './diff';
 import { type State } from './state';
-interface StoreAddEvent<T extends UnknownRecordOrArray> extends CustomEvent {
-    type: 'store-add';
-    detail: Partial<T>;
-}
-interface StoreChangeEvent<T extends UnknownRecordOrArray> extends CustomEvent {
-    type: 'store-change';
-    detail: Partial<T>;
-}
-interface StoreRemoveEvent<T extends UnknownRecordOrArray> extends CustomEvent {
-    type: 'store-remove';
-    detail: Partial<T>;
-}
-type StoreEventMap<T extends UnknownRecordOrArray> = {
+type ArrayItem<T> = T extends readonly (infer U extends {})[] ? U : never;
+type StoreEventMap<T extends UnknownRecord | UnknownArray> = {
     'store-add': StoreAddEvent<T>;
     'store-change': StoreChangeEvent<T>;
     'store-remove': StoreRemoveEvent<T>;
 };
-interface StoreEventTarget<T extends UnknownRecordOrArray> extends EventTarget {
+interface StoreEventTarget<T extends UnknownRecord | UnknownArray> extends EventTarget {
     addEventListener<K extends keyof StoreEventMap<T>>(type: K, listener: (event: StoreEventMap<T>[K]) => void, options?: boolean | AddEventListenerOptions): void;
     removeEventListener<K extends keyof StoreEventMap<T>>(type: K, listener: (event: StoreEventMap<T>[K]) => void, options?: boolean | EventListenerOptions): void;
     dispatchEvent(event: Event): boolean;
 }
-type Store<T extends UnknownRecordOrArray = UnknownRecord> = {
-    [K in keyof T]: T[K] extends UnknownRecord ? Store<T[K]> : State<T[K]>;
-} & StoreEventTarget<T> & {
-    [Symbol.toStringTag]: 'Store';
-    [Symbol.iterator](): IterableIterator<[keyof T, Signal<T[keyof T]>]>;
-    add<K extends keyof T>(key: K, value: T[K]): void;
+interface BaseStore<T extends UnknownRecord | UnknownArray> extends StoreEventTarget<T> {
+    readonly [Symbol.toStringTag]: 'Store';
     get(): T;
-    remove<K extends keyof T>(key: K): void;
     set(value: T): void;
-    update(updater: (value: T) => T): void;
-    size: State<number>;
+    update(fn: (value: T) => T): void;
+    readonly size: State<number>;
+}
+type RecordStore<T extends UnknownRecord> = BaseStore<T> & {
+    [K in keyof T]: T[K] extends readonly unknown[] | Record<string, unknown> ? Store<T[K]> : T[K] extends unknown ? State<T[K]> : never;
+} & {
+    add<K extends Extract<keyof T, string>>(key: K, value: T[K]): void;
+    remove<K extends Extract<keyof T, string>>(key: K): void;
+    [Symbol.iterator](): IterableIterator<[
+        Extract<keyof T, string>,
+        T[Extract<keyof T, string>] extends readonly unknown[] | Record<string, unknown> ? Store<T[Extract<keyof T, string>]> : T[Extract<keyof T, string>] extends unknown ? State<T[Extract<keyof T, string>]> : never
+    ]>;
 };
+type ArrayStore<T extends UnknownArray> = BaseStore<T> & {
+    readonly length: number;
+    [n: number]: ArrayItem<T> extends readonly unknown[] | Record<string, unknown> ? Store<ArrayItem<T>> : ArrayItem<T> extends unknown ? State<ArrayItem<T>> : never;
+    add(value: ArrayItem<T>): void;
+    remove(index: number): void;
+    [Symbol.iterator](): IterableIterator<ArrayItem<T> extends readonly unknown[] | Record<string, unknown> ? Store<ArrayItem<T>> : ArrayItem<T> extends unknown ? State<ArrayItem<T>> : never>;
+    readonly [Symbol.isConcatSpreadable]: boolean;
+};
+interface StoreAddEvent<T extends UnknownRecord | UnknownArray> extends CustomEvent {
+    type: 'store-add';
+    detail: Partial<T>;
+}
+interface StoreChangeEvent<T extends UnknownRecord | UnknownArray> extends CustomEvent {
+    type: 'store-change';
+    detail: Partial<T>;
+}
+interface StoreRemoveEvent<T extends UnknownRecord | UnknownArray> extends CustomEvent {
+    type: 'store-remove';
+    detail: Partial<T>;
+}
+type Store<T> = T extends UnknownRecord ? RecordStore<T> : T extends UnknownArray ? ArrayStore<T> : never;
 declare const TYPE_STORE = "Store";
 /**
  * Create a new store with deeply nested reactive properties
@@ -48,7 +62,7 @@ declare const TYPE_STORE = "Store";
  * @param {T} initialValue - initial object or array value of the store
  * @returns {Store<T>} - new store with reactive properties that preserves the original type T
  */
-declare const store: <T extends UnknownRecordOrArray>(initialValue: T) => Store<T>;
+declare const store: <T extends UnknownRecord | UnknownArray>(initialValue: T) => Store<T>;
 /**
  * Check if the provided value is a Store instance
  *

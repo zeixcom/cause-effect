@@ -10,7 +10,6 @@ import {
 	type Store,
 	state,
 	store,
-	toMutableSignal,
 	toSignal,
 	type UnknownRecord,
 } from '..'
@@ -20,31 +19,28 @@ import {
 describe('toSignal', () => {
 	describe('type inference and runtime behavior', () => {
 		test('converts array to Store<Record<string, T>>', () => {
-			const arr = [
+			const result = toSignal([
 				{ id: 1, name: 'Alice' },
 				{ id: 2, name: 'Bob' },
-			]
-			const result = toSignal(arr)
+			])
 
 			// Runtime behavior
 			expect(isStore(result)).toBe(true)
 			expect(result['0'].get()).toEqual({ id: 1, name: 'Alice' })
 			expect(result['1'].get()).toEqual({ id: 2, name: 'Bob' })
 
-			// Type inference test - now correctly returns Store<Record<string, {id: number, name: string}>>
-			const typedResult: Store<
-				Record<string, { id: number; name: string }>
-			> = result
+			// Type inference test - now correctly returns Store<Record<number, {id: number, name: string}>>
+			const typedResult: Store<{ id: number; name: string }[]> = result
 			expect(typedResult).toBeDefined()
 		})
 
 		test('converts empty array to Store<Record<string, never>>', () => {
-			const arr: never[] = []
-			const result = toSignal(arr)
+			const result = toSignal([])
 
 			// Runtime behavior
 			expect(isStore(result)).toBe(true)
-			expect(Object.keys(result).length).toBe(0)
+			expect(result.length).toBe(0)
+			expect(Object.keys(result).length).toBe(1) // length property
 		})
 
 		test('converts record to Store<T>', () => {
@@ -145,11 +141,10 @@ describe('toSignal', () => {
 
 	describe('edge cases', () => {
 		test('handles nested arrays', () => {
-			const nestedArr = [
+			const result = toSignal([
 				[1, 2],
 				[3, 4],
-			]
-			const result = toSignal(nestedArr)
+			])
 
 			expect(isStore(result)).toBe(true)
 			// With the fixed behavior, nested arrays should be recovered as arrays
@@ -180,112 +175,6 @@ describe('toSignal', () => {
 			expect('0' in result).toBe(false)
 			expect(result['1'].get()).toBe('middle')
 			expect('2' in result).toBe(false)
-		})
-	})
-})
-
-describe('toMutableSignal', () => {
-	describe('type inference and runtime behavior', () => {
-		test('converts array to Store<Record<string, T>>', () => {
-			const arr = [
-				{ id: 1, name: 'Alice' },
-				{ id: 2, name: 'Bob' },
-			]
-			const result = toMutableSignal(arr)
-
-			// Runtime behavior
-			expect(isStore(result)).toBe(true)
-			expect(result['0'].get()).toEqual({ id: 1, name: 'Alice' })
-			expect(result['1'].get()).toEqual({ id: 2, name: 'Bob' })
-
-			// Type inference test - now correctly returns Store<Record<string, {id: number, name: string}>>
-			const typedResult: Store<
-				Record<string, { id: number; name: string }>
-			> = result
-			expect(typedResult).toBeDefined()
-		})
-
-		test('converts record to Store<T>', () => {
-			const record = { name: 'Alice', age: 30 }
-			const result = toMutableSignal(record)
-
-			// Runtime behavior
-			expect(isStore(result)).toBe(true)
-			expect(result.name.get()).toBe('Alice')
-			expect(result.age.get()).toBe(30)
-
-			// Type inference test - should be Store<{name: string, age: number}>
-			const typedResult: Store<{ name: string; age: number }> = result
-			expect(typedResult).toBeDefined()
-		})
-
-		test('passes through existing Store unchanged', () => {
-			const originalStore = store({ count: 5 })
-			const result = toMutableSignal(originalStore)
-
-			// Runtime behavior
-			expect(result).toBe(originalStore) // Should be the same instance
-			expect(isStore(result)).toBe(true)
-			expect(result.count.get()).toBe(5)
-		})
-
-		test('passes through existing State unchanged', () => {
-			const originalState = state(42)
-			const result = toMutableSignal(originalState)
-
-			// Runtime behavior
-			expect(result).toBe(originalState) // Should be the same instance
-			expect(isState(result)).toBe(true)
-			expect(result.get()).toBe(42)
-
-			// Type inference test - should be State<number>
-			const typedResult: State<number> = result
-			expect(typedResult).toBeDefined()
-		})
-
-		test('converts primitive to State<T>', () => {
-			const num = 42
-			const result = toMutableSignal(num)
-
-			// Runtime behavior - primitives are correctly converted to State
-			expect(isState(result)).toBe(true)
-			expect(result.get()).toBe(42)
-		})
-
-		test('converts object to State<T> (not Store)', () => {
-			const obj = new Date('2024-01-01')
-			const result = toMutableSignal(obj)
-
-			// Runtime behavior - objects are correctly converted to State
-			expect(isState(result)).toBe(true)
-			expect(result.get()).toBe(obj)
-
-			// Type inference test - should be State<Date>
-			const typedResult: State<Date> = result
-			expect(typedResult).toBeDefined()
-		})
-	})
-
-	describe('differences from toSignal', () => {
-		test('does not accept functions (only mutable signals)', () => {
-			// toMutableSignal should not have a function overload
-			// This test documents the expected behavior difference
-			const fn = () => 'test'
-			const result = toMutableSignal(fn)
-
-			// Should treat function as a regular value and create State
-			expect(isState(result)).toBe(true)
-			expect(result.get()).toBe(fn)
-		})
-
-		test('does not accept Computed signals', () => {
-			// toMutableSignal should not accept Computed signals
-			const comp = computed(() => 'computed value')
-			const result = toMutableSignal(comp)
-
-			// Should treat Computed as a regular object and create State
-			expect(isState(result)).toBe(true)
-			expect(result.get()).toBe(comp)
 		})
 	})
 })
@@ -356,14 +245,7 @@ describe('Type precision tests', () => {
 
 	describe('Type inference issues', () => {
 		test('demonstrates current type inference problem', () => {
-			// Current issue: when passing an array, T is inferred as the array type
-			// instead of the element type, causing type compatibility problems
-			const items = [{ id: 1 }, { id: 2 }]
-			const result = toSignal(items)
-
-			// This should work but may have type issues in external libraries
-			// The return type should be Store<Record<string, {id: number}>>
-			// But currently it might be inferred as Store<Record<string, {id: number}[]>>
+			const result = toSignal([{ id: 1 }, { id: 2 }])
 
 			// Let's verify the actual behavior
 			expect(isStore(result)).toBe(true)
@@ -371,7 +253,7 @@ describe('Type precision tests', () => {
 			expect(result['1'].get()).toEqual({ id: 2 })
 
 			// Type assertion test - this should now work with correct typing
-			const typedResult: Store<Record<string, { id: number }>> = result
+			const typedResult: Store<{ id: number }[]> = result
 			expect(typedResult).toBeDefined()
 
 			// Simulate external library usage where P[K] represents element type
@@ -397,19 +279,11 @@ describe('Type precision tests', () => {
 		})
 
 		test('verifies fixed type inference for external library compatibility', () => {
-			// This test ensures the fix for the type inference issue works
-			// Fixed: toSignal<T extends unknown & {}>(value: T[]): Store<Record<string, T>>
-			// Now T = {id: number} (element type), T[] = {id: number}[] (array of elements)
-			// Return type: Store<Record<string, {id: number}>> (correct)
-
 			const items = [
 				{ id: 1, name: 'Alice' },
 				{ id: 2, name: 'Bob' },
 			]
 			const signal = toSignal(items)
-
-			// Type should be Store<Record<string, {id: number, name: string}>>
-			// Each property signal should be Signal<{id: number, name: string}>
 			const firstItemSignal = signal['0']
 			const secondItemSignal = signal['1']
 
@@ -419,9 +293,7 @@ describe('Type precision tests', () => {
 			expect(secondItemSignal.get()).toEqual({ id: 2, name: 'Bob' })
 
 			// Type inference should now work correctly:
-			const properlyTyped: Store<
-				Record<string, { id: number; name: string }>
-			> = signal
+			const properlyTyped: Store<{ id: number; name: string }[]> = signal
 			expect(properlyTyped).toBeDefined()
 
 			// These should work without type errors in external libraries

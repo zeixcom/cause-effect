@@ -16,10 +16,19 @@ export {
 	type DiffResult,
 	diff,
 	isEqual,
+	type UnknownArray,
 	type UnknownRecord,
 	type UnknownRecordOrArray,
 } from './src/diff'
 export { type EffectCallback, effect, type MaybeCleanup } from './src/effect'
+export {
+	CircularDependencyError,
+	InvalidSignalValueError,
+	NullishSignalValueError,
+	StoreKeyExistsError,
+	StoreKeyRangeError,
+	StoreKeyReadonlyError,
+} from './src/errors'
 export { type MatchHandlers, match } from './src/match'
 export { type ResolveResult, resolve } from './src/resolve'
 export {
@@ -35,13 +44,11 @@ export {
 	watch,
 } from './src/scheduler'
 export {
+	isMutableSignal,
 	isSignal,
-	type MaybeSignal,
 	type Signal,
 	type SignalValues,
-	toMutableSignal,
 	toSignal,
-	UNSET,
 	type UnknownSignalRecord,
 } from './src/signal'
 export { isState, type State, state, TYPE_STATE } from './src/state'
@@ -56,7 +63,6 @@ export {
 	TYPE_STORE,
 } from './src/store'
 export {
-	CircularDependencyError,
 	isAbortError,
 	isAsyncFunction,
 	isFunction,
@@ -64,5 +70,7 @@ export {
 	isRecord,
 	isRecordOrArray,
 	isString,
+	isSymbol,
 	toError,
+	UNSET,
 } from './src/util'

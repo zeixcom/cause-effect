@@ -231,7 +231,7 @@ describe('Computed', () => {
 		const c = computed(() => b.get() + a.get())
 		expect(() => {
 			b.get() // This should trigger the circular dependency
-		}).toThrow('Circular dependency in computed detected')
+		}).toThrow('Circular dependency detected in computed')
 		expect(a.get()).toBe(1)
 	})
 

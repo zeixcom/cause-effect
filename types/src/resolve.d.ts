@@ -1,4 +1,4 @@
-import { type SignalValues, type UnknownSignalRecord } from './signal';
+import type { SignalValues, UnknownSignalRecord } from './signal';
 type ResolveResult<S extends UnknownSignalRecord> = {
     ok: true;
     values: SignalValues<S>;

@@ -1,6 +1,6 @@
 import type { UnknownRecord } from './diff'
-import { type SignalValues, UNSET, type UnknownSignalRecord } from './signal'
-import { toError } from './util'
+import type { SignalValues, UnknownSignalRecord } from './signal'
+import { toError, UNSET } from './util'
 
 /* === Types === */
 

@@ -1,3 +1,8 @@
+/* === Constants === */
+
+// biome-ignore lint/suspicious/noExplicitAny: Deliberately using any to be used as a placeholder value in any signal
+const UNSET: any = Symbol()
+
 /* === Utility Functions === */
 
 const isString = /*#__PURE__*/ (value: unknown): value is string =>
@@ -5,6 +10,9 @@ const isString = /*#__PURE__*/ (value: unknown): value is string =>
 
 const isNumber = /*#__PURE__*/ (value: unknown): value is number =>
 	typeof value === 'number'
+
+const isSymbol = /*#__PURE__*/ (value: unknown): value is symbol =>
+	typeof value === 'symbol'
 
 const isFunction = /*#__PURE__*/ <T>(
 	fn: unknown,
@@ -14,6 +22,10 @@ const isAsyncFunction = /*#__PURE__*/ <T>(
 	fn: unknown,
 ): fn is (...args: unknown[]) => Promise<T> =>
 	isFunction(fn) && fn.constructor.name === 'AsyncFunction'
+
+const isDefinedObject = /*#__PURE__*/ (
+	value: unknown,
+): value is Record<string, unknown> => !!value && typeof value === 'object'
 
 const isObjectOfType = /*#__PURE__*/ <T>(
 	value: unknown,
@@ -25,9 +37,7 @@ const isRecord = /*#__PURE__*/ <T extends Record<string, unknown>>(
 ): value is T => isObjectOfType(value, 'Object')
 
 const isRecordOrArray = /*#__PURE__*/ <
-	T extends {
-		[x: string | number]: unknown
-	},
+	T extends Record<string | number, unknown> | ReadonlyArray<unknown>,
 >(
 	value: unknown,
 ): value is T => isRecord(value) || Array.isArray(value)
@@ -58,26 +68,51 @@ const isAbortError = /*#__PURE__*/ (error: unknown): boolean =>
 const toError = /*#__PURE__*/ (reason: unknown): Error =>
 	reason instanceof Error ? reason : Error(String(reason))
 
-class CircularDependencyError extends Error {
-	constructor(where: string) {
-		super(`Circular dependency in ${where} detected`)
-		this.name = 'CircularDependencyError'
+const arrayToRecord = /*#__PURE__*/ <T>(array: T[]): Record<string, T> => {
+	const record: Record<string, T> = {}
+	for (let i = 0; i < array.length; i++) {
+		record[String(i)] = array[i]
 	}
+	return record
 }
+
+const recordToArray = /*#__PURE__*/ <T>(
+	record: Record<string | number, T>,
+): Record<string, T> | T[] => {
+	const indexes = validArrayIndexes(Object.keys(record))
+	if (indexes === null) return record
+
+	const array: T[] = []
+	for (const index of indexes) {
+		array.push(record[String(index)])
+	}
+	return array
+}
+
+const valueString = /*#__PURE__*/ (value: unknown): string =>
+	isString(value)
+		? `"${value}"`
+		: isDefinedObject(value)
+			? JSON.stringify(value)
+			: String(value)
 
 /* === Exports === */
 
 export {
+	UNSET,
 	isString,
 	isNumber,
+	isSymbol,
 	isFunction,
 	isAsyncFunction,
+	isDefinedObject,
 	isObjectOfType,
 	isRecord,
 	isRecordOrArray,
-	validArrayIndexes,
 	hasMethod,
 	isAbortError,
 	toError,
-	CircularDependencyError,
+	arrayToRecord,
+	recordToArray,
+	valueString,
 }

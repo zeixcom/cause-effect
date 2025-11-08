@@ -1,4 +1,5 @@
 import { isEqual } from './diff'
+import { CircularDependencyError } from './errors'
 import {
 	flush,
 	notify,
@@ -7,14 +8,13 @@ import {
 	type Watcher,
 	watch,
 } from './scheduler'
-import { UNSET } from './signal'
 import {
-	CircularDependencyError,
 	isAbortError,
 	isAsyncFunction,
 	isFunction,
 	isObjectOfType,
 	toError,
+	UNSET,
 } from './util'
 
 /* === Types === */
