@@ -3,12 +3,12 @@ import {
 	computed,
 	effect,
 	isStore,
+	type State,
 	type StoreAddEvent,
 	type StoreChangeEvent,
 	type StoreRemoveEvent,
 	state,
 	store,
-	toSignal,
 	UNSET,
 } from '..'
 
@@ -46,28 +46,11 @@ describe('store', () => {
 				email: 'hannah@example.com',
 			})
 
-			/**
-			 * store() only accepts records with numeric keys for arrays
-			 */
-			const participants = store<
-				Record<number, { name: string; tags: string[] }>
-			>([
+			const participants = store<{ name: string; tags: string[] }[]>([
 				{ name: 'Alice', tags: ['friends', 'mates'] },
 				{ name: 'Bob', tags: ['friends'] },
 			])
 			expect(participants.get()).toEqual([
-				{ name: 'Alice', tags: ['friends', 'mates'] },
-				{ name: 'Bob', tags: ['friends'] },
-			])
-
-			/**
-			 * toSignal() converts arrays to records when creating stores
-			 */
-			const participants2 = toSignal<{ name: string; tags: string[] }[]>([
-				{ name: 'Alice', tags: ['friends', 'mates'] },
-				{ name: 'Bob', tags: ['friends'] },
-			])
-			expect(participants2.get()).toEqual([
 				{ name: 'Alice', tags: ['friends', 'mates'] },
 				{ name: 'Bob', tags: ['friends'] },
 			])
@@ -646,7 +629,7 @@ describe('store', () => {
 			expect(sum.get()).toBe(75) // 10 + 25 + 40
 		})
 
-		test('demonstrates edge case: computed with iteration fails when size unchanged but keys change', () => {
+		test('demonstrates array compaction behavior with remove operations', () => {
 			// Create a store with an array
 			const numbers = store([10, 20, 30, 40, 50])
 
@@ -673,32 +656,27 @@ describe('store', () => {
 			expect(sumWithGet.get()).toBe(150)
 			expect(numbers.size.get()).toBe(5)
 
-			// Remove items to create holes: remove indices 1 and 3
-			numbers.remove(1) // Remove 20
-			numbers.remove(3) // Remove 40
-			// Now we have: [10, 30, 50] with sparse keys [0, 2, 4]
+			// Remove items - arrays should compact (not create sparse holes)
+			numbers.remove(1) // Remove 20, array becomes [10, 30, 40, 50]
+			expect(numbers.size.get()).toBe(4)
+			expect(numbers.get()).toEqual([10, 30, 40, 50])
+			expect(sumWithIteration.get()).toBe(130) // 10 + 30 + 40 + 50
+			expect(sumWithGet.get()).toBe(130)
+
+			numbers.remove(2) // Remove 40, array becomes [10, 30, 50]
 			expect(numbers.size.get()).toBe(3)
+			expect(numbers.get()).toEqual([10, 30, 50])
 			expect(sumWithIteration.get()).toBe(90) // 10 + 30 + 50
 			expect(sumWithGet.get()).toBe(90)
 
-			// EDGE CASE: Set a new array of SAME SIZE (3 elements)
-			// The .set() operation doesn't properly replace sparse keys
-			// Expected: [100, 200, 300] with keys [0, 1, 2]
-			// Actual: [100, 300, 50] with keys [0, 2, 4] (only existing keys updated)
+			// Set a new array of same size (3 elements)
 			numbers.set([100, 200, 300])
-
-			// Size is still 3, so size-based reactivity doesn't trigger
 			expect(numbers.size.get()).toBe(3)
+			expect(numbers.get()).toEqual([100, 200, 300])
 
-			// With the fix: both approaches now work correctly!
-			expect(sumWithGet.get()).toBe(600) // 100 + 200 + 300 - fixed!
-
-			// The iteration approach also works now because the diff fix
-			// triggers proper add/remove events which cause size.get() to notify
-			expect(sumWithIteration.get()).toBe(600) // Now works correctly!
-
-			// This demonstrates the fix works for both .get() and iteration approaches
-			// when diff() properly handles sparse-to-dense array conversion
+			// Both approaches work correctly with compacted arrays
+			expect(sumWithGet.get()).toBe(600) // 100 + 200 + 300
+			expect(sumWithIteration.get()).toBe(600) // Both work correctly
 		})
 
 		test('verifies root cause: diff works on array representation but reconcile uses sparse keys', () => {
@@ -1291,14 +1269,14 @@ describe('store', () => {
 				// Find the name entry
 				const nameEntry = entries.find(([key]) => key === 'name')
 				expect(nameEntry).toBeDefined()
-				expect(nameEntry![0]).toBe('name')
-				expect(nameEntry![1].get()).toBe('Alice')
+				expect(nameEntry?.[0]).toBe('name')
+				expect(nameEntry?.[1].get()).toBe('Alice')
 
 				// Find the age entry
 				const ageEntry = entries.find(([key]) => key === 'age')
 				expect(ageEntry).toBeDefined()
-				expect(ageEntry![0]).toBe('age')
-				expect(ageEntry![1].get()).toBe(30)
+				expect(ageEntry?.[0]).toBe('age')
+				expect(ageEntry?.[1].get()).toBe(30)
 			})
 
 			test('array-like stores support single-parameter add() method', () => {
@@ -1329,12 +1307,15 @@ describe('store', () => {
 				const suffix = [state(4), state(5)]
 
 				// Should spread signals when concat-ed
-				const combined = prefix.concat(numbers, suffix)
+				const combined = prefix.concat(
+					numbers as unknown as ConcatArray<State<number>>,
+					suffix,
+				)
 
 				expect(combined).toHaveLength(5)
 				expect(combined[0].get()).toBe(1)
-				expect(combined[1].get()).toBe(2) // Signal
-				expect(combined[2].get()).toBe(3) // Signal
+				expect(combined[1].get()).toBe(2) // from store
+				expect(combined[2].get()).toBe(3) // from store
 				expect(combined[3].get()).toBe(4)
 				expect(combined[4].get()).toBe(5)
 			})
@@ -1347,8 +1328,8 @@ describe('store', () => {
 
 				expect(spread).toHaveLength(4)
 				expect(spread[0].get()).toBe(5)
-				expect(spread[1].get()).toBe(10) // Signal
-				expect(spread[2].get()).toBe(20) // Signal
+				expect(spread[1].get()).toBe(10) // from store
+				expect(spread[2].get()).toBe(20) // from store
 				expect(spread[3].get()).toBe(30)
 			})
 
@@ -1374,7 +1355,10 @@ describe('store', () => {
 
 				// Created as object - stays object-like
 				const objectStore = store<{ a: number; b: number; c?: number }>(
-					{ a: 1, b: 2 },
+					{
+						a: 1,
+						b: 2,
+					},
 				)
 				expect(objectStore[Symbol.isConcatSpreadable]).toBe(false)
 				// @ts-expect-error deliberate access to non-existent length property

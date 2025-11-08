@@ -19,11 +19,10 @@ import {
 describe('toSignal', () => {
 	describe('type inference and runtime behavior', () => {
 		test('converts array to Store<Record<string, T>>', () => {
-			const arr = [
+			const result = toSignal([
 				{ id: 1, name: 'Alice' },
 				{ id: 2, name: 'Bob' },
-			]
-			const result = toSignal(arr)
+			])
 
 			// Runtime behavior
 			expect(isStore(result)).toBe(true)
@@ -31,19 +30,17 @@ describe('toSignal', () => {
 			expect(result['1'].get()).toEqual({ id: 2, name: 'Bob' })
 
 			// Type inference test - now correctly returns Store<Record<number, {id: number, name: string}>>
-			const typedResult: Store<
-				Record<number, { id: number; name: string }>
-			> = result
+			const typedResult: Store<{ id: number; name: string }[]> = result
 			expect(typedResult).toBeDefined()
 		})
 
 		test('converts empty array to Store<Record<string, never>>', () => {
-			const arr: never[] = []
-			const result = toSignal(arr)
+			const result = toSignal([])
 
 			// Runtime behavior
 			expect(isStore(result)).toBe(true)
-			expect(Object.keys(result).length).toBe(0)
+			expect(result.length).toBe(0)
+			expect(Object.keys(result).length).toBe(1) // length property
 		})
 
 		test('converts record to Store<T>', () => {
@@ -144,11 +141,10 @@ describe('toSignal', () => {
 
 	describe('edge cases', () => {
 		test('handles nested arrays', () => {
-			const nestedArr = [
+			const result = toSignal([
 				[1, 2],
 				[3, 4],
-			]
-			const result = toSignal(nestedArr)
+			])
 
 			expect(isStore(result)).toBe(true)
 			// With the fixed behavior, nested arrays should be recovered as arrays
@@ -249,14 +245,7 @@ describe('Type precision tests', () => {
 
 	describe('Type inference issues', () => {
 		test('demonstrates current type inference problem', () => {
-			// Current issue: when passing an array, T is inferred as the array type
-			// instead of the element type, causing type compatibility problems
-			const items = [{ id: 1 }, { id: 2 }]
-			const result = toSignal(items)
-
-			// This should work but may have type issues in external libraries
-			// The return type should be Store<Record<string, {id: number}>>
-			// But currently it might be inferred as Store<Record<string, {id: number}[]>>
+			const result = toSignal([{ id: 1 }, { id: 2 }])
 
 			// Let's verify the actual behavior
 			expect(isStore(result)).toBe(true)
@@ -264,7 +253,7 @@ describe('Type precision tests', () => {
 			expect(result['1'].get()).toEqual({ id: 2 })
 
 			// Type assertion test - this should now work with correct typing
-			const typedResult: Store<Record<number, { id: number }>> = result
+			const typedResult: Store<{ id: number }[]> = result
 			expect(typedResult).toBeDefined()
 
 			// Simulate external library usage where P[K] represents element type
@@ -290,19 +279,11 @@ describe('Type precision tests', () => {
 		})
 
 		test('verifies fixed type inference for external library compatibility', () => {
-			// This test ensures the fix for the type inference issue works
-			// Fixed: toSignal<T extends unknown & {}>(value: T[]): Store<Record<string, T>>
-			// Now T = {id: number} (element type), T[] = {id: number}[] (array of elements)
-			// Return type: Store<Record<string, {id: number}>> (correct)
-
 			const items = [
 				{ id: 1, name: 'Alice' },
 				{ id: 2, name: 'Bob' },
 			]
 			const signal = toSignal(items)
-
-			// Type should be Store<Record<string, {id: number, name: string}>>
-			// Each property signal should be Signal<{id: number, name: string}>
 			const firstItemSignal = signal['0']
 			const secondItemSignal = signal['1']
 
@@ -312,9 +293,7 @@ describe('Type precision tests', () => {
 			expect(secondItemSignal.get()).toEqual({ id: 2, name: 'Bob' })
 
 			// Type inference should now work correctly:
-			const properlyTyped: Store<
-				Record<number, { id: number; name: string }>
-			> = signal
+			const properlyTyped: Store<{ id: number; name: string }[]> = signal
 			expect(properlyTyped).toBeDefined()
 
 			// These should work without type errors in external libraries

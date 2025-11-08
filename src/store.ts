@@ -282,21 +282,22 @@ const store = <T extends UnknownRecord | UnknownArray>(
 		return changes.changed
 	}
 
-	// Initialize data
+	// Initialize data - convert arrays to records for internal storage
 	reconcile({} as T, initialValue, true)
 
 	// Methods and Properties
 	const s: Record<string, unknown> = {
 		add: isArrayLike
 			? (v: ArrayItem<T>): void => {
-					const key = signals.size as keyof T
+					const nextIndex = signals.size
+					const key = String(nextIndex) as Extract<keyof T, string>
 					if (v == null) {
 						console.error(
 							`Invalid value for key ${String(key)}: ${v}`,
 						)
 						return
 					}
-					const ok = addProperty(key as Extract<keyof T, string>, v)
+					const ok = addProperty(key, v)
 					if (ok) {
 						size.set(signals.size)
 						notify(watchers)
@@ -335,16 +336,32 @@ const store = <T extends UnknownRecord | UnknownArray>(
 			subscribe(watchers)
 			return recordToArray(current()) as T
 		},
-		remove: <K extends Extract<keyof T, string>>(k: K): void => {
-			if (signals.has(k)) {
-				removeProperty(k)
-				notify(watchers)
-				emit(STORE_EVENT_REMOVE, {
-					[k]: UNSET,
-				} as Partial<T>)
-				size.set(signals.size)
-			}
-		},
+		remove: isArrayLike
+			? (index: number): void => {
+					const currentArray = recordToArray(current()) as T
+					if (
+						Array.isArray(currentArray) &&
+						index >= 0 &&
+						index < currentArray.length
+					) {
+						const newArray = [...currentArray]
+						newArray.splice(index, 1)
+
+						if (reconcile(currentArray, newArray as unknown as T)) {
+							notify(watchers)
+						}
+					}
+				}
+			: <K extends Extract<keyof T, string>>(k: K): void => {
+					if (signals.has(k)) {
+						removeProperty(k)
+						notify(watchers)
+						emit(STORE_EVENT_REMOVE, {
+							[k]: UNSET,
+						} as Partial<T>)
+						size.set(signals.size)
+					}
+				},
 		set: (v: T): void => {
 			if (reconcile(current() as T, v)) {
 				notify(watchers)
@@ -390,7 +407,10 @@ const store = <T extends UnknownRecord | UnknownArray>(
 
 			// Methods and Properties
 			if (prop in s) return s[prop]
-			if (prop === 'length' && isArrayLike) return size.get()
+			if (prop === 'length' && isArrayLike) {
+				subscribe(watchers)
+				return size.get()
+			}
 
 			// Signals
 			return signals.get(prop as Extract<keyof T, string>)
@@ -415,43 +435,26 @@ const store = <T extends UnknownRecord | UnknownArray>(
 				: Array.from(signals.keys()).map(key => String(key))
 		},
 		getOwnPropertyDescriptor(_target, prop) {
-			if (prop === 'length' && isArrayLike) {
+			const nonEnumerable = <T>(value: T) => ({
+				enumerable: false,
+				configurable: true,
+				writable: false,
+				value,
+			})
+
+			if (prop === 'length' && isArrayLike)
 				return {
-					enumerable: false,
+					enumerable: true,
 					configurable: true,
 					writable: false,
 					value: size.get(),
 				}
-			}
-
-			if (prop === Symbol.isConcatSpreadable) {
-				return {
-					enumerable: false,
-					configurable: true,
-					writable: false,
-					value: isArrayLike,
-				}
-			}
-
-			if (prop === Symbol.toStringTag) {
-				return {
-					enumerable: false,
-					configurable: true,
-					writable: false,
-					value: TYPE_STORE,
-				}
-			}
-
+			if (prop === Symbol.isConcatSpreadable)
+				return nonEnumerable(isArrayLike)
+			if (prop === Symbol.toStringTag) return nonEnumerable(TYPE_STORE)
 			if (isSymbol(prop)) return undefined
 
-			if (Object.keys(s).includes(prop)) {
-				return {
-					enumerable: false,
-					configurable: true,
-					writable: false,
-					value: s[prop],
-				}
-			}
+			if (Object.keys(s).includes(prop)) return nonEnumerable(s[prop])
 
 			const signal = signals.get(prop as Extract<keyof T, string>)
 			return signal

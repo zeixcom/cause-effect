@@ -53,10 +53,6 @@ const isMutableSignal = /*#__PURE__*/ <T extends {}>(
  * @param {T} value - value to convert
  * @returns {Signal<T>} - Signal instance
  */
-function toSignal<T extends {}>(value: T[]): Store<Record<number, T>>
-function toSignal<T extends {}>(
-	value: (() => T) | ((abort: AbortSignal) => Promise<T>),
-): Computed<T>
 function toSignal<T extends {}>(
 	value: T,
 ): T extends Store<infer U>
@@ -67,13 +63,20 @@ function toSignal<T extends {}>(
 			? Computed<U>
 			: T extends Signal<infer U>
 				? Signal<U>
-				: T extends Record<string | number, unknown & {}>
-					? Store<{ [K in keyof T]: T[K] }>
-					: State<T>
-function toSignal<T extends {}>(value: MaybeSignal<T>) {
+				: T extends ReadonlyArray<infer U extends {}>
+					? Store<U[]>
+					: T extends Record<string, unknown & {}>
+						? Store<{ [K in keyof T]: T[K] }>
+						: T extends (
+									abort: AbortSignal,
+							  ) => Promise<infer U extends {}>
+							? Computed<U>
+							: T extends (() => infer U extends {})
+								? Computed<U>
+								: State<T>
+function toSignal<T extends {}>(value: T) {
 	if (isSignal<T>(value)) return value
 	if (isComputedCallback(value)) return computed(value)
-	if (Array.isArray(value)) return store(value as T)
 	if (Array.isArray(value) || isRecord(value)) return store(value)
 	return state(value)
 }

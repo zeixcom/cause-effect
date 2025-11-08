@@ -501,7 +501,8 @@ var store = (initialValue) => {
   reconcile({}, initialValue, true);
   const s = {
     add: isArrayLike ? (v) => {
-      const key = signals.size;
+      const nextIndex = signals.size;
+      const key = String(nextIndex);
       if (v == null) {
         console.error(`Invalid value for key ${String(key)}: ${v}`);
         return;
@@ -540,7 +541,16 @@ var store = (initialValue) => {
       subscribe(watchers);
       return recordToArray(current());
     },
-    remove: (k) => {
+    remove: isArrayLike ? (index) => {
+      const currentArray = recordToArray(current());
+      if (Array.isArray(currentArray) && index >= 0 && index < currentArray.length) {
+        const newArray = [...currentArray];
+        newArray.splice(index, 1);
+        if (reconcile(currentArray, newArray)) {
+          notify(watchers);
+        }
+      }
+    } : (k) => {
       if (signals.has(k)) {
         removeProperty(k);
         notify(watchers);
@@ -593,8 +603,10 @@ var store = (initialValue) => {
         return;
       if (prop in s)
         return s[prop];
-      if (prop === "length" && isArrayLike)
+      if (prop === "length" && isArrayLike) {
+        subscribe(watchers);
         return size.get();
+      }
       return signals.get(prop);
     },
     has(_target, prop) {
@@ -605,40 +617,27 @@ var store = (initialValue) => {
       return isArrayLike ? getSortedIndexes().map((key) => String(key)).concat(["length"]) : Array.from(signals.keys()).map((key) => String(key));
     },
     getOwnPropertyDescriptor(_target, prop) {
-      if (prop === "length" && isArrayLike) {
+      const nonEnumerable = (value) => ({
+        enumerable: false,
+        configurable: true,
+        writable: false,
+        value
+      });
+      if (prop === "length" && isArrayLike)
         return {
-          enumerable: false,
+          enumerable: true,
           configurable: true,
           writable: false,
           value: size.get()
         };
-      }
-      if (prop === Symbol.isConcatSpreadable) {
-        return {
-          enumerable: false,
-          configurable: true,
-          writable: false,
-          value: isArrayLike
-        };
-      }
-      if (prop === Symbol.toStringTag) {
-        return {
-          enumerable: false,
-          configurable: true,
-          writable: false,
-          value: TYPE_STORE
-        };
-      }
+      if (prop === Symbol.isConcatSpreadable)
+        return nonEnumerable(isArrayLike);
+      if (prop === Symbol.toStringTag)
+        return nonEnumerable(TYPE_STORE);
       if (isSymbol(prop))
         return;
-      if (Object.keys(s).includes(prop)) {
-        return {
-          enumerable: false,
-          configurable: true,
-          writable: false,
-          value: s[prop]
-        };
-      }
+      if (Object.keys(s).includes(prop))
+        return nonEnumerable(s[prop]);
       const signal = signals.get(prop);
       return signal ? {
         enumerable: true,
@@ -659,8 +658,6 @@ function toSignal(value) {
     return value;
   if (isComputedCallback(value))
     return computed(value);
-  if (Array.isArray(value))
-    return store(value);
   if (Array.isArray(value) || isRecord(value))
     return store(value);
   return state(value);

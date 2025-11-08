@@ -32,9 +32,7 @@ declare const isMutableSignal: <T extends {}>(value: unknown) => value is State<
  * @param {T} value - value to convert
  * @returns {Signal<T>} - Signal instance
  */
-declare function toSignal<T extends {}>(value: T[]): Store<Record<number, T>>;
-declare function toSignal<T extends {}>(value: (() => T) | ((abort: AbortSignal) => Promise<T>)): Computed<T>;
-declare function toSignal<T extends {}>(value: T): T extends Store<infer U> ? Store<U> : T extends State<infer U> ? State<U> : T extends Computed<infer U> ? Computed<U> : T extends Signal<infer U> ? Signal<U> : T extends Record<string | number, unknown & {}> ? Store<{
+declare function toSignal<T extends {}>(value: T): T extends Store<infer U> ? Store<U> : T extends State<infer U> ? State<U> : T extends Computed<infer U> ? Computed<U> : T extends Signal<infer U> ? Signal<U> : T extends ReadonlyArray<infer U extends {}> ? Store<U[]> : T extends Record<string, unknown & {}> ? Store<{
     [K in keyof T]: T[K];
-}> : State<T>;
+}> : T extends (abort: AbortSignal) => Promise<infer U extends {}> ? Computed<U> : T extends (() => infer U extends {}) ? Computed<U> : State<T>;
 export { type Signal, type MaybeSignal, type UnknownSignalRecord, type SignalValues, isSignal, isMutableSignal, toSignal, };
