@@ -59,6 +59,7 @@ export {
 	type StoreChangeEvent,
 	type StoreEventMap,
 	type StoreRemoveEvent,
+	type StoreSortEvent,
 	store,
 	TYPE_STORE,
 } from './src/store'

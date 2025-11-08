@@ -23,7 +23,7 @@ describe('diff', () => {
 		test('should detect additions', () => {
 			const obj1 = { a: 1 }
 			const obj2 = { a: 1, b: 'new' }
-			const result = diff(obj1 as UnknownRecord, obj2 as UnknownRecord)
+			const result = diff<{ a: number; b?: string }>(obj1, obj2)
 
 			expect(result.changed).toBe(true)
 			expect(result.add).toEqual({ b: 'new' })
@@ -34,7 +34,7 @@ describe('diff', () => {
 		test('should detect removals', () => {
 			const obj1 = { a: 1, b: 'hello' }
 			const obj2 = { a: 1 }
-			const result = diff(obj1 as UnknownRecord, obj2 as UnknownRecord)
+			const result = diff<{ a: number; b?: string }>(obj1, obj2)
 
 			expect(result.changed).toBe(true)
 			expect(Object.keys(result.add)).toHaveLength(0)
@@ -56,7 +56,12 @@ describe('diff', () => {
 		test('should detect multiple changes', () => {
 			const obj1 = { a: 1, b: 'hello', c: true }
 			const obj2 = { a: 2, d: 'new', c: true }
-			const result = diff(obj1 as UnknownRecord, obj2 as UnknownRecord)
+			const result = diff<{
+				a: number
+				b?: string
+				c: boolean
+				d?: string
+			}>(obj1, obj2)
 
 			expect(result.changed).toBe(true)
 			expect(result.add).toEqual({ d: 'new' })
@@ -212,7 +217,10 @@ describe('diff', () => {
 		test('should handle changes from primitive to object', () => {
 			const obj1 = { value: 'string' }
 			const obj2 = { value: { type: 'object' } }
-			const result = diff(obj1 as UnknownRecord, obj2 as UnknownRecord)
+			const result = diff<{ value: string | { type: string } }>(
+				obj1,
+				obj2,
+			)
 
 			expect(result.changed).toBe(true)
 			expect(result.change).toEqual({ value: { type: 'object' } })
