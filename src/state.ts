@@ -1,4 +1,5 @@
 import { isEqual } from './diff'
+import { NullishSignalValueError } from './errors'
 import { notify, subscribe, type Watcher } from './scheduler'
 import { isObjectOfType, UNSET } from './util'
 
@@ -50,6 +51,7 @@ const state = /*#__PURE__*/ <T extends {}>(initialValue: T): State<T> => {
 		 * @returns {void}
 		 */
 		set: (v: T): void => {
+			if (v == null) throw new NullishSignalValueError('state')
 			if (isEqual(value, v)) return
 			value = v
 			notify(watchers)

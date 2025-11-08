@@ -264,7 +264,7 @@ describe('Effect', () => {
 					errCount++
 					expect(errors[0]).toBeInstanceOf(Error)
 					expect(errors[0].message).toBe(
-						'Circular dependency in effect detected',
+						'Circular dependency detected in effect',
 					)
 				},
 			})

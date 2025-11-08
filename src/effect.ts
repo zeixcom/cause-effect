@@ -1,10 +1,6 @@
+import { CircularDependencyError } from './errors'
 import { type Cleanup, observe, watch } from './scheduler'
-import {
-	CircularDependencyError,
-	isAbortError,
-	isAsyncFunction,
-	isFunction,
-} from './util'
+import { isAbortError, isAsyncFunction, isFunction } from './util'
 
 /* === Types === */
 

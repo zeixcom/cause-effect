@@ -23,6 +23,10 @@ const isAsyncFunction = /*#__PURE__*/ <T>(
 ): fn is (...args: unknown[]) => Promise<T> =>
 	isFunction(fn) && fn.constructor.name === 'AsyncFunction'
 
+const isDefinedObject = /*#__PURE__*/ (
+	value: unknown,
+): value is Record<string, unknown> => !!value && typeof value === 'object'
+
 const isObjectOfType = /*#__PURE__*/ <T>(
 	value: unknown,
 	type: string,
@@ -85,12 +89,12 @@ const recordToArray = /*#__PURE__*/ <T>(
 	return array
 }
 
-class CircularDependencyError extends Error {
-	constructor(where: string) {
-		super(`Circular dependency in ${where} detected`)
-		this.name = 'CircularDependencyError'
-	}
-}
+const valueString = /*#__PURE__*/ (value: unknown): string =>
+	isString(value)
+		? `"${value}"`
+		: isDefinedObject(value)
+			? JSON.stringify(value)
+			: String(value)
 
 /* === Exports === */
 
@@ -101,6 +105,7 @@ export {
 	isSymbol,
 	isFunction,
 	isAsyncFunction,
+	isDefinedObject,
 	isObjectOfType,
 	isRecord,
 	isRecordOrArray,
@@ -109,5 +114,5 @@ export {
 	toError,
 	arrayToRecord,
 	recordToArray,
-	CircularDependencyError,
+	valueString,
 }

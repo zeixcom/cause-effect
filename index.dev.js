@@ -1,3 +1,46 @@
+// src/errors.ts
+class CircularDependencyError extends Error {
+  constructor(where) {
+    super(`Circular dependency detected in ${where}`);
+    this.name = "CircularDependencyError";
+  }
+}
+
+class InvalidSignalValueError extends TypeError {
+  constructor(where, value) {
+    super(`Invalid signal value ${value} in ${where}`);
+    this.name = "InvalidSignalValueError";
+  }
+}
+
+class NullishSignalValueError extends TypeError {
+  constructor(where) {
+    super(`Nullish signal values are not allowed in ${where}`);
+    this.name = "NullishSignalValueError";
+  }
+}
+
+class StoreKeyExistsError extends Error {
+  constructor(key, value) {
+    super(`Could not add store key "${key}" with value ${value} because it already exists`);
+    this.name = "StoreKeyExistsError";
+  }
+}
+
+class StoreKeyRangeError extends RangeError {
+  constructor(index) {
+    super(`Could not remove store index ${String(index)} because it is out of range`);
+    this.name = "StoreKeyRangeError";
+  }
+}
+
+class StoreKeyReadonlyError extends Error {
+  constructor(key, value) {
+    super(`Could not set store key "${key}" to ${value} because it is readonly`);
+    this.name = "StoreKeyReadonlyError";
+  }
+}
+
 // src/util.ts
 var UNSET = Symbol();
 var isString = (value) => typeof value === "string";
@@ -5,6 +48,7 @@ var isNumber = (value) => typeof value === "number";
 var isSymbol = (value) => typeof value === "symbol";
 var isFunction = (fn) => typeof fn === "function";
 var isAsyncFunction = (fn) => isFunction(fn) && fn.constructor.name === "AsyncFunction";
+var isDefinedObject = (value) => !!value && typeof value === "object";
 var isObjectOfType = (value, type) => Object.prototype.toString.call(value) === `[object ${type}]`;
 var isRecord = (value) => isObjectOfType(value, "Object");
 var isRecordOrArray = (value) => isRecord(value) || Array.isArray(value);
@@ -26,13 +70,7 @@ var recordToArray = (record) => {
   }
   return array;
 };
-
-class CircularDependencyError extends Error {
-  constructor(where) {
-    super(`Circular dependency in ${where} detected`);
-    this.name = "CircularDependencyError";
-  }
-}
+var valueString = (value) => isString(value) ? `"${value}"` : isDefinedObject(value) ? JSON.stringify(value) : String(value);
 
 // src/diff.ts
 var isEqual = (a, b, visited) => {
@@ -400,6 +438,8 @@ var state = (initialValue) => {
       return value;
     },
     set: (v) => {
+      if (v == null)
+        throw new NullishSignalValueError("state");
       if (isEqual(value, v))
         return;
       value = v;
@@ -436,8 +476,17 @@ var store = (initialValue) => {
   };
   const emit = (type, detail) => eventTarget.dispatchEvent(new CustomEvent(type, { detail }));
   const getSortedIndexes = () => Array.from(signals.keys()).map((k) => Number(k)).filter((n) => Number.isInteger(n)).sort((a, b) => a - b);
-  const addProperty = (key, value) => {
-    if (isSymbol(key) || value == null)
+  const isValidValue = (key, value) => {
+    if (value == null)
+      throw new NullishSignalValueError(`store for key "${key}"`);
+    if (value === UNSET)
+      return true;
+    if (isSymbol(value) || isFunction(value) || isComputed(value))
+      throw new InvalidSignalValueError(`store for key "${key}"`, valueString(value));
+    return true;
+  };
+  const addProperty = (key, value, single = false) => {
+    if (!isValidValue(key, value))
       return false;
     const signal = isState(value) || isStore(value) ? value : isRecord(value) ? store(value) : Array.isArray(value) ? store(value) : state(value);
     signals.set(key, signal);
@@ -449,15 +498,29 @@ var store = (initialValue) => {
         });
     });
     cleanups.set(key, cleanup);
+    if (single) {
+      size.set(signals.size);
+      notify(watchers);
+      emit(STORE_EVENT_ADD, {
+        [key]: value
+      });
+    }
     return true;
   };
-  const removeProperty = (key) => {
+  const removeProperty = (key, single = false) => {
     const ok = signals.delete(key);
     if (ok) {
       const cleanup = cleanups.get(key);
       if (cleanup)
         cleanup();
       cleanups.delete(key);
+    }
+    if (single) {
+      size.set(signals.size);
+      notify(watchers);
+      emit(STORE_EVENT_REMOVE, {
+        [key]: UNSET
+      });
     }
     return ok;
   };
@@ -466,9 +529,8 @@ var store = (initialValue) => {
     batch(() => {
       if (Object.keys(changes.add).length) {
         for (const key in changes.add) {
-          const value = changes.add[key];
-          if (value != null)
-            addProperty(key, value);
+          const value = changes.add[key] ?? UNSET;
+          addProperty(key, value);
         }
         if (initialRun) {
           setTimeout(() => {
@@ -480,12 +542,14 @@ var store = (initialValue) => {
       }
       if (Object.keys(changes.change).length) {
         for (const key in changes.change) {
-          const signal = signals.get(key);
           const value = changes.change[key];
-          if (isMutableSignal(signal) && value != null)
+          if (!isValidValue(key, value))
+            continue;
+          const signal = signals.get(key);
+          if (isMutableSignal(signal))
             signal.set(value);
           else
-            console.error(`Invalid change for key ${key}: ${value}`);
+            throw new StoreKeyReadonlyError(key, valueString(value));
         }
         emit(STORE_EVENT_CHANGE, changes.change);
       }
@@ -503,39 +567,12 @@ var store = (initialValue) => {
     add: isArrayLike ? (v) => {
       const nextIndex = signals.size;
       const key = String(nextIndex);
-      if (v == null) {
-        console.error(`Invalid value for key ${String(key)}: ${v}`);
-        return;
-      }
-      const ok = addProperty(key, v);
-      if (ok) {
-        size.set(signals.size);
-        notify(watchers);
-        emit(STORE_EVENT_ADD, {
-          [key]: v
-        });
-      } else {
-        console.error(`Failed to add value ${v} to key ${String(key)}`);
-      }
+      addProperty(key, v, true);
     } : (k, v) => {
-      if (!signals.has(k)) {
-        if (v == null) {
-          console.error(`Invalid value for key ${k}: ${v}`);
-          return;
-        }
-        const ok = addProperty(k, v);
-        if (ok) {
-          size.set(signals.size);
-          notify(watchers);
-          emit(STORE_EVENT_ADD, {
-            [k]: v
-          });
-        } else {
-          console.error(`Failed to add value ${v} to key ${k}`);
-        }
-      } else {
-        console.error(`Key ${k} already exists`);
-      }
+      if (!signals.has(k))
+        addProperty(k, v, true);
+      else
+        throw new StoreKeyExistsError(k, valueString(v));
     },
     get: () => {
       subscribe(watchers);
@@ -543,22 +580,16 @@ var store = (initialValue) => {
     },
     remove: isArrayLike ? (index) => {
       const currentArray = recordToArray(current());
-      if (Array.isArray(currentArray) && index >= 0 && index < currentArray.length) {
-        const newArray = [...currentArray];
-        newArray.splice(index, 1);
-        if (reconcile(currentArray, newArray)) {
-          notify(watchers);
-        }
-      }
-    } : (k) => {
-      if (signals.has(k)) {
-        removeProperty(k);
+      const currentLength = signals.size;
+      if (!Array.isArray(currentArray) || index <= -currentLength || index >= currentLength)
+        throw new StoreKeyRangeError(index);
+      const newArray = [...currentArray];
+      newArray.splice(index, 1);
+      if (reconcile(currentArray, newArray))
         notify(watchers);
-        emit(STORE_EVENT_REMOVE, {
-          [k]: UNSET
-        });
-        size.set(signals.size);
-      }
+    } : (k) => {
+      if (signals.has(k))
+        removeProperty(k, true);
     },
     set: (v) => {
       if (reconcile(current(), v)) {
@@ -698,5 +729,10 @@ export {
   TYPE_STORE,
   TYPE_STATE,
   TYPE_COMPUTED,
+  StoreKeyReadonlyError,
+  StoreKeyRangeError,
+  StoreKeyExistsError,
+  NullishSignalValueError,
+  InvalidSignalValueError,
   CircularDependencyError
 };

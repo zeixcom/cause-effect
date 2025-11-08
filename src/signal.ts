@@ -14,7 +14,6 @@ import { isRecord } from './util'
 type Signal<T extends {}> = {
 	get(): T
 }
-type MaybeSignal<T extends {}> = T | Signal<T> | ComputedCallback<T>
 
 type UnknownSignalRecord = Record<string, Signal<unknown & {}>>
 
@@ -67,13 +66,9 @@ function toSignal<T extends {}>(
 					? Store<U[]>
 					: T extends Record<string, unknown & {}>
 						? Store<{ [K in keyof T]: T[K] }>
-						: T extends (
-									abort: AbortSignal,
-							  ) => Promise<infer U extends {}>
+						: T extends ComputedCallback<infer U extends {}>
 							? Computed<U>
-							: T extends (() => infer U extends {})
-								? Computed<U>
-								: State<T>
+							: State<T>
 function toSignal<T extends {}>(value: T) {
 	if (isSignal<T>(value)) return value
 	if (isComputedCallback(value)) return computed(value)
@@ -85,7 +80,6 @@ function toSignal<T extends {}>(value: T) {
 
 export {
 	type Signal,
-	type MaybeSignal,
 	type UnknownSignalRecord,
 	type SignalValues,
 	isSignal,

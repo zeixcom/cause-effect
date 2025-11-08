@@ -118,6 +118,19 @@ describe('store', () => {
 				name: 'Hannah',
 			})
 		})
+
+		test('add method prevents null values', () => {
+			const user = store<{ name: string; tags?: string[] }>({
+				name: 'Alice',
+			})
+
+			expect(() => {
+				// @ts-expect-error deliberate test that null values are not allowed
+				user.add('tags', null)
+			}).toThrow(
+				'Nullish signal values are not allowed in store for key "tags"',
+			)
+		})
 	})
 
 	describe('nested stores', () => {
@@ -472,7 +485,12 @@ describe('store', () => {
 			})
 
 			const originalSize = user.size.get()
-			user.add('email', 'new@example.com')
+
+			expect(() => {
+				user.add('email', 'new@example.com')
+			}).toThrow(
+				'Could not add store key "email" with value "new@example.com" because it already exists',
+			)
 
 			expect(user.email?.get()).toBe('original@example.com')
 			expect(user.size.get()).toBe(originalSize)
@@ -1054,6 +1072,8 @@ describe('store', () => {
 			}`
 
 			const data = JSON.parse(complexJson)
+
+			// Test that null values in initial JSON are filtered out (treated as UNSET)
 			const dashboardStore = store<{
 				dashboard: {
 					widgets: {
@@ -1096,10 +1116,29 @@ describe('store', () => {
 			expect(dashboardStore.get().dashboard.widgets).toHaveLength(3)
 			expect(dashboardStore.get().dashboard.widgets[2].type).toBe('graph')
 
-			// Handle null values (note: null values may become undefined in store processing)
-			expect(dashboardStore.get().metadata.tags).toBeUndefined()
+			// Test that individual null additions are still prevented via add()
+			expect(() => {
+				// @ts-expect-error deliberate test case
+				dashboardStore.add('newProp', null)
+			}).toThrow(
+				'Nullish signal values are not allowed in store for key "newProp"',
+			)
 
-			// Update null to actual value
+			// Test that individual property .set() operations prevent null values
+			expect(() => {
+				dashboardStore.update(data => ({
+					...data,
+					metadata: {
+						...data.metadata,
+						// @ts-expect-error deliberate test case
+						tags: null,
+					},
+				}))
+			}).toThrow(
+				'Nullish signal values are not allowed in store for key "tags"',
+			)
+
+			// Update null to actual value (this should work)
 			dashboardStore.update(data => ({
 				...data,
 				metadata: {

@@ -1,9 +1,5 @@
-import {
-	CircularDependencyError,
-	isRecord,
-	isRecordOrArray,
-	UNSET,
-} from './util'
+import { CircularDependencyError } from './errors'
+import { isRecord, isRecordOrArray, UNSET } from './util'
 
 /* === Types === */
 

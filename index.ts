@@ -21,6 +21,14 @@ export {
 	type UnknownRecordOrArray,
 } from './src/diff'
 export { type EffectCallback, effect, type MaybeCleanup } from './src/effect'
+export {
+	CircularDependencyError,
+	InvalidSignalValueError,
+	NullishSignalValueError,
+	StoreKeyExistsError,
+	StoreKeyRangeError,
+	StoreKeyReadonlyError,
+} from './src/errors'
 export { type MatchHandlers, match } from './src/match'
 export { type ResolveResult, resolve } from './src/resolve'
 export {
@@ -38,7 +46,6 @@ export {
 export {
 	isMutableSignal,
 	isSignal,
-	type MaybeSignal,
 	type Signal,
 	type SignalValues,
 	toSignal,
@@ -56,7 +63,6 @@ export {
 	TYPE_STORE,
 } from './src/store'
 export {
-	CircularDependencyError,
 	isAbortError,
 	isAsyncFunction,
 	isFunction,

@@ -1,3 +1,4 @@
+import { isComputed } from './computed'
 import {
 	type ArrayToRecord,
 	diff,
@@ -6,6 +7,13 @@ import {
 	type UnknownRecordOrArray,
 } from './diff'
 import { effect } from './effect'
+import {
+	InvalidSignalValueError,
+	NullishSignalValueError,
+	StoreKeyExistsError,
+	StoreKeyRangeError,
+	StoreKeyReadonlyError,
+} from './errors'
 import {
 	batch,
 	type Cleanup,
@@ -16,11 +24,13 @@ import {
 import { isMutableSignal } from './signal'
 import { isState, type State, state } from './state'
 import {
+	isFunction,
 	isObjectOfType,
 	isRecord,
 	isSymbol,
 	recordToArray,
 	UNSET,
+	valueString,
 } from './util'
 
 /* === Types === */
@@ -190,12 +200,29 @@ const store = <T extends UnknownRecord | UnknownArray>(
 			.filter(n => Number.isInteger(n))
 			.sort((a, b) => a - b)
 
+	// Validate input
+	const isValidValue = <T>(
+		key: string,
+		value: T,
+	): value is NonNullable<T> => {
+		if (value == null)
+			throw new NullishSignalValueError(`store for key "${key}"`)
+		if (value === UNSET) return true
+		if (isSymbol(value) || isFunction(value) || isComputed(value))
+			throw new InvalidSignalValueError(
+				`store for key "${key}"`,
+				valueString(value),
+			)
+		return true
+	}
+
 	// Add nested signal and effect
 	const addProperty = <K extends Extract<keyof T, string>>(
 		key: K,
-		value: (T[K] & {}) | ArrayItem<T>,
+		value: T[K] | ArrayItem<T>,
+		single = false,
 	): boolean => {
-		if (isSymbol(key) || value == null) return false
+		if (!isValidValue(key, value)) return false
 		const signal =
 			isState(value) || isStore(value)
 				? value
@@ -204,7 +231,7 @@ const store = <T extends UnknownRecord | UnknownArray>(
 					: Array.isArray(value)
 						? store(value)
 						: state(value)
-		// @ts-expect-error non-matching signal type
+		// @ts-expect-error non-matching signal types
 		signals.set(key, signal)
 		const cleanup = effect(() => {
 			const currentValue = signal.get()
@@ -214,16 +241,35 @@ const store = <T extends UnknownRecord | UnknownArray>(
 				} as unknown as Partial<T>)
 		})
 		cleanups.set(key, cleanup)
+
+		if (single) {
+			size.set(signals.size)
+			notify(watchers)
+			emit(STORE_EVENT_ADD, {
+				[key]: value,
+			} as unknown as Partial<T>)
+		}
 		return true
 	}
 
 	// Remove nested signal and effect
-	const removeProperty = <K extends Extract<keyof T, string>>(key: K) => {
+	const removeProperty = <K extends Extract<keyof T, string>>(
+		key: K,
+		single = false,
+	) => {
 		const ok = signals.delete(key)
 		if (ok) {
 			const cleanup = cleanups.get(key)
 			if (cleanup) cleanup()
 			cleanups.delete(key)
+		}
+
+		if (single) {
+			size.set(signals.size)
+			notify(watchers)
+			emit(STORE_EVENT_REMOVE, {
+				[key]: UNSET,
+			} as unknown as Partial<T>)
 		}
 		return ok
 	}
@@ -240,14 +286,14 @@ const store = <T extends UnknownRecord | UnknownArray>(
 		)
 
 		batch(() => {
+			// Additions
 			if (Object.keys(changes.add).length) {
 				for (const key in changes.add) {
-					const value = changes.add[key]
-					if (value != null)
-						addProperty(
-							key as Extract<keyof T, string>,
-							value as T[Extract<keyof T, string>] & {},
-						)
+					const value = changes.add[key] ?? UNSET
+					addProperty(
+						key as Extract<keyof T, string>,
+						value as T[Extract<keyof T, string>] & {},
+					)
 				}
 
 				// Queue initial additions event to allow listeners to be added first
@@ -259,17 +305,22 @@ const store = <T extends UnknownRecord | UnknownArray>(
 					emit(STORE_EVENT_ADD, changes.add as Partial<T>)
 				}
 			}
+
+			// Changes
 			if (Object.keys(changes.change).length) {
 				for (const key in changes.change) {
-					const signal = signals.get(key as Extract<keyof T, string>)
 					const value = changes.change[key]
-					if (isMutableSignal(signal) && value != null)
+					if (!isValidValue(key, value)) continue
+					const signal = signals.get(key as Extract<keyof T, string>)
+					if (isMutableSignal(signal))
 						signal.set(value as T[Extract<keyof T, string>] & {})
 					else
-						console.error(`Invalid change for key ${key}: ${value}`)
+						throw new StoreKeyReadonlyError(key, valueString(value))
 				}
 				emit(STORE_EVENT_CHANGE, changes.change as Partial<T>)
 			}
+
+			// Removals
 			if (Object.keys(changes.remove).length) {
 				for (const key in changes.remove)
 					removeProperty(key as Extract<keyof T, string>)
@@ -291,46 +342,11 @@ const store = <T extends UnknownRecord | UnknownArray>(
 			? (v: ArrayItem<T>): void => {
 					const nextIndex = signals.size
 					const key = String(nextIndex) as Extract<keyof T, string>
-					if (v == null) {
-						console.error(
-							`Invalid value for key ${String(key)}: ${v}`,
-						)
-						return
-					}
-					const ok = addProperty(key, v)
-					if (ok) {
-						size.set(signals.size)
-						notify(watchers)
-						emit(STORE_EVENT_ADD, {
-							[key]: v,
-						} as unknown as Partial<T>)
-					} else {
-						console.error(
-							`Failed to add value ${v} to key ${String(key)}`,
-						)
-					}
+					addProperty(key, v, true)
 				}
 			: <K extends Extract<keyof T, string>>(k: K, v: T[K]): void => {
-					if (!signals.has(k)) {
-						if (v == null) {
-							console.error(`Invalid value for key ${k}: ${v}`)
-							return
-						}
-						const ok = addProperty(k, v)
-						if (ok) {
-							size.set(signals.size)
-							notify(watchers)
-							emit(STORE_EVENT_ADD, {
-								[k]: v,
-							} as unknown as Partial<T>)
-						} else {
-							console.error(
-								`Failed to add value ${v} to key ${k}`,
-							)
-						}
-					} else {
-						console.error(`Key ${k} already exists`)
-					}
+					if (!signals.has(k)) addProperty(k, v, true)
+					else throw new StoreKeyExistsError(k, valueString(v))
 				},
 		get: (): T => {
 			subscribe(watchers)
@@ -339,28 +355,21 @@ const store = <T extends UnknownRecord | UnknownArray>(
 		remove: isArrayLike
 			? (index: number): void => {
 					const currentArray = recordToArray(current()) as T
+					const currentLength = signals.size
 					if (
-						Array.isArray(currentArray) &&
-						index >= 0 &&
-						index < currentArray.length
-					) {
-						const newArray = [...currentArray]
-						newArray.splice(index, 1)
+						!Array.isArray(currentArray) ||
+						index <= -currentLength ||
+						index >= currentLength
+					)
+						throw new StoreKeyRangeError(index)
+					const newArray = [...currentArray]
+					newArray.splice(index, 1)
 
-						if (reconcile(currentArray, newArray as unknown as T)) {
-							notify(watchers)
-						}
-					}
+					if (reconcile(currentArray, newArray as unknown as T))
+						notify(watchers)
 				}
 			: <K extends Extract<keyof T, string>>(k: K): void => {
-					if (signals.has(k)) {
-						removeProperty(k)
-						notify(watchers)
-						emit(STORE_EVENT_REMOVE, {
-							[k]: UNSET,
-						} as Partial<T>)
-						size.set(signals.size)
-					}
+					if (signals.has(k)) removeProperty(k, true)
 				},
 		set: (v: T): void => {
 			if (reconcile(current() as T, v)) {

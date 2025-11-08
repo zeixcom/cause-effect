@@ -1,4 +1,5 @@
 import { isEqual } from './diff'
+import { CircularDependencyError } from './errors'
 import {
 	flush,
 	notify,
@@ -8,7 +9,6 @@ import {
 	watch,
 } from './scheduler'
 import {
-	CircularDependencyError,
 	isAbortError,
 	isAsyncFunction,
 	isFunction,
