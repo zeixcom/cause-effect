@@ -25,7 +25,7 @@ type SignalValues<S extends UnknownSignalRecord> = {
 /* === Functions === */
 
 /**
- * Check whether a value is a Signal or not
+ * Check whether a value is a Signal
  *
  * @since 0.9.0
  * @param {unknown} value - value to check
@@ -34,6 +34,17 @@ type SignalValues<S extends UnknownSignalRecord> = {
 const isSignal = /*#__PURE__*/ <T extends {}>(
 	value: unknown,
 ): value is Signal<T> => isState(value) || isComputed(value) || isStore(value)
+
+/**
+ * Check whether a value is a State or Store
+ *
+ * @since 0.15.2
+ * @param {unknown} value - value to check
+ * @returns {boolean} - true if value is a State or Store, false otherwise
+ */
+const isMutableSignal = /*#__PURE__*/ <T extends {}>(
+	value: unknown,
+): value is State<T> | Store<T> => isState(value) || isStore(value)
 
 /**
  * Convert a value to a Signal if it's not already a Signal
@@ -67,30 +78,6 @@ function toSignal<T extends {}>(value: MaybeSignal<T>) {
 	return state(value)
 }
 
-/**
- * Convert a value to a mutable Signal if it's not already a Signal
- *
- * @since 0.15.0
- * @param {T} value - value to convert
- * @returns {State<T> | Store<T>} - Signal instance
- */
-function toMutableSignal<T extends {}>(value: T[]): Store<Record<string, T>>
-function toMutableSignal<T extends {}>(
-	value: T,
-): T extends Store<infer U>
-	? Store<U>
-	: T extends State<infer U>
-		? State<U>
-		: T extends Record<string | number, unknown & {}>
-			? Store<{ [K in keyof T]: T[K] }>
-			: State<T>
-function toMutableSignal<T extends {}>(value: T): State<T> | Store<T> {
-	if (isState<T>(value) || isStore<T>(value)) return value
-	if (Array.isArray(value)) return store(value as T)
-	if (isRecord(value)) return store(value)
-	return state(value)
-}
-
 /* === Exports === */
 
 export {
@@ -99,6 +86,6 @@ export {
 	type UnknownSignalRecord,
 	type SignalValues,
 	isSignal,
+	isMutableSignal,
 	toSignal,
-	toMutableSignal,
 }

@@ -10,7 +10,6 @@ import {
 	type Store,
 	state,
 	store,
-	toMutableSignal,
 	toSignal,
 	type UnknownRecord,
 } from '..'
@@ -180,112 +179,6 @@ describe('toSignal', () => {
 			expect('0' in result).toBe(false)
 			expect(result['1'].get()).toBe('middle')
 			expect('2' in result).toBe(false)
-		})
-	})
-})
-
-describe('toMutableSignal', () => {
-	describe('type inference and runtime behavior', () => {
-		test('converts array to Store<Record<string, T>>', () => {
-			const arr = [
-				{ id: 1, name: 'Alice' },
-				{ id: 2, name: 'Bob' },
-			]
-			const result = toMutableSignal(arr)
-
-			// Runtime behavior
-			expect(isStore(result)).toBe(true)
-			expect(result['0'].get()).toEqual({ id: 1, name: 'Alice' })
-			expect(result['1'].get()).toEqual({ id: 2, name: 'Bob' })
-
-			// Type inference test - now correctly returns Store<Record<string, {id: number, name: string}>>
-			const typedResult: Store<
-				Record<string, { id: number; name: string }>
-			> = result
-			expect(typedResult).toBeDefined()
-		})
-
-		test('converts record to Store<T>', () => {
-			const record = { name: 'Alice', age: 30 }
-			const result = toMutableSignal(record)
-
-			// Runtime behavior
-			expect(isStore(result)).toBe(true)
-			expect(result.name.get()).toBe('Alice')
-			expect(result.age.get()).toBe(30)
-
-			// Type inference test - should be Store<{name: string, age: number}>
-			const typedResult: Store<{ name: string; age: number }> = result
-			expect(typedResult).toBeDefined()
-		})
-
-		test('passes through existing Store unchanged', () => {
-			const originalStore = store({ count: 5 })
-			const result = toMutableSignal(originalStore)
-
-			// Runtime behavior
-			expect(result).toBe(originalStore) // Should be the same instance
-			expect(isStore(result)).toBe(true)
-			expect(result.count.get()).toBe(5)
-		})
-
-		test('passes through existing State unchanged', () => {
-			const originalState = state(42)
-			const result = toMutableSignal(originalState)
-
-			// Runtime behavior
-			expect(result).toBe(originalState) // Should be the same instance
-			expect(isState(result)).toBe(true)
-			expect(result.get()).toBe(42)
-
-			// Type inference test - should be State<number>
-			const typedResult: State<number> = result
-			expect(typedResult).toBeDefined()
-		})
-
-		test('converts primitive to State<T>', () => {
-			const num = 42
-			const result = toMutableSignal(num)
-
-			// Runtime behavior - primitives are correctly converted to State
-			expect(isState(result)).toBe(true)
-			expect(result.get()).toBe(42)
-		})
-
-		test('converts object to State<T> (not Store)', () => {
-			const obj = new Date('2024-01-01')
-			const result = toMutableSignal(obj)
-
-			// Runtime behavior - objects are correctly converted to State
-			expect(isState(result)).toBe(true)
-			expect(result.get()).toBe(obj)
-
-			// Type inference test - should be State<Date>
-			const typedResult: State<Date> = result
-			expect(typedResult).toBeDefined()
-		})
-	})
-
-	describe('differences from toSignal', () => {
-		test('does not accept functions (only mutable signals)', () => {
-			// toMutableSignal should not have a function overload
-			// This test documents the expected behavior difference
-			const fn = () => 'test'
-			const result = toMutableSignal(fn)
-
-			// Should treat function as a regular value and create State
-			expect(isState(result)).toBe(true)
-			expect(result.get()).toBe(fn)
-		})
-
-		test('does not accept Computed signals', () => {
-			// toMutableSignal should not accept Computed signals
-			const comp = computed(() => 'computed value')
-			const result = toMutableSignal(comp)
-
-			// Should treat Computed as a regular object and create State
-			expect(isState(result)).toBe(true)
-			expect(result.get()).toBe(comp)
 		})
 	})
 })

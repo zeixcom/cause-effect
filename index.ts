@@ -16,6 +16,7 @@ export {
 	type DiffResult,
 	diff,
 	isEqual,
+	type UnknownArray,
 	type UnknownRecord,
 	type UnknownRecordOrArray,
 } from './src/diff'
@@ -35,11 +36,11 @@ export {
 	watch,
 } from './src/scheduler'
 export {
+	isMutableSignal,
 	isSignal,
 	type MaybeSignal,
 	type Signal,
 	type SignalValues,
-	toMutableSignal,
 	toSignal,
 	type UnknownSignalRecord,
 } from './src/signal'
@@ -63,6 +64,7 @@ export {
 	isRecord,
 	isRecordOrArray,
 	isString,
+	isSymbol,
 	toError,
 	UNSET,
 } from './src/util'

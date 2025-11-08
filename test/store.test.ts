@@ -542,7 +542,7 @@ describe('store', () => {
 	describe('array-derived stores with computed sum', () => {
 		test('computes sum correctly and updates when items are added, removed, or changed', () => {
 			// Create a store with an array of numbers
-			const numbers = store<Record<number, number>>([1, 2, 3, 4, 5])
+			const numbers = store([1, 2, 3, 4, 5])
 
 			// Create a computed that calculates the sum by accessing the array via .get()
 			// This ensures reactivity to both value changes and structural changes
@@ -557,11 +557,11 @@ describe('store', () => {
 			expect(numbers.size.get()).toBe(5)
 
 			// Test adding items
-			numbers.add(0, 6) // Add 6 at index 5
+			numbers.add(6) // Add 6 at index 5
 			expect(sum.get()).toBe(21) // 15 + 6 = 21
 			expect(numbers.size.get()).toBe(6)
 
-			numbers.add(0, 7) // Add 7 at index 6
+			numbers.add(7) // Add 7 at index 6
 			expect(sum.get()).toBe(28) // 21 + 7 = 28
 			expect(numbers.size.get()).toBe(7)
 
@@ -590,7 +590,7 @@ describe('store', () => {
 
 		test('handles empty array and single element operations', () => {
 			// Start with empty array
-			const numbers = store<Record<number, number>>([])
+			const numbers = store<number[]>([])
 
 			const sum = computed(() => {
 				const array = numbers.get()
@@ -603,7 +603,7 @@ describe('store', () => {
 			expect(numbers.size.get()).toBe(0)
 
 			// Add first element
-			numbers.add(0, 42)
+			numbers.add(42)
 			expect(sum.get()).toBe(42)
 			expect(numbers.size.get()).toBe(1)
 
@@ -618,14 +618,14 @@ describe('store', () => {
 		})
 
 		test('computed sum using store iteration with size tracking', () => {
-			const numbers = store<Record<number, number>>([10, 20, 30])
+			const numbers = store([10, 20, 30])
 
 			// Use iteration but also track size to ensure reactivity to additions/removals
 			const sum = computed(() => {
 				// Access size to subscribe to structural changes
 				numbers.size.get()
 				let total = 0
-				for (const [_index, signal] of numbers) {
+				for (const signal of numbers) {
 					total += signal.get()
 				}
 				return total
@@ -634,7 +634,7 @@ describe('store', () => {
 			expect(sum.get()).toBe(60)
 
 			// Add more numbers
-			numbers.add(0, 40)
+			numbers.add(40)
 			expect(sum.get()).toBe(100)
 
 			// Modify existing values
@@ -648,14 +648,14 @@ describe('store', () => {
 
 		test('demonstrates edge case: computed with iteration fails when size unchanged but keys change', () => {
 			// Create a store with an array
-			const numbers = store<Record<number, number>>([10, 20, 30, 40, 50])
+			const numbers = store([10, 20, 30, 40, 50])
 
 			// Create a computed using iteration approach with size tracking
 			const sumWithIteration = computed(() => {
 				// Access size to subscribe to structural changes
 				numbers.size.get()
 				let total = 0
-				for (const [_index, signal] of numbers) {
+				for (const signal of numbers) {
 					total += signal.get()
 				}
 				return total
@@ -703,7 +703,7 @@ describe('store', () => {
 
 		test('verifies root cause: diff works on array representation but reconcile uses sparse keys', () => {
 			// Create a sparse array scenario
-			const numbers = store<Record<number, number>>([10, 20, 30])
+			const numbers = store([10, 20, 30])
 
 			// Remove middle element to create sparse structure
 			numbers.remove(1) // Now has keys ["0", "2"] with values [10, 30]
@@ -1235,6 +1235,196 @@ describe('store', () => {
 				'2024-01-15T12:00:00Z',
 			)
 			expect(formStore.get().profile.firstName).toBe('Jane') // Original data preserved
+		})
+
+		describe('Symbol.isConcatSpreadable and polymorphic behavior', () => {
+			test('array-like stores have Symbol.isConcatSpreadable true and length property', () => {
+				const numbers = store([1, 2, 3])
+
+				// Should be concat spreadable
+				expect(numbers[Symbol.isConcatSpreadable]).toBe(true)
+
+				// Should have length property
+				expect(numbers.length).toBe(3)
+				expect(typeof numbers.length).toBe('number')
+
+				// Add an item and verify length updates
+				numbers.add(4)
+				expect(numbers.length).toBe(4)
+			})
+
+			test('object-like stores have Symbol.isConcatSpreadable false and no length property', () => {
+				const user = store({ name: 'John', age: 25 })
+
+				// Should not be concat spreadable
+				expect(user[Symbol.isConcatSpreadable]).toBe(false)
+
+				// Should not have length property
+				// @ts-expect-error deliberately accessing non-existent length property
+				expect(user.length).toBeUndefined()
+				expect('length' in user).toBe(false)
+			})
+
+			test('array-like stores iterate over signals only', () => {
+				const numbers = store([10, 20, 30])
+				const signals = [...numbers]
+
+				// Should yield signals, not [key, signal] pairs
+				expect(signals).toHaveLength(3)
+				expect(signals[0].get()).toBe(10)
+				expect(signals[1].get()).toBe(20)
+				expect(signals[2].get()).toBe(30)
+
+				// Verify they are signal objects
+				signals.forEach(signal => {
+					expect(typeof signal.get).toBe('function')
+				})
+			})
+
+			test('object-like stores iterate over [key, signal] pairs', () => {
+				const user = store({ name: 'Alice', age: 30 })
+				const entries = [...user]
+
+				// Should yield [key, signal] pairs
+				expect(entries).toHaveLength(2)
+
+				// Find the name entry
+				const nameEntry = entries.find(([key]) => key === 'name')
+				expect(nameEntry).toBeDefined()
+				expect(nameEntry![0]).toBe('name')
+				expect(nameEntry![1].get()).toBe('Alice')
+
+				// Find the age entry
+				const ageEntry = entries.find(([key]) => key === 'age')
+				expect(ageEntry).toBeDefined()
+				expect(ageEntry![0]).toBe('age')
+				expect(ageEntry![1].get()).toBe(30)
+			})
+
+			test('array-like stores support single-parameter add() method', () => {
+				const fruits = store(['apple', 'banana'])
+
+				// Should add to end without specifying key
+				fruits.add('cherry')
+
+				const result = fruits.get()
+				expect(result).toEqual(['apple', 'banana', 'cherry'])
+				expect(fruits.length).toBe(3)
+			})
+
+			test('object-like stores require key parameter for add() method', () => {
+				const config = store<{ debug: boolean; timeout?: number }>({
+					debug: true,
+				})
+
+				// Should require both key and value
+				config.add('timeout', 5000)
+
+				expect(config.get()).toEqual({ debug: true, timeout: 5000 })
+			})
+
+			test('concat works correctly with array-like stores', () => {
+				const numbers = store([2, 3])
+				const prefix = [state(1)]
+				const suffix = [state(4), state(5)]
+
+				// Should spread signals when concat-ed
+				const combined = prefix.concat(numbers, suffix)
+
+				expect(combined).toHaveLength(5)
+				expect(combined[0].get()).toBe(1)
+				expect(combined[1].get()).toBe(2) // Signal
+				expect(combined[2].get()).toBe(3) // Signal
+				expect(combined[3].get()).toBe(4)
+				expect(combined[4].get()).toBe(5)
+			})
+
+			test('spread operator works correctly with array-like stores', () => {
+				const numbers = store([10, 20])
+
+				// Should spread signals
+				const spread = [state(5), ...numbers, state(30)]
+
+				expect(spread).toHaveLength(4)
+				expect(spread[0].get()).toBe(5)
+				expect(spread[1].get()).toBe(10) // Signal
+				expect(spread[2].get()).toBe(20) // Signal
+				expect(spread[3].get()).toBe(30)
+			})
+
+			test('array-like stores maintain numeric key ordering', () => {
+				const items = store(['first', 'second', 'third'])
+
+				// Get the keys
+				const keys = Object.keys(items)
+				expect(keys).toEqual(['0', '1', '2', 'length'])
+
+				// Iteration should be in order
+				const signals = [...items]
+				expect(signals[0].get()).toBe('first')
+				expect(signals[1].get()).toBe('second')
+				expect(signals[2].get()).toBe('third')
+			})
+
+			test('polymorphic behavior is determined at creation time', () => {
+				// Created as array - stays array-like
+				const arrayStore = store([1, 2])
+				expect(arrayStore[Symbol.isConcatSpreadable]).toBe(true)
+				expect(arrayStore.length).toBe(2)
+
+				// Created as object - stays object-like
+				const objectStore = store<{ a: number; b: number; c?: number }>(
+					{ a: 1, b: 2 },
+				)
+				expect(objectStore[Symbol.isConcatSpreadable]).toBe(false)
+				// @ts-expect-error deliberate access to non-existent length property
+				expect(objectStore.length).toBeUndefined()
+
+				// Even after modifications, behavior doesn't change
+				arrayStore.add(3)
+				expect(arrayStore[Symbol.isConcatSpreadable]).toBe(true)
+
+				objectStore.add('c', 3)
+				expect(objectStore[Symbol.isConcatSpreadable]).toBe(false)
+			})
+
+			test('runtime type detection using typeof length', () => {
+				const arrayStore = store([1, 2, 3])
+				const objectStore = store({ x: 1, y: 2 })
+
+				// Can distinguish at runtime
+				expect(typeof arrayStore.length === 'number').toBe(true)
+				// @ts-expect-error deliberately accessing non-existent length property
+				expect(typeof objectStore.length === 'number').toBe(false)
+			})
+
+			test('empty stores behave correctly', () => {
+				const emptyArray = store([])
+				const emptyObject = store({})
+
+				// Empty array store
+				expect(emptyArray[Symbol.isConcatSpreadable]).toBe(true)
+				expect(emptyArray.length).toBe(0)
+				expect([...emptyArray]).toEqual([])
+
+				// Empty object store
+				expect(emptyObject[Symbol.isConcatSpreadable]).toBe(false)
+				// @ts-expect-error deliberately accessing non-existent length property
+				expect(emptyObject.length).toBeUndefined()
+				expect([...emptyObject]).toEqual([])
+			})
+		})
+
+		test('debug length property issue', () => {
+			const numbers = store([1, 2, 3])
+
+			// Test length in computed context
+			const lengthComputed = computed(() => numbers.length)
+			numbers.add(4)
+
+			// Test if length property is actually reactive
+			expect(numbers.length).toBe(4)
+			expect(lengthComputed.get()).toBe(4)
 		})
 	})
 })

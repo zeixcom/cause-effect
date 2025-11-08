@@ -2,6 +2,7 @@
 var UNSET = Symbol();
 var isString = (value) => typeof value === "string";
 var isNumber = (value) => typeof value === "number";
+var isSymbol = (value) => typeof value === "symbol";
 var isFunction = (fn) => typeof fn === "function";
 var isAsyncFunction = (fn) => isFunction(fn) && fn.constructor.name === "AsyncFunction";
 var isObjectOfType = (value, type) => Object.prototype.toString.call(value) === `[object ${type}]`;
@@ -13,7 +14,6 @@ var validArrayIndexes = (keys) => {
   const indexes = keys.map((k) => isString(k) ? parseInt(k, 10) : isNumber(k) ? k : NaN);
   return indexes.every((index) => Number.isFinite(index) && index >= 0) ? indexes.sort((a, b) => a - b) : null;
 };
-var hasMethod = (obj, methodName) => (methodName in obj) && isFunction(obj[methodName]);
 var isAbortError = (error) => error instanceof DOMException && error.name === "AbortError";
 var toError = (reason) => reason instanceof Error ? reason : Error(String(reason));
 var recordToArray = (record) => {
@@ -425,33 +425,41 @@ var store = (initialValue) => {
   const eventTarget = new EventTarget;
   const signals = new Map;
   const cleanups = new Map;
+  const isArrayLike = Array.isArray(initialValue);
   const size = state(0);
   const current = () => {
     const record = {};
     for (const [key, signal] of signals) {
-      record[String(key)] = signal.get();
+      record[key] = signal.get();
     }
     return record;
   };
   const emit = (type, detail) => eventTarget.dispatchEvent(new CustomEvent(type, { detail }));
+  const getSortedIndexes = () => Array.from(signals.keys()).map((k) => Number(k)).filter((n) => Number.isInteger(n)).sort((a, b) => a - b);
   const addProperty = (key, value) => {
-    const stringKey = String(key);
-    const signal = toMutableSignal(value);
-    signals.set(stringKey, signal);
+    if (isSymbol(key) || value == null)
+      return false;
+    const signal = isState(value) || isStore(value) ? value : isRecord(value) ? store(value) : Array.isArray(value) ? store(value) : state(value);
+    signals.set(key, signal);
     const cleanup = effect(() => {
       const currentValue = signal.get();
       if (currentValue != null)
-        emit(STORE_EVENT_CHANGE, { [key]: currentValue });
+        emit(STORE_EVENT_CHANGE, {
+          [key]: currentValue
+        });
     });
-    cleanups.set(stringKey, cleanup);
+    cleanups.set(key, cleanup);
+    return true;
   };
   const removeProperty = (key) => {
-    const stringKey = String(key);
-    signals.delete(stringKey);
-    const cleanup = cleanups.get(stringKey);
-    if (cleanup)
-      cleanup();
-    cleanups.delete(stringKey);
+    const ok = signals.delete(key);
+    if (ok) {
+      const cleanup = cleanups.get(key);
+      if (cleanup)
+        cleanup();
+      cleanups.delete(key);
+    }
+    return ok;
   };
   const reconcile = (oldValue, newValue, initialRun) => {
     const changes = diff(oldValue, newValue);
@@ -474,15 +482,16 @@ var store = (initialValue) => {
         for (const key in changes.change) {
           const signal = signals.get(key);
           const value = changes.change[key];
-          if (signal && value != null && hasMethod(signal, "set"))
+          if (isMutableSignal(signal) && value != null)
             signal.set(value);
+          else
+            console.error(`Invalid change for key ${key}: ${value}`);
         }
         emit(STORE_EVENT_CHANGE, changes.change);
       }
       if (Object.keys(changes.remove).length) {
-        for (const key in changes.remove) {
+        for (const key in changes.remove)
           removeProperty(key);
-        }
         emit(STORE_EVENT_REMOVE, changes.remove);
       }
       size.set(signals.size);
@@ -491,16 +500,40 @@ var store = (initialValue) => {
   };
   reconcile({}, initialValue, true);
   const s = {
-    add: (k, v) => {
-      const indexes = validArrayIndexes(Array.from(signals.keys()));
-      const key = indexes ? indexes.length ? Math.max(...indexes) + 1 : 0 : k;
-      if (!signals.has(String(key))) {
-        addProperty(key, v);
+    add: isArrayLike ? (v) => {
+      const key = signals.size;
+      if (v == null) {
+        console.error(`Invalid value for key ${String(key)}: ${v}`);
+        return;
+      }
+      const ok = addProperty(key, v);
+      if (ok) {
+        size.set(signals.size);
         notify(watchers);
         emit(STORE_EVENT_ADD, {
           [key]: v
         });
-        size.set(signals.size);
+      } else {
+        console.error(`Failed to add value ${v} to key ${String(key)}`);
+      }
+    } : (k, v) => {
+      if (!signals.has(k)) {
+        if (v == null) {
+          console.error(`Invalid value for key ${k}: ${v}`);
+          return;
+        }
+        const ok = addProperty(k, v);
+        if (ok) {
+          size.set(signals.size);
+          notify(watchers);
+          emit(STORE_EVENT_ADD, {
+            [k]: v
+          });
+        } else {
+          console.error(`Failed to add value ${v} to key ${k}`);
+        }
+      } else {
+        console.error(`Key ${k} already exists`);
       }
     },
     get: () => {
@@ -508,7 +541,7 @@ var store = (initialValue) => {
       return recordToArray(current());
     },
     remove: (k) => {
-      if (signals.has(String(k))) {
+      if (signals.has(k)) {
         removeProperty(k);
         notify(watchers);
         emit(STORE_EVENT_REMOVE, {
@@ -540,27 +573,73 @@ var store = (initialValue) => {
   };
   return new Proxy({}, {
     get(_target, prop) {
-      if (isString(prop) && prop in s)
-        return s[prop];
       if (prop === Symbol.toStringTag)
         return TYPE_STORE;
+      if (prop === Symbol.isConcatSpreadable)
+        return isArrayLike;
       if (prop === Symbol.iterator)
-        return function* () {
-          for (const [key, signal] of signals) {
-            yield [key, signal];
+        return isArrayLike ? function* () {
+          const indexes = getSortedIndexes();
+          for (const index of indexes) {
+            const signal = signals.get(String(index));
+            if (signal)
+              yield signal;
           }
+        } : function* () {
+          for (const [key, signal] of signals)
+            yield [key, signal];
         };
-      return signals.get(String(prop));
+      if (isSymbol(prop))
+        return;
+      if (prop in s)
+        return s[prop];
+      if (prop === "length" && isArrayLike)
+        return size.get();
+      return signals.get(prop);
     },
     has(_target, prop) {
-      const key = String(prop);
-      return signals.has(key) || Object.keys(s).includes(key) || prop === Symbol.toStringTag || prop === Symbol.iterator;
+      const stringProp = String(prop);
+      return stringProp && signals.has(stringProp) || Object.keys(s).includes(stringProp) || prop === Symbol.toStringTag || prop === Symbol.iterator || prop === Symbol.isConcatSpreadable || prop === "length" && isArrayLike;
     },
     ownKeys() {
-      return Array.from(signals.keys()).map((key) => String(key));
+      return isArrayLike ? getSortedIndexes().map((key) => String(key)).concat(["length"]) : Array.from(signals.keys()).map((key) => String(key));
     },
     getOwnPropertyDescriptor(_target, prop) {
-      const signal = signals.get(String(prop));
+      if (prop === "length" && isArrayLike) {
+        return {
+          enumerable: false,
+          configurable: true,
+          writable: false,
+          value: size.get()
+        };
+      }
+      if (prop === Symbol.isConcatSpreadable) {
+        return {
+          enumerable: false,
+          configurable: true,
+          writable: false,
+          value: isArrayLike
+        };
+      }
+      if (prop === Symbol.toStringTag) {
+        return {
+          enumerable: false,
+          configurable: true,
+          writable: false,
+          value: TYPE_STORE
+        };
+      }
+      if (isSymbol(prop))
+        return;
+      if (Object.keys(s).includes(prop)) {
+        return {
+          enumerable: false,
+          configurable: true,
+          writable: false,
+          value: s[prop]
+        };
+      }
+      const signal = signals.get(prop);
       return signal ? {
         enumerable: true,
         configurable: true,
@@ -574,6 +653,7 @@ var isStore = (value) => isObjectOfType(value, TYPE_STORE);
 
 // src/signal.ts
 var isSignal = (value) => isState(value) || isComputed(value) || isStore(value);
+var isMutableSignal = (value) => isState(value) || isStore(value);
 function toSignal(value) {
   if (isSignal(value))
     return value;
@@ -585,19 +665,9 @@ function toSignal(value) {
     return store(value);
   return state(value);
 }
-function toMutableSignal(value) {
-  if (isState(value) || isStore(value))
-    return value;
-  if (Array.isArray(value))
-    return store(value);
-  if (isRecord(value))
-    return store(value);
-  return state(value);
-}
 export {
   watch,
   toSignal,
-  toMutableSignal,
   toError,
   subscribe,
   store,
@@ -606,6 +676,7 @@ export {
   observe,
   notify,
   match,
+  isSymbol,
   isString,
   isStore,
   isState,
@@ -613,6 +684,7 @@ export {
   isRecordOrArray,
   isRecord,
   isNumber,
+  isMutableSignal,
   isFunction,
   isEqual,
   isComputedCallback,

@@ -8,7 +8,11 @@ import {
 /* === Types === */
 
 type UnknownRecord = Record<string, unknown & {}>
-type UnknownRecordOrArray = Record<string | number, unknown & {}>
+type UnknownArray = ReadonlyArray<unknown & {}>
+type ArrayToRecord<T extends UnknownArray> = {
+	[key: string]: T extends Array<infer U extends {}> ? U : never
+}
+type UnknownRecordOrArray = UnknownRecord | ArrayToRecord<UnknownArray>
 
 type DiffResult<T extends UnknownRecordOrArray = UnknownRecord> = {
 	changed: boolean
@@ -151,9 +155,11 @@ const diff = <T extends UnknownRecordOrArray>(
 /* === Exports === */
 
 export {
+	type ArrayToRecord,
 	type DiffResult,
 	diff,
 	isEqual,
 	type UnknownRecord,
+	type UnknownArray,
 	type UnknownRecordOrArray,
 }
