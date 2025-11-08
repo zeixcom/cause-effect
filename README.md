@@ -140,6 +140,37 @@ The `add()` and `remove()` methods are optimized for performance:
 - They're perfect for frequent single-property additions/removals
 - They trigger the same events and reactivity as other store operations
 
+#### Array-like Stores
+
+Stores created from arrays behave like arrays with reactive properties. They support duck-typing with length property, single-parameter `add()`, and efficient sorting:
+
+```js
+import { store, effect } from '@zeix/cause-effect'
+
+const items = store(['banana', 'apple', 'cherry'])
+
+// Duck-typing: behaves like an array
+console.log(items.length) // 3
+console.log(typeof items.length) // 'number'
+
+// Individual items are reactive
+effect(() => {
+  console.log(`First item: ${items[0].get()}`)
+})
+
+// Single-parameter add() appends to end
+items.add('date') // Adds at index 3
+console.log(items.get()) // ['banana', 'apple', 'cherry', 'date']
+
+// Efficient sorting preserves signal references
+items.sort() // Default: string comparison
+console.log(items.get()) // ['apple', 'banana', 'cherry', 'date']
+
+// Custom sorting
+items.sort((a, b) => b.localeCompare(a)) // Reverse alphabetical
+console.log(items.get()) // ['date', 'cherry', 'banana', 'apple']
+```
+
 #### Store Events
 
 Stores emit events when properties are added, changed, or removed. You can listen to these events using standard `addEventListener()`:
@@ -168,6 +199,13 @@ user.addEventListener('store-remove', (event) => {
 user.add('email', 'alice@example.com') // Logs: "Added properties: { email: 'alice@example.com' }"
 user.age.set(31)                       // Logs: "Changed properties: { age: 31 }"
 user.remove('email')                   // Logs: "Removed properties: { email: UNSET }"
+
+// Listen for sort events (useful for UI animations)
+const items = store(['banana', 'apple', 'cherry'])
+items.sort((a, b) => b.localeCompare(a)) // Reverse alphabetical
+items.addEventListener('store-sort', (event) => {
+  console.log('Items reordered:', event.detail) // ['2', '1', '0']
+})
 ```
 
 Events are also fired when using `set()` or `update()` methods on the entire store:
