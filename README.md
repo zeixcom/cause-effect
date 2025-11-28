@@ -171,9 +171,9 @@ items.sort((a, b) => b.localeCompare(a)) // Reverse alphabetical
 console.log(items.get()) // ['date', 'cherry', 'banana', 'apple']
 ```
 
-#### Store Events
+#### Store Change Notifications
 
-Stores emit events when properties are added, changed, or removed. You can listen to these events using standard `addEventListener()`:
+Stores emit notifications (sort of light-weight events) when properties are added, changed, or removed. You can listen to these notications using the `.on()` method:
 
 ```js
 import { createStore } from '@zeix/cause-effect'
@@ -181,40 +181,49 @@ import { createStore } from '@zeix/cause-effect'
 const user = createStore({ name: 'Alice', age: 30 })
 
 // Listen for property additions
-user.addEventListener('store-add', (event) => {
-  console.log('Added properties:', event.detail)
+const offAdd = user.on('add', (added) => {
+  console.log('Added properties:', added)
 })
 
 // Listen for property changes
-user.addEventListener('store-change', (event) => {
-  console.log('Changed properties:', event.detail)
+const offChange = user.on('change', (changed) => {
+  console.log('Changed properties:', changed)
 })
 
 // Listen for property removals
-user.addEventListener('store-remove', (event) => {
-  console.log('Removed properties:', event.detail)
+const offRemove = user.on('remove', (removed) => {
+  console.log('Removed properties:', removed)
 })
 
-// These will trigger the respective events:
+// These will trigger the respective notifications:
 user.add('email', 'alice@example.com') // Logs: "Added properties: { email: 'alice@example.com' }"
 user.age.set(31)                       // Logs: "Changed properties: { age: 31 }"
 user.remove('email')                   // Logs: "Removed properties: { email: UNSET }"
 
-// Listen for sort events (useful for UI animations)
-const items = creatStore(['banana', 'apple', 'cherry'])
+// Listen for sort notifications (useful for UI animations)
+const items = createStore(['banana', 'apple', 'cherry'])
 items.sort((a, b) => b.localeCompare(a)) // Reverse alphabetical
-items.addEventListener('store-sort', (event) => {
-  console.log('Items reordered:', event.detail) // ['2', '1', '0']
+const offSort = items.on('sort', (newOrder) => {
+  console.log('Items reordered:', newOrder) // ['2', '1', '0']
 })
 ```
 
-Events are also fired when using `set()` or `update()` methods on the entire store:
+Notifications are also fired when using `set()` or `update()` methods on the entire store:
 
 ```js
-// This will fire multiple events based on what changed
+// This will fire multiple notifications based on what changed
 user.update(u => ({ ...u, name: 'Bob', city: 'New York' }))
 // Logs: "Changed properties: { name: 'Bob' }"
 // Logs: "Added properties: { city: 'New York' }"
+```
+
+To stop listening to notifications, call the returned cleanup function:
+
+```js
+offAdd() // Stops listening to add notifications
+offChange() // Stops listening to change notifications
+offRemove() // Stops listening to remove notifications
+offSort() // Stops listening to sort notifications
 ```
 
 **When to use stores vs states:**

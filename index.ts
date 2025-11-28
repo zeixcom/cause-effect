@@ -44,17 +44,7 @@ export {
 	type UnknownSignalRecord,
 } from './src/signal'
 export { createState, isState, type State, TYPE_STATE } from './src/state'
-export {
-	createStore,
-	isStore,
-	type Store,
-	type StoreAddEvent,
-	type StoreChangeEvent,
-	type StoreEventMap,
-	type StoreRemoveEvent,
-	type StoreSortEvent,
-	TYPE_STORE,
-} from './src/store'
+export { createStore, isStore, type Store, TYPE_STORE } from './src/store'
 export {
 	batch,
 	type Cleanup,

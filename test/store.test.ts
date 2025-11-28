@@ -6,10 +6,6 @@ import {
 	createStore,
 	isStore,
 	type State,
-	type StoreAddEvent,
-	type StoreChangeEvent,
-	type StoreRemoveEvent,
-	type StoreSortEvent,
 	UNSET,
 } from '..'
 
@@ -242,149 +238,140 @@ describe('store', () => {
 			expect(user.size.get()).toBe(1)
 		})
 
-		test('dispatches store-add event on initial creation', async () => {
-			let addEvent: StoreAddEvent<{ name: string }> | null = null
+		test('emits an add notification on initial creation', async () => {
+			let addNotification: Record<string, string> | null = null
 			const user = createStore({ name: 'Hannah' })
 
-			user.addEventListener('store-add', event => {
-				addEvent = event
+			user.on('add', change => {
+				addNotification = change
 			})
 
 			// Wait for the async initial event
 			await new Promise(resolve => setTimeout(resolve, 10))
 
-			expect(addEvent).toBeTruthy()
+			expect(addNotification).toBeTruthy()
 			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(addEvent!.detail).toEqual({ name: 'Hannah' })
+			expect(addNotification!).toEqual({ name: 'Hannah' })
 		})
 
-		test('dispatches store-add event for new properties', () => {
+		test('emits an add notification for new properties', () => {
 			const user = createStore<{ name: string; email?: string }>({
 				name: 'Hannah',
 			})
 
-			let addEvent: StoreAddEvent<{
-				name: string
-				email?: string
-			}> | null = null
-			user.addEventListener('store-add', event => {
-				addEvent = event
+			let addNotification: Record<string, string> | null = null
+			user.on('add', change => {
+				addNotification = change
 			})
 
 			user.update(v => ({ ...v, email: 'hannah@example.com' }))
 
-			expect(addEvent).toBeTruthy()
+			expect(addNotification).toBeTruthy()
 			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(addEvent!.detail).toEqual({
+			expect(addNotification!).toEqual({
 				email: 'hannah@example.com',
 			})
 		})
 
-		test('dispatches store-change event for property changes', () => {
+		test('emits a change notification for property changes', () => {
 			const user = createStore({ name: 'Hannah' })
 
-			let changeEvent: StoreChangeEvent<{ name: string }> | null = null
-			user.addEventListener('store-change', event => {
-				changeEvent = event
+			let changeNotification: Record<string, string> | null = null
+			user.on('change', change => {
+				changeNotification = change
 			})
 
 			user.set({ name: 'Alice' })
 
-			expect(changeEvent).toBeTruthy()
+			expect(changeNotification).toBeTruthy()
 			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(changeEvent!.detail).toEqual({
+			expect(changeNotification!).toEqual({
 				name: 'Alice',
 			})
 		})
 
-		test('dispatches store-change event for signal changes', () => {
+		test('emits a change notification for signal changes', () => {
 			const user = createStore({ name: 'Hannah' })
 
-			let changeEvent: StoreChangeEvent<{ name: string }> | null = null
-			user.addEventListener('store-change', event => {
-				changeEvent = event
+			let changeNotification: Record<string, string> | null = null
+			user.on('change', change => {
+				changeNotification = change
 			})
 
 			user.name.set('Bob')
 
-			expect(changeEvent).toBeTruthy()
+			expect(changeNotification).toBeTruthy()
 			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(changeEvent!.detail).toEqual({
+			expect(changeNotification!).toEqual({
 				name: 'Bob',
 			})
 		})
 
-		test('dispatches store-remove event for removed properties', () => {
+		test('emits a remove notification for removed properties', () => {
 			const user = createStore<{ name: string; email?: string }>({
 				name: 'Hannah',
 				email: 'hannah@example.com',
 			})
 
-			let removeEvent: StoreRemoveEvent<{
-				name: string
-				email?: string
-			}> | null = null
-			user.addEventListener('store-remove', event => {
-				removeEvent = event
+			let removeNotification: Record<string, string> | null = null
+			user.on('remove', change => {
+				removeNotification = change
 			})
 
 			user.remove('email')
 
-			expect(removeEvent).toBeTruthy()
+			expect(removeNotification).toBeTruthy()
 			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(removeEvent!.detail.email).toBe(UNSET)
+			expect(removeNotification!.email).toBe(UNSET)
 		})
 
-		test('dispatches store-add event when using add method', () => {
+		test('emits an add notification when using add method', () => {
 			const user = createStore<{ name: string; email?: string }>({
 				name: 'Hannah',
 			})
 
-			let addEvent: StoreAddEvent<{
-				name: string
-				email?: string
-			}> | null = null
-			user.addEventListener('store-add', event => {
-				addEvent = event
+			let addNotification: Record<string, string> | null = null
+			user.on('add', change => {
+				addNotification = change
 			})
 
 			user.add('email', 'hannah@example.com')
 
-			expect(addEvent).toBeTruthy()
+			expect(addNotification).toBeTruthy()
 			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(addEvent!.detail).toEqual({
+			expect(addNotification!).toEqual({
 				email: 'hannah@example.com',
 			})
 		})
 
-		test('can remove event listeners', () => {
+		test('can remove notification listeners', () => {
 			const user = createStore({ name: 'Hannah' })
 
-			let eventCount = 0
+			let notificationCount = 0
 			const listener = () => {
-				eventCount++
+				notificationCount++
 			}
 
-			user.addEventListener('store-change', listener)
+			const off = user.on('change', listener)
 			user.name.set('Alice')
-			expect(eventCount).toBe(1)
+			expect(notificationCount).toBe(1)
 
-			user.removeEventListener('store-change', listener)
+			off()
 			user.name.set('Bob')
-			expect(eventCount).toBe(1) // Should not increment
+			expect(notificationCount).toBe(1) // Should not increment
 		})
 
-		test('supports multiple event listeners for the same event', () => {
+		test('supports multiple notification listeners for the same type', () => {
 			const user = createStore({ name: 'Hannah' })
 
 			let listener1Called = false
 			let listener2Called = false
 
-			user.addEventListener('store-change', () => {
+			user.on('change', () => {
 				listener1Called = true
 			})
 
-			user.addEventListener('store-change', () => {
+			user.on('change', () => {
 				listener2Called = true
 			})
 
@@ -1541,22 +1528,20 @@ describe('store', () => {
 			expect(users.user3).toBe(oldSignals.user3)
 		})
 
-		test('emits store-sort event with new order', () => {
+		test('emits a sort notification with new order', () => {
 			const numbers = createStore([30, 10, 20])
-			let sortEvent: StoreSortEvent | null = null
+			let sortNotification: string[] | null = null
 
-			numbers.addEventListener('store-sort', event => {
-				sortEvent = event
+			numbers.on('sort', change => {
+				sortNotification = change
 			})
 
 			numbers.sort((a, b) => a - b)
 
-			expect(sortEvent).not.toBeNull()
-			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(sortEvent!.type).toBe('store-sort')
+			expect(sortNotification).not.toBeNull()
 			// Keys in new sorted order: [10, 20, 30] came from indices [1, 2, 0]
 			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(sortEvent!.detail).toEqual(['1', '2', '0'])
+			expect(sortNotification!).toEqual(['1', '2', '0'])
 		})
 
 		test('sort is reactive - watchers are notified', () => {
@@ -1694,24 +1679,24 @@ describe('store', () => {
 			expect(numbers.get()).toEqual([5, 4, 3, 1, 1])
 		})
 
-		test('sort event contains correct movement mapping for records', () => {
+		test('sort notification contains correct movement mapping for records', () => {
 			const users = createStore({
 				alice: { age: 30 },
 				bob: { age: 20 },
 				charlie: { age: 25 },
 			})
 
-			let sortEvent: StoreSortEvent | null = null
-			users.addEventListener('store-sort', event => {
-				sortEvent = event
+			let sortNotification: string[] | null = null
+			users.on('sort', change => {
+				sortNotification = change
 			})
 
 			// Sort by age
 			users.sort((a, b) => b.age - a.age)
 
-			expect(sortEvent).not.toBeNull()
+			expect(sortNotification).not.toBeNull()
 			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(sortEvent!.detail).toEqual(['alice', 'charlie', 'bob'])
+			expect(sortNotification!).toEqual(['alice', 'charlie', 'bob'])
 		})
 	})
 })

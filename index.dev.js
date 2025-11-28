@@ -430,13 +430,14 @@ var isState = (value) => isObjectOfType(value, TYPE_STATE);
 
 // src/store.ts
 var TYPE_STORE = "Store";
-var STORE_EVENT_ADD = "store-add";
-var STORE_EVENT_CHANGE = "store-change";
-var STORE_EVENT_REMOVE = "store-remove";
-var STORE_EVENT_SORT = "store-sort";
 var createStore = (initialValue) => {
   const watchers = new Set;
-  const eventTarget = new EventTarget;
+  const listeners = {
+    add: new Set,
+    change: new Set,
+    remove: new Set,
+    sort: new Set
+  };
   const signals = new Map;
   const cleanups = new Map;
   const isArrayLike = Array.isArray(initialValue);
@@ -448,7 +449,12 @@ var createStore = (initialValue) => {
     }
     return record;
   };
-  const emit = (type, detail) => eventTarget.dispatchEvent(new CustomEvent(type, { detail }));
+  const emit = (key, changes) => {
+    Object.freeze(changes);
+    for (const listener of listeners[key]) {
+      listener(changes);
+    }
+  };
   const getSortedIndexes = () => Array.from(signals.keys()).map((k) => Number(k)).filter((n) => Number.isInteger(n)).sort((a, b) => a - b);
   const isValidValue = (key, value) => {
     if (value == null)
@@ -467,7 +473,7 @@ var createStore = (initialValue) => {
     const cleanup = createEffect(() => {
       const currentValue = signal.get();
       if (currentValue != null)
-        emit(STORE_EVENT_CHANGE, {
+        emit("change", {
           [key]: currentValue
         });
     });
@@ -475,7 +481,7 @@ var createStore = (initialValue) => {
     if (single) {
       size.set(signals.size);
       notify(watchers);
-      emit(STORE_EVENT_ADD, {
+      emit("add", {
         [key]: value
       });
     }
@@ -492,7 +498,7 @@ var createStore = (initialValue) => {
     if (single) {
       size.set(signals.size);
       notify(watchers);
-      emit(STORE_EVENT_REMOVE, {
+      emit("remove", {
         [key]: UNSET
       });
     }
@@ -508,10 +514,10 @@ var createStore = (initialValue) => {
         }
         if (initialRun) {
           setTimeout(() => {
-            emit(STORE_EVENT_ADD, changes.add);
+            emit("add", changes.add);
           }, 0);
         } else {
-          emit(STORE_EVENT_ADD, changes.add);
+          emit("add", changes.add);
         }
       }
       if (Object.keys(changes.change).length) {
@@ -525,12 +531,12 @@ var createStore = (initialValue) => {
           else
             throw new StoreKeyReadonlyError(key, valueString(value));
         }
-        emit(STORE_EVENT_CHANGE, changes.change);
+        emit("change", changes.change);
       }
       if (Object.keys(changes.remove).length) {
         for (const key in changes.remove)
           removeProperty(key);
-        emit(STORE_EVENT_REMOVE, changes.remove);
+        emit("remove", changes.remove);
       }
       size.set(signals.size);
     });
@@ -595,11 +601,12 @@ var createStore = (initialValue) => {
       signals.clear();
       newSignals.forEach((signal, key) => signals.set(key, signal));
       notify(watchers);
-      emit(STORE_EVENT_SORT, newOrder);
+      emit("sort", newOrder);
     },
-    addEventListener: eventTarget.addEventListener.bind(eventTarget),
-    removeEventListener: eventTarget.removeEventListener.bind(eventTarget),
-    dispatchEvent: eventTarget.dispatchEvent.bind(eventTarget),
+    on: (type, listener) => {
+      listeners[type].add(listener);
+      return () => listeners[type].delete(listener);
+    },
     size
   };
   return new Proxy({}, {
