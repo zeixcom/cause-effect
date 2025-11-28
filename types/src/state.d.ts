@@ -12,7 +12,7 @@ declare const TYPE_STATE = "State";
  * @param {T} initialValue - initial value of the state
  * @returns {State<T>} - new state signal
  */
-declare const state: <T extends {}>(initialValue: T) => State<T>;
+declare const createState: <T extends {}>(initialValue: T) => State<T>;
 /**
  * Check if the provided value is a State instance
  *
@@ -21,4 +21,4 @@ declare const state: <T extends {}>(initialValue: T) => State<T>;
  * @returns {boolean} - true if the value is a State instance, false otherwise
  */
 declare const isState: <T extends {}>(value: unknown) => value is State<T>;
-export { TYPE_STATE, isState, state, type State };
+export { TYPE_STATE, isState, createState, type State };

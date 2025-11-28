@@ -1,6 +1,6 @@
+import { Random } from 'random'
 import type { TestConfig } from './framework-types'
 import type { Computed, ReactiveFramework, Signal } from './reactive-framework'
-import { Random } from 'random'
 
 export interface Graph {
 	sources: Signal<number>[]

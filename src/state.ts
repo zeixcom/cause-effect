@@ -1,6 +1,6 @@
 import { isEqual } from './diff'
 import { NullishSignalValueError } from './errors'
-import { notify, subscribe, type Watcher } from './scheduler'
+import { notify, subscribe, type Watcher } from './system'
 import { isObjectOfType, UNSET } from './util'
 
 /* === Types === */
@@ -25,7 +25,7 @@ const TYPE_STATE = 'State'
  * @param {T} initialValue - initial value of the state
  * @returns {State<T>} - new state signal
  */
-const state = /*#__PURE__*/ <T extends {}>(initialValue: T): State<T> => {
+const createState = /*#__PURE__*/ <T extends {}>(initialValue: T): State<T> => {
 	const watchers: Set<Watcher> = new Set()
 	let value: T = initialValue
 
@@ -88,4 +88,4 @@ const isState = /*#__PURE__*/ <T extends {}>(
 
 /* === Exports === */
 
-export { TYPE_STATE, isState, state, type State }
+export { TYPE_STATE, isState, createState, type State }

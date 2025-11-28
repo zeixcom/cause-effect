@@ -6,7 +6,7 @@ import {
 	type UnknownRecord,
 	type UnknownRecordOrArray,
 } from './diff'
-import { effect } from './effect'
+import { createEffect } from './effect'
 import {
 	InvalidSignalValueError,
 	NullishSignalValueError,
@@ -14,15 +14,9 @@ import {
 	StoreKeyRangeError,
 	StoreKeyReadonlyError,
 } from './errors'
-import {
-	batch,
-	type Cleanup,
-	notify,
-	subscribe,
-	type Watcher,
-} from './scheduler'
 import { isMutableSignal, type Signal } from './signal'
-import { isState, type State, state } from './state'
+import { createState, isState, type State } from './state'
+import { batch, type Cleanup, notify, subscribe, type Watcher } from './system'
 import {
 	isFunction,
 	isObjectOfType,
@@ -37,32 +31,18 @@ import {
 
 type ArrayItem<T> = T extends readonly (infer U extends {})[] ? U : never
 
-type StoreEventMap<T extends UnknownRecord | UnknownArray> = {
-	'store-add': StoreAddEvent<T>
-	'store-change': StoreChangeEvent<T>
-	'store-remove': StoreRemoveEvent<T>
-	'store-sort': StoreSortEvent
+type StoreChanges<T> = {
+	add: Partial<T>
+	change: Partial<T>
+	remove: Partial<T>
+	sort: string[]
 }
 
-interface StoreEventTarget<T extends UnknownRecord | UnknownArray>
-	extends EventTarget {
-	addEventListener<K extends keyof StoreEventMap<T>>(
-		type: K,
-		listener: (event: StoreEventMap<T>[K]) => void,
-		options?: boolean | AddEventListenerOptions,
-	): void
-
-	removeEventListener<K extends keyof StoreEventMap<T>>(
-		type: K,
-		listener: (event: StoreEventMap<T>[K]) => void,
-		options?: boolean | EventListenerOptions,
-	): void
-
-	dispatchEvent(event: Event): boolean
+type StoreListeners<T> = {
+	[K in keyof StoreChanges<T>]: Set<(change: StoreChanges<T>[K]) => void>
 }
 
-interface BaseStore<T extends UnknownRecord | UnknownArray>
-	extends StoreEventTarget<T> {
+interface BaseStore<T extends UnknownRecord | UnknownArray> {
 	readonly [Symbol.toStringTag]: 'Store'
 	get(): T
 	set(value: T): void
@@ -72,6 +52,10 @@ interface BaseStore<T extends UnknownRecord | UnknownArray>
 	>(
 		compareFn?: (a: U, b: U) => number,
 	): void
+	on<K extends keyof StoreChanges<T>>(
+		type: K,
+		listener: (change: StoreChanges<T>[K]) => void,
+	): Cleanup
 	readonly size: State<number>
 }
 
@@ -111,29 +95,6 @@ type ArrayStore<T extends UnknownArray> = BaseStore<T> & {
 	readonly [Symbol.isConcatSpreadable]: boolean
 }
 
-interface StoreAddEvent<T extends UnknownRecord | UnknownArray>
-	extends CustomEvent {
-	type: 'store-add'
-	detail: Partial<T>
-}
-
-interface StoreChangeEvent<T extends UnknownRecord | UnknownArray>
-	extends CustomEvent {
-	type: 'store-change'
-	detail: Partial<T>
-}
-
-interface StoreRemoveEvent<T extends UnknownRecord | UnknownArray>
-	extends CustomEvent {
-	type: 'store-remove'
-	detail: Partial<T>
-}
-
-interface StoreSortEvent extends CustomEvent {
-	type: 'store-sort'
-	detail: string[]
-}
-
 type Store<T> = T extends UnknownRecord
 	? RecordStore<T>
 	: T extends UnknownArray
@@ -143,11 +104,6 @@ type Store<T> = T extends UnknownRecord
 /* === Constants === */
 
 const TYPE_STORE = 'Store'
-
-const STORE_EVENT_ADD = 'store-add'
-const STORE_EVENT_CHANGE = 'store-change'
-const STORE_EVENT_REMOVE = 'store-remove'
-const STORE_EVENT_SORT = 'store-sort'
 
 /* === Functions === */
 
@@ -163,11 +119,16 @@ const STORE_EVENT_SORT = 'store-sort'
  * @param {T} initialValue - initial object or array value of the store
  * @returns {Store<T>} - new store with reactive properties that preserves the original type T
  */
-const store = <T extends UnknownRecord | UnknownArray>(
+const createStore = <T extends UnknownRecord | UnknownArray>(
 	initialValue: T,
 ): Store<T> => {
 	const watchers = new Set<Watcher>()
-	const eventTarget = new EventTarget()
+	const listeners: StoreListeners<T> = {
+		add: new Set<(change: Partial<T>) => void>(),
+		change: new Set<(change: Partial<T>) => void>(),
+		remove: new Set<(change: Partial<T>) => void>(),
+		sort: new Set<(change: string[]) => void>(),
+	}
 	const signals = new Map<string, Signal<T[Extract<keyof T, string>] & {}>>()
 	const cleanups = new Map<string, Cleanup>()
 
@@ -175,7 +136,7 @@ const store = <T extends UnknownRecord | UnknownArray>(
 	const isArrayLike = Array.isArray(initialValue)
 
 	// Internal state
-	const size = state(0)
+	const size = createState(0)
 
 	// Get current record
 	const current = () => {
@@ -186,9 +147,16 @@ const store = <T extends UnknownRecord | UnknownArray>(
 		return record
 	}
 
-	// Emit event
-	const emit = <R>(type: keyof StoreEventMap<T>, detail: R) =>
-		eventTarget.dispatchEvent(new CustomEvent(type, { detail }))
+	// Emit change notifications
+	const emit = <K extends keyof StoreChanges<T>>(
+		key: K,
+		changes: StoreChanges<T>[K],
+	) => {
+		Object.freeze(changes)
+		for (const listener of listeners[key]) {
+			listener(changes)
+		}
+	}
 
 	// Get sorted indexes
 	const getSortedIndexes = () =>
@@ -223,17 +191,15 @@ const store = <T extends UnknownRecord | UnknownArray>(
 		const signal =
 			isState(value) || isStore(value)
 				? value
-				: isRecord(value)
-					? store(value)
-					: Array.isArray(value)
-						? store(value)
-						: state(value)
+				: isRecord(value) || Array.isArray(value)
+					? createStore(value)
+					: createState(value)
 		// @ts-expect-error non-matching signal types
 		signals.set(key, signal)
-		const cleanup = effect(() => {
+		const cleanup = createEffect(() => {
 			const currentValue = signal.get()
 			if (currentValue != null)
-				emit(STORE_EVENT_CHANGE, {
+				emit('change', {
 					[key]: currentValue,
 				} as unknown as Partial<T>)
 		})
@@ -242,7 +208,7 @@ const store = <T extends UnknownRecord | UnknownArray>(
 		if (single) {
 			size.set(signals.size)
 			notify(watchers)
-			emit(STORE_EVENT_ADD, {
+			emit('add', {
 				[key]: value,
 			} as unknown as Partial<T>)
 		}
@@ -264,7 +230,7 @@ const store = <T extends UnknownRecord | UnknownArray>(
 		if (single) {
 			size.set(signals.size)
 			notify(watchers)
-			emit(STORE_EVENT_REMOVE, {
+			emit('remove', {
 				[key]: UNSET,
 			} as unknown as Partial<T>)
 		}
@@ -296,10 +262,10 @@ const store = <T extends UnknownRecord | UnknownArray>(
 				// Queue initial additions event to allow listeners to be added first
 				if (initialRun) {
 					setTimeout(() => {
-						emit(STORE_EVENT_ADD, changes.add as Partial<T>)
+						emit('add', changes.add as Partial<T>)
 					}, 0)
 				} else {
-					emit<Partial<T>>(STORE_EVENT_ADD, changes.add as Partial<T>)
+					emit('add', changes.add as Partial<T>)
 				}
 			}
 
@@ -314,14 +280,14 @@ const store = <T extends UnknownRecord | UnknownArray>(
 					else
 						throw new StoreKeyReadonlyError(key, valueString(value))
 				}
-				emit(STORE_EVENT_CHANGE, changes.change as Partial<T>)
+				emit('change', changes.change as Partial<T>)
 			}
 
 			// Removals
 			if (Object.keys(changes.remove).length) {
 				for (const key in changes.remove)
 					removeProperty(key as Extract<keyof T, string>)
-				emit(STORE_EVENT_REMOVE, changes.remove as Partial<T>)
+				emit('remove', changes.remove as Partial<T>)
 			}
 
 			size.set(signals.size)
@@ -426,11 +392,15 @@ const store = <T extends UnknownRecord | UnknownArray>(
 			signals.clear()
 			newSignals.forEach((signal, key) => signals.set(key, signal))
 			notify(watchers)
-			emit(STORE_EVENT_SORT, newOrder)
+			emit('sort', newOrder)
 		},
-		addEventListener: eventTarget.addEventListener.bind(eventTarget),
-		removeEventListener: eventTarget.removeEventListener.bind(eventTarget),
-		dispatchEvent: eventTarget.dispatchEvent.bind(eventTarget),
+		on: <K extends keyof StoreChanges<T>>(
+			type: K,
+			listener: (change: StoreChanges<T>[K]) => void,
+		): Cleanup => {
+			listeners[type].add(listener)
+			return () => listeners[type].delete(listener)
+		},
 		size,
 	}
 
@@ -534,14 +504,4 @@ const isStore = <T extends UnknownRecordOrArray>(
 
 /* === Exports === */
 
-export {
-	TYPE_STORE,
-	isStore,
-	store,
-	type Store,
-	type StoreAddEvent,
-	type StoreChangeEvent,
-	type StoreRemoveEvent,
-	type StoreSortEvent,
-	type StoreEventMap,
-}
+export { TYPE_STORE, isStore, createStore, type Store }

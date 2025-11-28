@@ -1,36 +1,35 @@
 import { describe, expect, test } from 'bun:test'
 import {
-	computed,
-	effect,
+	createComputed,
+	createEffect,
+	createState,
+	createStore,
 	isStore,
 	type State,
-	type StoreAddEvent,
-	type StoreChangeEvent,
-	type StoreRemoveEvent,
-	type StoreSortEvent,
-	state,
-	store,
 	UNSET,
 } from '..'
 
 describe('store', () => {
 	describe('creation and basic operations', () => {
 		test('creates a store with initial values', () => {
-			const user = store({ name: 'Hannah', email: 'hannah@example.com' })
+			const user = createStore({
+				name: 'Hannah',
+				email: 'hannah@example.com',
+			})
 
 			expect(user.name.get()).toBe('Hannah')
 			expect(user.email.get()).toBe('hannah@example.com')
 		})
 
 		test('has Symbol.toStringTag of Store', () => {
-			const s = store({ a: 1 })
+			const s = createStore({ a: 1 })
 			expect(s[Symbol.toStringTag]).toBe('Store')
 		})
 
 		test('isStore identifies store instances correctly', () => {
-			const s = store({ a: 1 })
-			const st = state(1)
-			const c = computed(() => 1)
+			const s = createStore({ a: 1 })
+			const st = createState(1)
+			const c = createComputed(() => 1)
 
 			expect(isStore(s)).toBe(true)
 			expect(isStore(st)).toBe(false)
@@ -40,14 +39,19 @@ describe('store', () => {
 		})
 
 		test('get() returns the complete store value', () => {
-			const user = store({ name: 'Hannah', email: 'hannah@example.com' })
+			const user = createStore({
+				name: 'Hannah',
+				email: 'hannah@example.com',
+			})
 
 			expect(user.get()).toEqual({
 				name: 'Hannah',
 				email: 'hannah@example.com',
 			})
 
-			const participants = store<{ name: string; tags: string[] }[]>([
+			const participants = createStore<
+				{ name: string; tags: string[] }[]
+			>([
 				{ name: 'Alice', tags: ['friends', 'mates'] },
 				{ name: 'Bob', tags: ['friends'] },
 			])
@@ -60,7 +64,7 @@ describe('store', () => {
 
 	describe('proxy data access and modification', () => {
 		test('properties can be accessed and modified via signals', () => {
-			const user = store({ name: 'Hannah', age: 25 })
+			const user = createStore({ name: 'Hannah', age: 25 })
 
 			// Get signals from store proxy
 			expect(user.name.get()).toBe('Hannah')
@@ -75,14 +79,14 @@ describe('store', () => {
 		})
 
 		test('returns undefined for non-existent properties', () => {
-			const user = store({ name: 'Hannah' })
+			const user = createStore({ name: 'Hannah' })
 
 			// @ts-expect-error accessing non-existent property
 			expect(user.nonExistent).toBeUndefined()
 		})
 
 		test('supports numeric key access', () => {
-			const items = store({ '0': 'first', '1': 'second' })
+			const items = createStore({ '0': 'first', '1': 'second' })
 
 			expect(items[0].get()).toBe('first')
 			expect(items['0'].get()).toBe('first')
@@ -91,7 +95,7 @@ describe('store', () => {
 		})
 
 		test('can add new properties via add method', () => {
-			const user = store<{ name: string; email?: string }>({
+			const user = createStore<{ name: string; email?: string }>({
 				name: 'Hannah',
 			})
 
@@ -105,7 +109,7 @@ describe('store', () => {
 		})
 
 		test('can remove existing properties via remove method', () => {
-			const user = store<{ name: string; email?: string }>({
+			const user = createStore<{ name: string; email?: string }>({
 				name: 'Hannah',
 				email: 'hannah@example.com',
 			})
@@ -121,7 +125,7 @@ describe('store', () => {
 		})
 
 		test('add method prevents null values', () => {
-			const user = store<{ name: string; tags?: string[] }>({
+			const user = createStore<{ name: string; tags?: string[] }>({
 				name: 'Alice',
 			})
 
@@ -136,7 +140,7 @@ describe('store', () => {
 
 	describe('nested stores', () => {
 		test('creates nested stores for object properties', () => {
-			const user = store({
+			const user = createStore({
 				name: 'Hannah',
 				preferences: {
 					theme: 'dark',
@@ -150,7 +154,7 @@ describe('store', () => {
 		})
 
 		test('nested properties are reactive', () => {
-			const user = store({
+			const user = createStore({
 				preferences: {
 					theme: 'dark',
 				},
@@ -162,7 +166,7 @@ describe('store', () => {
 		})
 
 		test('deeply nested stores work correctly', () => {
-			const config = store({
+			const config = createStore({
 				ui: {
 					theme: {
 						colors: {
@@ -180,7 +184,10 @@ describe('store', () => {
 
 	describe('set() and update() methods', () => {
 		test('set() replaces entire store value', () => {
-			const user = store({ name: 'Hannah', email: 'hannah@example.com' })
+			const user = createStore({
+				name: 'Hannah',
+				email: 'hannah@example.com',
+			})
 
 			user.set({ name: 'Alice', email: 'alice@example.com' })
 
@@ -191,7 +198,7 @@ describe('store', () => {
 		})
 
 		test('update() modifies store using function', () => {
-			const user = store({ name: 'Hannah', age: 25 })
+			const user = createStore({ name: 'Hannah', age: 25 })
 
 			user.update(prev => ({ ...prev, age: prev.age + 1 }))
 
@@ -204,7 +211,7 @@ describe('store', () => {
 
 	describe('iterator protocol', () => {
 		test('supports for...of iteration', () => {
-			const user = store({ name: 'Hannah', age: 25 })
+			const user = createStore({ name: 'Hannah', age: 25 })
 			const entries: Array<[string, unknown & {}]> = []
 
 			for (const [key, signal] of user) {
@@ -218,7 +225,7 @@ describe('store', () => {
 
 	describe('change tracking', () => {
 		test('tracks size changes', () => {
-			const user = store<{ name: string; email?: string }>({
+			const user = createStore<{ name: string; email?: string }>({
 				name: 'Hannah',
 			})
 
@@ -231,149 +238,140 @@ describe('store', () => {
 			expect(user.size.get()).toBe(1)
 		})
 
-		test('dispatches store-add event on initial creation', async () => {
-			let addEvent: StoreAddEvent<{ name: string }> | null = null
-			const user = store({ name: 'Hannah' })
+		test('emits an add notification on initial creation', async () => {
+			let addNotification: Record<string, string> | null = null
+			const user = createStore({ name: 'Hannah' })
 
-			user.addEventListener('store-add', event => {
-				addEvent = event
+			user.on('add', change => {
+				addNotification = change
 			})
 
 			// Wait for the async initial event
 			await new Promise(resolve => setTimeout(resolve, 10))
 
-			expect(addEvent).toBeTruthy()
+			expect(addNotification).toBeTruthy()
 			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(addEvent!.detail).toEqual({ name: 'Hannah' })
+			expect(addNotification!).toEqual({ name: 'Hannah' })
 		})
 
-		test('dispatches store-add event for new properties', () => {
-			const user = store<{ name: string; email?: string }>({
+		test('emits an add notification for new properties', () => {
+			const user = createStore<{ name: string; email?: string }>({
 				name: 'Hannah',
 			})
 
-			let addEvent: StoreAddEvent<{
-				name: string
-				email?: string
-			}> | null = null
-			user.addEventListener('store-add', event => {
-				addEvent = event
+			let addNotification: Record<string, string> | null = null
+			user.on('add', change => {
+				addNotification = change
 			})
 
 			user.update(v => ({ ...v, email: 'hannah@example.com' }))
 
-			expect(addEvent).toBeTruthy()
+			expect(addNotification).toBeTruthy()
 			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(addEvent!.detail).toEqual({
+			expect(addNotification!).toEqual({
 				email: 'hannah@example.com',
 			})
 		})
 
-		test('dispatches store-change event for property changes', () => {
-			const user = store({ name: 'Hannah' })
+		test('emits a change notification for property changes', () => {
+			const user = createStore({ name: 'Hannah' })
 
-			let changeEvent: StoreChangeEvent<{ name: string }> | null = null
-			user.addEventListener('store-change', event => {
-				changeEvent = event
+			let changeNotification: Record<string, string> | null = null
+			user.on('change', change => {
+				changeNotification = change
 			})
 
 			user.set({ name: 'Alice' })
 
-			expect(changeEvent).toBeTruthy()
+			expect(changeNotification).toBeTruthy()
 			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(changeEvent!.detail).toEqual({
+			expect(changeNotification!).toEqual({
 				name: 'Alice',
 			})
 		})
 
-		test('dispatches store-change event for signal changes', () => {
-			const user = store({ name: 'Hannah' })
+		test('emits a change notification for signal changes', () => {
+			const user = createStore({ name: 'Hannah' })
 
-			let changeEvent: StoreChangeEvent<{ name: string }> | null = null
-			user.addEventListener('store-change', event => {
-				changeEvent = event
+			let changeNotification: Record<string, string> | null = null
+			user.on('change', change => {
+				changeNotification = change
 			})
 
 			user.name.set('Bob')
 
-			expect(changeEvent).toBeTruthy()
+			expect(changeNotification).toBeTruthy()
 			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(changeEvent!.detail).toEqual({
+			expect(changeNotification!).toEqual({
 				name: 'Bob',
 			})
 		})
 
-		test('dispatches store-remove event for removed properties', () => {
-			const user = store<{ name: string; email?: string }>({
+		test('emits a remove notification for removed properties', () => {
+			const user = createStore<{ name: string; email?: string }>({
 				name: 'Hannah',
 				email: 'hannah@example.com',
 			})
 
-			let removeEvent: StoreRemoveEvent<{
-				name: string
-				email?: string
-			}> | null = null
-			user.addEventListener('store-remove', event => {
-				removeEvent = event
+			let removeNotification: Record<string, string> | null = null
+			user.on('remove', change => {
+				removeNotification = change
 			})
 
 			user.remove('email')
 
-			expect(removeEvent).toBeTruthy()
+			expect(removeNotification).toBeTruthy()
 			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(removeEvent!.detail.email).toBe(UNSET)
+			expect(removeNotification!.email).toBe(UNSET)
 		})
 
-		test('dispatches store-add event when using add method', () => {
-			const user = store<{ name: string; email?: string }>({
+		test('emits an add notification when using add method', () => {
+			const user = createStore<{ name: string; email?: string }>({
 				name: 'Hannah',
 			})
 
-			let addEvent: StoreAddEvent<{
-				name: string
-				email?: string
-			}> | null = null
-			user.addEventListener('store-add', event => {
-				addEvent = event
+			let addNotification: Record<string, string> | null = null
+			user.on('add', change => {
+				addNotification = change
 			})
 
 			user.add('email', 'hannah@example.com')
 
-			expect(addEvent).toBeTruthy()
+			expect(addNotification).toBeTruthy()
 			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(addEvent!.detail).toEqual({
+			expect(addNotification!).toEqual({
 				email: 'hannah@example.com',
 			})
 		})
 
-		test('can remove event listeners', () => {
-			const user = store({ name: 'Hannah' })
+		test('can remove notification listeners', () => {
+			const user = createStore({ name: 'Hannah' })
 
-			let eventCount = 0
+			let notificationCount = 0
 			const listener = () => {
-				eventCount++
+				notificationCount++
 			}
 
-			user.addEventListener('store-change', listener)
+			const off = user.on('change', listener)
 			user.name.set('Alice')
-			expect(eventCount).toBe(1)
+			expect(notificationCount).toBe(1)
 
-			user.removeEventListener('store-change', listener)
+			off()
 			user.name.set('Bob')
-			expect(eventCount).toBe(1) // Should not increment
+			expect(notificationCount).toBe(1) // Should not increment
 		})
 
-		test('supports multiple event listeners for the same event', () => {
-			const user = store({ name: 'Hannah' })
+		test('supports multiple notification listeners for the same type', () => {
+			const user = createStore({ name: 'Hannah' })
 
 			let listener1Called = false
 			let listener2Called = false
 
-			user.addEventListener('store-change', () => {
+			user.on('change', () => {
 				listener1Called = true
 			})
 
-			user.addEventListener('store-change', () => {
+			user.on('change', () => {
 				listener2Called = true
 			})
 
@@ -386,10 +384,13 @@ describe('store', () => {
 
 	describe('reactivity', () => {
 		test('store-level get() is reactive', () => {
-			const user = store({ name: 'Hannah', email: 'hannah@example.com' })
+			const user = createStore({
+				name: 'Hannah',
+				email: 'hannah@example.com',
+			})
 			let lastValue = { name: '', email: '' }
 
-			effect(() => {
+			createEffect(() => {
 				lastValue = user.get()
 			})
 
@@ -402,14 +403,17 @@ describe('store', () => {
 		})
 
 		test('individual signal reactivity works', () => {
-			const user = store({ name: 'Hannah', email: 'hannah@example.com' })
+			const user = createStore({
+				name: 'Hannah',
+				email: 'hannah@example.com',
+			})
 			let lastName = ''
 			let nameEffectRuns = 0
 
 			// Get signal for name property directly
 			const nameSignal = user.name
 
-			effect(() => {
+			createEffect(() => {
 				lastName = nameSignal.get()
 				nameEffectRuns++
 			})
@@ -421,14 +425,14 @@ describe('store', () => {
 		})
 
 		test('nested store changes propagate to parent', () => {
-			const user = store({
+			const user = createStore({
 				preferences: {
 					theme: 'dark',
 				},
 			})
 			let effectRuns = 0
 
-			effect(() => {
+			createEffect(() => {
 				user.get() // Watch entire store
 				effectRuns++
 			})
@@ -438,13 +442,13 @@ describe('store', () => {
 		})
 
 		test('updates are reactive', () => {
-			const user = store<{ name: string; email?: string }>({
+			const user = createStore<{ name: string; email?: string }>({
 				name: 'Hannah',
 			})
 			let lastValue = {}
 			let effectRuns = 0
 
-			effect(() => {
+			createEffect(() => {
 				lastValue = user.get()
 				effectRuns++
 			})
@@ -458,14 +462,14 @@ describe('store', () => {
 		})
 
 		test('remove method is reactive', () => {
-			const user = store<{ name: string; email?: string }>({
+			const user = createStore<{ name: string; email?: string }>({
 				name: 'Hannah',
 				email: 'hannah@example.com',
 			})
 			let lastValue = {}
 			let effectRuns = 0
 
-			effect(() => {
+			createEffect(() => {
 				lastValue = user.get()
 				effectRuns++
 			})
@@ -480,7 +484,7 @@ describe('store', () => {
 		})
 
 		test('add method does not overwrite existing properties', () => {
-			const user = store<{ name: string; email?: string }>({
+			const user = createStore<{ name: string; email?: string }>({
 				name: 'Hannah',
 				email: 'original@example.com',
 			})
@@ -498,7 +502,7 @@ describe('store', () => {
 		})
 
 		test('remove method has no effect on non-existent properties', () => {
-			const user = store<{ name: string; email?: string }>({
+			const user = createStore<{ name: string; email?: string }>({
 				name: 'Hannah',
 			})
 
@@ -511,9 +515,9 @@ describe('store', () => {
 
 	describe('computed integration', () => {
 		test('works with computed signals', () => {
-			const user = store({ firstName: 'Hannah', lastName: 'Smith' })
+			const user = createStore({ firstName: 'Hannah', lastName: 'Smith' })
 
-			const fullName = computed(() => {
+			const fullName = createComputed(() => {
 				return `${user.firstName.get()} ${user.lastName.get()}`
 			})
 
@@ -524,13 +528,13 @@ describe('store', () => {
 		})
 
 		test('computed reacts to nested store changes', () => {
-			const config = store({
+			const config = createStore({
 				ui: {
 					theme: 'dark',
 				},
 			})
 
-			const themeDisplay = computed(() => {
+			const themeDisplay = createComputed(() => {
 				return `Theme: ${config.ui.theme.get()}`
 			})
 
@@ -544,11 +548,11 @@ describe('store', () => {
 	describe('array-derived stores with computed sum', () => {
 		test('computes sum correctly and updates when items are added, removed, or changed', () => {
 			// Create a store with an array of numbers
-			const numbers = store([1, 2, 3, 4, 5])
+			const numbers = createStore([1, 2, 3, 4, 5])
 
 			// Create a computed that calculates the sum by accessing the array via .get()
 			// This ensures reactivity to both value changes and structural changes
-			const sum = computed(() => {
+			const sum = createComputed(() => {
 				const array = numbers.get()
 				if (!Array.isArray(array)) return 0
 				return array.reduce((acc, num) => acc + num, 0)
@@ -592,9 +596,9 @@ describe('store', () => {
 
 		test('handles empty array and single element operations', () => {
 			// Start with empty array
-			const numbers = store<number[]>([])
+			const numbers = createStore<number[]>([])
 
-			const sum = computed(() => {
+			const sum = createComputed(() => {
 				const array = numbers.get()
 				if (!Array.isArray(array)) return 0
 				return array.reduce((acc, num) => acc + num, 0)
@@ -620,10 +624,10 @@ describe('store', () => {
 		})
 
 		test('computed sum using store iteration with size tracking', () => {
-			const numbers = store([10, 20, 30])
+			const numbers = createStore([10, 20, 30])
 
 			// Use iteration but also track size to ensure reactivity to additions/removals
-			const sum = computed(() => {
+			const sum = createComputed(() => {
 				// Access size to subscribe to structural changes
 				numbers.size.get()
 				let total = 0
@@ -650,10 +654,10 @@ describe('store', () => {
 
 		test('demonstrates array compaction behavior with remove operations', () => {
 			// Create a store with an array
-			const numbers = store([10, 20, 30, 40, 50])
+			const numbers = createStore([10, 20, 30, 40, 50])
 
 			// Create a computed using iteration approach with size tracking
-			const sumWithIteration = computed(() => {
+			const sumWithIteration = createComputed(() => {
 				// Access size to subscribe to structural changes
 				numbers.size.get()
 				let total = 0
@@ -664,7 +668,7 @@ describe('store', () => {
 			})
 
 			// Create a computed using .get() approach for comparison
-			const sumWithGet = computed(() => {
+			const sumWithGet = createComputed(() => {
 				const array = numbers.get()
 				if (!Array.isArray(array)) return 0
 				return array.reduce((acc, num) => acc + num, 0)
@@ -700,7 +704,7 @@ describe('store', () => {
 
 		test('verifies root cause: diff works on array representation but reconcile uses sparse keys', () => {
 			// Create a sparse array scenario
-			const numbers = store([10, 20, 30])
+			const numbers = createStore([10, 20, 30])
 
 			// Remove middle element to create sparse structure
 			numbers.remove(1) // Now has keys ["0", "2"] with values [10, 30]
@@ -726,7 +730,7 @@ describe('store', () => {
 
 	describe('arrays and edge cases', () => {
 		test('handles arrays as store values', () => {
-			const data = store({ items: [1, 2, 3] })
+			const data = createStore({ items: [1, 2, 3] })
 
 			// Arrays become stores with string indices
 			expect(isStore(data.items)).toBe(true)
@@ -736,7 +740,7 @@ describe('store', () => {
 		})
 
 		test('array-derived nested stores have correct type inference', () => {
-			const todoApp = store({
+			const todoApp = createStore({
 				todos: ['Buy milk', 'Walk the dog', 'Write code'],
 				users: [
 					{ name: 'Alice', active: true },
@@ -795,7 +799,7 @@ describe('store', () => {
 		})
 
 		test('handles UNSET values', () => {
-			const data = store({ value: UNSET as string })
+			const data = createStore({ value: UNSET as string })
 
 			expect(data.value.get()).toBe(UNSET)
 			data.value.set('some string')
@@ -803,7 +807,7 @@ describe('store', () => {
 		})
 
 		test('handles primitive values', () => {
-			const data = store({
+			const data = createStore({
 				str: 'hello',
 				num: 42,
 				bool: true,
@@ -817,13 +821,19 @@ describe('store', () => {
 
 	describe('proxy behavior', () => {
 		test('Object.keys returns property keys', () => {
-			const user = store({ name: 'Hannah', email: 'hannah@example.com' })
+			const user = createStore({
+				name: 'Hannah',
+				email: 'hannah@example.com',
+			})
 
 			expect(Object.keys(user)).toEqual(['name', 'email'])
 		})
 
 		test('property enumeration works', () => {
-			const user = store({ name: 'Hannah', email: 'hannah@example.com' })
+			const user = createStore({
+				name: 'Hannah',
+				email: 'hannah@example.com',
+			})
 			const keys: string[] = []
 
 			for (const key in user) {
@@ -834,14 +844,14 @@ describe('store', () => {
 		})
 
 		test('in operator works', () => {
-			const user = store({ name: 'Hannah' })
+			const user = createStore({ name: 'Hannah' })
 
 			expect('name' in user).toBe(true)
 			expect('email' in user).toBe(false)
 		})
 
 		test('Object.getOwnPropertyDescriptor works', () => {
-			const user = store({ name: 'Hannah' })
+			const user = createStore({ name: 'Hannah' })
 
 			const descriptor = Object.getOwnPropertyDescriptor(user, 'name')
 			expect(descriptor).toEqual({
@@ -855,7 +865,7 @@ describe('store', () => {
 
 	describe('type conversion via toSignal', () => {
 		test('arrays are converted to stores', () => {
-			const fruits = store({ items: ['apple', 'banana', 'cherry'] })
+			const fruits = createStore({ items: ['apple', 'banana', 'cherry'] })
 
 			expect(isStore(fruits.items)).toBe(true)
 			expect(fruits.items['0'].get()).toBe('apple')
@@ -864,7 +874,7 @@ describe('store', () => {
 		})
 
 		test('nested objects become nested stores', () => {
-			const config = store({
+			const config = createStore({
 				database: {
 					host: 'localhost',
 					port: 5432,
@@ -879,7 +889,7 @@ describe('store', () => {
 
 	describe('spread operator behavior', () => {
 		test('spreading store spreads individual signals', () => {
-			const user = store({ name: 'Hannah', age: 25, active: true })
+			const user = createStore({ name: 'Hannah', age: 25, active: true })
 
 			// Spread the store - should get individual signals
 			const spread = { ...user }
@@ -908,7 +918,7 @@ describe('store', () => {
 		})
 
 		test('spreading nested store works correctly', () => {
-			const config = store({
+			const config = createStore({
 				app: { name: 'MyApp', version: '1.0' },
 				settings: { theme: 'dark', debug: false },
 			})
@@ -952,7 +962,7 @@ describe('store', () => {
 
 			// Parse JSON and create store - works seamlessly
 			const apiData = JSON.parse(jsonResponse)
-			const userStore = store<{
+			const userStore = createStore<{
 				user: {
 					id: number
 					name: string
@@ -1075,7 +1085,7 @@ describe('store', () => {
 			const data = JSON.parse(complexJson)
 
 			// Test that null values in initial JSON are filtered out (treated as UNSET)
-			const dashboardStore = store<{
+			const dashboardStore = createStore<{
 				dashboard: {
 					widgets: {
 						id: number
@@ -1182,7 +1192,7 @@ describe('store', () => {
 				},
 			}
 
-			const formStore = store<{
+			const formStore = createStore<{
 				profile: {
 					id?: number
 					createdAt?: string
@@ -1257,7 +1267,7 @@ describe('store', () => {
 
 		describe('Symbol.isConcatSpreadable and polymorphic behavior', () => {
 			test('array-like stores have Symbol.isConcatSpreadable true and length property', () => {
-				const numbers = store([1, 2, 3])
+				const numbers = createStore([1, 2, 3])
 
 				// Should be concat spreadable
 				expect(numbers[Symbol.isConcatSpreadable]).toBe(true)
@@ -1272,7 +1282,7 @@ describe('store', () => {
 			})
 
 			test('object-like stores have Symbol.isConcatSpreadable false and no length property', () => {
-				const user = store({ name: 'John', age: 25 })
+				const user = createStore({ name: 'John', age: 25 })
 
 				// Should not be concat spreadable
 				expect(user[Symbol.isConcatSpreadable]).toBe(false)
@@ -1284,7 +1294,7 @@ describe('store', () => {
 			})
 
 			test('array-like stores iterate over signals only', () => {
-				const numbers = store([10, 20, 30])
+				const numbers = createStore([10, 20, 30])
 				const signals = [...numbers]
 
 				// Should yield signals, not [key, signal] pairs
@@ -1300,7 +1310,7 @@ describe('store', () => {
 			})
 
 			test('object-like stores iterate over [key, signal] pairs', () => {
-				const user = store({ name: 'Alice', age: 30 })
+				const user = createStore({ name: 'Alice', age: 30 })
 				const entries = [...user]
 
 				// Should yield [key, signal] pairs
@@ -1320,7 +1330,7 @@ describe('store', () => {
 			})
 
 			test('array-like stores support single-parameter add() method', () => {
-				const fruits = store(['apple', 'banana'])
+				const fruits = createStore(['apple', 'banana'])
 
 				// Should add to end without specifying key
 				fruits.add('cherry')
@@ -1331,7 +1341,10 @@ describe('store', () => {
 			})
 
 			test('object-like stores require key parameter for add() method', () => {
-				const config = store<{ debug: boolean; timeout?: number }>({
+				const config = createStore<{
+					debug: boolean
+					timeout?: number
+				}>({
 					debug: true,
 				})
 
@@ -1342,9 +1355,9 @@ describe('store', () => {
 			})
 
 			test('concat works correctly with array-like stores', () => {
-				const numbers = store([2, 3])
-				const prefix = [state(1)]
-				const suffix = [state(4), state(5)]
+				const numbers = createStore([2, 3])
+				const prefix = [createState(1)]
+				const suffix = [createState(4), createState(5)]
 
 				// Should spread signals when concat-ed
 				const combined = prefix.concat(
@@ -1361,10 +1374,10 @@ describe('store', () => {
 			})
 
 			test('spread operator works correctly with array-like stores', () => {
-				const numbers = store([10, 20])
+				const numbers = createStore([10, 20])
 
 				// Should spread signals
-				const spread = [state(5), ...numbers, state(30)]
+				const spread = [createState(5), ...numbers, createState(30)]
 
 				expect(spread).toHaveLength(4)
 				expect(spread[0].get()).toBe(5)
@@ -1374,7 +1387,7 @@ describe('store', () => {
 			})
 
 			test('array-like stores maintain numeric key ordering', () => {
-				const items = store(['first', 'second', 'third'])
+				const items = createStore(['first', 'second', 'third'])
 
 				// Get the keys
 				const keys = Object.keys(items)
@@ -1389,17 +1402,19 @@ describe('store', () => {
 
 			test('polymorphic behavior is determined at creation time', () => {
 				// Created as array - stays array-like
-				const arrayStore = store([1, 2])
+				const arrayStore = createStore([1, 2])
 				expect(arrayStore[Symbol.isConcatSpreadable]).toBe(true)
 				expect(arrayStore.length).toBe(2)
 
 				// Created as object - stays object-like
-				const objectStore = store<{ a: number; b: number; c?: number }>(
-					{
-						a: 1,
-						b: 2,
-					},
-				)
+				const objectStore = createStore<{
+					a: number
+					b: number
+					c?: number
+				}>({
+					a: 1,
+					b: 2,
+				})
 				expect(objectStore[Symbol.isConcatSpreadable]).toBe(false)
 				// @ts-expect-error deliberate access to non-existent length property
 				expect(objectStore.length).toBeUndefined()
@@ -1413,8 +1428,8 @@ describe('store', () => {
 			})
 
 			test('runtime type detection using typeof length', () => {
-				const arrayStore = store([1, 2, 3])
-				const objectStore = store({ x: 1, y: 2 })
+				const arrayStore = createStore([1, 2, 3])
+				const objectStore = createStore({ x: 1, y: 2 })
 
 				// Can distinguish at runtime
 				expect(typeof arrayStore.length === 'number').toBe(true)
@@ -1423,8 +1438,8 @@ describe('store', () => {
 			})
 
 			test('empty stores behave correctly', () => {
-				const emptyArray = store([])
-				const emptyObject = store({})
+				const emptyArray = createStore([])
+				const emptyObject = createStore({})
 
 				// Empty array store
 				expect(emptyArray[Symbol.isConcatSpreadable]).toBe(true)
@@ -1440,10 +1455,10 @@ describe('store', () => {
 		})
 
 		test('debug length property issue', () => {
-			const numbers = store([1, 2, 3])
+			const numbers = createStore([1, 2, 3])
 
 			// Test length in computed context
-			const lengthComputed = computed(() => numbers.length)
+			const lengthComputed = createComputed(() => numbers.length)
 			numbers.add(4)
 
 			// Test if length property is actually reactive
@@ -1454,7 +1469,7 @@ describe('store', () => {
 
 	describe('sort() method', () => {
 		test('sorts array-like store with numeric compareFn', () => {
-			const numbers = store([3, 1, 4, 1, 5])
+			const numbers = createStore([3, 1, 4, 1, 5])
 
 			// Capture old signal references
 			const oldSignals = [
@@ -1479,7 +1494,7 @@ describe('store', () => {
 		})
 
 		test('sorts array-like store with string compareFn', () => {
-			const names = store(['Charlie', 'Alice', 'Bob'])
+			const names = createStore(['Charlie', 'Alice', 'Bob'])
 
 			names.sort((a, b) => a.localeCompare(b))
 
@@ -1487,7 +1502,7 @@ describe('store', () => {
 		})
 
 		test('sorts record-like store by value', () => {
-			const users = store({
+			const users = createStore({
 				user1: { name: 'Charlie', age: 25 },
 				user2: { name: 'Alice', age: 30 },
 				user3: { name: 'Bob', age: 20 },
@@ -1513,30 +1528,28 @@ describe('store', () => {
 			expect(users.user3).toBe(oldSignals.user3)
 		})
 
-		test('emits store-sort event with new order', () => {
-			const numbers = store([30, 10, 20])
-			let sortEvent: StoreSortEvent | null = null
+		test('emits a sort notification with new order', () => {
+			const numbers = createStore([30, 10, 20])
+			let sortNotification: string[] | null = null
 
-			numbers.addEventListener('store-sort', event => {
-				sortEvent = event
+			numbers.on('sort', change => {
+				sortNotification = change
 			})
 
 			numbers.sort((a, b) => a - b)
 
-			expect(sortEvent).not.toBeNull()
-			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(sortEvent!.type).toBe('store-sort')
+			expect(sortNotification).not.toBeNull()
 			// Keys in new sorted order: [10, 20, 30] came from indices [1, 2, 0]
 			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(sortEvent!.detail).toEqual(['1', '2', '0'])
+			expect(sortNotification!).toEqual(['1', '2', '0'])
 		})
 
 		test('sort is reactive - watchers are notified', () => {
-			const numbers = store([3, 1, 2])
+			const numbers = createStore([3, 1, 2])
 			let effectCount = 0
 			let lastValue: number[] = []
 
-			effect(() => {
+			createEffect(() => {
 				lastValue = numbers.get()
 				effectCount++
 			})
@@ -1553,7 +1566,7 @@ describe('store', () => {
 		})
 
 		test('nested signals remain reactive after sorting', () => {
-			const items = store([
+			const items = createStore([
 				{ name: 'Charlie', score: 85 },
 				{ name: 'Alice', score: 95 },
 				{ name: 'Bob', score: 75 },
@@ -1578,7 +1591,7 @@ describe('store', () => {
 		})
 
 		test('sort with complex nested structures', () => {
-			const posts = store([
+			const posts = createStore([
 				{
 					id: 'post1',
 					title: 'Hello World',
@@ -1612,7 +1625,7 @@ describe('store', () => {
 		})
 
 		test('sort preserves array length and size', () => {
-			const arr = store([5, 2, 8, 1])
+			const arr = createStore([5, 2, 8, 1])
 
 			expect(arr.length).toBe(4)
 			expect(arr.size.get()).toBe(4)
@@ -1625,7 +1638,7 @@ describe('store', () => {
 		})
 
 		test('sort with no compareFn uses default string sorting like Array.prototype.sort()', () => {
-			const items = store(['banana', 'cherry', 'apple', '10', '2'])
+			const items = createStore(['banana', 'cherry', 'apple', '10', '2'])
 
 			items.sort()
 
@@ -1636,7 +1649,7 @@ describe('store', () => {
 		})
 
 		test('default sort handles numbers as strings like Array.prototype.sort()', () => {
-			const numbers = store([80, 9, 100])
+			const numbers = createStore([80, 9, 100])
 
 			numbers.sort()
 
@@ -1646,7 +1659,7 @@ describe('store', () => {
 		})
 
 		test('default sort handles mixed values with proper string conversion', () => {
-			const mixed = store(['b', 0, 'a', '', 'c'])
+			const mixed = createStore(['b', 0, 'a', '', 'c'])
 
 			mixed.sort()
 
@@ -1655,7 +1668,7 @@ describe('store', () => {
 		})
 
 		test('multiple sorts work correctly', () => {
-			const numbers = store([3, 1, 4, 1, 5])
+			const numbers = createStore([3, 1, 4, 1, 5])
 
 			// Sort ascending
 			numbers.sort((a, b) => a - b)
@@ -1666,24 +1679,24 @@ describe('store', () => {
 			expect(numbers.get()).toEqual([5, 4, 3, 1, 1])
 		})
 
-		test('sort event contains correct movement mapping for records', () => {
-			const users = store({
+		test('sort notification contains correct movement mapping for records', () => {
+			const users = createStore({
 				alice: { age: 30 },
 				bob: { age: 20 },
 				charlie: { age: 25 },
 			})
 
-			let sortEvent: StoreSortEvent | null = null
-			users.addEventListener('store-sort', event => {
-				sortEvent = event
+			let sortNotification: string[] | null = null
+			users.on('sort', change => {
+				sortNotification = change
 			})
 
 			// Sort by age
 			users.sort((a, b) => b.age - a.age)
 
-			expect(sortEvent).not.toBeNull()
+			expect(sortNotification).not.toBeNull()
 			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(sortEvent!.detail).toEqual(['alice', 'charlie', 'bob'])
+			expect(sortNotification!).toEqual(['alice', 'charlie', 'bob'])
 		})
 	})
 })

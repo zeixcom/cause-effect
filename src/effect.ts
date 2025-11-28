@@ -1,5 +1,5 @@
 import { CircularDependencyError } from './errors'
-import { type Cleanup, observe, watch } from './scheduler'
+import { type Cleanup, createWatcher, observe } from './system'
 import { isAbortError, isAsyncFunction, isFunction } from './util'
 
 /* === Types === */
@@ -24,12 +24,12 @@ type EffectCallback =
  * @param {EffectCallback} callback - Synchronous or asynchronous effect callback
  * @returns {Cleanup} - Cleanup function for the effect
  */
-const effect = (callback: EffectCallback): Cleanup => {
+const createEffect = (callback: EffectCallback): Cleanup => {
 	const isAsync = isAsyncFunction<MaybeCleanup>(callback)
 	let running = false
 	let controller: AbortController | undefined
 
-	const run = watch(() =>
+	const run = createWatcher(() =>
 		observe(() => {
 			if (running) throw new CircularDependencyError('effect')
 			running = true
@@ -80,4 +80,4 @@ const effect = (callback: EffectCallback): Cleanup => {
 
 /* === Exports === */
 
-export { type MaybeCleanup, type EffectCallback, effect }
+export { type MaybeCleanup, type EffectCallback, createEffect }

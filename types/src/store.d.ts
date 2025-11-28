@@ -1,23 +1,20 @@
 import { type UnknownArray, type UnknownRecord, type UnknownRecordOrArray } from './diff';
 import { type State } from './state';
+import { type Cleanup } from './system';
 type ArrayItem<T> = T extends readonly (infer U extends {})[] ? U : never;
-type StoreEventMap<T extends UnknownRecord | UnknownArray> = {
-    'store-add': StoreAddEvent<T>;
-    'store-change': StoreChangeEvent<T>;
-    'store-remove': StoreRemoveEvent<T>;
-    'store-sort': StoreSortEvent;
+type StoreChanges<T> = {
+    add: Partial<T>;
+    change: Partial<T>;
+    remove: Partial<T>;
+    sort: string[];
 };
-interface StoreEventTarget<T extends UnknownRecord | UnknownArray> extends EventTarget {
-    addEventListener<K extends keyof StoreEventMap<T>>(type: K, listener: (event: StoreEventMap<T>[K]) => void, options?: boolean | AddEventListenerOptions): void;
-    removeEventListener<K extends keyof StoreEventMap<T>>(type: K, listener: (event: StoreEventMap<T>[K]) => void, options?: boolean | EventListenerOptions): void;
-    dispatchEvent(event: Event): boolean;
-}
-interface BaseStore<T extends UnknownRecord | UnknownArray> extends StoreEventTarget<T> {
+interface BaseStore<T extends UnknownRecord | UnknownArray> {
     readonly [Symbol.toStringTag]: 'Store';
     get(): T;
     set(value: T): void;
     update(fn: (value: T) => T): void;
     sort<U = T extends UnknownArray ? ArrayItem<T> : T[Extract<keyof T, string>]>(compareFn?: (a: U, b: U) => number): void;
+    on<K extends keyof StoreChanges<T>>(type: K, listener: (change: StoreChanges<T>[K]) => void): Cleanup;
     readonly size: State<number>;
 }
 type RecordStore<T extends UnknownRecord> = BaseStore<T> & {
@@ -38,22 +35,6 @@ type ArrayStore<T extends UnknownArray> = BaseStore<T> & {
     [Symbol.iterator](): IterableIterator<ArrayItem<T> extends readonly unknown[] | Record<string, unknown> ? Store<ArrayItem<T>> : State<ArrayItem<T>>>;
     readonly [Symbol.isConcatSpreadable]: boolean;
 };
-interface StoreAddEvent<T extends UnknownRecord | UnknownArray> extends CustomEvent {
-    type: 'store-add';
-    detail: Partial<T>;
-}
-interface StoreChangeEvent<T extends UnknownRecord | UnknownArray> extends CustomEvent {
-    type: 'store-change';
-    detail: Partial<T>;
-}
-interface StoreRemoveEvent<T extends UnknownRecord | UnknownArray> extends CustomEvent {
-    type: 'store-remove';
-    detail: Partial<T>;
-}
-interface StoreSortEvent extends CustomEvent {
-    type: 'store-sort';
-    detail: string[];
-}
 type Store<T> = T extends UnknownRecord ? RecordStore<T> : T extends UnknownArray ? ArrayStore<T> : never;
 declare const TYPE_STORE = "Store";
 /**
@@ -68,7 +49,7 @@ declare const TYPE_STORE = "Store";
  * @param {T} initialValue - initial object or array value of the store
  * @returns {Store<T>} - new store with reactive properties that preserves the original type T
  */
-declare const store: <T extends UnknownRecord | UnknownArray>(initialValue: T) => Store<T>;
+declare const createStore: <T extends UnknownRecord | UnknownArray>(initialValue: T) => Store<T>;
 /**
  * Check if the provided value is a Store instance
  *
@@ -77,4 +58,4 @@ declare const store: <T extends UnknownRecord | UnknownArray>(initialValue: T) =
  * @returns {boolean} - true if the value is a Store instance, false otherwise
  */
 declare const isStore: <T extends UnknownRecordOrArray>(value: unknown) => value is Store<T>;
-export { TYPE_STORE, isStore, store, type Store, type StoreAddEvent, type StoreChangeEvent, type StoreRemoveEvent, type StoreSortEvent, type StoreEventMap, };
+export { TYPE_STORE, isStore, createStore, type Store };

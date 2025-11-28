@@ -23,10 +23,6 @@ const isAsyncFunction = /*#__PURE__*/ <T>(
 ): fn is (...args: unknown[]) => Promise<T> =>
 	isFunction(fn) && fn.constructor.name === 'AsyncFunction'
 
-const isDefinedObject = /*#__PURE__*/ (
-	value: unknown,
-): value is Record<string, unknown> => !!value && typeof value === 'object'
-
 const isObjectOfType = /*#__PURE__*/ <T>(
 	value: unknown,
 	type: string,
@@ -92,7 +88,7 @@ const recordToArray = /*#__PURE__*/ <T>(
 const valueString = /*#__PURE__*/ (value: unknown): string =>
 	isString(value)
 		? `"${value}"`
-		: isDefinedObject(value)
+		: !!value && typeof value === 'object'
 			? JSON.stringify(value)
 			: String(value)
 
@@ -105,7 +101,6 @@ export {
 	isSymbol,
 	isFunction,
 	isAsyncFunction,
-	isDefinedObject,
 	isObjectOfType,
 	isRecord,
 	isRecordOrArray,

@@ -8,8 +8,6 @@ type Watcher = {
 	cleanup(): void
 }
 
-type Updater = <T>() => T | boolean | undefined
-
 /* === Internal === */
 
 // Currently active watcher
@@ -18,27 +16,6 @@ let active: Watcher | undefined
 // Pending queue for batched change notifications
 const pending = new Set<Watcher>()
 let batchDepth = 0
-
-// Map of deduplication symbols to update functions (using Symbol keys prevents unintended overwrites)
-const updateMap = new Map<symbol, Updater>()
-let requestId: number | undefined
-
-const updateDOM = () => {
-	requestId = undefined
-	const updates = Array.from(updateMap.values())
-	updateMap.clear()
-	for (const update of updates) {
-		update()
-	}
-}
-
-const requestTick = () => {
-	if (requestId) cancelAnimationFrame(requestId)
-	requestId = requestAnimationFrame(updateDOM)
-}
-
-// Initial render when the call stack is empty
-queueMicrotask(updateDOM)
 
 /* === Functions === */
 
@@ -49,7 +26,7 @@ queueMicrotask(updateDOM)
  * @param {() => void} notice - function to be called when the state changes
  * @returns {Watcher} - watcher object with off and cleanup methods
  */
-const watch = (notice: () => void): Watcher => {
+const createWatcher = (notice: () => void): Watcher => {
 	const cleanups = new Set<Cleanup>()
 	const w = notice as Partial<Watcher>
 	w.off = (on: Cleanup) => {
@@ -135,38 +112,15 @@ const observe = (run: () => void, watcher?: Watcher): void => {
 	}
 }
 
-/**
- * Enqueue a function to be executed on the next animation frame
- *
- * If the same Symbol is provided for multiple calls before the next animation frame,
- * only the latest call will be executed (deduplication).
- *
- * @param {Updater} fn - function to be executed on the next animation frame; can return updated value <T>, success <boolean> or void
- * @param {symbol} dedupe - Symbol for deduplication; if not provided, a unique Symbol is created ensuring the update is always executed
- */
-const enqueue = <T>(fn: Updater, dedupe?: symbol) =>
-	new Promise<T | boolean | undefined>((resolve, reject) => {
-		updateMap.set(dedupe || Symbol(), (): undefined => {
-			try {
-				resolve(fn())
-			} catch (error) {
-				reject(error)
-			}
-		})
-		requestTick()
-	})
-
 /* === Exports === */
 
 export {
 	type Cleanup,
 	type Watcher,
-	type Updater,
 	subscribe,
 	notify,
 	flush,
 	batch,
-	watch,
+	createWatcher,
 	observe,
-	enqueue,
 }
