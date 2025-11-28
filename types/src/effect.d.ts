@@ -1,4 +1,4 @@
-import { type Cleanup } from './scheduler';
+import { type Cleanup } from './system';
 type MaybeCleanup = Cleanup | undefined | void;
 type EffectCallback = (() => MaybeCleanup) | ((abort: AbortSignal) => Promise<MaybeCleanup>);
 /**
@@ -12,5 +12,5 @@ type EffectCallback = (() => MaybeCleanup) | ((abort: AbortSignal) => Promise<Ma
  * @param {EffectCallback} callback - Synchronous or asynchronous effect callback
  * @returns {Cleanup} - Cleanup function for the effect
  */
-declare const effect: (callback: EffectCallback) => Cleanup;
-export { type MaybeCleanup, type EffectCallback, effect };
+declare const createEffect: (callback: EffectCallback) => Cleanup;
+export { type MaybeCleanup, type EffectCallback, createEffect };

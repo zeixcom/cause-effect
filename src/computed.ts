@@ -1,13 +1,13 @@
 import { isEqual } from './diff'
 import { CircularDependencyError } from './errors'
 import {
+	createWatcher,
 	flush,
 	notify,
 	observe,
 	subscribe,
 	type Watcher,
-	watch,
-} from './scheduler'
+} from './system'
 import {
 	isAbortError,
 	isAsyncFunction,
@@ -40,7 +40,7 @@ const TYPE_COMPUTED = 'Computed'
  * @param {ComputedCallback<T>} fn - computation callback function
  * @returns {Computed<T>} - Computed signal
  */
-const computed = <T extends {}>(fn: ComputedCallback<T>): Computed<T> => {
+const createComputed = <T extends {}>(fn: ComputedCallback<T>): Computed<T> => {
 	const watchers: Set<Watcher> = new Set()
 
 	// Internal state
@@ -84,7 +84,7 @@ const computed = <T extends {}>(fn: ComputedCallback<T>): Computed<T> => {
 		}
 
 	// Own watcher: called when notified from sources (push)
-	const mark = watch(() => {
+	const mark = createWatcher(() => {
 		dirty = true
 		controller?.abort()
 		if (watchers.size) notify(watchers)
@@ -179,7 +179,7 @@ const isComputedCallback = /*#__PURE__*/ <T extends {}>(
 
 export {
 	TYPE_COMPUTED,
-	computed,
+	createComputed,
 	isComputed,
 	isComputedCallback,
 	type Computed,

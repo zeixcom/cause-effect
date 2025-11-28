@@ -1,12 +1,12 @@
 import {
 	type Computed,
 	type ComputedCallback,
-	computed,
+	createComputed,
 	isComputed,
 	isComputedCallback,
 } from './computed'
-import { isState, type State, state } from './state'
-import { isStore, type Store, store } from './store'
+import { createState, isState, type State } from './state'
+import { createStore, isStore, type Store } from './store'
 import { isRecord } from './util'
 
 /* === Types === */
@@ -71,9 +71,9 @@ function toSignal<T extends {}>(
 							: State<T>
 function toSignal<T extends {}>(value: T) {
 	if (isSignal<T>(value)) return value
-	if (isComputedCallback(value)) return computed(value)
-	if (Array.isArray(value) || isRecord(value)) return store(value)
-	return state(value)
+	if (isComputedCallback(value)) return createComputed(value)
+	if (Array.isArray(value) || isRecord(value)) return createStore(value)
+	return createState(value)
 }
 
 /* === Exports === */

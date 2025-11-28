@@ -1,14 +1,21 @@
 import { describe, expect, test } from 'bun:test'
-import { batch, computed, effect, match, resolve, state } from '../'
+import {
+	batch,
+	createComputed,
+	createEffect,
+	createState,
+	match,
+	resolve,
+} from '../'
 
 /* === Tests === */
 
 describe('Batch', () => {
 	test('should be triggered only once after repeated state change', () => {
-		const cause = state(0)
+		const cause = createState(0)
 		let result = 0
 		let count = 0
-		effect((): undefined => {
+		createEffect((): undefined => {
 			result = cause.get()
 			count++
 		})
@@ -22,13 +29,13 @@ describe('Batch', () => {
 	})
 
 	test('should be triggered only once when multiple signals are set', () => {
-		const a = state(3)
-		const b = state(4)
-		const c = state(5)
-		const sum = computed(() => a.get() + b.get() + c.get())
+		const a = createState(3)
+		const b = createState(4)
+		const c = createState(5)
+		const sum = createComputed(() => a.get() + b.get() + c.get())
 		let result = 0
 		let count = 0
-		effect(() => {
+		createEffect(() => {
 			const resolved = resolve({ sum })
 			match(resolved, {
 				ok: ({ sum: res }) => {
@@ -49,10 +56,10 @@ describe('Batch', () => {
 
 	test('should prove example from README works', () => {
 		// State: define an array of Signal<number>
-		const signals = [state(2), state(3), state(5)]
+		const signals = [createState(2), createState(3), createState(5)]
 
 		// Computed: derive a calculation ...
-		const sum = computed(() => {
+		const sum = createComputed(() => {
 			const v = signals.reduce((total, v) => total + v.get(), 0)
 			if (!Number.isFinite(v)) throw new Error('Invalid value')
 			return v
@@ -63,7 +70,7 @@ describe('Batch', () => {
 		let errCount = 0
 
 		// Effect: switch cases for the result
-		effect(() => {
+		createEffect(() => {
 			const resolved = resolve({ sum })
 			match(resolved, {
 				ok: ({ sum: v }) => {

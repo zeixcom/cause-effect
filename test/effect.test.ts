@@ -1,11 +1,11 @@
 import { describe, expect, mock, test } from 'bun:test'
 import {
-	computed,
-	effect,
+	createComputed,
+	createEffect,
+	createState,
 	isAbortError,
 	match,
 	resolve,
-	state,
 	UNSET,
 } from '../'
 
@@ -17,9 +17,9 @@ const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
 describe('Effect', () => {
 	test('should be triggered after a state change', () => {
-		const cause = state('foo')
+		const cause = createState('foo')
 		let count = 0
-		effect(() => {
+		createEffect(() => {
 			cause.get()
 			count++
 		})
@@ -29,17 +29,17 @@ describe('Effect', () => {
 	})
 
 	test('should be triggered after computed async signals resolve without waterfalls', async () => {
-		const a = computed(async () => {
+		const a = createComputed(async () => {
 			await wait(100)
 			return 10
 		})
-		const b = computed(async () => {
+		const b = createComputed(async () => {
 			await wait(100)
 			return 20
 		})
 		let result = 0
 		let count = 0
-		effect(() => {
+		createEffect(() => {
 			const resolved = resolve({ a, b })
 			match(resolved, {
 				ok: ({ a: aValue, b: bValue }) => {
@@ -56,10 +56,10 @@ describe('Effect', () => {
 	})
 
 	test('should be triggered repeatedly after repeated state change', async () => {
-		const cause = state(0)
+		const cause = createState(0)
 		let result = 0
 		let count = 0
-		effect(() => {
+		createEffect(() => {
 			result = cause.get()
 			count++
 		})
@@ -71,15 +71,15 @@ describe('Effect', () => {
 	})
 
 	test('should handle errors in effects with resolve handlers', () => {
-		const a = state(1)
-		const b = computed(() => {
+		const a = createState(1)
+		const b = createComputed(() => {
 			const v = a.get()
 			if (v > 5) throw new Error('Value too high')
 			return v * 2
 		})
 		let normalCallCount = 0
 		let errorCallCount = 0
-		effect(() => {
+		createEffect(() => {
 			const resolved = resolve({ b })
 			match(resolved, {
 				ok: () => {
@@ -109,15 +109,15 @@ describe('Effect', () => {
 	})
 
 	test('should handle errors in effects with resolve result', () => {
-		const a = state(1)
-		const b = computed(() => {
+		const a = createState(1)
+		const b = createComputed(() => {
 			const v = a.get()
 			if (v > 5) throw new Error('Value too high')
 			return v * 2
 		})
 		let normalCallCount = 0
 		let errorCallCount = 0
-		effect(() => {
+		createEffect(() => {
 			const result = resolve({ b })
 			if (result.ok) {
 				normalCallCount++
@@ -144,13 +144,13 @@ describe('Effect', () => {
 	})
 
 	test('should handle UNSET values in effects with resolve handlers', async () => {
-		const a = computed(async () => {
+		const a = createComputed(async () => {
 			await wait(100)
 			return 42
 		})
 		let normalCallCount = 0
 		let nilCount = 0
-		effect(() => {
+		createEffect(() => {
 			const resolved = resolve({ a })
 			match(resolved, {
 				ok: values => {
@@ -173,13 +173,13 @@ describe('Effect', () => {
 	})
 
 	test('should handle UNSET values in effects with resolve result', async () => {
-		const a = computed(async () => {
+		const a = createComputed(async () => {
 			await wait(100)
 			return 42
 		})
 		let normalCallCount = 0
 		let nilCount = 0
-		effect(() => {
+		createEffect(() => {
 			const result = resolve({ a })
 			if (result.ok) {
 				normalCallCount++
@@ -205,15 +205,15 @@ describe('Effect', () => {
 		console.error = mockConsoleError
 
 		try {
-			const a = state(1)
-			const b = computed(() => {
+			const a = createState(1)
+			const b = createComputed(() => {
 				const v = a.get()
 				if (v > 5) throw new Error('Value too high')
 				return v * 2
 			})
 
 			// Create an effect without explicit error handling
-			effect(() => {
+			createEffect(() => {
 				b.get()
 			})
 
@@ -232,10 +232,10 @@ describe('Effect', () => {
 	})
 
 	test('should clean up subscriptions when disposed', () => {
-		const count = state(42)
+		const count = createState(42)
 		let received = 0
 
-		const cleanup = effect(() => {
+		const cleanup = createEffect(() => {
 			received = count.get()
 		})
 
@@ -250,9 +250,9 @@ describe('Effect', () => {
 	test('should detect and throw error for circular dependencies in effects', () => {
 		let okCount = 0
 		let errCount = 0
-		const count = state(0)
+		const count = createState(0)
 
-		effect(() => {
+		createEffect(() => {
 			const resolved = resolve({ count })
 			match(resolved, {
 				ok: () => {
@@ -282,7 +282,7 @@ describe('Effect - Async with AbortSignal', () => {
 		let abortSignalReceived = false
 		let effectCompleted = false
 
-		effect(async (abort: AbortSignal) => {
+		createEffect(async (abort: AbortSignal) => {
 			expect(abort).toBeInstanceOf(AbortSignal)
 			expect(abort.aborted).toBe(false)
 			abortSignalReceived = true
@@ -298,12 +298,12 @@ describe('Effect - Async with AbortSignal', () => {
 	})
 
 	test('should abort async operations when signal changes', async () => {
-		const testSignal = state(1)
+		const testSignal = createState(1)
 		let operationAborted = false
 		let operationCompleted = false
 		let abortReason: DOMException | undefined
 
-		effect(async abort => {
+		createEffect(async abort => {
 			const result = resolve({ testSignal })
 			if (!result.ok) return
 
@@ -340,7 +340,7 @@ describe('Effect - Async with AbortSignal', () => {
 		let operationAborted = false
 		let abortReason: DOMException | undefined
 
-		const cleanup = effect(async abort => {
+		const cleanup = createEffect(async abort => {
 			abort.addEventListener('abort', () => {
 				operationAborted = true
 				abortReason = abort.reason
@@ -364,9 +364,9 @@ describe('Effect - Async with AbortSignal', () => {
 		console.error = mockConsoleError
 
 		try {
-			const testSignal = state(1)
+			const testSignal = createState(1)
 
-			effect(async abort => {
+			createEffect(async abort => {
 				const result = resolve({ testSignal })
 				if (!result.ok) return
 
@@ -408,9 +408,9 @@ describe('Effect - Async with AbortSignal', () => {
 	test('should handle async effects that return cleanup functions', async () => {
 		let asyncEffectCompleted = false
 		let cleanupRegistered = false
-		const testSignal = state('initial')
+		const testSignal = createState('initial')
 
-		const cleanup = effect(async () => {
+		const cleanup = createEffect(async () => {
 			const result = resolve({ testSignal })
 			if (!result.ok) return
 
@@ -431,11 +431,11 @@ describe('Effect - Async with AbortSignal', () => {
 	})
 
 	test('should handle rapid signal changes with concurrent async operations', async () => {
-		const testSignal = state(0)
+		const testSignal = createState(0)
 		let completedOperations = 0
 		let abortedOperations = 0
 
-		effect(async abort => {
+		createEffect(async abort => {
 			const result = resolve({ testSignal })
 			if (!result.ok) return
 
@@ -477,15 +477,15 @@ describe('Effect - Async with AbortSignal', () => {
 		console.error = mockConsoleError
 
 		try {
-			const testSignal = state(1)
+			const testSignal = createState(1)
 
-			const errorThrower = computed(() => {
+			const errorThrower = createComputed(() => {
 				const value = testSignal.get()
 				if (value > 5) throw new Error('Value too high')
 				return value
 			})
 
-			effect(async () => {
+			createEffect(async () => {
 				const result = resolve({ errorThrower })
 				if (result.ok) {
 					// Normal operation
@@ -517,9 +517,9 @@ describe('Effect - Async with AbortSignal', () => {
 	test('should handle promise-based async effects', async () => {
 		let promiseResolved = false
 		let effectValue = ''
-		const testSignal = state('test-value')
+		const testSignal = createState('test-value')
 
-		effect(async abort => {
+		createEffect(async abort => {
 			const result = resolve({ testSignal })
 			if (!result.ok) return
 
@@ -548,7 +548,7 @@ describe('Effect - Async with AbortSignal', () => {
 	})
 
 	test('should not create AbortController for sync functions', () => {
-		const testSignal = state('test')
+		const testSignal = createState('test')
 		let syncCallCount = 0
 
 		// Mock AbortController constructor to detect if it's called
@@ -563,7 +563,7 @@ describe('Effect - Async with AbortSignal', () => {
 		}
 
 		try {
-			effect(() => {
+			createEffect(() => {
 				const result = resolve({ testSignal })
 				if (result.ok) {
 					syncCallCount++
@@ -579,11 +579,11 @@ describe('Effect - Async with AbortSignal', () => {
 	})
 
 	test('should handle concurrent async operations with abort', async () => {
-		const testSignal = state(1)
+		const testSignal = createState(1)
 		let operation1Completed = false
 		let operation1Aborted = false
 
-		effect(async abort => {
+		createEffect(async abort => {
 			const result = resolve({ testSignal })
 			if (!result.ok) return
 
@@ -629,11 +629,11 @@ describe('Effect - Async with AbortSignal', () => {
 
 describe('Effect + Resolve Integration', () => {
 	test('should work with resolve discriminated union', () => {
-		const a = state(10)
-		const b = state('hello')
+		const a = createState(10)
+		const b = createState('hello')
 		let effectRan = false
 
-		effect(() => {
+		createEffect(() => {
 			const result = resolve({ a, b })
 
 			if (result.ok) {
@@ -647,10 +647,10 @@ describe('Effect + Resolve Integration', () => {
 	})
 
 	test('should work with match function', () => {
-		const a = state(42)
+		const a = createState(42)
 		let matchedValue = 0
 
-		effect(() => {
+		createEffect(() => {
 			const result = resolve({ a })
 			match(result, {
 				ok: values => {
@@ -666,12 +666,12 @@ describe('Effect + Resolve Integration', () => {
 describe('Effect - Race Conditions and Consistency', () => {
 	test('should handle race conditions between abort and cleanup properly', async () => {
 		// This test explores potential race conditions in effect cleanup
-		const testSignal = state(0)
+		const testSignal = createState(0)
 		let cleanupCallCount = 0
 		let abortCallCount = 0
 		let operationCount = 0
 
-		effect(async abort => {
+		createEffect(async abort => {
 			testSignal.get()
 			++operationCount
 
@@ -706,19 +706,19 @@ describe('Effect - Race Conditions and Consistency', () => {
 
 	test('should demonstrate difference in abort handling between computed and effect', async () => {
 		// This test shows why computed needs an abort listener but effect might not
-		const source = state(1)
+		const source = createState(1)
 		let computedRetries = 0
 		let effectRuns = 0
 
 		// Computed with abort listener (current implementation)
-		const comp = computed(async () => {
+		const comp = createComputed(async () => {
 			computedRetries++
 			await wait(30)
 			return source.get() * 2
 		})
 
 		// Effect without abort listener (current implementation)
-		effect(async () => {
+		createEffect(async () => {
 			effectRuns++
 			// Must access the source to make effect reactive
 			source.get()
@@ -741,12 +741,12 @@ describe('Effect - Race Conditions and Consistency', () => {
 
 	test('should prevent stale cleanup registration with generation counter approach', async () => {
 		// This test verifies that the currentController check prevents stale cleanups
-		const testSignal = state(0)
+		const testSignal = createState(0)
 		let cleanupCallCount = 0
 		let effectRunCount = 0
 		let staleCleanupAttempts = 0
 
-		effect(async () => {
+		createEffect(async () => {
 			effectRunCount++
 			const currentRun = effectRunCount
 			testSignal.get() // Make reactive
@@ -782,11 +782,11 @@ describe('Effect - Race Conditions and Consistency', () => {
 
 	test('should demonstrate why computed needs immediate retry via abort listener', async () => {
 		// This test shows the performance benefit of immediate retry in computed
-		const source = state(1)
+		const source = createState(1)
 		let computeAttempts = 0
 		let finalValue: number = 0
 
-		const comp = computed(async () => {
+		const comp = createComputed(async () => {
 			computeAttempts++
 			await wait(30)
 			return source.get() * 2

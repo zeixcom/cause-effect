@@ -68,7 +68,7 @@ declare const TYPE_STORE = "Store";
  * @param {T} initialValue - initial object or array value of the store
  * @returns {Store<T>} - new store with reactive properties that preserves the original type T
  */
-declare const store: <T extends UnknownRecord | UnknownArray>(initialValue: T) => Store<T>;
+declare const createStore: <T extends UnknownRecord | UnknownArray>(initialValue: T) => Store<T>;
 /**
  * Check if the provided value is a Store instance
  *
@@ -77,4 +77,4 @@ declare const store: <T extends UnknownRecord | UnknownArray>(initialValue: T) =
  * @returns {boolean} - true if the value is a Store instance, false otherwise
  */
 declare const isStore: <T extends UnknownRecordOrArray>(value: unknown) => value is Store<T>;
-export { TYPE_STORE, isStore, store, type Store, type StoreAddEvent, type StoreChangeEvent, type StoreRemoveEvent, type StoreSortEvent, type StoreEventMap, };
+export { TYPE_STORE, isStore, createStore, type Store, type StoreAddEvent, type StoreChangeEvent, type StoreRemoveEvent, type StoreSortEvent, type StoreEventMap, };

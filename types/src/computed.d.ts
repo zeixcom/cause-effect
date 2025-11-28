@@ -13,7 +13,7 @@ declare const TYPE_COMPUTED = "Computed";
  * @param {ComputedCallback<T>} fn - computation callback function
  * @returns {Computed<T>} - Computed signal
  */
-declare const computed: <T extends {}>(fn: ComputedCallback<T>) => Computed<T>;
+declare const createComputed: <T extends {}>(fn: ComputedCallback<T>) => Computed<T>;
 /**
  * Check if a value is a computed state
  *
@@ -30,4 +30,4 @@ declare const isComputed: <T extends {}>(value: unknown) => value is Computed<T>
  * @returns {boolean} - true if value is a callback or callbacks object, false otherwise
  */
 declare const isComputedCallback: <T extends {}>(value: unknown) => value is ComputedCallback<T>;
-export { TYPE_COMPUTED, computed, isComputed, isComputedCallback, type Computed, type ComputedCallback, };
+export { TYPE_COMPUTED, createComputed, isComputed, isComputedCallback, type Computed, type ComputedCallback, };

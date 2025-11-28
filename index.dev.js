@@ -48,7 +48,6 @@ var isNumber = (value) => typeof value === "number";
 var isSymbol = (value) => typeof value === "symbol";
 var isFunction = (fn) => typeof fn === "function";
 var isAsyncFunction = (fn) => isFunction(fn) && fn.constructor.name === "AsyncFunction";
-var isDefinedObject = (value) => !!value && typeof value === "object";
 var isObjectOfType = (value, type) => Object.prototype.toString.call(value) === `[object ${type}]`;
 var isRecord = (value) => isObjectOfType(value, "Object");
 var isRecordOrArray = (value) => isRecord(value) || Array.isArray(value);
@@ -70,7 +69,7 @@ var recordToArray = (record) => {
   }
   return array;
 };
-var valueString = (value) => isString(value) ? `"${value}"` : isDefinedObject(value) ? JSON.stringify(value) : String(value);
+var valueString = (value) => isString(value) ? `"${value}"` : !!value && typeof value === "object" ? JSON.stringify(value) : String(value);
 
 // src/diff.ts
 var isEqual = (a, b, visited) => {
@@ -160,27 +159,11 @@ var diff = (oldObj, newObj) => {
   };
 };
 
-// src/scheduler.ts
+// src/system.ts
 var active;
 var pending = new Set;
 var batchDepth = 0;
-var updateMap = new Map;
-var requestId;
-var updateDOM = () => {
-  requestId = undefined;
-  const updates = Array.from(updateMap.values());
-  updateMap.clear();
-  for (const update of updates) {
-    update();
-  }
-};
-var requestTick = () => {
-  if (requestId)
-    cancelAnimationFrame(requestId);
-  requestId = requestAnimationFrame(updateDOM);
-};
-queueMicrotask(updateDOM);
-var watch = (notice) => {
+var createWatcher = (notice) => {
   const cleanups = new Set;
   const w = notice;
   w.off = (on) => {
@@ -238,20 +221,10 @@ var observe = (run, watcher) => {
     active = prev;
   }
 };
-var enqueue = (fn, dedupe) => new Promise((resolve, reject) => {
-  updateMap.set(dedupe || Symbol(), () => {
-    try {
-      resolve(fn());
-    } catch (error) {
-      reject(error);
-    }
-  });
-  requestTick();
-});
 
 // src/computed.ts
 var TYPE_COMPUTED = "Computed";
-var computed = (fn) => {
+var createComputed = (fn) => {
   const watchers = new Set;
   let value = UNSET;
   let error;
@@ -285,7 +258,7 @@ var computed = (fn) => {
     if (changed)
       notify(watchers);
   };
-  const mark = watch(() => {
+  const mark = createWatcher(() => {
     dirty = true;
     controller?.abort();
     if (watchers.size)
@@ -349,11 +322,11 @@ var computed = (fn) => {
 var isComputed = (value) => isObjectOfType(value, TYPE_COMPUTED);
 var isComputedCallback = (value) => isFunction(value) && value.length < 2;
 // src/effect.ts
-var effect = (callback) => {
+var createEffect = (callback) => {
   const isAsync = isAsyncFunction(callback);
   let running = false;
   let controller;
-  const run = watch(() => observe(() => {
+  const run = createWatcher(() => observe(() => {
     if (running)
       throw new CircularDependencyError("effect");
     running = true;
@@ -428,7 +401,7 @@ function resolve(signals) {
 }
 // src/state.ts
 var TYPE_STATE = "State";
-var state = (initialValue) => {
+var createState = (initialValue) => {
   const watchers = new Set;
   let value = initialValue;
   const s = {
@@ -461,13 +434,13 @@ var STORE_EVENT_ADD = "store-add";
 var STORE_EVENT_CHANGE = "store-change";
 var STORE_EVENT_REMOVE = "store-remove";
 var STORE_EVENT_SORT = "store-sort";
-var store = (initialValue) => {
+var createStore = (initialValue) => {
   const watchers = new Set;
   const eventTarget = new EventTarget;
   const signals = new Map;
   const cleanups = new Map;
   const isArrayLike = Array.isArray(initialValue);
-  const size = state(0);
+  const size = createState(0);
   const current = () => {
     const record = {};
     for (const [key, signal] of signals) {
@@ -489,9 +462,9 @@ var store = (initialValue) => {
   const addProperty = (key, value, single = false) => {
     if (!isValidValue(key, value))
       return false;
-    const signal = isState(value) || isStore(value) ? value : isRecord(value) ? store(value) : Array.isArray(value) ? store(value) : state(value);
+    const signal = isState(value) || isStore(value) ? value : isRecord(value) || Array.isArray(value) ? createStore(value) : createState(value);
     signals.set(key, signal);
-    const cleanup = effect(() => {
+    const cleanup = createEffect(() => {
       const currentValue = signal.get();
       if (currentValue != null)
         emit(STORE_EVENT_CHANGE, {
@@ -705,18 +678,16 @@ function toSignal(value) {
   if (isSignal(value))
     return value;
   if (isComputedCallback(value))
-    return computed(value);
+    return createComputed(value);
   if (Array.isArray(value) || isRecord(value))
-    return store(value);
-  return state(value);
+    return createStore(value);
+  return createState(value);
 }
 export {
-  watch,
+  valueString,
   toSignal,
   toError,
   subscribe,
-  store,
-  state,
   resolve,
   observe,
   notify,
@@ -737,10 +708,12 @@ export {
   isAsyncFunction,
   isAbortError,
   flush,
-  enqueue,
-  effect,
   diff,
-  computed,
+  createWatcher,
+  createStore,
+  createState,
+  createEffect,
+  createComputed,
   batch,
   UNSET,
   TYPE_STORE,

@@ -10,10 +10,10 @@ Version 0.15.2
 
 ### Core Concepts
 
-- **State signals**: Hold values that can be directly modified: `state()`
-- **Store signals**: Hold objects of nested reactive properties: `store()`
-- **Computed signals**: Derive memoized values from other signals: `computed()`
-- **Effects**: Run side effects when signals change: `effect()`
+- **State signals**: Hold values that can be directly modified: `createState()`
+- **Store signals**: Hold objects of nested reactive properties: `createStore()`
+- **Computed signals**: Derive memoized values from other signals: `createComputed()`
+- **Effects**: Run side effects when signals change: `createEffect()`
 
 ## Key Features
 
@@ -28,16 +28,16 @@ Version 0.15.2
 ## Quick Start
 
 ```js
-import { state, computed, effect } from '@zeix/cause-effect'
+import { createState, createComputed, createEffect } from '@zeix/cause-effect'
 
 // 1. Create state
-const user = state({ name: 'Alice', age: 30 })
+const user = createState({ name: 'Alice', age: 30 })
 
 // 2. Create computed values
-const greeting = computed(() => `Hello ${user.get().name}!`)
+const greeting = createComputed(() => `Hello ${user.get().name}!`)
 
 // 3. React to changes
-effect(() => {
+createEffect(() => {
   console.log(`${greeting.get()} You are ${user.get().age} years old`)
 })
 
@@ -59,13 +59,13 @@ bun add @zeix/cause-effect
 
 ### State Signals
 
-`state()` creates a mutable signal. Every signal has a `.get()` method to access its current value. State signals also provide `.set()` to directly assign a new value and `.update()` to modify the value with a function.
+`createState()` creates a mutable signal. Every signal has a `.get()` method to access its current value. State signals also provide `.set()` to directly assign a new value and `.update()` to modify the value with a function.
 
 ```js
-import { state, effect } from '@zeix/cause-effect'
+import { createState, createEffect } from '@zeix/cause-effect'
 
-const count = state(42)
-effect(() => {
+const count = createState(42)
+createEffect(() => {
   console.log(count.get()) // logs '42'
 })
 count.set(24) // logs '24'
@@ -77,12 +77,12 @@ document.querySelector('.increment').addEventListener('click', () => {
 
 ### Store Signals
 
-`store()` creates a mutable signal that holds an object with nested reactive properties. Each property automatically becomes its own signal with `.get()`, `.set()`, and `.update()` methods. Nested objects recursively become nested stores.
+`createStore()` creates a mutable signal that holds an object with nested reactive properties. Each property automatically becomes its own signal with `.get()`, `.set()`, and `.update()` methods. Nested objects recursively become nested stores.
 
 ```js
-import { store, effect } from '@zeix/cause-effect'
+import { createStore, createEffect } from '@zeix/cause-effect'
 
-const user = store({
+const user = createStore({
   name: 'Alice',
   age: 30,
   preferences: {
@@ -92,12 +92,12 @@ const user = store({
 })
 
 // Individual properties are reactive
-effect(() => {
+createEffect(() => {
   console.log(`${user.name.get()} is ${user.age.get()} years old`)
 })
 
 // Nested properties work the same way
-effect(() => {
+createEffect(() => {
   console.log(`Theme: ${user.preferences.theme.get()}`)
 })
 
@@ -106,7 +106,7 @@ user.age.update(v => v + 1) // Logs: "Alice is 31 years old"
 user.preferences.theme.set('light') // Logs: "Theme: light"
 
 // Watch the entire store
-effect(() => {
+createEffect(() => {
   console.log('User data:', user.get()) // Triggers on any nested change
 })
 ```
@@ -116,7 +116,7 @@ effect(() => {
 Stores support dynamic property addition and removal at runtime using the `add()` and `remove()` methods:
 
 ```js
-import { store, effect } from '@zeix/cause-effect'
+import { createStore, createEffect } from '@zeix/cause-effect'
 
 const settings = store({ autoSave: true })
 
@@ -145,16 +145,16 @@ The `add()` and `remove()` methods are optimized for performance:
 Stores created from arrays behave like arrays with reactive properties. They support duck-typing with length property, single-parameter `add()`, and efficient sorting:
 
 ```js
-import { store, effect } from '@zeix/cause-effect'
+import { createStore, createEffect } from '@zeix/cause-effect'
 
-const items = store(['banana', 'apple', 'cherry'])
+const items = createStore(['banana', 'apple', 'cherry'])
 
 // Duck-typing: behaves like an array
 console.log(items.length) // 3
 console.log(typeof items.length) // 'number'
 
 // Individual items are reactive
-effect(() => {
+createEffect(() => {
   console.log(`First item: ${items[0].get()}`)
 })
 
@@ -176,9 +176,9 @@ console.log(items.get()) // ['date', 'cherry', 'banana', 'apple']
 Stores emit events when properties are added, changed, or removed. You can listen to these events using standard `addEventListener()`:
 
 ```js
-import { store } from '@zeix/cause-effect'
+import { createStore } from '@zeix/cause-effect'
 
-const user = store({ name: 'Alice', age: 30 })
+const user = createStore({ name: 'Alice', age: 30 })
 
 // Listen for property additions
 user.addEventListener('store-add', (event) => {
@@ -201,7 +201,7 @@ user.age.set(31)                       // Logs: "Changed properties: { age: 31 }
 user.remove('email')                   // Logs: "Removed properties: { email: UNSET }"
 
 // Listen for sort events (useful for UI animations)
-const items = store(['banana', 'apple', 'cherry'])
+const items = creatStore(['banana', 'apple', 'cherry'])
 items.sort((a, b) => b.localeCompare(a)) // Reverse alphabetical
 items.addEventListener('store-sort', (event) => {
   console.log('Items reordered:', event.detail) // ['2', '1', '0']
@@ -217,22 +217,22 @@ user.update(u => ({ ...u, name: 'Bob', city: 'New York' }))
 // Logs: "Added properties: { city: 'New York' }"
 ```
 
-**When to use stores vs state:**
-- **Use `store()`** for objects with reactive properties that you want to access individually
-- **Use `state()`** for primitive values or objects you replace entirely
+**When to use stores vs states:**
+- **Use `createStore()`** for objects with reactive properties that you want to access individually
+- **Use `createState()`** for primitive values or objects you replace entirely
 
-### Computed Signals vs. Functions
+### Computed Signals
 
 #### When to Use Computed Signals
 
-`computed()` creates a memoized read-only signal that automatically tracks dependencies and updates only when those dependencies change.
+`createComputed()` creates a memoized read-only signal that automatically tracks dependencies and updates only when those dependencies change.
 
 ```js
-import { state, computed, effect } from '@zeix/cause-effect'
+import { createState, createComputed, createEffect } from '@zeix/cause-effect'
 
-const count = state(42)
-const isEven = computed(() => !(count.get() % 2))
-effect(() => console.log(isEven.get())) // logs 'true'
+const count = createState(42)
+const isEven = createComputed(() => !(count.get() % 2))
+createEffect(() => console.log(isEven.get())) // logs 'true'
 count.set(24) // logs nothing because 24 is also an even number
 document.querySelector('button.increment').addEventListener('click', () => {
   count.update(v => ++v)
@@ -252,7 +252,7 @@ const isEven = () => !(count.get() % 2)
 **When to use which approach:**
 
 - **Use functions when**: The calculation is simple, inexpensive, or called infrequently
-- **Use computed() when**:
+- **Use createComputed() when**:
   - The calculation is expensive
   - You need to share the result between multiple consumers
   - You're working with asynchronous operations
@@ -260,7 +260,7 @@ const isEven = () => !(count.get() % 2)
 
 #### Asynchronous Computations with Automatic Cancellation
 
-`computed()` seamlessly handles asynchronous operations with built-in cancellation support. When used with an async function, it:
+`createComputed()` seamlessly handles asynchronous operations with built-in cancellation support. When used with an async function, it:
 
 1. Provides an `abort` signal parameter you can pass to fetch or other cancelable APIs
 2. Automatically cancels pending operations when dependencies change
@@ -268,10 +268,10 @@ const isEven = () => !(count.get() % 2)
 4. Properly handles errors from failed requests
 
 ```js
-import { state, computed, effect, resolve, match } from '@zeix/cause-effect'
+import { createState, createComputed, createEffect, resolve, match } from '@zeix/cause-effect'
 
-const id = state(42)
-const data = computed(async abort => {
+const id = createState(42)
+const data = createComputed(async abort => {
   // The abort signal is automatically managed by the computed signal
   const response = await fetch(`/api/entries/${id.get()}`, { signal: abort })
   if (!response.ok) throw new Error(`Failed to fetch data: ${response.statusText}`)
@@ -279,7 +279,7 @@ const data = computed(async abort => {
 })
 
 // Handle all possible states using resolve and match helpers
-effect(() => {
+createEffect(() => {
   match(resolve({ data }), {
     ok: ({ data: json }) => console.log('Data loaded:', json),
     nil: () => console.log('Loading...'),
@@ -293,19 +293,19 @@ document.querySelector('button.next').addEventListener('click', () => {
 })
 ```
 
-**Note**: Always use `computed()` (not plain functions) for async operations to benefit from automatic cancellation, memoization, and state management.
+**Note**: Always use `createComputed()` (not plain functions) for async operations to benefit from automatic cancellation, memoization, and state management.
 
 ## Effects and Error Handling
 
-The `effect()` function supports both synchronous and asynchronous callbacks:
+The `createEffect()` function supports both synchronous and asynchronous callbacks:
 
 ### Synchronous Effects
 
 ```js
-import { state, effect } from '@zeix/cause-effect'
+import { createState, createEffect } from '@zeix/cause-effect'
 
-const count = state(42)
-effect(() => {
+const count = createState(42)
+createEffect(() => {
   console.log('Count changed:', count.get())
 })
 ```
@@ -315,10 +315,10 @@ effect(() => {
 Async effect callbacks receive an `AbortSignal` parameter that automatically cancels when the effect re-runs or is cleaned up:
 
 ```js
-import { state, effect } from '@zeix/cause-effect'
+import { createState, createEffect } from '@zeix/cause-effect'
 
-const userId = state(1)
-effect(async (abort) => {
+const userId = createState(1)
+createEffect(async (abort) => {
   try {
     const response = await fetch(`/api/users/${userId.get()}`, { signal: abort })
     const user = await response.json()
@@ -336,16 +336,16 @@ effect(async (abort) => {
 For more sophisticated error handling, use the `resolve()` and `match()` helper functions:
 
 ```js
-import { state, computed, effect, resolve, match } from '@zeix/cause-effect'
+import { createState, createEffect, resolve, match } from '@zeix/cause-effect'
 
-const userId = state(1)
-const userData = computed(async (abort) => {
+const userId = createState(1)
+const userData = createEffect(async (abort) => {
   const response = await fetch(`/api/users/${userId.get()}`, { signal: abort })
   if (!response.ok) throw new Error(`HTTP ${response.status}`)
   return response.json()
 })
 
-effect(() => {
+createEffect(() => {
   match(resolve({ userData }), {
     ok: ({ userData: user }) => console.log('User loaded:', user),
     nil: () => console.log('Loading user...'),
@@ -356,90 +356,6 @@ effect(() => {
 
 The `resolve()` function extracts values from signals and returns a discriminated union result, while `match()` provides pattern matching for handling different states declaratively.
 
-## DOM Updates
-
-The `enqueue()` function allows you to schedule DOM updates to be executed on the next animation frame. It returns a `Promise`, which makes it easy to track when updates are applied or handle errors.
-
-```js
-import { enqueue } from '@zeix/cause-effect'
-
-// Schedule a DOM update
-enqueue(() => {
-  document.getElementById('myElement').textContent = 'Updated content'
-})
-  .then(() => console.log('Update applied successfully'))
-  .catch(error => console.error('Update failed:', error))
-```
-
-### Deduplication with Symbols
-
-A powerful feature of `enqueue()` is deduplication, which ensures that only the most recent update for a specific operation is applied when multiple updates occur within a single animation frame. This is particularly useful for high-frequency events like typing, dragging, or scrolling.
-
-Deduplication is controlled using JavaScript Symbols:
-
-```js
-import { state, effect, enqueue } from '@zeix/cause-effect'
-
-// Define a signal and update it in an event handler
-const name = state('')
-document.querySelector('input[name="name"]').addEventListener('input', e => {
-  name.set(e.target.value) // Triggers an update on every keystroke
-})
-
-// Define an effect to react to signal changes
-effect(text => {
-  // Create a Symbol for a specific update operation
-  const NAME_UPDATE = Symbol('name-update')
-  const text = name.get()
-  const nameSpan = document.querySelector('.greeting .name')
-  enqueue(() => {
-    nameSpan.textContent = text
-    return text
-  }, NAME_UPDATE) // Using the Symbol for deduplication
-    .then(result => console.log(`Name was updated to ${result}`))
-    .catch(error => console.error('Failed to update name:', error))
-})
-```
-
-In this example, as the user types "Jane" quickly, the intermediate values ('J', 'Ja', 'Jan') are deduplicated, and only the final value 'Jane' is applied to the DOM. Only the Promise for the final update is resolved.
-
-### How Deduplication Works
-
-When multiple `enqueue` calls use the same Symbol before the next animation frame:
-
-1. Only the last call will be executed
-2. Previous calls are superseded
-3. Only the Promise of the last call will be resolved
-
-This "last-write-wins" behavior optimizes DOM updates and prevents unnecessary work when many updates happen rapidly.
-
-### Optional Deduplication
-
-The deduplication Symbol is optional. When not provided, a unique Symbol is created automatically, ensuring the update is always executed:
-
-```js
-// No deduplication - always executed
-enqueue(() => document.title = 'New Page Title')
-
-// Create symbols for different types of updates
-const COLOR_UPDATE = Symbol('color-update')
-const SIZE_UPDATE = Symbol('size-update')
-
-// These won't interfere with each other (different symbols)
-enqueue(() => element.style.color = 'red', COLOR_UPDATE)
-enqueue(() => element.style.fontSize = '16px', SIZE_UPDATE)
-
-// This will replace the previous color update (same symbol)
-enqueue(() => element.style.color = 'blue', COLOR_UPDATE)
-```
-
-Using Symbols for deduplication provides:
-
-- Clear semantic meaning for update operations
-- Type safety in TypeScript
-- Simple mechanism to control which updates should overwrite each other
-- Flexibility to run every update when needed
-
 ## Advanced Usage
 
 ### Batching Updates
@@ -447,13 +363,20 @@ Using Symbols for deduplication provides:
 Use `batch()` to group multiple signal updates, ensuring effects run only once after all changes are applied:
 
 ```js
-import { state, computed, effect, batch, resolve, match } from '@zeix/cause-effect'
+import {
+  createState,
+  createComputed,
+  createEffect,
+  batch,
+  resolve,
+  match
+} from '@zeix/cause-effect'
 
-// State: define an array of State<number>
-const signals = [state(2), state(3), state(5)]
+// State: define an Array<State<number>>
+const signals = [createState(2), createState(3), createState(5)]
 
 // Compute the sum of all signals
-const sum = computed(() => {
+const sum = createComputed(() => {
   const v = signals.reduce((total, signal) => total + signal.get(), 0)
   // Validate the result
   if (!Number.isFinite(v)) throw new Error('Invalid value')
@@ -461,7 +384,7 @@ const sum = computed(() => {
 })
 
 // Effect: handle the result with error handling
-effect(() => {
+createEffect(() => {
   match(resolve({ sum }), {
     ok: ({ sum: v }) => console.log('Sum:', v),
     err: errors => console.error('Error:', errors[0])
@@ -488,11 +411,11 @@ signals[0].set(NaN)
 Effects return a cleanup function. When executed, it will unsubscribe from signals and run cleanup functions returned by effect callbacks, for example to remove event listeners.
 
 ```js
-import { state, computed, effect } from '@zeix/cause-effect'
+import { createState, createComputed, createEffect } from '@zeix/cause-effect'
 
-const user = state({ name: 'Alice', age: 30 })
+const user = createState({ name: 'Alice', age: 30 })
 const greeting = () => `Hello ${user.get().name}!`
-const cleanup = effect(() => {
+const cleanup = createEffect(() => {
 	console.log(`${greeting()} You are ${user.get().age} years old`)
 	return () => console.log('Cleanup') // Cleanup function
 })
@@ -510,10 +433,10 @@ user.set({ name: 'Bob', age: 28 }) // Won't trigger the effect anymore
 The `resolve()` function extracts values from multiple signals and returns a discriminated union result:
 
 ```js
-import { state, computed, resolve } from '@zeix/cause-effect'
+import { createState, createComputed, resolve } from '@zeix/cause-effect'
 
-const name = state('Alice')
-const age = computed(() => 30)
+const name = createState('Alice')
+const age = createComputed(() => 30)
 const result = resolve({ name, age })
 
 if (result.ok) {

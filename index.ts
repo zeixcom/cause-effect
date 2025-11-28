@@ -1,13 +1,13 @@
 /**
  * @name Cause & Effect
- * @version 0.15.1
+ * @version 0.16.0
  * @author Esther Brunner
  */
 
 export {
 	type Computed,
 	type ComputedCallback,
-	computed,
+	createComputed,
 	isComputed,
 	isComputedCallback,
 	TYPE_COMPUTED,
@@ -20,7 +20,11 @@ export {
 	type UnknownRecord,
 	type UnknownRecordOrArray,
 } from './src/diff'
-export { type EffectCallback, effect, type MaybeCleanup } from './src/effect'
+export {
+	createEffect,
+	type EffectCallback,
+	type MaybeCleanup,
+} from './src/effect'
 export {
 	CircularDependencyError,
 	InvalidSignalValueError,
@@ -32,18 +36,6 @@ export {
 export { type MatchHandlers, match } from './src/match'
 export { type ResolveResult, resolve } from './src/resolve'
 export {
-	batch,
-	type Cleanup,
-	enqueue,
-	flush,
-	notify,
-	observe,
-	subscribe,
-	type Updater,
-	type Watcher,
-	watch,
-} from './src/scheduler'
-export {
 	isMutableSignal,
 	isSignal,
 	type Signal,
@@ -51,8 +43,9 @@ export {
 	toSignal,
 	type UnknownSignalRecord,
 } from './src/signal'
-export { isState, type State, state, TYPE_STATE } from './src/state'
+export { createState, isState, type State, TYPE_STATE } from './src/state'
 export {
+	createStore,
 	isStore,
 	type Store,
 	type StoreAddEvent,
@@ -60,9 +53,18 @@ export {
 	type StoreEventMap,
 	type StoreRemoveEvent,
 	type StoreSortEvent,
-	store,
 	TYPE_STORE,
 } from './src/store'
+export {
+	batch,
+	type Cleanup,
+	createWatcher,
+	flush,
+	notify,
+	observe,
+	subscribe,
+	type Watcher,
+} from './src/system'
 export {
 	isAbortError,
 	isAsyncFunction,
@@ -74,4 +76,5 @@ export {
 	isSymbol,
 	toError,
 	UNSET,
+	valueString,
 } from './src/util'

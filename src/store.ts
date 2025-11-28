@@ -6,7 +6,7 @@ import {
 	type UnknownRecord,
 	type UnknownRecordOrArray,
 } from './diff'
-import { effect } from './effect'
+import { createEffect } from './effect'
 import {
 	InvalidSignalValueError,
 	NullishSignalValueError,
@@ -14,15 +14,9 @@ import {
 	StoreKeyRangeError,
 	StoreKeyReadonlyError,
 } from './errors'
-import {
-	batch,
-	type Cleanup,
-	notify,
-	subscribe,
-	type Watcher,
-} from './scheduler'
 import { isMutableSignal, type Signal } from './signal'
-import { isState, type State, state } from './state'
+import { createState, isState, type State } from './state'
+import { batch, type Cleanup, notify, subscribe, type Watcher } from './system'
 import {
 	isFunction,
 	isObjectOfType,
@@ -163,7 +157,7 @@ const STORE_EVENT_SORT = 'store-sort'
  * @param {T} initialValue - initial object or array value of the store
  * @returns {Store<T>} - new store with reactive properties that preserves the original type T
  */
-const store = <T extends UnknownRecord | UnknownArray>(
+const createStore = <T extends UnknownRecord | UnknownArray>(
 	initialValue: T,
 ): Store<T> => {
 	const watchers = new Set<Watcher>()
@@ -175,7 +169,7 @@ const store = <T extends UnknownRecord | UnknownArray>(
 	const isArrayLike = Array.isArray(initialValue)
 
 	// Internal state
-	const size = state(0)
+	const size = createState(0)
 
 	// Get current record
 	const current = () => {
@@ -223,14 +217,12 @@ const store = <T extends UnknownRecord | UnknownArray>(
 		const signal =
 			isState(value) || isStore(value)
 				? value
-				: isRecord(value)
-					? store(value)
-					: Array.isArray(value)
-						? store(value)
-						: state(value)
+				: isRecord(value) || Array.isArray(value)
+					? createStore(value)
+					: createState(value)
 		// @ts-expect-error non-matching signal types
 		signals.set(key, signal)
-		const cleanup = effect(() => {
+		const cleanup = createEffect(() => {
 			const currentValue = signal.get()
 			if (currentValue != null)
 				emit(STORE_EVENT_CHANGE, {
@@ -537,7 +529,7 @@ const isStore = <T extends UnknownRecordOrArray>(
 export {
 	TYPE_STORE,
 	isStore,
-	store,
+	createStore,
 	type Store,
 	type StoreAddEvent,
 	type StoreChangeEvent,

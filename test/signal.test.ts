@@ -1,15 +1,15 @@
 import { describe, expect, test } from 'bun:test'
 import {
 	type Computed,
-	computed,
+	createComputed,
+	createState,
+	createStore,
 	isComputed,
 	isState,
 	isStore,
 	type Signal,
 	type State,
 	type Store,
-	state,
-	store,
 	toSignal,
 	type UnknownRecord,
 } from '..'
@@ -58,7 +58,7 @@ describe('toSignal', () => {
 		})
 
 		test('passes through existing Store unchanged', () => {
-			const originalStore = store({ count: 5 })
+			const originalStore = createStore({ count: 5 })
 			const result = toSignal(originalStore)
 
 			// Runtime behavior
@@ -72,7 +72,7 @@ describe('toSignal', () => {
 		})
 
 		test('passes through existing State unchanged', () => {
-			const originalState = state(42)
+			const originalState = createState(42)
 			const result = toSignal(originalState)
 
 			// Runtime behavior
@@ -86,7 +86,7 @@ describe('toSignal', () => {
 		})
 
 		test('passes through existing Computed unchanged', () => {
-			const originalComputed = computed(() => 'hello world')
+			const originalComputed = createComputed(() => 'hello world')
 			const result = toSignal(originalComputed)
 
 			// Runtime behavior
@@ -185,7 +185,7 @@ describe('Signal compatibility', () => {
 		const recordSignal = toSignal({ a: 1, b: 2 })
 		const primitiveSignal = toSignal(42)
 		const functionSignal = toSignal(() => 'hello')
-		const stateSignal = toSignal(state(true))
+		const stateSignal = toSignal(createState(true))
 
 		// All should have get() method
 		expect(typeof arraySignal.get).toBe('function')
