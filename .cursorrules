@@ -1,0 +1,53 @@
+# Cause & Effect - Reactive State Management Library
+
+## Project Type
+TypeScript/JavaScript reactive state management library using signals pattern
+
+## Core Concepts
+- Signals: Base reactive primitives with .get() method
+- State: createState() for primitives/simple values  
+- Store: createStore() for objects with reactive properties
+- Computed: createComputed() for derived/memoized values
+- Effects: createEffect() for side effects
+
+## Code Style
+- Use const for immutable values
+- Generic constraints: T extends {} (excludes null/undefined)
+- Factory functions: create* prefix
+- Type predicates: is* prefix  
+- Constants: TYPE_* or UPPER_CASE
+- Pure functions marked with /*#__PURE__*/ comment
+
+## Key Patterns
+- All signals have .get() method
+- Mutable signals have .set(value) and .update(fn)
+- Store properties auto-become reactive signals
+- Effects receive AbortSignal for async cancellation
+- Use UNSET symbol for uninitialized states
+- Batch updates for performance
+- JSDoc comments on all public APIs
+
+## File Structure
+- src/signal.ts - Base signal types
+- src/state.ts - Mutable state signals  
+- src/store.ts - Object stores
+- src/computed.ts - Computed signals
+- src/effect.ts - Effect system
+- src/system.ts - Core reactivity (watchers, batching)
+- index.ts - Main exports
+
+## Error Handling  
+- Custom error classes in src/errors.ts
+- Validate inputs, throw descriptive errors
+- Support AbortSignal in async operations
+
+## Performance
+- Use Set<Watcher> for subscriptions
+- Shallow equality with isEqual() utility
+- Tree-shaking friendly code
+- Minimize effect re-runs
+
+## Build
+- Bun build tool and runtime
+- ES modules only
+- TypeScript with declaration files

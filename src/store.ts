@@ -510,4 +510,4 @@ const isStore = <T extends UnknownRecordOrArray>(
 
 /* === Exports === */
 
-export { TYPE_STORE, isStore, createStore, type Store }
+export { TYPE_STORE, isStore, createStore, type Store, type StoreChanges }

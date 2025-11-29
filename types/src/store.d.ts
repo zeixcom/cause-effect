@@ -63,4 +63,4 @@ declare const createStore: <T extends UnknownRecord | UnknownArray>(initialValue
  * @returns {boolean} - true if the value is a Store instance, false otherwise
  */
 declare const isStore: <T extends UnknownRecordOrArray>(value: unknown) => value is Store<T>;
-export { TYPE_STORE, isStore, createStore, type Store };
+export { TYPE_STORE, isStore, createStore, type Store, type StoreChanges };

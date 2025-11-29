@@ -1,8 +1,10 @@
 import type { UnknownArray } from './diff';
-import { type Store } from './store';
+import { type Store, type StoreChanges } from './store';
+import { type Cleanup } from './system';
 type Collection<T extends UnknownArray> = {
     readonly [Symbol.toStringTag]: 'Collection';
     get(): T;
+    on<K extends keyof StoreChanges<T>>(type: K, listener: (change: StoreChanges<T>[K]) => void): Cleanup;
 };
 type CollectionCallback<T extends UnknownArray> = (store: Store<T>) => T;
 declare const TYPE_COLLECTION = "Collection";
