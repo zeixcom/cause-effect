@@ -8,34 +8,39 @@ type StoreChanges<T> = {
     remove: Partial<T>;
     sort: string[];
 };
-interface BaseStore<T extends UnknownRecord | UnknownArray> {
+interface BaseStore {
     readonly [Symbol.toStringTag]: 'Store';
-    get(): T;
-    set(value: T): void;
-    update(fn: (value: T) => T): void;
-    sort<U = T extends UnknownArray ? ArrayItem<T> : T[Extract<keyof T, string>]>(compareFn?: (a: U, b: U) => number): void;
-    on<K extends keyof StoreChanges<T>>(type: K, listener: (change: StoreChanges<T>[K]) => void): Cleanup;
     readonly size: State<number>;
 }
-type RecordStore<T extends UnknownRecord> = BaseStore<T> & {
+type RecordStore<T extends UnknownRecord> = BaseStore & {
     [K in keyof T]: T[K] extends readonly unknown[] | Record<string, unknown> ? Store<T[K]> : State<T[K]>;
 } & {
-    add<K extends Extract<keyof T, string>>(key: K, value: T[K]): void;
-    remove<K extends Extract<keyof T, string>>(key: K): void;
     [Symbol.iterator](): IterableIterator<[
         Extract<keyof T, string>,
         T[Extract<keyof T, string>] extends readonly unknown[] | Record<string, unknown> ? Store<T[Extract<keyof T, string>]> : State<T[Extract<keyof T, string>]>
     ]>;
+    add<K extends Extract<keyof T, string>>(key: K, value: T[K]): void;
+    get(): T;
+    set(value: T): void;
+    update(fn: (value: T) => T): void;
+    sort<U = T[Extract<keyof T, string>]>(compareFn?: (a: U, b: U) => number): void;
+    on<K extends keyof StoreChanges<T>>(type: K, listener: (change: StoreChanges<T>[K]) => void): Cleanup;
+    remove<K extends Extract<keyof T, string>>(key: K): void;
 };
-type ArrayStore<T extends UnknownArray> = BaseStore<T> & {
-    readonly length: number;
-    [n: number]: ArrayItem<T> extends readonly unknown[] | Record<string, unknown> ? Store<ArrayItem<T>> : State<ArrayItem<T>>;
-    add(value: ArrayItem<T>): void;
-    remove(index: number): void;
+type ArrayStore<T extends UnknownArray> = BaseStore & {
     [Symbol.iterator](): IterableIterator<ArrayItem<T> extends readonly unknown[] | Record<string, unknown> ? Store<ArrayItem<T>> : State<ArrayItem<T>>>;
     readonly [Symbol.isConcatSpreadable]: boolean;
+    [n: number]: ArrayItem<T> extends readonly unknown[] | Record<string, unknown> ? Store<ArrayItem<T>> : State<ArrayItem<T>>;
+    add(value: ArrayItem<T>): void;
+    get(): T;
+    set(value: T): void;
+    update(fn: (value: T) => T): void;
+    sort<U = ArrayItem<T>>(compareFn?: (a: U, b: U) => number): void;
+    on<K extends keyof StoreChanges<T>>(type: K, listener: (change: StoreChanges<T>[K]) => void): Cleanup;
+    remove(index: number): void;
+    readonly length: number;
 };
-type Store<T> = T extends UnknownRecord ? RecordStore<T> : T extends UnknownArray ? ArrayStore<T> : never;
+type Store<T extends UnknownRecord | UnknownArray> = T extends UnknownRecord ? RecordStore<T> : T extends UnknownArray ? ArrayStore<T> : never;
 declare const TYPE_STORE = "Store";
 /**
  * Create a new store with deeply nested reactive properties

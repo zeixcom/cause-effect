@@ -1,5 +1,5 @@
 type Computed<T extends {}> = {
-    [Symbol.toStringTag]: 'Computed';
+    readonly [Symbol.toStringTag]: 'Computed';
     get(): T;
 };
 type ComputedCallback<T extends {} & {
@@ -15,11 +15,11 @@ declare const TYPE_COMPUTED = "Computed";
  */
 declare const createComputed: <T extends {}>(fn: ComputedCallback<T>) => Computed<T>;
 /**
- * Check if a value is a computed state
+ * Check if a value is a computed signal
  *
  * @since 0.9.0
  * @param {unknown} value - value to check
- * @returns {boolean} - true if value is a computed state, false otherwise
+ * @returns {boolean} - true if value is a computed signal, false otherwise
  */
 declare const isComputed: <T extends {}>(value: unknown) => value is Computed<T>;
 /**

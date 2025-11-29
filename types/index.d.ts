@@ -3,6 +3,7 @@
  * @version 0.16.0
  * @author Esther Brunner
  */
+export { type Collection, createCollection, isCollection, TYPE_COLLECTION, } from './src/collection';
 export { type Computed, type ComputedCallback, createComputed, isComputed, isComputedCallback, TYPE_COMPUTED, } from './src/computed';
 export { type DiffResult, diff, isEqual, type UnknownArray, type UnknownRecord, type UnknownRecordOrArray, } from './src/diff';
 export { createEffect, type EffectCallback, type MaybeCleanup, } from './src/effect';

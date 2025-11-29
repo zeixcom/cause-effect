@@ -305,7 +305,7 @@ var createComputed = (fn) => {
       ok(result);
     computing = false;
   }, mark);
-  const c = {
+  return {
     [Symbol.toStringTag]: TYPE_COMPUTED,
     get: () => {
       subscribe(watchers);
@@ -317,10 +317,10 @@ var createComputed = (fn) => {
       return value;
     }
   };
-  return c;
 };
 var isComputed = (value) => isObjectOfType(value, TYPE_COMPUTED);
 var isComputedCallback = (value) => isFunction(value) && value.length < 2;
+
 // src/effect.ts
 var createEffect = (callback) => {
   const isAsync = isAsyncFunction(callback);
@@ -361,44 +361,7 @@ var createEffect = (callback) => {
     run.cleanup();
   };
 };
-// src/match.ts
-function match(result, handlers) {
-  try {
-    if (result.pending)
-      handlers.nil?.();
-    else if (result.errors)
-      handlers.err?.(result.errors);
-    else if (result.ok)
-      handlers.ok(result.values);
-  } catch (error) {
-    if (handlers.err && (!result.errors || !result.errors.includes(toError(error))))
-      handlers.err(result.errors ? [...result.errors, toError(error)] : [toError(error)]);
-    else
-      throw error;
-  }
-}
-// src/resolve.ts
-function resolve(signals) {
-  const errors = [];
-  let pending2 = false;
-  const values = {};
-  for (const [key, signal] of Object.entries(signals)) {
-    try {
-      const value = signal.get();
-      if (value === UNSET)
-        pending2 = true;
-      else
-        values[key] = value;
-    } catch (e) {
-      errors.push(toError(e));
-    }
-  }
-  if (pending2)
-    return { ok: false, pending: true };
-  if (errors.length > 0)
-    return { ok: false, errors };
-  return { ok: true, values };
-}
+
 // src/state.ts
 var TYPE_STATE = "State";
 var createState = (initialValue) => {
@@ -427,6 +390,19 @@ var createState = (initialValue) => {
   return s;
 };
 var isState = (value) => isObjectOfType(value, TYPE_STATE);
+
+// src/signal.ts
+var isSignal = (value) => isState(value) || isComputed(value) || isStore(value);
+var isMutableSignal = (value) => isState(value) || isStore(value);
+function toSignal(value) {
+  if (isSignal(value))
+    return value;
+  if (isComputedCallback(value))
+    return createComputed(value);
+  if (Array.isArray(value) || isRecord(value))
+    return createStore(value);
+  return createState(value);
+}
 
 // src/store.ts
 var TYPE_STORE = "Store";
@@ -678,17 +654,71 @@ var createStore = (initialValue) => {
 };
 var isStore = (value) => isObjectOfType(value, TYPE_STORE);
 
-// src/signal.ts
-var isSignal = (value) => isState(value) || isComputed(value) || isStore(value);
-var isMutableSignal = (value) => isState(value) || isStore(value);
-function toSignal(value) {
-  if (isSignal(value))
-    return value;
-  if (isComputedCallback(value))
-    return createComputed(value);
-  if (Array.isArray(value) || isRecord(value))
-    return createStore(value);
-  return createState(value);
+// src/collection.ts
+var TYPE_COLLECTION = "Collection";
+var createCollection = (fn) => {
+  const watchers = new Set;
+  const store = createStore(UNSET);
+  let error;
+  const collect = () => {
+    try {
+      store.set(fn(store));
+    } catch (err) {
+      error = err;
+    }
+  };
+  return {
+    [Symbol.toStringTag]: TYPE_COLLECTION,
+    get: () => {
+      subscribe(watchers);
+      if (error)
+        throw error;
+      const value = store.get();
+      if (value !== UNSET)
+        return value;
+      collect();
+      return store.get();
+    }
+  };
+};
+var isCollection = (value) => isObjectOfType(value, TYPE_COLLECTION);
+// src/match.ts
+function match(result, handlers) {
+  try {
+    if (result.pending)
+      handlers.nil?.();
+    else if (result.errors)
+      handlers.err?.(result.errors);
+    else if (result.ok)
+      handlers.ok(result.values);
+  } catch (error) {
+    if (handlers.err && (!result.errors || !result.errors.includes(toError(error))))
+      handlers.err(result.errors ? [...result.errors, toError(error)] : [toError(error)]);
+    else
+      throw error;
+  }
+}
+// src/resolve.ts
+function resolve(signals) {
+  const errors = [];
+  let pending2 = false;
+  const values = {};
+  for (const [key, signal] of Object.entries(signals)) {
+    try {
+      const value = signal.get();
+      if (value === UNSET)
+        pending2 = true;
+      else
+        values[key] = value;
+    } catch (e) {
+      errors.push(toError(e));
+    }
+  }
+  if (pending2)
+    return { ok: false, pending: true };
+  if (errors.length > 0)
+    return { ok: false, errors };
+  return { ok: true, values };
 }
 export {
   valueString,
@@ -712,6 +742,7 @@ export {
   isEqual,
   isComputedCallback,
   isComputed,
+  isCollection,
   isAsyncFunction,
   isAbortError,
   flush,
@@ -721,11 +752,13 @@ export {
   createState,
   createEffect,
   createComputed,
+  createCollection,
   batch,
   UNSET,
   TYPE_STORE,
   TYPE_STATE,
   TYPE_COMPUTED,
+  TYPE_COLLECTION,
   StoreKeyReadonlyError,
   StoreKeyRangeError,
   StoreKeyExistsError,

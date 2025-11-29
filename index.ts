@@ -5,6 +5,12 @@
  */
 
 export {
+	type Collection,
+	createCollection,
+	isCollection,
+	TYPE_COLLECTION,
+} from './src/collection'
+export {
 	type Computed,
 	type ComputedCallback,
 	createComputed,
