@@ -1,6 +1,6 @@
 # Cause & Effect
 
-Version 0.15.2
+Version 0.16.0
 
 **Cause & Effect** is a lightweight, reactive state management library for JavaScript applications. It uses fine-grained reactivity with signals to create predictable and efficient data flow in your app.
 
@@ -110,6 +110,13 @@ createEffect(() => {
   console.log('User data:', user.get()) // Triggers on any nested change
 })
 ```
+
+#### When to Use
+
+**When to use stores vs states:**
+
+- **Use `createStore()`** for objects with properties that you want to access and modify individually.
+- **Use `createState()`** for primitive values (numbers, strings, booleans) or objects you access and replace entirely.
 
 #### Dynamic Properties
 
@@ -226,13 +233,7 @@ offRemove() // Stops listening to remove notifications
 offSort() // Stops listening to sort notifications
 ```
 
-**When to use stores vs states:**
-- **Use `createStore()`** for objects with reactive properties that you want to access individually
-- **Use `createState()`** for primitive values or objects you replace entirely
-
 ### Computed Signals
-
-#### When to Use Computed Signals
 
 `createComputed()` creates a memoized read-only signal that automatically tracks dependencies and updates only when those dependencies change.
 
@@ -249,7 +250,7 @@ document.querySelector('button.increment').addEventListener('click', () => {
 // Click on button logs 'false', 'true', and so on
 ```
 
-#### When to Use Functions
+#### When to Use
 
 **Performance tip**: For simple derivations, plain functions often outperform computed signals:
 
@@ -260,7 +261,7 @@ const isEven = () => !(count.get() % 2)
 
 **When to use which approach:**
 
-- **Use functions when**: The calculation is simple, inexpensive, or called infrequently
+- **Use functions when**: The calculation is simple, inexpensive, or called infrequently.
 - **Use createComputed() when**:
   - The calculation is expensive
   - You need to share the result between multiple consumers
@@ -302,7 +303,7 @@ document.querySelector('button.next').addEventListener('click', () => {
 })
 ```
 
-**Note**: Always use `createComputed()` (not plain functions) for async operations to benefit from automatic cancellation, memoization, and state management.
+**Note**: Always use `createComputed()` (not plain functions) for async operations to benefit from automatic cancellation and memoization.
 
 ## Effects and Error Handling
 

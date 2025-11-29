@@ -1,5 +1,5 @@
 type State<T extends {}> = {
-    [Symbol.toStringTag]: 'State';
+    readonly [Symbol.toStringTag]: 'State';
     get(): T;
     set(v: T): void;
     update(fn: (v: T) => T): void;

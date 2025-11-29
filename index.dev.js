@@ -305,7 +305,7 @@ var createComputed = (fn) => {
       ok(result);
     computing = false;
   }, mark);
-  const c = {
+  return {
     [Symbol.toStringTag]: TYPE_COMPUTED,
     get: () => {
       subscribe(watchers);
@@ -317,7 +317,6 @@ var createComputed = (fn) => {
       return value;
     }
   };
-  return c;
 };
 var isComputed = (value) => isObjectOfType(value, TYPE_COMPUTED);
 var isComputedCallback = (value) => isFunction(value) && value.length < 2;

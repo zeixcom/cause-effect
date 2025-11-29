@@ -1699,4 +1699,100 @@ describe('store', () => {
 			expect(sortNotification!).toEqual(['alice', 'charlie', 'bob'])
 		})
 	})
+
+	describe('cross-component communication pattern', () => {
+		test('event bus with UNSET initialization - type-safe pattern', () => {
+			// Component B (the owner) declares the shape of events it will emit
+			type EventBusSchema = {
+				userLogin: { userId: number; timestamp: number }
+				userLogout: { userId: number }
+				userUpdate: { userId: number; profile: { name: string } }
+			}
+
+			// Initialize the event bus with proper typing
+			const eventBus = createStore<EventBusSchema>({
+				userLogin: UNSET,
+				userLogout: UNSET,
+				userUpdate: UNSET,
+			})
+
+			// Simple type-safe on functions
+			const on = (
+				event: keyof EventBusSchema,
+				callback: (data: EventBusSchema[keyof EventBusSchema]) => void,
+			) =>
+				createEffect(() => {
+					const data = eventBus[event].get()
+					if (data !== UNSET) callback(data)
+				})
+
+			// Test the pattern with properly typed variables
+			let receivedLogin: unknown = null
+			let receivedLogout: unknown = null
+			let receivedUpdate: unknown = null
+
+			// Component A listens for events
+			on('userLogin', data => {
+				receivedLogin = data
+			})
+
+			on('userLogout', data => {
+				receivedLogout = data
+			})
+
+			on('userUpdate', data => {
+				receivedUpdate = data
+			})
+
+			// Initially nothing should be received (all UNSET)
+			expect(receivedLogin).toBe(null)
+			expect(receivedLogout).toBe(null)
+			expect(receivedUpdate).toBe(null)
+
+			// Component B emits user events with full type safety
+			const loginData: EventBusSchema['userLogin'] = {
+				userId: 123,
+				timestamp: Date.now(),
+			}
+			eventBus.userLogin.set(loginData)
+
+			expect(receivedLogin).toEqual(loginData)
+			expect(receivedLogout).toBe(null) // Should not have triggered
+			expect(receivedUpdate).toBe(null) // Should not have triggered
+
+			// Test second event
+			const logoutData: EventBusSchema['userLogout'] = { userId: 123 }
+			eventBus.userLogout.set(logoutData)
+
+			expect(receivedLogout).toEqual(logoutData)
+			expect(receivedLogin).toEqual(loginData) // Should remain unchanged
+
+			// Test third event
+			const updateData: EventBusSchema['userUpdate'] = {
+				userId: 456,
+				profile: { name: 'Alice' },
+			}
+			eventBus.userUpdate.set(updateData)
+
+			expect(receivedUpdate).toEqual(updateData)
+			expect(receivedLogin).toEqual(loginData) // Should remain unchanged
+			expect(receivedLogout).toEqual(logoutData) // Should remain unchanged
+
+			// Test updating existing event
+			const newLoginData: EventBusSchema['userLogin'] = {
+				userId: 789,
+				timestamp: Date.now(),
+			}
+			eventBus.userLogin.set(newLoginData)
+
+			expect(receivedLogin).toEqual(newLoginData) // Should update
+			expect(receivedLogout).toEqual(logoutData) // Should remain unchanged
+			expect(receivedUpdate).toEqual(updateData) // Should remain unchanged
+
+			// Compile-time type checking prevents errors:
+			// emitUserLogin({ userId: 'invalid' }) // ❌ TypeScript error
+			// emitUserLogin({ userId: 123, extraProp: 'invalid' }) // ❌ TypeScript error
+			// emitUserLogout({ userId: 123, extraProp: 'invalid' }) // ❌ TypeScript error
+		})
+	})
 })
