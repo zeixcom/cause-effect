@@ -27,6 +27,7 @@ export {
 } from './src/effect'
 export {
 	CircularDependencyError,
+	InvalidCallbackError,
 	InvalidSignalValueError,
 	NullishSignalValueError,
 	StoreKeyExistsError,

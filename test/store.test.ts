@@ -307,6 +307,190 @@ describe('store', () => {
 			})
 		})
 
+		test('emits a change notification when nested properties change', () => {
+			const user = createStore({
+				name: 'Hannah',
+				preferences: {
+					theme: 'dark',
+					notifications: true,
+				},
+			})
+
+			let changeNotification: Record<string, unknown> = {}
+			user.on('change', change => {
+				changeNotification = change
+			})
+
+			// Change a nested property
+			user.preferences.theme.set('light')
+
+			expect(changeNotification).toBeTruthy()
+			// Should notify about the direct child "preferences" that contains the changed nested property
+			expect(changeNotification).toEqual({
+				preferences: {
+					theme: 'light',
+					notifications: true,
+				},
+			})
+		})
+
+		test('emits a change notification for deeply nested property changes', () => {
+			const config = createStore({
+				ui: {
+					theme: {
+						colors: {
+							primary: 'blue',
+							secondary: 'green',
+						},
+						mode: 'dark',
+					},
+				},
+			})
+
+			let changeNotification: Record<string, unknown> = {}
+			config.on('change', change => {
+				changeNotification = change
+			})
+
+			// Change a deeply nested property (3 levels deep)
+			config.ui.theme.colors.primary.set('red')
+
+			expect(changeNotification).toBeTruthy()
+			// Should notify about the direct child "ui" that contains the changed nested structure
+			expect(changeNotification).toEqual({
+				ui: {
+					theme: {
+						colors: {
+							primary: 'red',
+							secondary: 'green',
+						},
+						mode: 'dark',
+					},
+				},
+			})
+		})
+
+		test('emits a remove notification when nested properties are removed', () => {
+			const user = createStore<{
+				name: string
+				preferences?: {
+					theme: string
+					notifications: boolean
+				}
+			}>({
+				name: 'Hannah',
+				preferences: {
+					theme: 'dark',
+					notifications: true,
+				},
+			})
+
+			let removeNotification: Record<string, unknown> = {}
+			user.on('remove', remove => {
+				removeNotification = remove
+			})
+
+			// Remove the entire preferences object by setting the store without it
+			user.set({ name: 'Hannah' })
+
+			expect(removeNotification).toBeTruthy()
+			// Should notify about the removal of the preferences property
+			expect(removeNotification).toEqual({
+				preferences: expect.anything(), // The actual structure doesn't matter, just that it was removed
+			})
+		})
+
+		test('set() correctly handles mixed changes, additions, and removals', () => {
+			const user = createStore<{
+				name: string
+				email?: string
+				preferences?: {
+					theme: string
+					notifications?: boolean
+				}
+				age?: number
+			}>({
+				name: 'Hannah',
+				email: 'hannah@example.com',
+				preferences: {
+					theme: 'dark',
+				},
+			})
+
+			let changeNotification: Record<string, unknown> = {}
+			let addNotification: Record<string, unknown> = {}
+			let removeNotification: Record<string, unknown> = {}
+
+			user.on('change', change => {
+				changeNotification = change
+			})
+			user.on('add', add => {
+				addNotification = add
+			})
+			user.on('remove', remove => {
+				removeNotification = remove
+			})
+
+			// Perform a set() that changes name, removes email, adds age, and keeps preferences
+			user.set({
+				name: 'Alice', // changed
+				preferences: {
+					theme: 'dark', // unchanged nested
+				},
+				age: 30, // added
+				// email removed
+			})
+
+			// Should emit change notification for changed properties
+			expect(changeNotification).toEqual({
+				name: 'Alice',
+			})
+
+			// Should emit add notification for new properties
+			expect(addNotification).toEqual({
+				age: 30,
+			})
+
+			// Should emit remove notification for removed properties
+			expect(removeNotification).toEqual({
+				email: expect.anything(),
+			})
+		})
+
+		test('set() with only removals emits only remove notifications', () => {
+			const user = createStore<{
+				name: string
+				email?: string
+				age?: number
+			}>({
+				name: 'Hannah',
+				email: 'hannah@example.com',
+				age: 25,
+			})
+
+			let changeNotification: Record<string, unknown> | null = null
+			let removeNotification: Record<string, unknown> = {}
+
+			user.on('change', change => {
+				changeNotification = change
+			})
+			user.on('remove', remove => {
+				removeNotification = remove
+			})
+
+			// Set to a subset that only removes properties (no changes)
+			user.set({ name: 'Hannah' }) // same name, removes email and age
+
+			// Should NOT emit change notification since name didn't change
+			expect(changeNotification).toBe(null)
+
+			// Should emit remove notification for removed properties
+			expect(removeNotification).toEqual({
+				email: expect.anything(),
+				age: expect.anything(),
+			})
+		})
+
 		test('emits a remove notification for removed properties', () => {
 			const user = createStore<{ name: string; email?: string }>({
 				name: 'Hannah',

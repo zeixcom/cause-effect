@@ -119,6 +119,193 @@ describe('State', () => {
 			cause.set([...array, 4]) // use destructuring instead!
 			expect(cause.get()).toEqual([1, 2, 3, 4])
 		})
+
+		describe('Input Validation', () => {
+			test('should throw NullishSignalValueError when initialValue is nullish', () => {
+				expect(() => {
+					// @ts-expect-error - Testing invalid input
+					createState(null)
+				}).toThrow('Nullish signal values are not allowed in state')
+
+				expect(() => {
+					// @ts-expect-error - Testing invalid input
+					createState(undefined)
+				}).toThrow('Nullish signal values are not allowed in state')
+			})
+
+			test('should throw NullishSignalValueError when newValue is nullish in set()', () => {
+				const state = createState(42)
+
+				expect(() => {
+					// @ts-expect-error - Testing invalid input
+					state.set(null)
+				}).toThrow('Nullish signal values are not allowed in state')
+
+				expect(() => {
+					// @ts-expect-error - Testing invalid input
+					state.set(undefined)
+				}).toThrow('Nullish signal values are not allowed in state')
+			})
+
+			test('should throw specific error types for nullish values', () => {
+				try {
+					// @ts-expect-error - Testing invalid input
+					createState(null)
+					expect(true).toBe(false) // Should not reach here
+				} catch (error) {
+					expect(error).toBeInstanceOf(TypeError)
+					expect(error.name).toBe('NullishSignalValueError')
+					expect(error.message).toBe(
+						'Nullish signal values are not allowed in state',
+					)
+				}
+
+				const state = createState(42)
+				try {
+					// @ts-expect-error - Testing invalid input
+					state.set(null)
+					expect(true).toBe(false) // Should not reach here
+				} catch (error) {
+					expect(error).toBeInstanceOf(TypeError)
+					expect(error.name).toBe('NullishSignalValueError')
+					expect(error.message).toBe(
+						'Nullish signal values are not allowed in state',
+					)
+				}
+			})
+
+			test('should allow valid non-nullish values', () => {
+				// These should not throw
+				expect(() => {
+					createState(0)
+				}).not.toThrow()
+
+				expect(() => {
+					createState('')
+				}).not.toThrow()
+
+				expect(() => {
+					createState(false)
+				}).not.toThrow()
+
+				expect(() => {
+					createState({})
+				}).not.toThrow()
+
+				expect(() => {
+					createState([])
+				}).not.toThrow()
+
+				const state = createState(42)
+				expect(() => {
+					state.set(0)
+				}).not.toThrow()
+
+				expect(() => {
+					// @ts-expect-error - Testing valid input of invalid type
+					state.set('')
+				}).not.toThrow()
+			})
+
+			test('should throw InvalidCallbackError for non-function updater in update()', () => {
+				const state = createState(42)
+
+				expect(() => {
+					// @ts-expect-error - Testing invalid input
+					state.update(null)
+				}).toThrow('Invalid state update callback null')
+
+				expect(() => {
+					// @ts-expect-error - Testing invalid input
+					state.update(undefined)
+				}).toThrow('Invalid state update callback undefined')
+
+				expect(() => {
+					// @ts-expect-error - Testing invalid input
+					state.update('not a function')
+				}).toThrow('Invalid state update callback "not a function"')
+
+				expect(() => {
+					// @ts-expect-error - Testing invalid input
+					state.update(42)
+				}).toThrow('Invalid state update callback 42')
+			})
+
+			test('should throw specific error type for non-function updater', () => {
+				const state = createState(42)
+
+				try {
+					// @ts-expect-error - Testing invalid input
+					state.update(null)
+					expect(true).toBe(false) // Should not reach here
+				} catch (error) {
+					expect(error).toBeInstanceOf(TypeError)
+					expect(error.name).toBe('InvalidCallbackError')
+					expect(error.message).toBe(
+						'Invalid state update callback null',
+					)
+				}
+			})
+
+			test('should handle updater function that throws an error', () => {
+				const state = createState(42)
+
+				expect(() => {
+					state.update(() => {
+						throw new Error('Updater error')
+					})
+				}).toThrow('Updater error')
+
+				// State should remain unchanged after error
+				expect(state.get()).toBe(42)
+			})
+
+			test('should handle updater function that returns nullish value', () => {
+				const state = createState(42)
+
+				expect(() => {
+					// @ts-expect-error - Testing invalid return value
+					state.update(() => null)
+				}).toThrow('Nullish signal values are not allowed in state')
+
+				expect(() => {
+					// @ts-expect-error - Testing invalid return value
+					state.update(() => undefined)
+				}).toThrow('Nullish signal values are not allowed in state')
+
+				// State should remain unchanged after error
+				expect(state.get()).toBe(42)
+			})
+
+			test('should handle valid updater functions', () => {
+				const numberState = createState(10)
+				expect(() => {
+					numberState.update(x => x + 5)
+				}).not.toThrow()
+				expect(numberState.get()).toBe(15)
+
+				const stringState = createState('hello')
+				expect(() => {
+					stringState.update(x => x.toUpperCase())
+				}).not.toThrow()
+				expect(stringState.get()).toBe('HELLO')
+
+				const arrayState = createState([1, 2, 3])
+				expect(() => {
+					arrayState.update(arr => [...arr, 4])
+				}).not.toThrow()
+				expect(arrayState.get()).toEqual([1, 2, 3, 4])
+
+				const objectState = createState({ count: 0 })
+				expect(() => {
+					objectState.update(obj => ({
+						...obj,
+						count: obj.count + 1,
+					}))
+				}).not.toThrow()
+				expect(objectState.get()).toEqual({ count: 1 })
+			})
+		})
 	})
 
 	describe('Object cause', () => {

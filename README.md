@@ -267,6 +267,43 @@ const isEven = () => !(count.get() % 2)
   - You need to share the result between multiple consumers
   - You're working with asynchronous operations
   - You need to track specific error states
+  
+#### Reducer-like Capabilities
+
+`createComputed()` supports reducer-like patterns by accepting an initial value and providing access to the previous value in the callback:
+
+```js
+import { createState, createComputed, createEffect } from '@zeix/cause-effect'
+
+const actions = createState('increment')
+const counter = createComputed((prev, abort) => {
+  const action = actions.get()
+  switch (action) {
+    case 'increment':
+      return prev + 1
+    case 'decrement':
+      return prev - 1
+    case 'reset':
+      return 0
+    default:
+      return prev
+  }
+}, 0) // Initial value of 0
+
+createEffect(() => console.log('Counter:', counter.get()))
+
+// Dispatch actions
+actions.set('increment') // Counter: 1
+actions.set('increment') // Counter: 2
+actions.set('decrement') // Counter: 1
+actions.set('reset')     // Counter: 0
+```
+
+This pattern is particularly useful for:
+- State machines with transitions based on current state
+- Accumulating values over time
+- Complex state updates that depend on previous state
+- Building reactive reducers similar to Redux patterns
 
 #### Asynchronous Computations with Automatic Cancellation
 
@@ -281,7 +318,7 @@ const isEven = () => !(count.get() % 2)
 import { createState, createComputed, createEffect, resolve, match } from '@zeix/cause-effect'
 
 const id = createState(42)
-const data = createComputed(async abort => {
+const data = createComputed(async (_, abort) => {
   // The abort signal is automatically managed by the computed signal
   const response = await fetch(`/api/entries/${id.get()}`, { signal: abort })
   if (!response.ok) throw new Error(`Failed to fetch data: ${response.statusText}`)

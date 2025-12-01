@@ -1,17 +1,17 @@
 type Cleanup = () => void;
 type Watcher = {
     (): void;
-    off(cleanup: Cleanup): void;
+    unwatch(cleanup: Cleanup): void;
     cleanup(): void;
 };
 /**
  * Create a watcher that can be used to observe changes to a signal
  *
  * @since 0.14.1
- * @param {() => void} notice - function to be called when the state changes
- * @returns {Watcher} - watcher object with off and cleanup methods
+ * @param {() => void} watch - Function to be called when the state changes
+ * @returns {Watcher} - Watcher object with off and cleanup methods
  */
-declare const createWatcher: (notice: () => void) => Watcher;
+declare const createWatcher: (watch: () => void) => Watcher;
 /**
  * Add active watcher to the Set of watchers
  *

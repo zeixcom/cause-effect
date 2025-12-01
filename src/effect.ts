@@ -1,6 +1,6 @@
-import { CircularDependencyError } from './errors'
+import { CircularDependencyError, InvalidCallbackError } from './errors'
 import { type Cleanup, createWatcher, observe } from './system'
-import { isAbortError, isAsyncFunction, isFunction } from './util'
+import { isAbortError, isAsyncFunction, isFunction, valueString } from './util'
 
 /* === Types === */
 
@@ -25,11 +25,14 @@ type EffectCallback =
  * @returns {Cleanup} - Cleanup function for the effect
  */
 const createEffect = (callback: EffectCallback): Cleanup => {
-	const isAsync = isAsyncFunction<MaybeCleanup>(callback)
+	if (!isFunction(callback) || callback.length > 1)
+		throw new InvalidCallbackError('effect', valueString(callback))
+
+	const isAsync = isAsyncFunction(callback)
 	let running = false
 	let controller: AbortController | undefined
 
-	const run = createWatcher(() =>
+	const watcher = createWatcher(() =>
 		observe(() => {
 			if (running) throw new CircularDependencyError('effect')
 			running = true
@@ -52,7 +55,7 @@ const createEffect = (callback: EffectCallback): Cleanup => {
 								isFunction(cleanup) &&
 								controller === currentController
 							)
-								run.off(cleanup)
+								watcher.unwatch(cleanup)
 						})
 						.catch(error => {
 							if (!isAbortError(error))
@@ -60,7 +63,7 @@ const createEffect = (callback: EffectCallback): Cleanup => {
 						})
 				} else {
 					cleanup = (callback as () => MaybeCleanup)()
-					if (isFunction(cleanup)) run.off(cleanup)
+					if (isFunction(cleanup)) watcher.unwatch(cleanup)
 				}
 			} catch (error) {
 				if (!isAbortError(error))
@@ -68,13 +71,13 @@ const createEffect = (callback: EffectCallback): Cleanup => {
 			}
 
 			running = false
-		}, run),
+		}, watcher),
 	)
 
-	run()
+	watcher()
 	return () => {
 		controller?.abort()
-		run.cleanup()
+		watcher.cleanup()
 	}
 }
 

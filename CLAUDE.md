@@ -69,6 +69,7 @@ Computed signals implement smart memoization:
 - **Stale Detection**: Only recalculates when dependencies actually change
 - **Async Support**: Handles Promise-based computations with automatic cancellation
 - **Error Handling**: Preserves error states and prevents cascade failures
+- **Reducer-like Capabilities**: Access to previous value enables state accumulation and transitions
 
 ## Advanced Patterns and Best Practices
 
@@ -112,11 +113,35 @@ const expensiveCalc = createComputed(() => {
   return heavyComputation(data1.get(), data2.get()) // Memoized
 })
 
-const userData = createComputed(async (abort) => {
+const userData = createComputed(async (prev, abort) => {
   const id = userId.get()
+  if (!id) return prev // Keep previous data if no ID
   const response = await fetch(`/users/${id}`, { signal: abort })
   return response.json()
 })
+
+// Reducer-like pattern for state machines
+const gameState = createComputed((currentState) => {
+  const action = playerAction.get()
+  switch (currentState) {
+    case 'menu':
+      return action === 'start' ? 'playing' : 'menu'
+    case 'playing':
+      return action === 'pause' ? 'paused' : action === 'gameover' ? 'ended' : 'playing'
+    case 'paused':
+      return action === 'resume' ? 'playing' : action === 'quit' ? 'menu' : 'paused'
+    case 'ended':
+      return action === 'restart' ? 'playing' : action === 'menu' ? 'menu' : 'ended'
+    default:
+      return 'menu'
+  }
+}, 'menu') // Initial state
+
+// Accumulating values over time
+const runningTotal = createComputed((previous) => {
+  const newValue = currentValue.get()
+  return previous + newValue
+}, 0) // Start with 0
 ```
 
 ### Error Handling Strategies
@@ -231,8 +256,8 @@ const remainingCount = createComputed(() =>
 ### Reactive State Machines
 ```typescript
 const state = createState<'idle' | 'loading' | 'success' | 'error'>('idle')
-const canRetry = createComputed(() => state.get() === 'error')
-const isLoading = createComputed(() => state.get() === 'loading')
+const canRetry = () => state.get() === 'error'
+const isLoading = () => state.get() === 'loading'
 ```
 
 ### Cross-Component Communication
