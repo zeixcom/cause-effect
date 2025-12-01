@@ -6,7 +6,7 @@ import {
 	type UnknownRecord,
 	type UnknownRecordOrArray,
 } from './diff'
-import { createEffect } from './effect'
+
 import {
 	InvalidSignalValueError,
 	NullishSignalValueError,
@@ -16,7 +16,15 @@ import {
 } from './errors'
 import { isMutableSignal, type Signal } from './signal'
 import { createState, isState, type State } from './state'
-import { batch, type Cleanup, notify, subscribe, type Watcher } from './system'
+import {
+	batch,
+	type Cleanup,
+	createWatcher,
+	notify,
+	observe,
+	subscribe,
+	type Watcher,
+} from './system'
 import {
 	isFunction,
 	isObjectOfType,
@@ -128,6 +136,8 @@ const TYPE_STORE = 'Store'
 const createStore = <T extends UnknownRecord | UnknownArray>(
 	initialValue: T,
 ): Store<T> => {
+	if (initialValue == null) throw new NullishSignalValueError('store')
+
 	const watchers = new Set<Watcher>()
 	const listeners: StoreListeners<T> = {
 		add: new Set<(change: Partial<T>) => void>(),
@@ -136,7 +146,7 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 		sort: new Set<(change: string[]) => void>(),
 	}
 	const signals = new Map<string, Signal<T[Extract<keyof T, string>] & {}>>()
-	const cleanups = new Map<string, Cleanup>()
+	const signalWatchers = new Map<string, Watcher>()
 
 	// Determine if this is an array-like store at creation time
 	const isArrayLike = Array.isArray(initialValue)
@@ -202,14 +212,15 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 					: createState(value)
 		// @ts-expect-error non-matching signal types
 		signals.set(key, signal)
-		const cleanup = createEffect(() => {
-			const currentValue = signal.get()
-			if (currentValue != null)
+		const watcher = createWatcher(() =>
+			observe(() => {
 				emit('change', {
-					[key]: currentValue,
+					[key]: signal.get(),
 				} as unknown as Partial<T>)
-		})
-		cleanups.set(key, cleanup)
+			}, watcher),
+		)
+		watcher()
+		signalWatchers.set(key, watcher)
 
 		if (single) {
 			size.set(signals.size)
@@ -228,9 +239,9 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 	) => {
 		const ok = signals.delete(key)
 		if (ok) {
-			const cleanup = cleanups.get(key)
-			if (cleanup) cleanup()
-			cleanups.delete(key)
+			const watcher = signalWatchers.get(key)
+			if (watcher) watcher.cleanup()
+			signalWatchers.delete(key)
 		}
 
 		if (single) {
@@ -306,7 +317,7 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 	reconcile({} as T, initialValue, true)
 
 	// Methods and Properties
-	const s: Record<string, unknown> = {
+	const store: Record<string, unknown> = {
 		add: isArrayLike
 			? (v: ArrayItem<T>): void => {
 					const nextIndex = signals.size
@@ -434,7 +445,7 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 			if (isSymbol(prop)) return undefined
 
 			// Methods and Properties
-			if (prop in s) return s[prop]
+			if (prop in store) return store[prop]
 			if (prop === 'length' && isArrayLike) {
 				subscribe(watchers)
 				return size.get()
@@ -448,7 +459,7 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 			return (
 				(stringProp &&
 					signals.has(stringProp as Extract<keyof T, string>)) ||
-				Object.keys(s).includes(stringProp) ||
+				Object.keys(store).includes(stringProp) ||
 				prop === Symbol.toStringTag ||
 				prop === Symbol.iterator ||
 				prop === Symbol.isConcatSpreadable ||
@@ -482,7 +493,8 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 			if (prop === Symbol.toStringTag) return nonEnumerable(TYPE_STORE)
 			if (isSymbol(prop)) return undefined
 
-			if (Object.keys(s).includes(prop)) return nonEnumerable(s[prop])
+			if (Object.keys(store).includes(prop))
+				return nonEnumerable(store[prop])
 
 			const signal = signals.get(prop as Extract<keyof T, string>)
 			return signal

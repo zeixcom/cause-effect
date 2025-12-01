@@ -1,15 +1,15 @@
 import { isEqual } from './diff'
-import { NullishSignalValueError } from './errors'
+import { InvalidCallbackError, NullishSignalValueError } from './errors'
 import { notify, subscribe, type Watcher } from './system'
-import { isObjectOfType, UNSET } from './util'
+import { isFunction, isObjectOfType, UNSET, valueString } from './util'
 
 /* === Types === */
 
 type State<T extends {}> = {
 	readonly [Symbol.toStringTag]: 'State'
 	get(): T
-	set(v: T): void
-	update(fn: (v: T) => T): void
+	set(newValue: T): void
+	update(updater: (oldValue: T) => T): void
 }
 
 /* === Constants === */
@@ -26,17 +26,19 @@ const TYPE_STATE = 'State'
  * @returns {State<T>} - new state signal
  */
 const createState = /*#__PURE__*/ <T extends {}>(initialValue: T): State<T> => {
+	if (initialValue == null) throw new NullishSignalValueError('state')
+
 	const watchers: Set<Watcher> = new Set()
 	let value: T = initialValue
 
-	const s: State<T> = {
+	const state: State<T> = {
 		[Symbol.toStringTag]: TYPE_STATE,
 
 		/**
 		 * Get the current value of the state
 		 *
 		 * @since 0.9.0
-		 * @returns {T} - current value of the state
+		 * @returns {T} - Current value of the state
 		 */
 		get: (): T => {
 			subscribe(watchers)
@@ -47,13 +49,13 @@ const createState = /*#__PURE__*/ <T extends {}>(initialValue: T): State<T> => {
 		 * Set a new value of the state
 		 *
 		 * @since 0.9.0
-		 * @param {T} v
+		 * @param {T} newValue - New value of the state
 		 * @returns {void}
 		 */
-		set: (v: T): void => {
-			if (v == null) throw new NullishSignalValueError('state')
-			if (isEqual(value, v)) return
-			value = v
+		set: (newValue: T): void => {
+			if (newValue == null) throw new NullishSignalValueError('state')
+			if (isEqual(value, newValue)) return
+			value = newValue
 			notify(watchers)
 
 			// Setting to UNSET clears the watchers so the signal can be garbage collected
@@ -64,15 +66,20 @@ const createState = /*#__PURE__*/ <T extends {}>(initialValue: T): State<T> => {
 		 * Update the state with a new value using a function
 		 *
 		 * @since 0.10.0
-		 * @param {(v: T) => T} fn - function to update the state
-		 * @returns {void} - updates the state with the result of the function
+		 * @param {(v: T) => T} updater - Function to update the state
+		 * @returns {void}
 		 */
-		update: (fn: (v: T) => T): void => {
-			s.set(fn(value))
+		update: (updater: (oldValue: T) => T): void => {
+			if (!isFunction(updater))
+				throw new InvalidCallbackError(
+					'state update',
+					valueString(updater),
+				)
+			state.set(updater(value))
 		},
 	}
 
-	return s
+	return state
 }
 
 /**

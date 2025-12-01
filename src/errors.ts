@@ -5,6 +5,13 @@ class CircularDependencyError extends Error {
 	}
 }
 
+class InvalidCallbackError extends TypeError {
+	constructor(where: string, value: string) {
+		super(`Invalid ${where} callback ${value}`)
+		this.name = 'InvalidCallbackError'
+	}
+}
+
 class InvalidSignalValueError extends TypeError {
 	constructor(where: string, value: string) {
 		super(`Invalid signal value ${value} in ${where}`)
@@ -48,6 +55,7 @@ class StoreKeyReadonlyError extends Error {
 
 export {
 	CircularDependencyError,
+	InvalidCallbackError,
 	InvalidSignalValueError,
 	NullishSignalValueError,
 	StoreKeyExistsError,

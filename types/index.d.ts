@@ -6,7 +6,7 @@
 export { type Computed, type ComputedCallback, createComputed, isComputed, isComputedCallback, TYPE_COMPUTED, } from './src/computed';
 export { type DiffResult, diff, isEqual, type UnknownArray, type UnknownRecord, type UnknownRecordOrArray, } from './src/diff';
 export { createEffect, type EffectCallback, type MaybeCleanup, } from './src/effect';
-export { CircularDependencyError, InvalidSignalValueError, NullishSignalValueError, StoreKeyExistsError, StoreKeyRangeError, StoreKeyReadonlyError, } from './src/errors';
+export { CircularDependencyError, InvalidCallbackError, InvalidSignalValueError, NullishSignalValueError, StoreKeyExistsError, StoreKeyRangeError, StoreKeyReadonlyError, } from './src/errors';
 export { type MatchHandlers, match } from './src/match';
 export { type ResolveResult, resolve } from './src/resolve';
 export { isMutableSignal, isSignal, type Signal, type SignalValues, toSignal, type UnknownSignalRecord, } from './src/signal';

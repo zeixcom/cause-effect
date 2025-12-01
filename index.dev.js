@@ -6,6 +6,13 @@ class CircularDependencyError extends Error {
   }
 }
 
+class InvalidCallbackError extends TypeError {
+  constructor(where, value) {
+    super(`Invalid ${where} callback ${value}`);
+    this.name = "InvalidCallbackError";
+  }
+}
+
 class InvalidSignalValueError extends TypeError {
   constructor(where, value) {
     super(`Invalid signal value ${value} in ${where}`);
@@ -160,47 +167,45 @@ var diff = (oldObj, newObj) => {
 };
 
 // src/system.ts
-var active;
-var pending = new Set;
+var activeWatcher;
+var pendingWatchers = new Set;
 var batchDepth = 0;
-var createWatcher = (notice) => {
+var createWatcher = (watch) => {
   const cleanups = new Set;
-  const w = notice;
-  w.off = (on) => {
-    cleanups.add(on);
+  const w = watch;
+  w.unwatch = (cleanup) => {
+    cleanups.add(cleanup);
   };
   w.cleanup = () => {
-    for (const cleanup of cleanups) {
+    for (const cleanup of cleanups)
       cleanup();
-    }
     cleanups.clear();
   };
   return w;
 };
 var subscribe = (watchers) => {
-  if (active && !watchers.has(active)) {
-    const watcher = active;
-    watchers.add(watcher);
-    active.off(() => {
+  if (activeWatcher && !watchers.has(activeWatcher)) {
+    const watcher = activeWatcher;
+    watcher.unwatch(() => {
       watchers.delete(watcher);
     });
+    watchers.add(watcher);
   }
 };
 var notify = (watchers) => {
   for (const watcher of watchers) {
     if (batchDepth)
-      pending.add(watcher);
+      pendingWatchers.add(watcher);
     else
       watcher();
   }
 };
 var flush = () => {
-  while (pending.size) {
-    const watchers = Array.from(pending);
-    pending.clear();
-    for (const watcher of watchers) {
+  while (pendingWatchers.size) {
+    const watchers = Array.from(pendingWatchers);
+    pendingWatchers.clear();
+    for (const watcher of watchers)
       watcher();
-    }
   }
 };
 var batch = (fn) => {
@@ -213,20 +218,24 @@ var batch = (fn) => {
   }
 };
 var observe = (run, watcher) => {
-  const prev = active;
-  active = watcher;
+  const prev = activeWatcher;
+  activeWatcher = watcher;
   try {
     run();
   } finally {
-    active = prev;
+    activeWatcher = prev;
   }
 };
 
 // src/computed.ts
 var TYPE_COMPUTED = "Computed";
-var createComputed = (fn) => {
+var createComputed = (callback, initialValue = UNSET) => {
+  if (!isComputedCallback(callback))
+    throw new InvalidCallbackError("computed", valueString(callback));
+  if (initialValue == null)
+    throw new NullishSignalValueError("computed");
   const watchers = new Set;
-  let value = UNSET;
+  let value = initialValue;
   let error;
   let controller;
   let dirty = true;
@@ -251,29 +260,29 @@ var createComputed = (fn) => {
     value = UNSET;
     error = newError;
   };
-  const settle = (settleFn) => (arg) => {
+  const settle = (fn) => (arg) => {
     computing = false;
     controller = undefined;
-    settleFn(arg);
+    fn(arg);
     if (changed)
       notify(watchers);
   };
-  const mark = createWatcher(() => {
+  const watcher = createWatcher(() => {
     dirty = true;
     controller?.abort();
     if (watchers.size)
       notify(watchers);
     else
-      mark.cleanup();
+      watcher.cleanup();
   });
-  mark.off(() => {
+  watcher.unwatch(() => {
     controller?.abort();
   });
   const compute = () => observe(() => {
     if (computing)
       throw new CircularDependencyError("computed");
     changed = false;
-    if (isAsyncFunction(fn)) {
+    if (isAsyncFunction(callback)) {
       if (controller)
         return value;
       controller = new AbortController;
@@ -288,7 +297,7 @@ var createComputed = (fn) => {
     let result;
     computing = true;
     try {
-      result = controller ? fn(controller.signal) : fn();
+      result = controller ? callback(value, controller.signal) : callback(value);
     } catch (e) {
       if (isAbortError(e))
         nil();
@@ -304,7 +313,7 @@ var createComputed = (fn) => {
     else
       ok(result);
     computing = false;
-  }, mark);
+  }, watcher);
   return {
     [Symbol.toStringTag]: TYPE_COMPUTED,
     get: () => {
@@ -319,13 +328,15 @@ var createComputed = (fn) => {
   };
 };
 var isComputed = (value) => isObjectOfType(value, TYPE_COMPUTED);
-var isComputedCallback = (value) => isFunction(value) && value.length < 2;
+var isComputedCallback = (value) => isFunction(value) && value.length < 3;
 // src/effect.ts
 var createEffect = (callback) => {
+  if (!isFunction(callback) || callback.length > 1)
+    throw new InvalidCallbackError("effect", valueString(callback));
   const isAsync = isAsyncFunction(callback);
   let running = false;
   let controller;
-  const run = createWatcher(() => observe(() => {
+  const watcher = createWatcher(() => observe(() => {
     if (running)
       throw new CircularDependencyError("effect");
     running = true;
@@ -338,7 +349,7 @@ var createEffect = (callback) => {
         const currentController = controller;
         callback(controller.signal).then((cleanup2) => {
           if (isFunction(cleanup2) && controller === currentController)
-            run.off(cleanup2);
+            watcher.unwatch(cleanup2);
         }).catch((error) => {
           if (!isAbortError(error))
             console.error("Async effect error:", error);
@@ -346,18 +357,18 @@ var createEffect = (callback) => {
       } else {
         cleanup = callback();
         if (isFunction(cleanup))
-          run.off(cleanup);
+          watcher.unwatch(cleanup);
       }
     } catch (error) {
       if (!isAbortError(error))
         console.error("Effect callback error:", error);
     }
     running = false;
-  }, run));
-  run();
+  }, watcher));
+  watcher();
   return () => {
     controller?.abort();
-    run.cleanup();
+    watcher.cleanup();
   };
 };
 // src/match.ts
@@ -379,20 +390,20 @@ function match(result, handlers) {
 // src/resolve.ts
 function resolve(signals) {
   const errors = [];
-  let pending2 = false;
+  let pending = false;
   const values = {};
   for (const [key, signal] of Object.entries(signals)) {
     try {
       const value = signal.get();
       if (value === UNSET)
-        pending2 = true;
+        pending = true;
       else
         values[key] = value;
     } catch (e) {
       errors.push(toError(e));
     }
   }
-  if (pending2)
+  if (pending)
     return { ok: false, pending: true };
   if (errors.length > 0)
     return { ok: false, errors };
@@ -401,35 +412,41 @@ function resolve(signals) {
 // src/state.ts
 var TYPE_STATE = "State";
 var createState = (initialValue) => {
+  if (initialValue == null)
+    throw new NullishSignalValueError("state");
   const watchers = new Set;
   let value = initialValue;
-  const s = {
+  const state = {
     [Symbol.toStringTag]: TYPE_STATE,
     get: () => {
       subscribe(watchers);
       return value;
     },
-    set: (v) => {
-      if (v == null)
+    set: (newValue) => {
+      if (newValue == null)
         throw new NullishSignalValueError("state");
-      if (isEqual(value, v))
+      if (isEqual(value, newValue))
         return;
-      value = v;
+      value = newValue;
       notify(watchers);
       if (UNSET === value)
         watchers.clear();
     },
-    update: (fn) => {
-      s.set(fn(value));
+    update: (updater) => {
+      if (!isFunction(updater))
+        throw new InvalidCallbackError("state update", valueString(updater));
+      state.set(updater(value));
     }
   };
-  return s;
+  return state;
 };
 var isState = (value) => isObjectOfType(value, TYPE_STATE);
 
 // src/store.ts
 var TYPE_STORE = "Store";
 var createStore = (initialValue) => {
+  if (initialValue == null)
+    throw new NullishSignalValueError("store");
   const watchers = new Set;
   const listeners = {
     add: new Set,
@@ -438,7 +455,7 @@ var createStore = (initialValue) => {
     sort: new Set
   };
   const signals = new Map;
-  const cleanups = new Map;
+  const signalWatchers = new Map;
   const isArrayLike = Array.isArray(initialValue);
   const size = createState(0);
   const current = () => {
@@ -469,14 +486,13 @@ var createStore = (initialValue) => {
       return false;
     const signal = isState(value) || isStore(value) ? value : isRecord(value) || Array.isArray(value) ? createStore(value) : createState(value);
     signals.set(key, signal);
-    const cleanup = createEffect(() => {
-      const currentValue = signal.get();
-      if (currentValue != null)
-        emit("change", {
-          [key]: currentValue
-        });
-    });
-    cleanups.set(key, cleanup);
+    const watcher = createWatcher(() => observe(() => {
+      emit("change", {
+        [key]: signal.get()
+      });
+    }, watcher));
+    watcher();
+    signalWatchers.set(key, watcher);
     if (single) {
       size.set(signals.size);
       notify(watchers);
@@ -489,10 +505,10 @@ var createStore = (initialValue) => {
   const removeProperty = (key, single = false) => {
     const ok = signals.delete(key);
     if (ok) {
-      const cleanup = cleanups.get(key);
-      if (cleanup)
-        cleanup();
-      cleanups.delete(key);
+      const watcher = signalWatchers.get(key);
+      if (watcher)
+        watcher.cleanup();
+      signalWatchers.delete(key);
     }
     if (single) {
       size.set(signals.size);
@@ -542,7 +558,7 @@ var createStore = (initialValue) => {
     return changes.changed;
   };
   reconcile({}, initialValue, true);
-  const s = {
+  const store = {
     add: isArrayLike ? (v) => {
       const nextIndex = signals.size;
       const key = String(nextIndex);
@@ -628,8 +644,8 @@ var createStore = (initialValue) => {
         };
       if (isSymbol(prop))
         return;
-      if (prop in s)
-        return s[prop];
+      if (prop in store)
+        return store[prop];
       if (prop === "length" && isArrayLike) {
         subscribe(watchers);
         return size.get();
@@ -638,7 +654,7 @@ var createStore = (initialValue) => {
     },
     has(_target, prop) {
       const stringProp = String(prop);
-      return stringProp && signals.has(stringProp) || Object.keys(s).includes(stringProp) || prop === Symbol.toStringTag || prop === Symbol.iterator || prop === Symbol.isConcatSpreadable || prop === "length" && isArrayLike;
+      return stringProp && signals.has(stringProp) || Object.keys(store).includes(stringProp) || prop === Symbol.toStringTag || prop === Symbol.iterator || prop === Symbol.isConcatSpreadable || prop === "length" && isArrayLike;
     },
     ownKeys() {
       return isArrayLike ? getSortedIndexes().map((key) => String(key)).concat(["length"]) : Array.from(signals.keys()).map((key) => String(key));
@@ -663,8 +679,8 @@ var createStore = (initialValue) => {
         return nonEnumerable(TYPE_STORE);
       if (isSymbol(prop))
         return;
-      if (Object.keys(s).includes(prop))
-        return nonEnumerable(s[prop]);
+      if (Object.keys(store).includes(prop))
+        return nonEnumerable(store[prop]);
       const signal = signals.get(prop);
       return signal ? {
         enumerable: true,
@@ -730,5 +746,6 @@ export {
   StoreKeyExistsError,
   NullishSignalValueError,
   InvalidSignalValueError,
+  InvalidCallbackError,
   CircularDependencyError
 };

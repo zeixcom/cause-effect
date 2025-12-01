@@ -9,7 +9,7 @@ Cause & Effect is a reactive state management library for JavaScript/TypeScript 
 - **Signals**: Base reactive primitives with `.get()` method
 - **State**: Mutable signals for primitive values (`createState()`)
 - **Store**: Mutable signals for objects with reactive properties (`createStore()`)
-- **Computed**: Derived read-only signals with memoization (`createComputed()`)
+- **Computed**: Derived read-only signals with memoization, reducer-like capabilities and async support (`createComputed()`)
 - **Effects**: Side effect handlers that react to signal changes (`createEffect()`)
 
 ## Key Files Structure
@@ -70,13 +70,20 @@ Cause & Effect is a reactive state management library for JavaScript/TypeScript 
 ```typescript
 // State for primitives
 const count = createState(42)
-const name = createState("Alice")
+const name = createState('Alice')
+const actions = createState<'increment' | 'decrement'>('increment')
 
 // Store for objects
-const user = createStore({ name: "Alice", age: 30 })
+const user = createStore({ name: 'Alice', age: 30 })
 
 // Computed for derived values
 const doubled = createComputed(() => count.get() * 2)
+
+// Computed with reducer-like capabilities
+const counter = createComputed((prev) => {
+  const action = actions.get()
+  return action === 'increment' ? prev + 1 : prev - 1
+}, 0) // Initial value
 ```
 
 ### Reactivity
@@ -89,6 +96,13 @@ createEffect(() => {
 // Async effects with cancellation
 createEffect(async (abort) => {
   const response = await fetch('/api', { signal: abort })
+  return response.json()
+})
+
+// Async computed with old value access
+const userData = createComputed(async (prev, abort) => {
+  if (!userId.get()) return prev // Keep previous data if no user
+  const response = await fetch(`/users/${userId.get()}`, { signal: abort })
   return response.json()
 })
 ```

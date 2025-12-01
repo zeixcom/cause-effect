@@ -4,17 +4,17 @@ type Cleanup = () => void
 
 type Watcher = {
 	(): void
-	off(cleanup: Cleanup): void
+	unwatch(cleanup: Cleanup): void
 	cleanup(): void
 }
 
 /* === Internal === */
 
 // Currently active watcher
-let active: Watcher | undefined
+let activeWatcher: Watcher | undefined
 
 // Pending queue for batched change notifications
-const pending = new Set<Watcher>()
+const pendingWatchers = new Set<Watcher>()
 let batchDepth = 0
 
 /* === Functions === */
@@ -23,19 +23,17 @@ let batchDepth = 0
  * Create a watcher that can be used to observe changes to a signal
  *
  * @since 0.14.1
- * @param {() => void} notice - function to be called when the state changes
- * @returns {Watcher} - watcher object with off and cleanup methods
+ * @param {() => void} watch - Function to be called when the state changes
+ * @returns {Watcher} - Watcher object with off and cleanup methods
  */
-const createWatcher = (notice: () => void): Watcher => {
+const createWatcher = (watch: () => void): Watcher => {
 	const cleanups = new Set<Cleanup>()
-	const w = notice as Partial<Watcher>
-	w.off = (on: Cleanup) => {
-		cleanups.add(on)
+	const w = watch as Partial<Watcher>
+	w.unwatch = (cleanup: Cleanup) => {
+		cleanups.add(cleanup)
 	}
 	w.cleanup = () => {
-		for (const cleanup of cleanups) {
-			cleanup()
-		}
+		for (const cleanup of cleanups) cleanup()
 		cleanups.clear()
 	}
 	return w as Watcher
@@ -47,12 +45,12 @@ const createWatcher = (notice: () => void): Watcher => {
  * @param {Set<Watcher>} watchers - watchers of the signal
  */
 const subscribe = (watchers: Set<Watcher>) => {
-	if (active && !watchers.has(active)) {
-		const watcher = active
-		watchers.add(watcher)
-		active.off(() => {
+	if (activeWatcher && !watchers.has(activeWatcher)) {
+		const watcher = activeWatcher
+		watcher.unwatch(() => {
 			watchers.delete(watcher)
 		})
+		watchers.add(watcher)
 	}
 }
 
@@ -63,7 +61,7 @@ const subscribe = (watchers: Set<Watcher>) => {
  */
 const notify = (watchers: Set<Watcher>) => {
 	for (const watcher of watchers) {
-		if (batchDepth) pending.add(watcher)
+		if (batchDepth) pendingWatchers.add(watcher)
 		else watcher()
 	}
 }
@@ -72,12 +70,10 @@ const notify = (watchers: Set<Watcher>) => {
  * Flush all pending changes to notify watchers
  */
 const flush = () => {
-	while (pending.size) {
-		const watchers = Array.from(pending)
-		pending.clear()
-		for (const watcher of watchers) {
-			watcher()
-		}
+	while (pendingWatchers.size) {
+		const watchers = Array.from(pendingWatchers)
+		pendingWatchers.clear()
+		for (const watcher of watchers) watcher()
 	}
 }
 
@@ -103,12 +99,12 @@ const batch = (fn: () => void) => {
  * @param {Watcher} watcher - function to be called when the state changes or undefined for temporary unwatching while inserting auto-hydrating DOM nodes that might read signals (e.g., web components)
  */
 const observe = (run: () => void, watcher?: Watcher): void => {
-	const prev = active
-	active = watcher
+	const prev = activeWatcher
+	activeWatcher = watcher
 	try {
 		run()
 	} finally {
-		active = prev
+		activeWatcher = prev
 	}
 }
 

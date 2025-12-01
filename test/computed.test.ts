@@ -357,7 +357,7 @@ describe('Computed', () => {
 	test('should handle signal changes during async computation', async () => {
 		const source = createState(1)
 		let computationCount = 0
-		const derived = createComputed(async abort => {
+		const derived = createComputed(async (_, abort) => {
 			computationCount++
 			expect(abort?.aborted).toBe(false)
 			await wait(100)
@@ -378,7 +378,7 @@ describe('Computed', () => {
 	test('should handle multiple rapid changes during async computation', async () => {
 		const source = createState(1)
 		let computationCount = 0
-		const derived = createComputed(async abort => {
+		const derived = createComputed(async (_, abort) => {
 			computationCount++
 			expect(abort?.aborted).toBe(false)
 			await wait(100)
@@ -421,5 +421,441 @@ describe('Computed', () => {
 		source.set(3)
 		await wait(100)
 		expect(derived.get()).toBe(3)
+	})
+
+	describe('Input Validation', () => {
+		test('should throw InvalidCallbackError when callback is not a function', () => {
+			expect(() => {
+				// @ts-expect-error - Testing invalid input
+				createComputed(null)
+			}).toThrow('Invalid computed callback null')
+
+			expect(() => {
+				// @ts-expect-error - Testing invalid input
+				createComputed(undefined)
+			}).toThrow('Invalid computed callback undefined')
+
+			expect(() => {
+				// @ts-expect-error - Testing invalid input
+				createComputed(42)
+			}).toThrow('Invalid computed callback 42')
+
+			expect(() => {
+				// @ts-expect-error - Testing invalid input
+				createComputed('not a function')
+			}).toThrow('Invalid computed callback "not a function"')
+
+			expect(() => {
+				// @ts-expect-error - Testing invalid input
+				createComputed({ not: 'a function' })
+			}).toThrow('Invalid computed callback {"not":"a function"}')
+
+			expect(() => {
+				// @ts-expect-error - Testing invalid input
+				createComputed((_a: unknown, _b: unknown, _c: unknown) => 42)
+			}).toThrow('Invalid computed callback (_a, _b, _c) => 42')
+		})
+
+		test('should throw NullishSignalValueError when initialValue is null', () => {
+			expect(() => {
+				// @ts-expect-error - Testing invalid input
+				createComputed(() => 42, null)
+			}).toThrow('Nullish signal values are not allowed in computed')
+		})
+
+		test('should throw specific error types for invalid inputs', () => {
+			try {
+				// @ts-expect-error - Testing invalid input
+				createComputed(null)
+				expect(true).toBe(false) // Should not reach here
+			} catch (error) {
+				expect(error).toBeInstanceOf(TypeError)
+				expect(error.name).toBe('InvalidCallbackError')
+				expect(error.message).toBe('Invalid computed callback null')
+			}
+
+			try {
+				// @ts-expect-error - Testing invalid input
+				createComputed(() => 42, null)
+				expect(true).toBe(false) // Should not reach here
+			} catch (error) {
+				expect(error).toBeInstanceOf(TypeError)
+				expect(error.name).toBe('NullishSignalValueError')
+				expect(error.message).toBe(
+					'Nullish signal values are not allowed in computed',
+				)
+			}
+		})
+
+		test('should allow valid callbacks and non-nullish initialValues', () => {
+			// These should not throw
+			expect(() => {
+				createComputed(() => 42)
+			}).not.toThrow()
+
+			expect(() => {
+				createComputed(() => 42, 0)
+			}).not.toThrow()
+
+			expect(() => {
+				createComputed(() => 'foo', '')
+			}).not.toThrow()
+
+			expect(() => {
+				createComputed(() => true, false)
+			}).not.toThrow()
+
+			expect(() => {
+				createComputed(async () => ({ id: 42, name: 'John' }), UNSET)
+			}).not.toThrow()
+		})
+	})
+
+	describe('Initial Value and Old Value', () => {
+		test('should use initialValue when provided', () => {
+			const computed = createComputed(
+				(oldValue: number) => oldValue + 1,
+				10,
+			)
+			expect(computed.get()).toBe(11)
+		})
+
+		test('should pass current value as oldValue to callback', () => {
+			const state = createState(5)
+			let receivedOldValue: number | undefined
+			const computed = createComputed((oldValue: number) => {
+				receivedOldValue = oldValue
+				return state.get() * 2
+			}, 0)
+
+			expect(computed.get()).toBe(10)
+			expect(receivedOldValue).toBe(0)
+
+			state.set(3)
+			expect(computed.get()).toBe(6)
+			expect(receivedOldValue).toBe(10)
+		})
+
+		test('should work as reducer function with oldValue', () => {
+			const increment = createState(0)
+			const sum = createComputed((oldValue: number) => {
+				const inc = increment.get()
+				return inc === 0 ? oldValue : oldValue + inc
+			}, 0)
+
+			expect(sum.get()).toBe(0)
+
+			increment.set(5)
+			expect(sum.get()).toBe(5)
+
+			increment.set(3)
+			expect(sum.get()).toBe(8)
+
+			increment.set(2)
+			expect(sum.get()).toBe(10)
+		})
+
+		test('should handle array accumulation with oldValue', () => {
+			const item = createState('')
+			const items = createComputed((oldValue: string[]) => {
+				const newItem = item.get()
+				return newItem === '' ? oldValue : [...oldValue, newItem]
+			}, [] as string[])
+
+			expect(items.get()).toEqual([])
+
+			item.set('first')
+			expect(items.get()).toEqual(['first'])
+
+			item.set('second')
+			expect(items.get()).toEqual(['first', 'second'])
+
+			item.set('third')
+			expect(items.get()).toEqual(['first', 'second', 'third'])
+		})
+
+		test('should handle counter with oldValue and multiple dependencies', () => {
+			const reset = createState(false)
+			const add = createState(0)
+			const counter = createComputed((oldValue: number) => {
+				if (reset.get()) return 0
+				const increment = add.get()
+				return increment === 0 ? oldValue : oldValue + increment
+			}, 0)
+
+			expect(counter.get()).toBe(0)
+
+			add.set(5)
+			expect(counter.get()).toBe(5)
+
+			add.set(3)
+			expect(counter.get()).toBe(8)
+
+			reset.set(true)
+			expect(counter.get()).toBe(0)
+
+			reset.set(false)
+			add.set(2)
+			expect(counter.get()).toBe(2)
+		})
+
+		test('should pass UNSET as oldValue when no initialValue provided', () => {
+			let receivedOldValue: number | undefined
+			const state = createState(42)
+			const computed = createComputed((oldValue: number) => {
+				receivedOldValue = oldValue
+				return state.get()
+			})
+
+			expect(computed.get()).toBe(42)
+			expect(receivedOldValue).toBe(UNSET)
+		})
+
+		test('should work with async computation and oldValue', async () => {
+			let receivedOldValue: number | undefined
+
+			const asyncComputed = createComputed(async (oldValue: number) => {
+				receivedOldValue = oldValue
+				await wait(50)
+				return oldValue + 5
+			}, 10)
+
+			// Initially returns initialValue before async computation completes
+			expect(asyncComputed.get()).toBe(10)
+
+			// Wait for async computation to complete
+			await wait(60)
+			expect(asyncComputed.get()).toBe(15) // 10 + 5
+			expect(receivedOldValue).toBe(10)
+		})
+
+		test('should handle object updates with oldValue', () => {
+			const key = createState('')
+			const value = createState('')
+			const obj = createComputed(
+				(oldValue: Record<string, string>) => {
+					const k = key.get()
+					const v = value.get()
+					if (k === '' || v === '') return oldValue
+					return { ...oldValue, [k]: v }
+				},
+				{} as Record<string, string>,
+			)
+
+			expect(obj.get()).toEqual({})
+
+			key.set('name')
+			value.set('Alice')
+			expect(obj.get()).toEqual({ name: 'Alice' })
+
+			key.set('age')
+			value.set('30')
+			expect(obj.get()).toEqual({ name: 'Alice', age: '30' })
+		})
+
+		test('should handle async computation with AbortSignal and oldValue', async () => {
+			const source = createState(1)
+			let computationCount = 0
+			const receivedOldValues: number[] = []
+
+			const asyncComputed = createComputed(
+				async (oldValue: number, abort: AbortSignal) => {
+					computationCount++
+					receivedOldValues.push(oldValue)
+
+					// Simulate async work
+					await wait(100)
+
+					// Check if computation was aborted
+					if (abort.aborted) {
+						return oldValue
+					}
+
+					return source.get() + oldValue
+				},
+				0,
+			)
+
+			// Initial computation
+			expect(asyncComputed.get()).toBe(0) // Returns initialValue immediately
+
+			// Change source before first computation completes
+			source.set(2)
+
+			// Wait for computation to complete
+			await wait(110)
+
+			// Should have the result from the computation that wasn't aborted
+			expect(asyncComputed.get()).toBe(2) // 2 + 0 (initialValue was used as oldValue)
+			expect(computationCount).toBe(1) // Only one computation completed
+			expect(receivedOldValues).toEqual([0])
+		})
+
+		test('should work with error handling and oldValue', () => {
+			const shouldError = createState(false)
+			const counter = createState(1)
+
+			const computed = createComputed((oldValue: number) => {
+				if (shouldError.get()) {
+					throw new Error('Computation failed')
+				}
+				// Handle UNSET case by treating it as 0
+				const safeOldValue = oldValue === UNSET ? 0 : oldValue
+				return safeOldValue + counter.get()
+			}, 10)
+
+			expect(computed.get()).toBe(11) // 10 + 1
+
+			counter.set(5)
+			expect(computed.get()).toBe(16) // 11 + 5
+
+			// Trigger error
+			shouldError.set(true)
+			expect(() => computed.get()).toThrow('Computation failed')
+
+			// Recover from error
+			shouldError.set(false)
+			counter.set(2)
+
+			// After error, oldValue should be UNSET, so we treat it as 0 and get 0 + 2 = 2
+			expect(computed.get()).toBe(2)
+		})
+
+		test('should work with complex state transitions using oldValue', () => {
+			const action = createState<
+				'increment' | 'decrement' | 'reset' | 'multiply'
+			>('increment')
+			const amount = createState(1)
+
+			const calculator = createComputed((oldValue: number) => {
+				const act = action.get()
+				const amt = amount.get()
+
+				switch (act) {
+					case 'increment':
+						return oldValue + amt
+					case 'decrement':
+						return oldValue - amt
+					case 'multiply':
+						return oldValue * amt
+					case 'reset':
+						return 0
+					default:
+						return oldValue
+				}
+			}, 0)
+
+			expect(calculator.get()).toBe(1) // 0 + 1
+
+			amount.set(5)
+			expect(calculator.get()).toBe(6) // 1 + 5
+
+			action.set('multiply')
+			amount.set(2)
+			expect(calculator.get()).toBe(12) // 6 * 2
+
+			action.set('decrement')
+			amount.set(3)
+			expect(calculator.get()).toBe(9) // 12 - 3
+
+			action.set('reset')
+			expect(calculator.get()).toBe(0)
+		})
+
+		test('should handle edge cases with initialValue and oldValue', () => {
+			// Test with null/undefined-like values
+			const nullishComputed = createComputed((oldValue: string) => {
+				return `${oldValue} updated`
+			}, '')
+
+			expect(nullishComputed.get()).toBe(' updated')
+
+			// Test with complex object initialValue
+			interface StateObject {
+				count: number
+				items: string[]
+				meta: { created: Date }
+			}
+
+			const now = new Date()
+			const objectComputed = createComputed(
+				(oldValue: StateObject) => ({
+					...oldValue,
+					count: oldValue.count + 1,
+					items: [...oldValue.items, `item${oldValue.count + 1}`],
+				}),
+				{
+					count: 0,
+					items: [] as string[],
+					meta: { created: now },
+				},
+			)
+
+			const result = objectComputed.get()
+			expect(result.count).toBe(1)
+			expect(result.items).toEqual(['item1'])
+			expect(result.meta.created).toBe(now)
+		})
+
+		test('should preserve initialValue type consistency', () => {
+			// Test that oldValue type is consistent with initialValue
+			const stringComputed = createComputed((oldValue: string) => {
+				expect(typeof oldValue).toBe('string')
+				return oldValue.toUpperCase()
+			}, 'hello')
+
+			expect(stringComputed.get()).toBe('HELLO')
+
+			const numberComputed = createComputed((oldValue: number) => {
+				expect(typeof oldValue).toBe('number')
+				expect(Number.isFinite(oldValue)).toBe(true)
+				return oldValue * 2
+			}, 5)
+
+			expect(numberComputed.get()).toBe(10)
+		})
+
+		test('should work with chained computed using oldValue', () => {
+			const source = createState(1)
+
+			const first = createComputed(
+				(oldValue: number) => oldValue + source.get(),
+				10,
+			)
+
+			const second = createComputed(
+				(oldValue: number) => oldValue + first.get(),
+				20,
+			)
+
+			expect(first.get()).toBe(11) // 10 + 1
+			expect(second.get()).toBe(31) // 20 + 11
+
+			source.set(5)
+			expect(first.get()).toBe(16) // 11 + 5
+			expect(second.get()).toBe(47) // 31 + 16
+		})
+
+		test('should handle frequent updates with oldValue correctly', () => {
+			const trigger = createState(0)
+			let computationCount = 0
+
+			const accumulator = createComputed((oldValue: number) => {
+				computationCount++
+				return oldValue + trigger.get()
+			}, 100)
+
+			expect(accumulator.get()).toBe(100) // 100 + 0
+			expect(computationCount).toBe(1)
+
+			// Make rapid changes
+			for (let i = 1; i <= 5; i++) {
+				trigger.set(i)
+				accumulator.get() // Force evaluation
+			}
+
+			expect(computationCount).toBe(6) // Initial + 5 updates
+			expect(accumulator.get()).toBe(115) // Final accumulated value
+		})
 	})
 })

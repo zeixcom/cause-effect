@@ -22,7 +22,8 @@ TypeScript/JavaScript reactive state management library using signals pattern
 - All signals have .get() method
 - Mutable signals have .set(value) and .update(fn)
 - Store properties auto-become reactive signals
-- Effects receive AbortSignal for async cancellation
+- Computed callbacks receive oldValue as first parameter for reducer patterns
+- Async computed and effect callbacks receive AbortSignal for async cancellation
 - Use UNSET symbol for uninitialized states
 - Batch updates for performance
 - JSDoc comments on all public APIs

@@ -1,8 +1,8 @@
 type State<T extends {}> = {
     readonly [Symbol.toStringTag]: 'State';
     get(): T;
-    set(v: T): void;
-    update(fn: (v: T) => T): void;
+    set(newValue: T): void;
+    update(updater: (oldValue: T) => T): void;
 };
 declare const TYPE_STATE = "State";
 /**
