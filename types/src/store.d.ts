@@ -10,7 +10,7 @@ type StoreChanges<T> = {
 };
 interface BaseStore {
     readonly [Symbol.toStringTag]: 'Store';
-    readonly size: State<number>;
+    readonly length: number;
 }
 type RecordStore<T extends UnknownRecord> = BaseStore & {
     [K in keyof T]: T[K] extends readonly unknown[] | Record<string, unknown> ? Store<T[K]> : State<T[K]>;
@@ -38,7 +38,6 @@ type ArrayStore<T extends UnknownArray> = BaseStore & {
     sort<U = ArrayItem<T>>(compareFn?: (a: U, b: U) => number): void;
     on<K extends keyof StoreChanges<T>>(type: K, listener: (change: StoreChanges<T>[K]) => void): Cleanup;
     remove(index: number): void;
-    readonly length: number;
 };
 type Store<T extends UnknownRecord | UnknownArray> = T extends UnknownRecord ? RecordStore<T> : T extends UnknownArray ? ArrayStore<T> : never;
 declare const TYPE_STORE = "Store";

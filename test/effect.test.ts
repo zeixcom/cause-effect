@@ -7,7 +7,7 @@ import {
 	match,
 	resolve,
 	UNSET,
-} from '../'
+} from '..'
 
 /* === Utility Functions === */
 

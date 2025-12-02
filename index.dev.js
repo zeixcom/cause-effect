@@ -457,19 +457,16 @@ var createStore = (initialValue) => {
   const signals = new Map;
   const signalWatchers = new Map;
   const isArrayLike = Array.isArray(initialValue);
-  const size = createState(0);
   const current = () => {
     const record = {};
-    for (const [key, signal] of signals) {
+    for (const [key, signal] of signals)
       record[key] = signal.get();
-    }
     return record;
   };
   const emit = (key, changes) => {
     Object.freeze(changes);
-    for (const listener of listeners[key]) {
+    for (const listener of listeners[key])
       listener(changes);
-    }
   };
   const getSortedIndexes = () => Array.from(signals.keys()).map((k) => Number(k)).filter((n) => Number.isInteger(n)).sort((a, b) => a - b);
   const isValidValue = (key, value) => {
@@ -494,7 +491,6 @@ var createStore = (initialValue) => {
     watcher();
     signalWatchers.set(key, watcher);
     if (single) {
-      size.set(signals.size);
       notify(watchers);
       emit("add", {
         [key]: value
@@ -511,7 +507,6 @@ var createStore = (initialValue) => {
       signalWatchers.delete(key);
     }
     if (single) {
-      size.set(signals.size);
       notify(watchers);
       emit("remove", {
         [key]: UNSET
@@ -553,7 +548,6 @@ var createStore = (initialValue) => {
           removeProperty(key);
         emit("remove", changes.remove);
       }
-      size.set(signals.size);
     });
     return changes.changed;
   };
@@ -621,8 +615,7 @@ var createStore = (initialValue) => {
     on: (type, listener) => {
       listeners[type].add(listener);
       return () => listeners[type].delete(listener);
-    },
-    size
+    }
   };
   return new Proxy({}, {
     get(_target, prop) {
@@ -646,18 +639,18 @@ var createStore = (initialValue) => {
         return;
       if (prop in store)
         return store[prop];
-      if (prop === "length" && isArrayLike) {
+      if (prop === "length") {
         subscribe(watchers);
-        return size.get();
+        return signals.size;
       }
       return signals.get(prop);
     },
     has(_target, prop) {
       const stringProp = String(prop);
-      return stringProp && signals.has(stringProp) || Object.keys(store).includes(stringProp) || prop === Symbol.toStringTag || prop === Symbol.iterator || prop === Symbol.isConcatSpreadable || prop === "length" && isArrayLike;
+      return stringProp && signals.has(stringProp) || Object.keys(store).includes(stringProp) || prop === Symbol.toStringTag || prop === Symbol.iterator || prop === Symbol.isConcatSpreadable || prop === "length";
     },
     ownKeys() {
-      return isArrayLike ? getSortedIndexes().map((key) => String(key)).concat(["length"]) : Array.from(signals.keys()).map((key) => String(key));
+      return isArrayLike ? getSortedIndexes().map((key) => String(key)).concat(["length"]) : Array.from(signals.keys()).map((key) => String(key)).concat(["length"]);
     },
     getOwnPropertyDescriptor(_target, prop) {
       const nonEnumerable = (value) => ({
@@ -666,12 +659,14 @@ var createStore = (initialValue) => {
         writable: false,
         value
       });
-      if (prop === "length" && isArrayLike)
+      if (prop === "length")
         return {
-          enumerable: true,
+          enumerable: isArrayLike,
           configurable: true,
-          writable: false,
-          value: size.get()
+          get: () => {
+            subscribe(watchers);
+            return signals.size;
+          }
         };
       if (prop === Symbol.isConcatSpreadable)
         return nonEnumerable(isArrayLike);
@@ -721,6 +716,7 @@ export {
   isSignal,
   isRecordOrArray,
   isRecord,
+  isObjectOfType,
   isNumber,
   isMutableSignal,
   isFunction,

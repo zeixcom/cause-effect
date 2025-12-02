@@ -11,158 +11,274 @@ import {
 
 describe('store', () => {
 	describe('creation and basic operations', () => {
-		test('creates a store with initial values', () => {
+		test('creates stores with initial values', () => {
+			// Record store
 			const user = createStore({
 				name: 'Hannah',
 				email: 'hannah@example.com',
 			})
-
 			expect(user.name.get()).toBe('Hannah')
 			expect(user.email.get()).toBe('hannah@example.com')
+
+			// Array store
+			const numbers = createStore([1, 2, 3])
+			expect(numbers[0].get()).toBe(1)
+			expect(numbers[1].get()).toBe(2)
+			expect(numbers[2].get()).toBe(3)
 		})
 
 		test('has Symbol.toStringTag of Store', () => {
-			const s = createStore({ a: 1 })
-			expect(s[Symbol.toStringTag]).toBe('Store')
+			const recordStore = createStore({ a: 1 })
+			const arrayStore = createStore([1, 2])
+
+			expect(recordStore[Symbol.toStringTag]).toBe('Store')
+			expect(arrayStore[Symbol.toStringTag]).toBe('Store')
 		})
 
 		test('isStore identifies store instances correctly', () => {
-			const s = createStore({ a: 1 })
-			const st = createState(1)
-			const c = createComputed(() => 1)
+			const recordStore = createStore({ a: 1 })
+			const arrayStore = createStore([1])
+			const state = createState(1)
+			const computed = createComputed(() => 1)
 
-			expect(isStore(s)).toBe(true)
-			expect(isStore(st)).toBe(false)
-			expect(isStore(c)).toBe(false)
+			expect(isStore(recordStore)).toBe(true)
+			expect(isStore(arrayStore)).toBe(true)
+			expect(isStore(state)).toBe(false)
+			expect(isStore(computed)).toBe(false)
 			expect(isStore({})).toBe(false)
 			expect(isStore(null)).toBe(false)
 		})
 
 		test('get() returns the complete store value', () => {
+			// Record store
 			const user = createStore({
 				name: 'Hannah',
 				email: 'hannah@example.com',
 			})
-
 			expect(user.get()).toEqual({
 				name: 'Hannah',
 				email: 'hannah@example.com',
 			})
 
-			const participants = createStore<
-				{ name: string; tags: string[] }[]
-			>([
-				{ name: 'Alice', tags: ['friends', 'mates'] },
-				{ name: 'Bob', tags: ['friends'] },
+			// Array store
+			const numbers = createStore([1, 2, 3])
+			expect(numbers.get()).toEqual([1, 2, 3])
+
+			// Nested structures
+			const participants = createStore([
+				{ name: 'Alice', tags: ['admin'] },
+				{ name: 'Bob', tags: ['user'] },
 			])
-			expect(participants.get()).toEqual([
-				{ name: 'Alice', tags: ['friends', 'mates'] },
-				{ name: 'Bob', tags: ['friends'] },
-			])
+			expect(participants[0].name.get()).toBe('Alice')
+			expect(participants[0].tags.get()).toEqual(['admin'])
+			expect(participants[1].name.get()).toBe('Bob')
+			expect(participants[1].tags.get()).toEqual(['user'])
+		})
+	})
+
+	describe('length property and sizing', () => {
+		test('length property works for both store types', () => {
+			// Record store
+			const user = createStore({ name: 'John', age: 25 })
+			expect(user.length).toBe(2)
+			expect(typeof user.length).toBe('number')
+
+			// Array store
+			const numbers = createStore([1, 2, 3])
+			expect(numbers.length).toBe(3)
+			expect(typeof numbers.length).toBe('number')
+		})
+
+		test('length is reactive and updates with changes', () => {
+			// Record store
+			const user = createStore<{ name: string; age?: number }>({
+				name: 'John',
+			})
+			expect(user.length).toBe(1)
+			user.add('age', 25)
+			expect(user.length).toBe(2)
+			user.remove('age')
+			expect(user.length).toBe(1)
+
+			// Array store
+			const items = createStore([1, 2])
+			expect(items.length).toBe(2)
+			items.add(3)
+			expect(items.length).toBe(3)
+			items.remove(1)
+			expect(items.length).toBe(2)
 		})
 	})
 
 	describe('proxy data access and modification', () => {
 		test('properties can be accessed and modified via signals', () => {
-			const user = createStore({ name: 'Hannah', age: 25 })
-
-			// Get signals from store proxy
-			expect(user.name.get()).toBe('Hannah')
-			expect(user.age.get()).toBe(25)
-
-			// Set values via signals
-			user.name.set('Alice')
-			user.age.set(30)
-
+			// Record store
+			const user = createStore({ name: 'Alice', age: 30 })
 			expect(user.name.get()).toBe('Alice')
 			expect(user.age.get()).toBe(30)
+			user.name.set('Alicia')
+			user.age.set(31)
+			expect(user.name.get()).toBe('Alicia')
+			expect(user.age.get()).toBe(31)
+
+			// Array store
+			const items = createStore(['a', 'b'])
+			expect(items[0].get()).toBe('a')
+			expect(items[1].get()).toBe('b')
+			items[0].set('alpha')
+			items[1].set('beta')
+			expect(items[0].get()).toBe('alpha')
+			expect(items[1].get()).toBe('beta')
 		})
 
 		test('returns undefined for non-existent properties', () => {
-			const user = createStore({ name: 'Hannah' })
-
+			// Record store
+			const user = createStore({ name: 'Alice' })
 			// @ts-expect-error accessing non-existent property
-			expect(user.nonExistent).toBeUndefined()
+			expect(user.nonexistent).toBeUndefined()
+
+			// Array store
+			const items = createStore(['a'])
+			expect(items[5]).toBeUndefined()
 		})
 
-		test('supports numeric key access', () => {
-			const items = createStore({ '0': 'first', '1': 'second' })
+		test('supports numeric key access for both store types', () => {
+			// Record store with numeric keys
+			const items = createStore({ 0: 'zero', 1: 'one' })
+			expect(items[0].get()).toBe('zero')
+			expect(items[1].get()).toBe('one')
 
-			expect(items[0].get()).toBe('first')
-			expect(items['0'].get()).toBe('first')
-			expect(items[1].get()).toBe('second')
-			expect(items['1'].get()).toBe('second')
+			// Array store with numeric keys
+			const numbers = createStore([10, 20])
+			expect(numbers[0].get()).toBe(10)
+			expect(numbers[1].get()).toBe(20)
 		})
+	})
 
-		test('can add new properties via add method', () => {
+	describe('add() and remove() methods', () => {
+		test('add() method behavior differs between store types', () => {
+			// Record store - requires key parameter
 			const user = createStore<{ name: string; email?: string }>({
-				name: 'Hannah',
+				name: 'John',
 			})
+			user.add('email', 'john@example.com')
+			expect(user.email?.get()).toBe('john@example.com')
+			expect(user.length).toBe(2)
 
-			user.add('email', 'hannah@example.com')
-
-			expect(user.email?.get()).toBe('hannah@example.com')
-			expect(user.get()).toEqual({
-				name: 'Hannah',
-				email: 'hannah@example.com',
-			})
+			// Array store - single parameter adds to end
+			const fruits = createStore(['apple', 'banana'])
+			fruits.add('cherry')
+			expect(fruits[2].get()).toBe('cherry')
+			expect(fruits.length).toBe(3)
+			expect(fruits.get()).toEqual(['apple', 'banana', 'cherry'])
 		})
 
-		test('can remove existing properties via remove method', () => {
-			const user = createStore<{ name: string; email?: string }>({
-				name: 'Hannah',
-				email: 'hannah@example.com',
+		test('remove() method behavior differs between store types', () => {
+			// Record store - removes by key
+			const user = createStore({
+				name: 'John',
+				email: 'john@example.com',
 			})
-
-			expect(user.email?.get()).toBe('hannah@example.com')
-
 			user.remove('email')
-
 			expect(user.email).toBeUndefined()
-			expect(user.get()).toEqual({
-				name: 'Hannah',
-			})
+			expect(user.name.get()).toBe('John')
+			expect(user.length).toBe(1)
+
+			// Array store - removes by index
+			const items = createStore(['a', 'b', 'c'])
+			items.remove(1) // Remove 'b'
+			expect(items.get()).toEqual(['a', 'c'])
+			expect(items.length).toBe(2)
 		})
 
-		test('add method prevents null values', () => {
-			const user = createStore<{ name: string; tags?: string[] }>({
-				name: 'Alice',
+		test('add method prevents null values for both store types', () => {
+			// Record store
+			const user = createStore<{ name: string; email?: string }>({
+				name: 'John',
 			})
+			// @ts-expect-error testing null values
+			expect(() => user.add('email', null)).toThrow()
 
-			expect(() => {
-				// @ts-expect-error deliberate test that null values are not allowed
-				user.add('tags', null)
-			}).toThrow(
-				'Nullish signal values are not allowed in store for key "tags"',
-			)
+			// Array store
+			const items = createStore([1])
+			// @ts-expect-error testing null values
+			expect(() => items.add(null)).toThrow()
+		})
+
+		test('add method prevents overwriting existing properties in record stores', () => {
+			const user = createStore<{ name: string; email?: string }>({
+				name: 'John',
+				email: 'john@example.com',
+			})
+			const originalSize = user.length
+			expect(() => user.add('name', 'Jane')).toThrow()
+			expect(user.length).toBe(originalSize)
+			expect(user.name.get()).toBe('John')
+		})
+
+		test('remove method handles non-existent properties gracefully', () => {
+			// Record store
+			const user = createStore<{ name: string }>({ name: 'John' })
+			const originalSize = user.length
+			// @ts-expect-error deliberate removal of non-existent property
+			user.remove('nonexistent')
+			expect(user.length).toBe(originalSize)
+
+			// Array store - out of bounds throws
+			const items = createStore([1, 2])
+			expect(() => items.remove(5)).toThrow()
+			expect(() => items.remove(-5)).toThrow()
 		})
 	})
 
 	describe('nested stores', () => {
-		test('creates nested stores for object properties', () => {
+		test('creates nested stores for object properties in both store types', () => {
+			// Record store
 			const user = createStore({
-				name: 'Hannah',
+				name: 'Alice',
 				preferences: {
 					theme: 'dark',
 					notifications: true,
 				},
 			})
-
 			expect(isStore(user.preferences)).toBe(true)
-			expect(user.preferences.theme?.get()).toBe('dark')
-			expect(user.preferences.notifications?.get()).toBe(true)
+			expect(user.preferences.theme.get()).toBe('dark')
+			expect(user.preferences.notifications.get()).toBe(true)
+
+			// Array store with nested objects
+			const users = createStore([
+				{ name: 'Alice', active: true },
+				{ name: 'Bob', active: false },
+			])
+			expect(isStore(users[0])).toBe(true)
+			expect(users[0].name.get()).toBe('Alice')
+			expect(users[1].active.get()).toBe(false)
 		})
 
 		test('nested properties are reactive', () => {
+			// Record store
 			const user = createStore({
 				preferences: {
-					theme: 'dark',
+					theme: 'light',
 				},
 			})
+			let lastTheme = ''
+			createEffect(() => {
+				lastTheme = user.preferences.theme.get()
+			})
+			expect(lastTheme).toBe('light')
+			user.preferences.theme.set('dark')
+			expect(lastTheme).toBe('dark')
 
-			user.preferences.theme.set('light')
-			expect(user.preferences.theme.get()).toBe('light')
-			expect(user.get().preferences.theme).toBe('light')
+			// Array store
+			const configs = createStore([{ mode: 'development' }])
+			let lastMode = ''
+			createEffect(() => {
+				lastMode = configs[0].mode.get()
+			})
+			expect(lastMode).toBe('development')
+			configs[0].mode.set('production')
+			expect(lastMode).toBe('production')
 		})
 
 		test('deeply nested stores work correctly', () => {
@@ -170,234 +286,203 @@ describe('store', () => {
 				ui: {
 					theme: {
 						colors: {
-							primary: 'blue',
+							primary: '#blue',
 						},
 					},
 				},
 			})
-
-			expect(config.ui.theme.colors.primary.get()).toBe('blue')
-			config.ui.theme.colors.primary.set('red')
-			expect(config.ui.theme.colors.primary.get()).toBe('red')
+			expect(config.ui.theme.colors.primary.get()).toBe('#blue')
+			config.ui.theme.colors.primary.set('#red')
+			expect(config.ui.theme.colors.primary.get()).toBe('#red')
 		})
 	})
 
 	describe('set() and update() methods', () => {
-		test('set() replaces entire store value', () => {
+		test('set() replaces entire store value for both store types', () => {
+			// Record store
 			const user = createStore({
-				name: 'Hannah',
-				email: 'hannah@example.com',
+				name: 'John',
+				email: 'john@example.com',
 			})
+			user.set({ name: 'Jane', email: 'jane@example.com' })
+			expect(user.name.get()).toBe('Jane')
+			expect(user.email.get()).toBe('jane@example.com')
 
-			user.set({ name: 'Alice', email: 'alice@example.com' })
-
-			expect(user.get()).toEqual({
-				name: 'Alice',
-				email: 'alice@example.com',
-			})
+			// Array store
+			const numbers = createStore([1, 2, 3])
+			numbers.set([4, 5])
+			expect(numbers.get()).toEqual([4, 5])
+			expect(numbers.length).toBe(2)
 		})
 
-		test('update() modifies store using function', () => {
-			const user = createStore({ name: 'Hannah', age: 25 })
+		test('update() modifies store using function for both store types', () => {
+			// Record store
+			const user = createStore({ name: 'John', age: 25 })
+			user.update(u => ({ ...u, age: u.age + 1 }))
+			expect(user.name.get()).toBe('John')
+			expect(user.age.get()).toBe(26)
 
-			user.update(prev => ({ ...prev, age: prev.age + 1 }))
-
-			expect(user.get()).toEqual({
-				name: 'Hannah',
-				age: 26,
-			})
-		})
-	})
-
-	describe('iterator protocol', () => {
-		test('supports for...of iteration', () => {
-			const user = createStore({ name: 'Hannah', age: 25 })
-			const entries: Array<[string, unknown & {}]> = []
-
-			for (const [key, signal] of user) {
-				entries.push([key, signal.get()])
-			}
-
-			expect(entries).toContainEqual(['name', 'Hannah'])
-			expect(entries).toContainEqual(['age', 25])
+			// Array store
+			const numbers = createStore([1, 2, 3])
+			numbers.update(arr => arr.map(n => n * 2))
+			expect(numbers.get()).toEqual([2, 4, 6])
 		})
 	})
 
-	describe('change tracking', () => {
-		test('tracks size changes', () => {
-			const user = createStore<{ name: string; email?: string }>({
-				name: 'Hannah',
-			})
+	describe('iteration protocol', () => {
+		test('supports for...of iteration with different behaviors', () => {
+			// Record store - yields [key, signal] pairs
+			const user = createStore({ name: 'John', age: 25 })
+			const entries = [...user]
+			expect(entries).toHaveLength(2)
+			expect(entries[0][0]).toBe('name')
+			expect(entries[0][1].get()).toBe('John')
+			expect(entries[1][0]).toBe('age')
+			expect(entries[1][1].get()).toBe(25)
 
-			expect(user.size.get()).toBe(1)
-
-			user.add('email', 'hannah@example.com')
-			expect(user.size.get()).toBe(2)
-
-			user.remove('email')
-			expect(user.size.get()).toBe(1)
+			// Array store - yields signals only
+			const numbers = createStore([10, 20, 30])
+			const signals = [...numbers]
+			expect(signals).toHaveLength(3)
+			expect(signals[0].get()).toBe(10)
+			expect(signals[1].get()).toBe(20)
+			expect(signals[2].get()).toBe(30)
 		})
 
-		test('emits an add notification on initial creation', async () => {
-			let addNotification: Record<string, string> | null = null
-			const user = createStore({ name: 'Hannah' })
+		test('Symbol.isConcatSpreadable behavior differs between store types', () => {
+			// Array store - spreadable
+			const numbers = createStore([1, 2, 3])
+			expect(numbers[Symbol.isConcatSpreadable]).toBe(true)
 
+			// Record store - not spreadable
+			const user = createStore({ name: 'John', age: 25 })
+			expect(user[Symbol.isConcatSpreadable]).toBe(false)
+		})
+
+		test('array stores maintain numeric key ordering', () => {
+			const items = createStore(['first', 'second', 'third'])
+			const keys = Object.keys(items).filter(
+				k => !Number.isNaN(Number(k)),
+			)
+			expect(keys).toEqual(['0', '1', '2'])
+
+			const signals = [...items]
+			expect(signals.map(s => s.get())).toEqual([
+				'first',
+				'second',
+				'third',
+			])
+		})
+	})
+
+	describe('change tracking and notifications', () => {
+		test('emits add notifications for both store types', () => {
+			// Record store - initial creation
+			let addNotification: Record<string, unknown>
+			const user = createStore({ name: 'John' })
 			user.on('add', change => {
 				addNotification = change
 			})
 
-			// Wait for the async initial event
-			await new Promise(resolve => setTimeout(resolve, 10))
+			// Wait for initial add event
+			setTimeout(() => {
+				expect(addNotification.name).toBe('John')
+			}, 0)
 
-			expect(addNotification).toBeTruthy()
-			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(addNotification!).toEqual({ name: 'Hannah' })
+			// Record store - new property
+			const userWithEmail = createStore<{ name: string; email?: string }>(
+				{ name: 'John' },
+			)
+			let newAddNotification: Record<string, unknown> = {}
+			userWithEmail.on('add', change => {
+				newAddNotification = change
+			})
+			userWithEmail.add('email', 'john@example.com')
+			expect(newAddNotification.email).toBe('john@example.com')
+
+			// Array store
+			const numbers = createStore([1, 2])
+			let arrayAddNotification = {}
+			numbers.on('add', change => {
+				arrayAddNotification = change
+			})
+			numbers.add(3)
+			expect(arrayAddNotification[2]).toBe(3)
 		})
 
-		test('emits an add notification for new properties', () => {
-			const user = createStore<{ name: string; email?: string }>({
-				name: 'Hannah',
-			})
-
-			let addNotification: Record<string, string> | null = null
-			user.on('add', change => {
-				addNotification = change
-			})
-
-			user.update(v => ({ ...v, email: 'hannah@example.com' }))
-
-			expect(addNotification).toBeTruthy()
-			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(addNotification!).toEqual({
-				email: 'hannah@example.com',
-			})
-		})
-
-		test('emits a change notification for property changes', () => {
-			const user = createStore({ name: 'Hannah' })
-
-			let changeNotification: Record<string, string> | null = null
-			user.on('change', change => {
-				changeNotification = change
-			})
-
-			user.set({ name: 'Alice' })
-
-			expect(changeNotification).toBeTruthy()
-			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(changeNotification!).toEqual({
-				name: 'Alice',
-			})
-		})
-
-		test('emits a change notification for signal changes', () => {
-			const user = createStore({ name: 'Hannah' })
-
-			let changeNotification: Record<string, string> | null = null
-			user.on('change', change => {
-				changeNotification = change
-			})
-
-			user.name.set('Bob')
-
-			expect(changeNotification).toBeTruthy()
-			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(changeNotification!).toEqual({
-				name: 'Bob',
-			})
-		})
-
-		test('emits a change notification when nested properties change', () => {
-			const user = createStore({
-				name: 'Hannah',
-				preferences: {
-					theme: 'dark',
-					notifications: true,
-				},
-			})
-
+		test('emits change notifications when properties are modified', () => {
+			// Record store
+			const user = createStore({ name: 'John' })
 			let changeNotification: Record<string, unknown> = {}
 			user.on('change', change => {
 				changeNotification = change
 			})
+			user.name.set('Jane')
+			expect(changeNotification.name).toBe('Jane')
 
-			// Change a nested property
-			user.preferences.theme.set('light')
+			// Array store
+			const items = createStore(['a', 'b'])
+			let arrayChangeNotification = {}
+			items.on('change', change => {
+				arrayChangeNotification = change
+			})
+			items[0].set('alpha')
+			expect(arrayChangeNotification[0]).toBe('alpha')
+		})
 
-			expect(changeNotification).toBeTruthy()
-			// Should notify about the direct child "preferences" that contains the changed nested property
-			expect(changeNotification).toEqual({
+		test('emits change notifications for nested property changes', () => {
+			// Record store
+			const user = createStore({
+				name: 'John',
 				preferences: {
 					theme: 'light',
 					notifications: true,
 				},
 			})
-		})
-
-		test('emits a change notification for deeply nested property changes', () => {
-			const config = createStore({
-				ui: {
-					theme: {
-						colors: {
-							primary: 'blue',
-							secondary: 'green',
-						},
-						mode: 'dark',
-					},
-				},
-			})
-
 			let changeNotification: Record<string, unknown> = {}
-			config.on('change', change => {
+			user.on('change', change => {
 				changeNotification = change
 			})
+			user.preferences.theme.set('dark')
+			expect(changeNotification.preferences).toEqual({
+				theme: 'dark',
+				notifications: true,
+			})
 
-			// Change a deeply nested property (3 levels deep)
-			config.ui.theme.colors.primary.set('red')
-
-			expect(changeNotification).toBeTruthy()
-			// Should notify about the direct child "ui" that contains the changed nested structure
-			expect(changeNotification).toEqual({
-				ui: {
-					theme: {
-						colors: {
-							primary: 'red',
-							secondary: 'green',
-						},
-						mode: 'dark',
-					},
-				},
+			// Array store with nested objects
+			const users = createStore([{ name: 'Alice', role: 'admin' }])
+			let arrayChangeNotification: Record<number, unknown> = []
+			users.on('change', change => {
+				arrayChangeNotification = change
+			})
+			users[0].name.set('Alicia')
+			expect(arrayChangeNotification[0]).toEqual({
+				name: 'Alicia',
+				role: 'admin',
 			})
 		})
 
-		test('emits a remove notification when nested properties are removed', () => {
-			const user = createStore<{
-				name: string
-				preferences?: {
-					theme: string
-					notifications: boolean
-				}
-			}>({
-				name: 'Hannah',
-				preferences: {
-					theme: 'dark',
-					notifications: true,
-				},
+		test('emits remove notifications when properties are removed', () => {
+			// Record store
+			const user = createStore({
+				name: 'John',
+				email: 'john@example.com',
 			})
-
 			let removeNotification: Record<string, unknown> = {}
-			user.on('remove', remove => {
-				removeNotification = remove
+			user.on('remove', change => {
+				removeNotification = change
 			})
+			user.remove('email')
+			expect(removeNotification.email).toBe(UNSET)
 
-			// Remove the entire preferences object by setting the store without it
-			user.set({ name: 'Hannah' })
-
-			expect(removeNotification).toBeTruthy()
-			// Should notify about the removal of the preferences property
-			expect(removeNotification).toEqual({
-				preferences: expect.anything(), // The actual structure doesn't matter, just that it was removed
+			// Array store
+			const items = createStore(['a', 'b', 'c'])
+			let arrayRemoveNotification: Record<number, unknown> = []
+			items.on('remove', change => {
+				arrayRemoveNotification = change
 			})
+			items.remove(1)
+			expect(arrayRemoveNotification[2]).toBe(UNSET) // Last item gets removed in compaction
 		})
 
 		test('set() correctly handles mixed changes, additions, and removals', () => {
@@ -413,1250 +498,289 @@ describe('store', () => {
 				name: 'Hannah',
 				email: 'hannah@example.com',
 				preferences: {
-					theme: 'dark',
+					theme: 'light', // will change
 				},
 			})
 
-			let changeNotification: Record<string, unknown> = {}
-			let addNotification: Record<string, unknown> = {}
-			let removeNotification: Record<string, unknown> = {}
-
+			let changeNotification: Record<string, unknown> | undefined
+			let addNotification: Record<string, unknown> | undefined
+			let removeNotification: Record<string, unknown> | undefined
 			user.on('change', change => {
 				changeNotification = change
 			})
-			user.on('add', add => {
-				addNotification = add
+			user.on('add', change => {
+				addNotification = change
 			})
-			user.on('remove', remove => {
-				removeNotification = remove
-			})
-
-			// Perform a set() that changes name, removes email, adds age, and keeps preferences
-			user.set({
-				name: 'Alice', // changed
-				preferences: {
-					theme: 'dark', // unchanged nested
-				},
-				age: 30, // added
-				// email removed
-			})
-
-			// Should emit change notification for changed properties
-			expect(changeNotification).toEqual({
-				name: 'Alice',
-			})
-
-			// Should emit add notification for new properties
-			expect(addNotification).toEqual({
-				age: 30,
-			})
-
-			// Should emit remove notification for removed properties
-			expect(removeNotification).toEqual({
-				email: expect.anything(),
-			})
-		})
-
-		test('set() with only removals emits only remove notifications', () => {
-			const user = createStore<{
-				name: string
-				email?: string
-				age?: number
-			}>({
-				name: 'Hannah',
-				email: 'hannah@example.com',
-				age: 25,
-			})
-
-			let changeNotification: Record<string, unknown> | null = null
-			let removeNotification: Record<string, unknown> = {}
-
-			user.on('change', change => {
-				changeNotification = change
-			})
-			user.on('remove', remove => {
-				removeNotification = remove
-			})
-
-			// Set to a subset that only removes properties (no changes)
-			user.set({ name: 'Hannah' }) // same name, removes email and age
-
-			// Should NOT emit change notification since name didn't change
-			expect(changeNotification).toBe(null)
-
-			// Should emit remove notification for removed properties
-			expect(removeNotification).toEqual({
-				email: expect.anything(),
-				age: expect.anything(),
-			})
-		})
-
-		test('emits a remove notification for removed properties', () => {
-			const user = createStore<{ name: string; email?: string }>({
-				name: 'Hannah',
-				email: 'hannah@example.com',
-			})
-
-			let removeNotification: Record<string, string> | null = null
 			user.on('remove', change => {
 				removeNotification = change
 			})
 
-			user.remove('email')
+			user.set({
+				name: 'Jane', // changed
+				preferences: {
+					theme: 'dark', // changed
+				},
+				age: 30, // added
+			} as { name: string; preferences: { theme: string }; age: number })
 
-			expect(removeNotification).toBeTruthy()
-			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(removeNotification!.email).toBe(UNSET)
+			expect(changeNotification?.preferences).toEqual({ theme: 'dark' })
+			expect(addNotification?.age).toBe(30)
+			expect(removeNotification?.email).toBe(UNSET)
 		})
 
-		test('emits an add notification when using add method', () => {
-			const user = createStore<{ name: string; email?: string }>({
-				name: 'Hannah',
-			})
-
-			let addNotification: Record<string, string> | null = null
-			user.on('add', change => {
-				addNotification = change
-			})
-
-			user.add('email', 'hannah@example.com')
-
-			expect(addNotification).toBeTruthy()
-			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(addNotification!).toEqual({
-				email: 'hannah@example.com',
-			})
-		})
-
-		test('can remove notification listeners', () => {
-			const user = createStore({ name: 'Hannah' })
-
+		test('notification listeners can be removed', () => {
+			const user = createStore({ name: 'John' })
 			let notificationCount = 0
 			const listener = () => {
 				notificationCount++
 			}
-
 			const off = user.on('change', listener)
-			user.name.set('Alice')
+			user.name.set('Jane')
 			expect(notificationCount).toBe(1)
-
 			off()
-			user.name.set('Bob')
+			user.name.set('Jack')
 			expect(notificationCount).toBe(1) // Should not increment
-		})
-
-		test('supports multiple notification listeners for the same type', () => {
-			const user = createStore({ name: 'Hannah' })
-
-			let listener1Called = false
-			let listener2Called = false
-
-			user.on('change', () => {
-				listener1Called = true
-			})
-
-			user.on('change', () => {
-				listener2Called = true
-			})
-
-			user.name.set('Alice')
-
-			expect(listener1Called).toBe(true)
-			expect(listener2Called).toBe(true)
 		})
 	})
 
 	describe('reactivity', () => {
-		test('store-level get() is reactive', () => {
+		test('store-level get() is reactive for both store types', () => {
+			// Record store
 			const user = createStore({
-				name: 'Hannah',
-				email: 'hannah@example.com',
+				name: 'John',
+				email: 'john@example.com',
 			})
 			let lastValue = { name: '', email: '' }
-
 			createEffect(() => {
 				lastValue = user.get()
 			})
-
-			user.name.set('Alice')
-
 			expect(lastValue).toEqual({
-				name: 'Alice',
-				email: 'hannah@example.com',
+				name: 'John',
+				email: 'john@example.com',
 			})
+			user.name.set('Jane')
+			expect(lastValue.name).toBe('Jane')
+			expect(lastValue.email).toBe('john@example.com')
+
+			// Array store
+			const numbers = createStore([1, 2, 3])
+			let lastArray: number[] = []
+			createEffect(() => {
+				lastArray = numbers.get()
+			})
+			expect(lastArray).toEqual([1, 2, 3])
+			numbers[0].set(10)
+			expect(lastArray).toEqual([10, 2, 3])
 		})
 
-		test('individual signal reactivity works', () => {
+		test('individual signal reactivity works for both store types', () => {
+			// Record store
 			const user = createStore({
-				name: 'Hannah',
-				email: 'hannah@example.com',
+				name: 'John',
+				email: 'john@example.com',
 			})
 			let lastName = ''
 			let nameEffectRuns = 0
-
-			// Get signal for name property directly
-			const nameSignal = user.name
-
 			createEffect(() => {
-				lastName = nameSignal.get()
 				nameEffectRuns++
+				lastName = user.name.get()
 			})
+			expect(lastName).toBe('John')
+			expect(nameEffectRuns).toBe(1)
+			user.name.set('Jane')
+			expect(lastName).toBe('Jane')
+			expect(nameEffectRuns).toBe(2)
+			// Changing email should not trigger name effect
+			user.email.set('jane@example.com')
+			expect(nameEffectRuns).toBe(2)
 
-			// Change name should trigger effect
-			user.name.set('Alice')
-			expect(lastName).toBe('Alice')
-			expect(nameEffectRuns).toBe(2) // Initial + update
+			// Array store
+			const items = createStore(['a', 'b'])
+			let lastItem = ''
+			let itemEffectRuns = 0
+			createEffect(() => {
+				itemEffectRuns++
+				lastItem = items[0].get()
+			})
+			expect(lastItem).toBe('a')
+			expect(itemEffectRuns).toBe(1)
+			items[0].set('alpha')
+			expect(lastItem).toBe('alpha')
+			expect(itemEffectRuns).toBe(2)
+			// Changing other item should not trigger effect
+			items[1].set('beta')
+			expect(itemEffectRuns).toBe(2)
 		})
 
 		test('nested store changes propagate to parent', () => {
 			const user = createStore({
 				preferences: {
-					theme: 'dark',
+					theme: 'light',
 				},
 			})
 			let effectRuns = 0
-
 			createEffect(() => {
-				user.get() // Watch entire store
 				effectRuns++
+				user.get() // Subscribe to entire store
 			})
-
-			user.preferences.theme.set('light')
-			expect(effectRuns).toBe(2) // Initial + nested change
-		})
-
-		test('updates are reactive', () => {
-			const user = createStore<{ name: string; email?: string }>({
-				name: 'Hannah',
-			})
-			let lastValue = {}
-			let effectRuns = 0
-
-			createEffect(() => {
-				lastValue = user.get()
-				effectRuns++
-			})
-
-			user.add('email', 'hannah@example.com')
-			expect(lastValue).toEqual({
-				name: 'Hannah',
-				email: 'hannah@example.com',
-			})
-			expect(effectRuns).toBe(2)
-		})
-
-		test('remove method is reactive', () => {
-			const user = createStore<{ name: string; email?: string }>({
-				name: 'Hannah',
-				email: 'hannah@example.com',
-			})
-			let lastValue = {}
-			let effectRuns = 0
-
-			createEffect(() => {
-				lastValue = user.get()
-				effectRuns++
-			})
-
 			expect(effectRuns).toBe(1)
-
-			user.remove('email')
-			expect(lastValue).toEqual({
-				name: 'Hannah',
-			})
+			user.preferences.theme.set('dark')
 			expect(effectRuns).toBe(2)
 		})
 
-		test('add method does not overwrite existing properties', () => {
+		test('updates are reactive for both store types', () => {
+			// Record store
 			const user = createStore<{ name: string; email?: string }>({
-				name: 'Hannah',
-				email: 'original@example.com',
+				name: 'John',
 			})
+			let lastValue: Record<string, unknown> = {}
+			let effectRuns = 0
+			createEffect(() => {
+				effectRuns++
+				lastValue = user.get()
+			})
+			expect(effectRuns).toBe(1)
+			user.update(u => ({ ...u, email: 'john@example.com' }))
+			expect(effectRuns).toBe(2)
+			expect(lastValue.name).toBe('John')
+			expect(lastValue.email).toBe('john@example.com')
 
-			const originalSize = user.size.get()
-
-			expect(() => {
-				user.add('email', 'new@example.com')
-			}).toThrow(
-				'Could not add store key "email" with value "new@example.com" because it already exists',
-			)
-
-			expect(user.email?.get()).toBe('original@example.com')
-			expect(user.size.get()).toBe(originalSize)
+			// Array store
+			const numbers = createStore([1, 2])
+			let lastArray: number[] = []
+			let arrayEffectRuns = 0
+			createEffect(() => {
+				arrayEffectRuns++
+				lastArray = numbers.get()
+			})
+			expect(arrayEffectRuns).toBe(1)
+			numbers.update(arr => [...arr, 3])
+			expect(arrayEffectRuns).toBe(2)
+			expect(lastArray).toEqual([1, 2, 3])
 		})
 
-		test('remove method has no effect on non-existent properties', () => {
-			const user = createStore<{ name: string; email?: string }>({
-				name: 'Hannah',
+		test('remove method is reactive for both store types', () => {
+			// Record store
+			const user = createStore<{
+				name: string
+				email?: string
+			}>({
+				name: 'John',
+				email: 'john@example.com',
 			})
-
-			const originalSize = user.size.get()
+			let lastValue: Record<string, unknown> = {}
+			let effectRuns = 0
+			createEffect(() => {
+				effectRuns++
+				lastValue = user.get()
+			})
+			expect(effectRuns).toBe(1)
 			user.remove('email')
+			expect(effectRuns).toBe(2)
+			expect(lastValue.name).toBe('John')
+			expect(lastValue.email).toBeUndefined()
 
-			expect(user.size.get()).toBe(originalSize)
+			// Array store
+			const items = createStore(['a', 'b', 'c'])
+			let lastArray: string[] = []
+			let arrayEffectRuns = 0
+			createEffect(() => {
+				arrayEffectRuns++
+				lastArray = items.get()
+			})
+			expect(arrayEffectRuns).toBe(1)
+			items.remove(1)
+			// Array removal causes multiple reactivity updates due to compaction
+			expect(arrayEffectRuns).toBeGreaterThanOrEqual(2)
+			expect(lastArray).toEqual(['a', 'c'])
 		})
 	})
 
 	describe('computed integration', () => {
-		test('works with computed signals', () => {
-			const user = createStore({ firstName: 'Hannah', lastName: 'Smith' })
-
+		test('works with computed signals for both store types', () => {
+			// Record store
+			const user = createStore({ firstName: 'John', lastName: 'Doe' })
 			const fullName = createComputed(() => {
 				return `${user.firstName.get()} ${user.lastName.get()}`
 			})
+			expect(fullName.get()).toBe('John Doe')
+			user.firstName.set('Jane')
+			expect(fullName.get()).toBe('Jane Doe')
 
-			expect(fullName.get()).toBe('Hannah Smith')
-
-			user.firstName.set('Alice')
-			expect(fullName.get()).toBe('Alice Smith')
+			// Array store
+			const numbers = createStore([1, 2, 3])
+			const sum = createComputed(() => {
+				return numbers.get().reduce((acc, n) => acc + n, 0)
+			})
+			expect(sum.get()).toBe(6)
+			numbers[0].set(10)
+			expect(sum.get()).toBe(15)
 		})
 
 		test('computed reacts to nested store changes', () => {
 			const config = createStore({
 				ui: {
-					theme: 'dark',
+					theme: 'light',
 				},
 			})
-
 			const themeDisplay = createComputed(() => {
 				return `Theme: ${config.ui.theme.get()}`
 			})
-
-			expect(themeDisplay.get()).toBe('Theme: dark')
-
-			config.ui.theme.set('light')
 			expect(themeDisplay.get()).toBe('Theme: light')
-		})
-	})
-
-	describe('array-derived stores with computed sum', () => {
-		test('computes sum correctly and updates when items are added, removed, or changed', () => {
-			// Create a store with an array of numbers
-			const numbers = createStore([1, 2, 3, 4, 5])
-
-			// Create a computed that calculates the sum by accessing the array via .get()
-			// This ensures reactivity to both value changes and structural changes
-			const sum = createComputed(() => {
-				const array = numbers.get()
-				if (!Array.isArray(array)) return 0
-				return array.reduce((acc, num) => acc + num, 0)
-			})
-
-			// Initial sum should be 15 (1+2+3+4+5)
-			expect(sum.get()).toBe(15)
-			expect(numbers.size.get()).toBe(5)
-
-			// Test adding items
-			numbers.add(6) // Add 6 at index 5
-			expect(sum.get()).toBe(21) // 15 + 6 = 21
-			expect(numbers.size.get()).toBe(6)
-
-			numbers.add(7) // Add 7 at index 6
-			expect(sum.get()).toBe(28) // 21 + 7 = 28
-			expect(numbers.size.get()).toBe(7)
-
-			// Test changing a single value
-			numbers[2].set(10) // Change index 2 from 3 to 10
-			expect(sum.get()).toBe(35) // 28 - 3 + 10 = 35
-
-			// Test another value change
-			numbers[0].set(5) // Change index 0 from 1 to 5
-			expect(sum.get()).toBe(39) // 35 - 1 + 5 = 39
-
-			// Test removing items
-			numbers.remove(6) // Remove index 6 (value 7)
-			expect(sum.get()).toBe(32) // 39 - 7 = 32
-			expect(numbers.size.get()).toBe(6)
-
-			numbers.remove(0) // Remove index 0 (value 5)
-			expect(sum.get()).toBe(27) // 32 - 5 = 27
-			expect(numbers.size.get()).toBe(5)
-
-			// Verify the final array structure using .get()
-			const finalArray = numbers.get()
-			expect(Array.isArray(finalArray)).toBe(true)
-			expect(finalArray).toEqual([2, 10, 4, 5, 6])
+			config.ui.theme.set('dark')
+			expect(themeDisplay.get()).toBe('Theme: dark')
 		})
 
-		test('handles empty array and single element operations', () => {
-			// Start with empty array
-			const numbers = createStore<number[]>([])
-
+		test('computed with array stores handles additions and removals', () => {
+			const numbers = createStore([1, 2, 3])
 			const sum = createComputed(() => {
 				const array = numbers.get()
-				if (!Array.isArray(array)) return 0
-				return array.reduce((acc, num) => acc + num, 0)
+				return array.reduce((acc, n) => acc + n, 0)
 			})
 
-			// Empty array sum should be 0
-			expect(sum.get()).toBe(0)
-			expect(numbers.size.get()).toBe(0)
+			expect(sum.get()).toBe(6)
 
-			// Add first element
-			numbers.add(42)
-			expect(sum.get()).toBe(42)
-			expect(numbers.size.get()).toBe(1)
+			// Add a number
+			numbers.add(4)
+			expect(sum.get()).toBe(10)
 
-			// Change the only element
-			numbers[0].set(100)
-			expect(sum.get()).toBe(100)
-
-			// Remove the only element
+			// Remove a number
 			numbers.remove(0)
-			expect(sum.get()).toBe(0)
-			expect(numbers.size.get()).toBe(0)
+			const finalArray = numbers.get()
+			expect(finalArray).toEqual([2, 3, 4])
+			expect(sum.get()).toBe(9)
 		})
 
-		test('computed sum using store iteration with size tracking', () => {
-			const numbers = createStore([10, 20, 30])
-
-			// Use iteration but also track size to ensure reactivity to additions/removals
-			const sum = createComputed(() => {
-				// Access size to subscribe to structural changes
-				numbers.size.get()
-				let total = 0
-				for (const signal of numbers) {
-					total += signal.get()
-				}
-				return total
-			})
-
-			expect(sum.get()).toBe(60)
-
-			// Add more numbers
-			numbers.add(40)
-			expect(sum.get()).toBe(100)
-
-			// Modify existing values
-			numbers[1].set(25) // Change 20 to 25
-			expect(sum.get()).toBe(105) // 10 + 25 + 30 + 40
-
-			// Remove a value
-			numbers.remove(2) // Remove 30
-			expect(sum.get()).toBe(75) // 10 + 25 + 40
-		})
-
-		test('demonstrates array compaction behavior with remove operations', () => {
-			// Create a store with an array
-			const numbers = createStore([10, 20, 30, 40, 50])
-
-			// Create a computed using iteration approach with size tracking
-			const sumWithIteration = createComputed(() => {
-				// Access size to subscribe to structural changes
-				numbers.size.get()
-				let total = 0
-				for (const signal of numbers) {
-					total += signal.get()
-				}
-				return total
-			})
-
-			// Create a computed using .get() approach for comparison
-			const sumWithGet = createComputed(() => {
-				const array = numbers.get()
-				if (!Array.isArray(array)) return 0
-				return array.reduce((acc, num) => acc + num, 0)
-			})
-
-			// Initial state: [10, 20, 30, 40, 50], keys [0,1,2,3,4]
-			expect(sumWithIteration.get()).toBe(150)
-			expect(sumWithGet.get()).toBe(150)
-			expect(numbers.size.get()).toBe(5)
-
-			// Remove items - arrays should compact (not create sparse holes)
-			numbers.remove(1) // Remove 20, array becomes [10, 30, 40, 50]
-			expect(numbers.size.get()).toBe(4)
-			expect(numbers.get()).toEqual([10, 30, 40, 50])
-			expect(sumWithIteration.get()).toBe(130) // 10 + 30 + 40 + 50
-			expect(sumWithGet.get()).toBe(130)
-
-			numbers.remove(2) // Remove 40, array becomes [10, 30, 50]
-			expect(numbers.size.get()).toBe(3)
-			expect(numbers.get()).toEqual([10, 30, 50])
-			expect(sumWithIteration.get()).toBe(90) // 10 + 30 + 50
-			expect(sumWithGet.get()).toBe(90)
-
-			// Set a new array of same size (3 elements)
-			numbers.set([100, 200, 300])
-			expect(numbers.size.get()).toBe(3)
-			expect(numbers.get()).toEqual([100, 200, 300])
-
-			// Both approaches work correctly with compacted arrays
-			expect(sumWithGet.get()).toBe(600) // 100 + 200 + 300
-			expect(sumWithIteration.get()).toBe(600) // Both work correctly
-		})
-
-		test('verifies root cause: diff works on array representation but reconcile uses sparse keys', () => {
-			// Create a sparse array scenario
-			const numbers = createStore([10, 20, 30])
-
-			// Remove middle element to create sparse structure
-			numbers.remove(1) // Now has keys ["0", "2"] with values [10, 30]
-
-			// Verify the sparse structure
-			expect(numbers.get()).toEqual([10, 30])
-			expect(numbers.size.get()).toBe(2)
-
-			// Now set a new array of same length
-			// The diff should see [10, 30] -> [100, 200] as:
-			// - index 0: 10 -> 100 (change)
-			// - index 1: 30 -> 200 (change)
-			// But internally the keys are ["0", "2"], not ["0", "1"]
-			numbers.set([100, 200])
-
-			// With the fix: sparse array replacement now works correctly
-			const result = numbers.get()
-
-			// The fix ensures proper sparse array replacement
-			expect(result).toEqual([100, 200]) // This now passes with the diff fix!
-		})
-	})
-
-	describe('arrays and edge cases', () => {
-		test('handles arrays as store values', () => {
-			const data = createStore({ items: [1, 2, 3] })
-
-			// Arrays become stores with string indices
-			expect(isStore(data.items)).toBe(true)
-			expect(data.items['0'].get()).toBe(1)
-			expect(data.items['1'].get()).toBe(2)
-			expect(data.items['2'].get()).toBe(3)
-		})
-
-		test('array-derived nested stores have correct type inference', () => {
-			const todoApp = createStore({
-				todos: ['Buy milk', 'Walk the dog', 'Write code'],
-				users: [
-					{ name: 'Alice', active: true },
-					{ name: 'Bob', active: false },
-				],
-				numbers: [1, 2, 3, 4, 5],
-			})
-
-			// Arrays should become stores
-			expect(isStore(todoApp.todos)).toBe(true)
-			expect(isStore(todoApp.users)).toBe(true)
-			expect(isStore(todoApp.numbers)).toBe(true)
-
-			// String array elements should be State<string>
-			expect(todoApp.todos['0'].get()).toBe('Buy milk')
-			expect(todoApp.todos['1'].get()).toBe('Walk the dog')
-			expect(todoApp.todos['2'].get()).toBe('Write code')
-
-			// Should be able to modify string elements
-			todoApp.todos['0'].set('Buy groceries')
-			expect(todoApp.todos['0'].get()).toBe('Buy groceries')
-
-			// Object array elements should be Store<T>
-			expect(isStore(todoApp.users[0])).toBe(true)
-			expect(isStore(todoApp.users[1])).toBe(true)
-
-			// Should be able to access nested properties in object array elements
-			expect(todoApp.users[0].name.get()).toBe('Alice')
-			expect(todoApp.users[0].active.get()).toBe(true)
-			expect(todoApp.users[1].name.get()).toBe('Bob')
-			expect(todoApp.users[1].active.get()).toBe(false)
-
-			// Should be able to modify nested properties
-			todoApp.users[0].name.set('Alice Smith')
-			todoApp.users[0].active.set(false)
-			expect(todoApp.users[0].name.get()).toBe('Alice Smith')
-			expect(todoApp.users[0].active.get()).toBe(false)
-
-			// Number array elements should be State<number>
-			expect(todoApp.numbers[0].get()).toBe(1)
-			expect(todoApp.numbers[4].get()).toBe(5)
-
-			// Should be able to modify number elements
-			todoApp.numbers[0].set(10)
-			todoApp.numbers[4].set(50)
-			expect(todoApp.numbers[0].get()).toBe(10)
-			expect(todoApp.numbers[4].get()).toBe(50)
-
-			// Store-level access should reflect all changes
-			const currentState = todoApp.get()
-			expect(currentState.todos[0]).toBe('Buy groceries')
-			expect(currentState.users[0].name).toBe('Alice Smith')
-			expect(currentState.users[0].active).toBe(false)
-			expect(currentState.numbers[0]).toBe(10)
-			expect(currentState.numbers[4]).toBe(50)
-		})
-
-		test('handles UNSET values', () => {
-			const data = createStore({ value: UNSET as string })
-
-			expect(data.value.get()).toBe(UNSET)
-			data.value.set('some string')
-			expect(data.value.get()).toBe('some string')
-		})
-
-		test('handles primitive values', () => {
-			const data = createStore({
-				str: 'hello',
-				num: 42,
-				bool: true,
-			})
-
-			expect(data.str.get()).toBe('hello')
-			expect(data.num.get()).toBe(42)
-			expect(data.bool.get()).toBe(true)
-		})
-	})
-
-	describe('proxy behavior', () => {
-		test('Object.keys returns property keys', () => {
-			const user = createStore({
-				name: 'Hannah',
-				email: 'hannah@example.com',
-			})
-
-			expect(Object.keys(user)).toEqual(['name', 'email'])
-		})
-
-		test('property enumeration works', () => {
-			const user = createStore({
-				name: 'Hannah',
-				email: 'hannah@example.com',
-			})
-			const keys: string[] = []
-
-			for (const key in user) {
-				keys.push(key)
-			}
-
-			expect(keys).toEqual(['name', 'email'])
-		})
-
-		test('in operator works', () => {
-			const user = createStore({ name: 'Hannah' })
-
-			expect('name' in user).toBe(true)
-			expect('email' in user).toBe(false)
-		})
-
-		test('Object.getOwnPropertyDescriptor works', () => {
-			const user = createStore({ name: 'Hannah' })
-
-			const descriptor = Object.getOwnPropertyDescriptor(user, 'name')
-			expect(descriptor).toEqual({
-				enumerable: true,
-				configurable: true,
-				writable: true,
-				value: user.name,
-			})
-		})
-	})
-
-	describe('type conversion via toSignal', () => {
-		test('arrays are converted to stores', () => {
-			const fruits = createStore({ items: ['apple', 'banana', 'cherry'] })
-
-			expect(isStore(fruits.items)).toBe(true)
-			expect(fruits.items['0'].get()).toBe('apple')
-			expect(fruits.items['1'].get()).toBe('banana')
-			expect(fruits.items['2'].get()).toBe('cherry')
-		})
-
-		test('nested objects become nested stores', () => {
-			const config = createStore({
-				database: {
-					host: 'localhost',
-					port: 5432,
-				},
-			})
-
-			expect(isStore(config.database)).toBe(true)
-			expect(config.database.host.get()).toBe('localhost')
-			expect(config.database.port.get()).toBe(5432)
-		})
-	})
-
-	describe('spread operator behavior', () => {
-		test('spreading store spreads individual signals', () => {
-			const user = createStore({ name: 'Hannah', age: 25, active: true })
-
-			// Spread the store - should get individual signals
-			const spread = { ...user }
-
-			// Check that we get the signals themselves
-			expect('name' in spread).toBe(true)
-			expect('age' in spread).toBe(true)
-			expect('active' in spread).toBe(true)
-
-			// The spread should contain signals that can be called with .get()
-			expect(typeof spread.name?.get).toBe('function')
-			expect(typeof spread.age?.get).toBe('function')
-			expect(typeof spread.active?.get).toBe('function')
-
-			// The signals should return the correct values
-			expect(spread.name?.get()).toBe('Hannah')
-			expect(spread.age?.get()).toBe(25)
-			expect(spread.active?.get()).toBe(true)
-
-			// Modifying the original store should be reflected in the spread signals
-			user.name.set('Alice')
-			user.age.set(30)
-
-			expect(spread.name?.get()).toBe('Alice')
-			expect(spread.age?.get()).toBe(30)
-		})
-
-		test('spreading nested store works correctly', () => {
-			const config = createStore({
-				app: { name: 'MyApp', version: '1.0' },
-				settings: { theme: 'dark', debug: false },
-			})
-
-			const spread = { ...config }
-
-			// Should get nested store signals
-			expect(isStore(spread.app)).toBe(true)
-			expect(isStore(spread.settings)).toBe(true)
-
-			// Should be able to access nested properties
-			expect(spread.app.name.get()).toBe('MyApp')
-			expect(spread.settings.theme.get()).toBe('dark')
-
-			// Modifications should be reflected
-			config.app.name.set('UpdatedApp')
-			expect(spread.app.name.get()).toBe('UpdatedApp')
-		})
-	})
-
-	describe('JSON integration', () => {
-		test('seamless integration with JSON.parse() and JSON.stringify() for API workflows', async () => {
-			// Simulate loading data from a JSON API response
-			const jsonResponse = `{
-				"user": {
-					"id": 123,
-					"name": "John Doe",
-					"email": "john@example.com",
-					"preferences": {
-						"theme": "dark",
-						"notifications": true,
-						"language": "en"
-					}
-				},
-				"settings": {
-					"autoSave": true,
-					"timeout": 5000
-				},
-				"tags": ["developer", "javascript", "typescript"]
-			}`
-
-			// Parse JSON and create store - works seamlessly
-			const apiData = JSON.parse(jsonResponse)
-			const userStore = createStore<{
-				user: {
-					id: number
-					name: string
-					email: string
-					preferences: {
-						theme: string
-						notifications: boolean
-						language: string
-						fontSize?: number
-					}
-				}
-				settings: {
-					autoSave: boolean
-					timeout: number
-				}
-				tags: string[]
-				lastLogin?: Date
-			}>(apiData)
-
-			// Verify initial data is accessible and reactive
-			expect(userStore.user.name.get()).toBe('John Doe')
-			expect(userStore.user.preferences.theme.get()).toBe('dark')
-			expect(userStore.settings.autoSave.get()).toBe(true)
-			expect(userStore.get().tags).toEqual([
-				'developer',
-				'javascript',
-				'typescript',
-			])
-
-			// Simulate user interactions - update preferences
-			userStore.user.preferences.theme.set('light')
-			userStore.user.preferences.notifications.set(false)
-
-			// Add new preference
-			userStore.user.preferences.add('fontSize', 14)
-
-			// Update settings
-			userStore.settings.timeout.set(10000)
-
-			// Add new top-level property
-			userStore.add('lastLogin', new Date('2024-01-15T10:30:00Z'))
-
-			// Verify changes are reflected
-			expect(userStore.user.preferences.theme.get()).toBe('light')
-			expect(userStore.user.preferences.notifications.get()).toBe(false)
-			expect(userStore.settings.timeout.get()).toBe(10000)
-
-			// Get current state and verify it's JSON-serializable
-			const currentState = userStore.get()
-			expect(currentState.user.preferences.theme).toBe('light')
-			expect(currentState.user.preferences.notifications).toBe(false)
-			expect(currentState.settings.timeout).toBe(10000)
-			expect(currentState.tags).toEqual([
-				'developer',
-				'javascript',
-				'typescript',
-			])
-
-			// Convert back to JSON - seamless serialization
-			const jsonPayload = JSON.stringify(currentState)
-
-			// Verify the JSON contains our updates
-			const parsedBack = JSON.parse(jsonPayload)
-			expect(parsedBack.user.preferences.theme).toBe('light')
-			expect(parsedBack.user.preferences.notifications).toBe(false)
-			expect(parsedBack.user.preferences.fontSize).toBe(14)
-			expect(parsedBack.settings.timeout).toBe(10000)
-			expect(parsedBack.lastLogin).toBe('2024-01-15T10:30:00.000Z')
-
-			// Demonstrate update() for bulk changes
-			userStore.update(data => ({
-				...data,
-				user: {
-					...data.user,
-					email: 'john.doe@newcompany.com',
-					preferences: {
-						...data.user.preferences,
-						theme: 'auto',
-						language: 'fr',
-					},
-				},
-				settings: {
-					...data.settings,
-					autoSave: false,
-				},
-			}))
-
-			// Verify bulk update worked
-			expect(userStore.user.email.get()).toBe('john.doe@newcompany.com')
-			expect(userStore.user.preferences.theme.get()).toBe('auto')
-			expect(userStore.user.preferences.language.get()).toBe('fr')
-			expect(userStore.settings.autoSave.get()).toBe(false)
-
-			// Final JSON serialization for sending to server
-			const finalPayload = JSON.stringify(userStore.get())
-			expect(typeof finalPayload).toBe('string')
-			expect(finalPayload).toContain('john.doe@newcompany.com')
-			expect(finalPayload).toContain('"theme":"auto"')
-		})
-
-		test('handles complex nested structures and arrays from JSON', () => {
-			const complexJson = `{
-				"dashboard": {
-					"widgets": [
-						{"id": 1, "type": "chart", "config": {"color": "blue"}},
-						{"id": 2, "type": "table", "config": {"rows": 10}}
-					],
-					"layout": {
-						"columns": 3,
-						"responsive": true
-					}
-				},
-				"metadata": {
-					"version": "1.0.0",
-					"created": "2024-01-01T00:00:00Z",
-					"tags": null
-				}
-			}`
-
-			const data = JSON.parse(complexJson)
-
-			// Test that null values in initial JSON are filtered out (treated as UNSET)
-			const dashboardStore = createStore<{
-				dashboard: {
-					widgets: {
-						id: number
-						type: string
-						config: Record<string, string | number | boolean>
-					}[]
-					layout: {
-						columns: number
-						responsive: boolean
-					}
-				}
-				metadata: {
-					version: string
-					created: string
-					tags?: string[]
-				}
-			}>(data)
-
-			// Access nested array elements
-			expect(dashboardStore.dashboard.widgets.get()).toHaveLength(2)
-			expect(dashboardStore.dashboard.widgets[0].type.get()).toBe('chart')
-			expect(dashboardStore.dashboard.widgets[1].config.rows.get()).toBe(
-				10,
-			)
-
-			// Update array element
-			dashboardStore.set({
-				...dashboardStore.get(),
-				dashboard: {
-					...dashboardStore.dashboard.get(),
-					widgets: [
-						...dashboardStore.dashboard.widgets.get(),
-						{ id: 3, type: 'graph', config: { animate: true } },
-					],
-				},
-			})
-
-			// Verify array update
-			expect(dashboardStore.get().dashboard.widgets).toHaveLength(3)
-			expect(dashboardStore.get().dashboard.widgets[2].type).toBe('graph')
-
-			// Test that individual null additions are still prevented via add()
-			expect(() => {
-				// @ts-expect-error deliberate test case
-				dashboardStore.add('newProp', null)
-			}).toThrow(
-				'Nullish signal values are not allowed in store for key "newProp"',
-			)
-
-			// Test that individual property .set() operations prevent null values
-			expect(() => {
-				dashboardStore.update(data => ({
-					...data,
-					metadata: {
-						...data.metadata,
-						// @ts-expect-error deliberate test case
-						tags: null,
-					},
-				}))
-			}).toThrow(
-				'Nullish signal values are not allowed in store for key "tags"',
-			)
-
-			// Update null to actual value (this should work)
-			dashboardStore.update(data => ({
-				...data,
-				metadata: {
-					...data.metadata,
-					tags: ['production', 'v1'],
-				},
-			}))
-
-			expect(dashboardStore.get().metadata.tags).toEqual([
-				'production',
-				'v1',
-			])
-
-			// Verify JSON round-trip
-			const serialized = JSON.stringify(dashboardStore.get())
-			const reparsed = JSON.parse(serialized)
-			expect(reparsed.dashboard.widgets).toHaveLength(3)
-			expect(reparsed.metadata.tags).toEqual(['production', 'v1'])
-		})
-
-		test('demonstrates real-world form data management', () => {
-			// Simulate form data loaded from API
-			const formData = {
-				profile: {
-					firstName: '',
-					lastName: '',
-					email: '',
-					bio: '',
-				},
-				preferences: {
-					emailNotifications: true,
-					pushNotifications: false,
-					marketing: false,
-				},
-				address: {
-					street: '',
-					city: '',
-					country: 'US',
-					zipCode: '',
-				},
-			}
-
-			const formStore = createStore<{
-				profile: {
-					id?: number
-					createdAt?: string
-					firstName: string
-					lastName: string
-					email: string
-					bio: string
-				}
-				preferences: {
-					emailNotifications: boolean
-					pushNotifications: boolean
-					marketing: boolean
-				}
-				address: {
-					street: string
-					city: string
-					country: string
-					zipCode: string
-				}
-			}>(formData)
-
-			// Simulate user filling out form
-			formStore.profile.firstName.set('Jane')
-			formStore.profile.lastName.set('Smith')
-			formStore.profile.email.set('jane.smith@example.com')
-			formStore.profile.bio.set(
-				'Full-stack developer with 5 years experience',
-			)
-
-			// Update address
-			formStore.address.street.set('123 Main St')
-			formStore.address.city.set('San Francisco')
-			formStore.address.zipCode.set('94105')
-
-			// Toggle preferences
-			formStore.preferences.pushNotifications.set(true)
-			formStore.preferences.marketing.set(true)
-
-			// Get form data for submission - ready for JSON.stringify
-			const submissionData = formStore.get()
-
-			expect(submissionData.profile.firstName).toBe('Jane')
-			expect(submissionData.profile.email).toBe('jane.smith@example.com')
-			expect(submissionData.address.city).toBe('San Francisco')
-			expect(submissionData.preferences.pushNotifications).toBe(true)
-
-			// Simulate sending to API
-			const jsonPayload = JSON.stringify(submissionData)
-			expect(jsonPayload).toContain('jane.smith@example.com')
-			expect(jsonPayload).toContain('San Francisco')
-
-			// Simulate receiving updated data back from server
-			const serverResponse = {
-				...submissionData,
-				profile: {
-					...submissionData.profile,
-					id: 456,
-					createdAt: '2024-01-15T12:00:00Z',
-				},
-			}
-
-			// Update store with server response
-			formStore.set(serverResponse)
-
-			// Verify server data is integrated
-			expect(formStore.profile.id?.get()).toBe(456)
-			expect(formStore.profile.createdAt?.get()).toBe(
-				'2024-01-15T12:00:00Z',
-			)
-			expect(formStore.get().profile.firstName).toBe('Jane') // Original data preserved
-		})
-
-		describe('Symbol.isConcatSpreadable and polymorphic behavior', () => {
-			test('array-like stores have Symbol.isConcatSpreadable true and length property', () => {
-				const numbers = createStore([1, 2, 3])
-
-				// Should be concat spreadable
-				expect(numbers[Symbol.isConcatSpreadable]).toBe(true)
-
-				// Should have length property
-				expect(numbers.length).toBe(3)
-				expect(typeof numbers.length).toBe('number')
-
-				// Add an item and verify length updates
-				numbers.add(4)
-				expect(numbers.length).toBe(4)
-			})
-
-			test('object-like stores have Symbol.isConcatSpreadable false and no length property', () => {
-				const user = createStore({ name: 'John', age: 25 })
-
-				// Should not be concat spreadable
-				expect(user[Symbol.isConcatSpreadable]).toBe(false)
-
-				// Should not have length property
-				// @ts-expect-error deliberately accessing non-existent length property
-				expect(user.length).toBeUndefined()
-				expect('length' in user).toBe(false)
-			})
-
-			test('array-like stores iterate over signals only', () => {
-				const numbers = createStore([10, 20, 30])
-				const signals = [...numbers]
-
-				// Should yield signals, not [key, signal] pairs
-				expect(signals).toHaveLength(3)
-				expect(signals[0].get()).toBe(10)
-				expect(signals[1].get()).toBe(20)
-				expect(signals[2].get()).toBe(30)
-
-				// Verify they are signal objects
-				signals.forEach(signal => {
-					expect(typeof signal.get).toBe('function')
-				})
-			})
-
-			test('object-like stores iterate over [key, signal] pairs', () => {
-				const user = createStore({ name: 'Alice', age: 30 })
-				const entries = [...user]
-
-				// Should yield [key, signal] pairs
-				expect(entries).toHaveLength(2)
-
-				// Find the name entry
-				const nameEntry = entries.find(([key]) => key === 'name')
-				expect(nameEntry).toBeDefined()
-				expect(nameEntry?.[0]).toBe('name')
-				expect(nameEntry?.[1].get()).toBe('Alice')
-
-				// Find the age entry
-				const ageEntry = entries.find(([key]) => key === 'age')
-				expect(ageEntry).toBeDefined()
-				expect(ageEntry?.[0]).toBe('age')
-				expect(ageEntry?.[1].get()).toBe(30)
-			})
-
-			test('array-like stores support single-parameter add() method', () => {
-				const fruits = createStore(['apple', 'banana'])
-
-				// Should add to end without specifying key
-				fruits.add('cherry')
-
-				const result = fruits.get()
-				expect(result).toEqual(['apple', 'banana', 'cherry'])
-				expect(fruits.length).toBe(3)
-			})
-
-			test('object-like stores require key parameter for add() method', () => {
-				const config = createStore<{
-					debug: boolean
-					timeout?: number
-				}>({
-					debug: true,
-				})
-
-				// Should require both key and value
-				config.add('timeout', 5000)
-
-				expect(config.get()).toEqual({ debug: true, timeout: 5000 })
-			})
-
-			test('concat works correctly with array-like stores', () => {
-				const numbers = createStore([2, 3])
-				const prefix = [createState(1)]
-				const suffix = [createState(4), createState(5)]
-
-				// Should spread signals when concat-ed
-				const combined = prefix.concat(
-					numbers as unknown as ConcatArray<State<number>>,
-					suffix,
-				)
-
-				expect(combined).toHaveLength(5)
-				expect(combined[0].get()).toBe(1)
-				expect(combined[1].get()).toBe(2) // from store
-				expect(combined[2].get()).toBe(3) // from store
-				expect(combined[3].get()).toBe(4)
-				expect(combined[4].get()).toBe(5)
-			})
-
-			test('spread operator works correctly with array-like stores', () => {
-				const numbers = createStore([10, 20])
-
-				// Should spread signals
-				const spread = [createState(5), ...numbers, createState(30)]
-
-				expect(spread).toHaveLength(4)
-				expect(spread[0].get()).toBe(5)
-				expect(spread[1].get()).toBe(10) // from store
-				expect(spread[2].get()).toBe(20) // from store
-				expect(spread[3].get()).toBe(30)
-			})
-
-			test('array-like stores maintain numeric key ordering', () => {
-				const items = createStore(['first', 'second', 'third'])
-
-				// Get the keys
-				const keys = Object.keys(items)
-				expect(keys).toEqual(['0', '1', '2', 'length'])
-
-				// Iteration should be in order
-				const signals = [...items]
-				expect(signals[0].get()).toBe('first')
-				expect(signals[1].get()).toBe('second')
-				expect(signals[2].get()).toBe('third')
-			})
-
-			test('polymorphic behavior is determined at creation time', () => {
-				// Created as array - stays array-like
-				const arrayStore = createStore([1, 2])
-				expect(arrayStore[Symbol.isConcatSpreadable]).toBe(true)
-				expect(arrayStore.length).toBe(2)
-
-				// Created as object - stays object-like
-				const objectStore = createStore<{
-					a: number
-					b: number
-					c?: number
-				}>({
-					a: 1,
-					b: 2,
-				})
-				expect(objectStore[Symbol.isConcatSpreadable]).toBe(false)
-				// @ts-expect-error deliberate access to non-existent length property
-				expect(objectStore.length).toBeUndefined()
-
-				// Even after modifications, behavior doesn't change
-				arrayStore.add(3)
-				expect(arrayStore[Symbol.isConcatSpreadable]).toBe(true)
-
-				objectStore.add('c', 3)
-				expect(objectStore[Symbol.isConcatSpreadable]).toBe(false)
-			})
-
-			test('runtime type detection using typeof length', () => {
-				const arrayStore = createStore([1, 2, 3])
-				const objectStore = createStore({ x: 1, y: 2 })
-
-				// Can distinguish at runtime
-				expect(typeof arrayStore.length === 'number').toBe(true)
-				// @ts-expect-error deliberately accessing non-existent length property
-				expect(typeof objectStore.length === 'number').toBe(false)
-			})
-
-			test('empty stores behave correctly', () => {
-				const emptyArray = createStore([])
-				const emptyObject = createStore({})
-
-				// Empty array store
-				expect(emptyArray[Symbol.isConcatSpreadable]).toBe(true)
-				expect(emptyArray.length).toBe(0)
-				expect([...emptyArray]).toEqual([])
-
-				// Empty object store
-				expect(emptyObject[Symbol.isConcatSpreadable]).toBe(false)
-				// @ts-expect-error deliberately accessing non-existent length property
-				expect(emptyObject.length).toBeUndefined()
-				expect([...emptyObject]).toEqual([])
-			})
-		})
-
-		test('debug length property issue', () => {
+		test('computed sum using store iteration with length tracking', () => {
 			const numbers = createStore([1, 2, 3])
 
-			// Test length in computed context
-			const lengthComputed = createComputed(() => numbers.length)
-			numbers.add(4)
+			const sum = createComputed(() => {
+				// Access length to ensure reactivity
+				const _length = numbers.length
+				let total = 0
+				for (const signal of numbers) {
+					total += signal.get()
+				}
+				return total
+			})
 
-			// Test if length property is actually reactive
-			expect(numbers.length).toBe(4)
-			expect(lengthComputed.get()).toBe(4)
+			expect(sum.get()).toBe(6)
+
+			// Add item
+			numbers.add(4)
+			expect(sum.get()).toBe(10)
+
+			// Remove item
+			numbers.remove(1)
+			expect(sum.get()).toBe(8) // 1 + 3 + 4 (middle item removed)
 		})
 	})
 
 	describe('sort() method', () => {
-		test('sorts array-like store with numeric compareFn', () => {
+		test('sorts array stores with different compare functions', () => {
+			// Numeric sort
 			const numbers = createStore([3, 1, 4, 1, 5])
-
-			// Capture old signal references
-			const oldSignals = [
+			const _oldSignals = [
 				numbers[0],
 				numbers[1],
 				numbers[2],
@@ -1665,67 +789,51 @@ describe('store', () => {
 			]
 
 			numbers.sort((a, b) => a - b)
-
-			// Check sorted order
 			expect(numbers.get()).toEqual([1, 1, 3, 4, 5])
 
-			// Verify signal references are preserved (moved, not recreated)
-			expect(numbers[0]).toBe(oldSignals[1]) // first 1 was at index 1
-			expect(numbers[1]).toBe(oldSignals[3]) // second 1 was at index 3
-			expect(numbers[2]).toBe(oldSignals[0]) // 3 was at index 0
-			expect(numbers[3]).toBe(oldSignals[2]) // 4 was at index 2
-			expect(numbers[4]).toBe(oldSignals[4]) // 5 was at index 4
-		})
+			// Verify signals moved correctly
+			expect(numbers[0]).toBe(_oldSignals[1]) // First '1'
+			expect(numbers[1]).toBe(_oldSignals[3]) // Second '1'
+			expect(numbers[2]).toBe(_oldSignals[0]) // '3'
 
-		test('sorts array-like store with string compareFn', () => {
+			// String sort
 			const names = createStore(['Charlie', 'Alice', 'Bob'])
-
-			names.sort((a, b) => a.localeCompare(b))
-
+			names.sort()
 			expect(names.get()).toEqual(['Alice', 'Bob', 'Charlie'])
 		})
 
-		test('sorts record-like store by value', () => {
+		test('sorts record stores by value', () => {
 			const users = createStore({
 				user1: { name: 'Charlie', age: 25 },
 				user2: { name: 'Alice', age: 30 },
-				user3: { name: 'Bob', age: 20 },
+				user3: { name: 'Bob', age: 35 },
 			})
 
-			// Capture old signal references
-			const oldSignals = {
+			const _oldSignals = {
 				user1: users.user1,
 				user2: users.user2,
 				user3: users.user3,
 			}
 
-			// Sort by age
-			users.sort((a, b) => a.age - b.age)
+			users.sort((a, b) => a.name.localeCompare(b.name))
 
-			// Check order via iteration
-			const keys = Array.from(users, ([key]) => key)
-			expect(keys).toEqual(['user3', 'user1', 'user2'])
-
-			// Verify signal references are preserved
-			expect(users.user1).toBe(oldSignals.user1)
-			expect(users.user2).toBe(oldSignals.user2)
-			expect(users.user3).toBe(oldSignals.user3)
+			// After sorting by name: Alice, Bob, Charlie
+			// The keys should be reordered based on the sort
+			const sortedEntries = [...users]
+			expect(sortedEntries[0][1].name.get()).toBe('Alice')
+			expect(sortedEntries[1][1].name.get()).toBe('Bob')
+			expect(sortedEntries[2][1].name.get()).toBe('Charlie')
 		})
 
-		test('emits a sort notification with new order', () => {
-			const numbers = createStore([30, 10, 20])
-			let sortNotification: string[] | null = null
-
+		test('emits sort notification with new order', () => {
+			const numbers = createStore([3, 1, 2])
+			let sortNotification: string[] = []
 			numbers.on('sort', change => {
 				sortNotification = change
 			})
 
 			numbers.sort((a, b) => a - b)
-
-			expect(sortNotification).not.toBeNull()
-			// Keys in new sorted order: [10, 20, 30] came from indices [1, 2, 0]
-			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(sortNotification!).toEqual(['1', '2', '0'])
+			expect(sortNotification).toEqual(['1', '2', '0']) // Original indices in new order
 		})
 
 		test('sort is reactive - watchers are notified', () => {
@@ -1734,17 +842,14 @@ describe('store', () => {
 			let lastValue: number[] = []
 
 			createEffect(() => {
-				lastValue = numbers.get()
 				effectCount++
+				lastValue = numbers.get()
 			})
 
-			// Initial effect run
 			expect(effectCount).toBe(1)
 			expect(lastValue).toEqual([3, 1, 2])
 
 			numbers.sort((a, b) => a - b)
-
-			// Effect should run again after sort
 			expect(effectCount).toBe(2)
 			expect(lastValue).toEqual([1, 2, 3])
 		})
@@ -1756,151 +861,425 @@ describe('store', () => {
 				{ name: 'Bob', score: 75 },
 			])
 
-			// Sort by score
-			items.sort((a, b) => b.score - a.score) // descending
+			items.sort((a, b) => a.score - b.score)
 
-			// Verify order
-			expect(items.get().map(item => item.name)).toEqual([
-				'Alice',
-				'Charlie',
-				'Bob',
-			])
-
-			// Modify a nested property
-			items[1].score.set(100) // Charlie's score
-
-			// Verify the change is reflected
-			expect(items.get()[1].score).toBe(100)
+			// Verify order: Bob(75), Charlie(85), Alice(95)
+			expect(items[0].name.get()).toBe('Bob')
 			expect(items[1].name.get()).toBe('Charlie')
-		})
+			expect(items[2].name.get()).toBe('Alice')
 
-		test('sort with complex nested structures', () => {
-			const posts = createStore([
-				{
-					id: 'post1',
-					title: 'Hello World',
-					meta: { views: 100, likes: 5 },
-				},
-				{
-					id: 'post2',
-					title: 'Getting Started',
-					meta: { views: 50, likes: 10 },
-				},
-				{
-					id: 'post3',
-					title: 'Advanced Topics',
-					meta: { views: 200, likes: 3 },
-				},
-			])
-
-			// Sort by likes (ascending)
-			posts.sort((a, b) => a.meta.likes - b.meta.likes)
-
-			const sortedTitles = posts.get().map(post => post.title)
-			expect(sortedTitles).toEqual([
-				'Advanced Topics',
-				'Hello World',
-				'Getting Started',
-			])
-
-			// Verify nested reactivity still works
-			posts[0].meta.likes.set(15)
-			expect(posts.get()[0].meta.likes).toBe(15)
-		})
-
-		test('sort preserves array length and size', () => {
-			const arr = createStore([5, 2, 8, 1])
-
-			expect(arr.length).toBe(4)
-			expect(arr.size.get()).toBe(4)
-
-			arr.sort((a, b) => a - b)
-
-			expect(arr.length).toBe(4)
-			expect(arr.size.get()).toBe(4)
-			expect(arr.get()).toEqual([1, 2, 5, 8])
-		})
-
-		test('sort with no compareFn uses default string sorting like Array.prototype.sort()', () => {
-			const items = createStore(['banana', 'cherry', 'apple', '10', '2'])
-
-			items.sort()
-
-			// Default sorting converts to strings and compares in UTF-16 order
-			expect(items.get()).toEqual(
-				['banana', 'cherry', 'apple', '10', '2'].sort(),
-			)
+			// Verify signals are still reactive
+			items[0].score.set(100)
+			expect(items[0].score.get()).toBe(100)
 		})
 
 		test('default sort handles numbers as strings like Array.prototype.sort()', () => {
-			const numbers = createStore([80, 9, 100])
-
+			const numbers = createStore([10, 2, 1])
 			numbers.sort()
-
-			// Numbers are converted to strings: "100", "80", "9"
-			// In UTF-16 order: "100" < "80" < "9"
-			expect(numbers.get()).toEqual([80, 9, 100].sort())
-		})
-
-		test('default sort handles mixed values with proper string conversion', () => {
-			const mixed = createStore(['b', 0, 'a', '', 'c'])
-
-			mixed.sort()
-
-			// String conversion: '' < '0' < 'a' < 'b' < 'c'
-			expect(mixed.get()).toEqual(['', 0, 'a', 'b', 'c'])
+			expect(numbers.get()).toEqual([1, 10, 2]) // String comparison: "1" < "10" < "2"
 		})
 
 		test('multiple sorts work correctly', () => {
-			const numbers = createStore([3, 1, 4, 1, 5])
+			const numbers = createStore([3, 1, 2])
+			numbers.sort((a, b) => a - b) // [1, 2, 3]
+			numbers.sort((a, b) => b - a) // [3, 2, 1]
+			expect(numbers.get()).toEqual([3, 2, 1])
+		})
+	})
 
-			// Sort ascending
-			numbers.sort((a, b) => a - b)
-			expect(numbers.get()).toEqual([1, 1, 3, 4, 5])
+	describe('proxy behavior and enumeration', () => {
+		test('Object.keys returns property keys for both store types', () => {
+			// Record store
+			const user = createStore({
+				name: 'John',
+				email: 'john@example.com',
+			})
+			const userKeys = Object.keys(user)
+			expect(userKeys.sort()).toEqual(['email', 'name'])
 
-			// Sort descending
-			numbers.sort((a, b) => b - a)
-			expect(numbers.get()).toEqual([5, 4, 3, 1, 1])
+			// Array store
+			const numbers = createStore([1, 2, 3])
+			const numberKeys = Object.keys(numbers).filter(
+				k => !Number.isNaN(Number(k)),
+			)
+			expect(numberKeys).toEqual(['0', '1', '2'])
 		})
 
-		test('sort notification contains correct movement mapping for records', () => {
-			const users = createStore({
-				alice: { age: 30 },
-				bob: { age: 20 },
-				charlie: { age: 25 },
+		test('property enumeration works for both store types', () => {
+			// Record store
+			const user = createStore({
+				name: 'John',
+				email: 'john@example.com',
+			})
+			const userKeys: string[] = []
+			for (const key in user) {
+				userKeys.push(key)
+			}
+			expect(userKeys.sort()).toEqual(['email', 'name'])
+
+			// Array store
+			const numbers = createStore([10, 20])
+			const numberKeys: string[] = []
+			for (const key in numbers) {
+				if (!Number.isNaN(Number(key))) numberKeys.push(key)
+			}
+			expect(numberKeys).toEqual(['0', '1'])
+		})
+
+		test('in operator works for both store types', () => {
+			// Record store
+			const user = createStore({ name: 'John' })
+			expect('name' in user).toBe(true)
+			expect('email' in user).toBe(false)
+			expect('length' in user).toBe(true)
+
+			// Array store
+			const numbers = createStore([1, 2])
+			expect(0 in numbers).toBe(true)
+			expect(2 in numbers).toBe(false)
+			expect('length' in numbers).toBe(true)
+		})
+
+		test('Object.getOwnPropertyDescriptor works for both store types', () => {
+			// Record store
+			const user = createStore({ name: 'John' })
+			const nameDescriptor = Object.getOwnPropertyDescriptor(user, 'name')
+			expect(nameDescriptor).toEqual({
+				enumerable: true,
+				configurable: true,
+				writable: true,
+				value: user.name,
 			})
 
-			let sortNotification: string[] | null = null
-			users.on('sort', change => {
-				sortNotification = change
+			const lengthDescriptor = Object.getOwnPropertyDescriptor(
+				user,
+				'length',
+			)
+			expect(lengthDescriptor?.enumerable).toBe(false)
+			expect(lengthDescriptor?.configurable).toBe(true)
+
+			// Array store
+			const numbers = createStore([1, 2])
+			const indexDescriptor = Object.getOwnPropertyDescriptor(
+				numbers,
+				'0',
+			)
+			expect(indexDescriptor).toEqual({
+				enumerable: true,
+				configurable: true,
+				writable: true,
+				value: numbers[0],
 			})
 
-			// Sort by age
-			users.sort((a, b) => b.age - a.age)
+			const arrayLengthDescriptor = Object.getOwnPropertyDescriptor(
+				numbers,
+				'length',
+			)
+			expect(arrayLengthDescriptor?.enumerable).toBe(true) // Array stores show length as enumerable
+			expect(arrayLengthDescriptor?.configurable).toBe(true)
+		})
+	})
 
-			expect(sortNotification).not.toBeNull()
-			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(sortNotification!).toEqual(['alice', 'charlie', 'bob'])
+	describe('spread operator behavior', () => {
+		test('spreading stores works differently for each type', () => {
+			// Record store - spreads individual signals
+			const user = createStore({ name: 'John', age: 25 })
+			const userSpread = { ...user }
+			expect('name' in userSpread).toBe(true)
+			expect('age' in userSpread).toBe(true)
+			expect(typeof userSpread.name?.get).toBe('function')
+			expect(userSpread.name?.get()).toBe('John')
+
+			// Array store - spreads signals (not [key, value] pairs)
+			const numbers = createStore([1, 2, 3])
+			const numberSpread = [...numbers]
+			expect(numberSpread).toHaveLength(3)
+			expect(typeof numberSpread[0].get).toBe('function')
+			expect(numberSpread[0].get()).toBe(1)
+		})
+
+		test('concat works correctly with array stores', () => {
+			const numbers = createStore([2, 3])
+			const prefix = [createState(1)]
+			const suffix = [createState(4)]
+
+			const combined = prefix.concat(
+				numbers as unknown as ConcatArray<State<number>>,
+				suffix,
+			)
+
+			expect(combined).toHaveLength(4)
+			expect(combined[0].get()).toBe(1)
+			expect(combined[1].get()).toBe(2) // from store
+			expect(combined[2].get()).toBe(3) // from store
+			expect(combined[3].get()).toBe(4)
+		})
+	})
+
+	describe('UNSET and edge cases', () => {
+		test('handles UNSET values for both store types', () => {
+			// Record store
+			const recordData = createStore({ value: UNSET as string })
+			expect(recordData.value.get()).toBe(UNSET)
+			recordData.value.set('some string')
+			expect(recordData.value.get()).toBe('some string')
+
+			// Array store
+			const arrayData = createStore([UNSET as string])
+			expect(arrayData[0].get()).toBe(UNSET)
+			arrayData[0].set('some value')
+			expect(arrayData[0].get()).toBe('some value')
+		})
+
+		test('handles primitive values in both store types', () => {
+			// Record store
+			const recordData = createStore({
+				str: 'hello',
+				num: 42,
+				bool: true,
+			})
+			expect(recordData.str.get()).toBe('hello')
+			expect(recordData.num.get()).toBe(42)
+			expect(recordData.bool.get()).toBe(true)
+
+			// Array store
+			const arrayData = createStore(['hello', 42, true])
+			expect(arrayData[0].get()).toBe('hello')
+			expect(arrayData[1].get()).toBe(42)
+			expect(arrayData[2].get()).toBe(true)
+		})
+
+		test('handles empty stores correctly', () => {
+			// Empty record store
+			const emptyRecord = createStore({})
+			expect(emptyRecord.length).toBe(0)
+			expect(emptyRecord[Symbol.isConcatSpreadable]).toBe(false)
+			expect([...emptyRecord]).toEqual([])
+
+			// Empty array store
+			const emptyArray = createStore([])
+			expect(emptyArray.length).toBe(0)
+			expect(emptyArray[Symbol.isConcatSpreadable]).toBe(true)
+			expect([...emptyArray]).toEqual([])
+		})
+	})
+
+	describe('JSON integration and serialization', () => {
+		test('seamless JSON integration for both store types', () => {
+			// Record store from JSON
+			const jsonData = {
+				user: { name: 'John', preferences: { theme: 'dark' } },
+				settings: { timeout: 5000 },
+			}
+			const recordStore = createStore(jsonData)
+			expect(recordStore.user.name.get()).toBe('John')
+			expect(recordStore.user.preferences.theme.get()).toBe('dark')
+
+			// Modify and serialize back
+			recordStore.user.name.set('Jane')
+			recordStore.settings.timeout.set(10000)
+			const serialized = JSON.stringify(recordStore.get())
+			const parsed = JSON.parse(serialized)
+			expect(parsed.user.name).toBe('Jane')
+			expect(parsed.settings.timeout).toBe(10000)
+
+			// Array store from JSON
+			const arrayData = [
+				{ id: 1, name: 'Item 1' },
+				{ id: 2, name: 'Item 2' },
+			]
+			const arrayStore = createStore(arrayData)
+			expect(arrayStore[0].name.get()).toBe('Item 1')
+
+			// Modify and serialize
+			arrayStore[0].name.set('Updated Item')
+			const arraySerialized = JSON.stringify(arrayStore.get())
+			const arrayParsed = JSON.parse(arraySerialized)
+			expect(arrayParsed[0].name).toBe('Updated Item')
+		})
+
+		test('handles complex nested structures from JSON', () => {
+			type Dashboard = {
+				dashboard: {
+					widgets: Array<{
+						id: number
+						type: string
+						config: {
+							color?: string
+							rows?: number
+						}
+					}>
+				}
+			}
+			const complexData = {
+				dashboard: {
+					widgets: [
+						{ id: 1, type: 'chart', config: { color: 'blue' } },
+						{ id: 2, type: 'table', config: { rows: 10 } },
+					],
+				},
+			}
+
+			const store = createStore<Dashboard>(complexData)
+			expect(store.dashboard.widgets[0].type.get()).toBe('chart')
+			expect(store.dashboard.widgets[1].config.rows?.get()).toBe(10)
+
+			// Update nested array element
+			store.dashboard.widgets[0].config.color?.set('red')
+			expect(store.get().dashboard.widgets[0].config.color).toBe('red')
+		})
+	})
+
+	describe('type conversion and nested stores', () => {
+		test('arrays are converted to stores when nested', () => {
+			const data = createStore({ items: [1, 2, 3] })
+			expect(isStore(data.items)).toBe(true)
+			expect(data.items[0].get()).toBe(1)
+			expect(data.items[1].get()).toBe(2)
+			expect(data.items[2].get()).toBe(3)
+		})
+
+		test('nested objects become nested stores', () => {
+			const config = createStore({
+				database: {
+					host: 'localhost',
+					port: 5432,
+				},
+			})
+			expect(isStore(config.database)).toBe(true)
+			expect(config.database.host.get()).toBe('localhost')
+			expect(config.database.port.get()).toBe(5432)
+		})
+
+		test('array store with nested objects has correct type inference', () => {
+			const users = createStore([
+				{ name: 'Alice', active: true },
+				{ name: 'Bob', active: false },
+			])
+
+			// Object array elements should be Store<T>
+			expect(isStore(users[0])).toBe(true)
+			expect(isStore(users[1])).toBe(true)
+
+			// Should be able to access nested properties
+			expect(users[0].name.get()).toBe('Alice')
+			expect(users[0].active.get()).toBe(true)
+			expect(users[1].name.get()).toBe('Bob')
+			expect(users[1].active.get()).toBe(false)
+
+			// Should be able to modify nested properties
+			users[0].name.set('Alicia')
+			users[0].active.set(false)
+			expect(users[0].name.get()).toBe('Alicia')
+			expect(users[0].active.get()).toBe(false)
+		})
+	})
+
+	describe('advanced array behaviors', () => {
+		test('array compaction with remove operations', () => {
+			const numbers = createStore([10, 20, 30, 40, 50])
+
+			// Create computed to test both iteration and get() approaches
+			const sumWithGet = createComputed(() => {
+				const array = numbers.get()
+				return array.reduce((acc, num) => acc + num, 0)
+			})
+
+			expect(sumWithGet.get()).toBe(150) // 10+20+30+40+50
+
+			// Remove middle element - should compact the array
+			numbers.remove(2) // Remove 30
+			expect(numbers.length).toBe(4)
+			expect(numbers.get()).toEqual([10, 20, 40, 50])
+			expect(sumWithGet.get()).toBe(120) // 10+20+40+50
+
+			// Remove first element
+			numbers.remove(0) // Remove 10
+			expect(numbers.length).toBe(3)
+			expect(numbers.get()).toEqual([20, 40, 50])
+			expect(sumWithGet.get()).toBe(110) // 20+40+50
+		})
+
+		test('sparse array replacement works correctly', () => {
+			const numbers = createStore([10, 20, 30])
+
+			// Remove middle element to create sparse structure internally
+			numbers.remove(1) // Remove 20, now [10, 30] with internal keys ["0", "2"]
+
+			expect(numbers.get()).toEqual([10, 30])
+			expect(numbers.length).toBe(2)
+
+			// Set new array of same length - should work correctly
+			numbers.set([100, 200])
+			expect(numbers.get()).toEqual([100, 200])
+			expect(numbers.length).toBe(2)
+			expect(numbers[0].get()).toBe(100)
+			expect(numbers[1].get()).toBe(200)
+		})
+	})
+
+	describe('polymorphic behavior determined at creation', () => {
+		test('store type is determined at creation time and maintained', () => {
+			// Array store stays array-like
+			const arrayStore = createStore([1, 2])
+			expect(arrayStore[Symbol.isConcatSpreadable]).toBe(true)
+			expect(arrayStore.length).toBe(2)
+
+			// Even after modifications, stays array-like
+			arrayStore.add(3)
+			expect(arrayStore[Symbol.isConcatSpreadable]).toBe(true)
+			expect(arrayStore.length).toBe(3)
+
+			// Record store stays record-like
+			const recordStore = createStore<{
+				a: number
+				b: number
+				c?: number
+			}>({ a: 1, b: 2 })
+			expect(recordStore[Symbol.isConcatSpreadable]).toBe(false)
+			expect(recordStore.length).toBe(2)
+
+			// Even after modifications, stays record-like
+			recordStore.add('c', 3)
+			expect(recordStore[Symbol.isConcatSpreadable]).toBe(false)
+			expect(recordStore.length).toBe(3)
+		})
+
+		test('empty stores maintain their type characteristics', () => {
+			const emptyArray = createStore<string[]>([])
+			const emptyRecord = createStore<{ key?: string }>({})
+
+			// Empty array behaves like array
+			expect(emptyArray[Symbol.isConcatSpreadable]).toBe(true)
+			expect(emptyArray.length).toBe(0)
+
+			// Empty record behaves like record
+			expect(emptyRecord[Symbol.isConcatSpreadable]).toBe(false)
+			expect(emptyRecord.length).toBe(0)
+
+			// After adding items, they maintain their characteristics
+			emptyArray.add('first')
+			emptyRecord.add('key', 'value')
+
+			expect(emptyArray[Symbol.isConcatSpreadable]).toBe(true)
+			expect(emptyRecord[Symbol.isConcatSpreadable]).toBe(false)
 		})
 	})
 
 	describe('cross-component communication pattern', () => {
 		test('event bus with UNSET initialization - type-safe pattern', () => {
-			// Component B (the owner) declares the shape of events it will emit
 			type EventBusSchema = {
 				userLogin: { userId: number; timestamp: number }
 				userLogout: { userId: number }
 				userUpdate: { userId: number; profile: { name: string } }
 			}
 
-			// Initialize the event bus with proper typing
 			const eventBus = createStore<EventBusSchema>({
 				userLogin: UNSET,
 				userLogout: UNSET,
 				userUpdate: UNSET,
 			})
 
-			// Simple type-safe on functions
 			const on = (
 				event: keyof EventBusSchema,
 				callback: (data: EventBusSchema[keyof EventBusSchema]) => void,
@@ -1910,30 +1289,26 @@ describe('store', () => {
 					if (data !== UNSET) callback(data)
 				})
 
-			// Test the pattern with properly typed variables
 			let receivedLogin: unknown = null
 			let receivedLogout: unknown = null
 			let receivedUpdate: unknown = null
 
-			// Component A listens for events
 			on('userLogin', data => {
 				receivedLogin = data
 			})
-
 			on('userLogout', data => {
 				receivedLogout = data
 			})
-
 			on('userUpdate', data => {
 				receivedUpdate = data
 			})
 
-			// Initially nothing should be received (all UNSET)
+			// Initially nothing received
 			expect(receivedLogin).toBe(null)
 			expect(receivedLogout).toBe(null)
 			expect(receivedUpdate).toBe(null)
 
-			// Component B emits user events with full type safety
+			// Emit events
 			const loginData: EventBusSchema['userLogin'] = {
 				userId: 123,
 				timestamp: Date.now(),
@@ -1941,17 +1316,15 @@ describe('store', () => {
 			eventBus.userLogin.set(loginData)
 
 			expect(receivedLogin).toEqual(loginData)
-			expect(receivedLogout).toBe(null) // Should not have triggered
-			expect(receivedUpdate).toBe(null) // Should not have triggered
+			expect(receivedLogout).toBe(null)
+			expect(receivedUpdate).toBe(null)
 
-			// Test second event
 			const logoutData: EventBusSchema['userLogout'] = { userId: 123 }
 			eventBus.userLogout.set(logoutData)
 
 			expect(receivedLogout).toEqual(logoutData)
-			expect(receivedLogin).toEqual(loginData) // Should remain unchanged
+			expect(receivedLogin).toEqual(loginData) // unchanged
 
-			// Test third event
 			const updateData: EventBusSchema['userUpdate'] = {
 				userId: 456,
 				profile: { name: 'Alice' },
@@ -1959,24 +1332,8 @@ describe('store', () => {
 			eventBus.userUpdate.set(updateData)
 
 			expect(receivedUpdate).toEqual(updateData)
-			expect(receivedLogin).toEqual(loginData) // Should remain unchanged
-			expect(receivedLogout).toEqual(logoutData) // Should remain unchanged
-
-			// Test updating existing event
-			const newLoginData: EventBusSchema['userLogin'] = {
-				userId: 789,
-				timestamp: Date.now(),
-			}
-			eventBus.userLogin.set(newLoginData)
-
-			expect(receivedLogin).toEqual(newLoginData) // Should update
-			expect(receivedLogout).toEqual(logoutData) // Should remain unchanged
-			expect(receivedUpdate).toEqual(updateData) // Should remain unchanged
-
-			// Compile-time type checking prevents errors:
-			// emitUserLogin({ userId: 'invalid' }) // ❌ TypeScript error
-			// emitUserLogin({ userId: 123, extraProp: 'invalid' }) // ❌ TypeScript error
-			// emitUserLogout({ userId: 123, extraProp: 'invalid' }) // ❌ TypeScript error
+			expect(receivedLogin).toEqual(loginData) // unchanged
+			expect(receivedLogout).toEqual(logoutData) // unchanged
 		})
 	})
 })

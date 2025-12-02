@@ -161,7 +161,7 @@ const createComputed = <T extends {}>(
 			if (error) throw error
 			return value
 		},
-	}
+	} as Computed<T>
 }
 
 /**

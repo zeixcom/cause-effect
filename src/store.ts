@@ -52,7 +52,7 @@ type StoreListeners<T> = {
 
 interface BaseStore {
 	readonly [Symbol.toStringTag]: 'Store'
-	readonly size: State<number>
+	readonly length: number
 }
 
 type RecordStore<T extends UnknownRecord> = BaseStore & {
@@ -106,7 +106,6 @@ type ArrayStore<T extends UnknownArray> = BaseStore & {
 		listener: (change: StoreChanges<T>[K]) => void,
 	): Cleanup
 	remove(index: number): void
-	readonly length: number
 }
 
 type Store<T extends UnknownRecord | UnknownArray> = T extends UnknownRecord
@@ -151,15 +150,10 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 	// Determine if this is an array-like store at creation time
 	const isArrayLike = Array.isArray(initialValue)
 
-	// Internal state
-	const size = createState(0)
-
 	// Get current record
 	const current = () => {
 		const record: Record<string, unknown> = {}
-		for (const [key, signal] of signals) {
-			record[key] = signal.get()
-		}
+		for (const [key, signal] of signals) record[key] = signal.get()
 		return record
 	}
 
@@ -169,9 +163,7 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 		changes: StoreChanges<T>[K],
 	) => {
 		Object.freeze(changes)
-		for (const listener of listeners[key]) {
-			listener(changes)
-		}
+		for (const listener of listeners[key]) listener(changes)
 	}
 
 	// Get sorted indexes
@@ -223,7 +215,6 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 		signalWatchers.set(key, watcher)
 
 		if (single) {
-			size.set(signals.size)
 			notify(watchers)
 			emit('add', {
 				[key]: value,
@@ -245,7 +236,6 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 		}
 
 		if (single) {
-			size.set(signals.size)
 			notify(watchers)
 			emit('remove', {
 				[key]: UNSET,
@@ -306,8 +296,6 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 					removeProperty(key as Extract<keyof T, string>)
 				emit('remove', changes.remove as Partial<T>)
 			}
-
-			size.set(signals.size)
 		})
 
 		return changes.changed
@@ -418,7 +406,6 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 			listeners[type].add(listener)
 			return () => listeners[type].delete(listener)
 		},
-		size,
 	}
 
 	// Return proxy directly with integrated signal methods
@@ -446,9 +433,9 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 
 			// Methods and Properties
 			if (prop in store) return store[prop]
-			if (prop === 'length' && isArrayLike) {
+			if (prop === 'length') {
 				subscribe(watchers)
-				return size.get()
+				return signals.size
 			}
 
 			// Signals
@@ -463,7 +450,7 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 				prop === Symbol.toStringTag ||
 				prop === Symbol.iterator ||
 				prop === Symbol.isConcatSpreadable ||
-				(prop === 'length' && isArrayLike)
+				prop === 'length'
 			)
 		},
 		ownKeys() {
@@ -471,7 +458,9 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 				? getSortedIndexes()
 						.map(key => String(key))
 						.concat(['length'])
-				: Array.from(signals.keys()).map(key => String(key))
+				: Array.from(signals.keys())
+						.map(key => String(key))
+						.concat(['length'])
 		},
 		getOwnPropertyDescriptor(_target, prop) {
 			const nonEnumerable = <T>(value: T) => ({
@@ -481,12 +470,14 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 				value,
 			})
 
-			if (prop === 'length' && isArrayLike)
+			if (prop === 'length')
 				return {
-					enumerable: true,
+					enumerable: isArrayLike,
 					configurable: true,
-					writable: false,
-					value: size.get(),
+					get: () => {
+						subscribe(watchers)
+						return signals.size
+					},
 				}
 			if (prop === Symbol.isConcatSpreadable)
 				return nonEnumerable(isArrayLike)

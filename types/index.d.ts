@@ -13,4 +13,4 @@ export { isMutableSignal, isSignal, type Signal, type SignalValues, toSignal, ty
 export { createState, isState, type State, TYPE_STATE } from './src/state';
 export { createStore, isStore, type Store, type StoreChanges, TYPE_STORE, } from './src/store';
 export { batch, type Cleanup, createWatcher, flush, notify, observe, subscribe, type Watcher, } from './src/system';
-export { isAbortError, isAsyncFunction, isFunction, isNumber, isRecord, isRecordOrArray, isString, isSymbol, toError, UNSET, valueString, } from './src/util';
+export { isAbortError, isAsyncFunction, isFunction, isNumber, isRecord, isRecordOrArray, isObjectOfType, isString, isSymbol, toError, UNSET, valueString, } from './src/util';
