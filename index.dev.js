@@ -543,129 +543,131 @@ var createStore = (initialValue) => {
     return changes.changed;
   };
   reconcile({}, initialValue, true);
-  const store = {
-    add: isArrayLike ? (v) => {
-      addProperty(String(signals.size), v, true);
-    } : (k, v) => {
-      if (!signals.has(k))
-        addProperty(k, v, true);
-      else
-        throw new StoreKeyExistsError(k, valueString(v));
+  const store = {};
+  Object.defineProperties(store, {
+    [Symbol.toStringTag]: {
+      value: TYPE_STORE
     },
-    get: () => {
-      subscribe(watchers);
-      return recordToArray(current());
+    [Symbol.isConcatSpreadable]: {
+      value: isArrayLike
     },
-    remove: isArrayLike ? (index) => {
-      const currentArray = recordToArray(current());
-      const currentLength = signals.size;
-      if (!Array.isArray(currentArray) || index <= -currentLength || index >= currentLength)
-        throw new StoreKeyRangeError(index);
-      const newArray = [...currentArray];
-      newArray.splice(index, 1);
-      if (reconcile(currentArray, newArray))
-        notify(watchers);
-    } : (k) => {
-      if (signals.has(k))
-        removeProperty(k, true);
-    },
-    set: (v) => {
-      if (reconcile(current(), v)) {
-        notify(watchers);
-        if (UNSET === v)
-          watchers.clear();
+    [Symbol.iterator]: {
+      value: isArrayLike ? function* () {
+        const indexes = getSortedIndexes();
+        for (const index of indexes) {
+          const signal = signals.get(String(index));
+          if (signal)
+            yield signal;
+        }
+      } : function* () {
+        for (const [key, signal] of signals)
+          yield [key, signal];
       }
     },
-    update: (fn) => {
-      const oldValue = current();
-      const newValue = fn(recordToArray(oldValue));
-      if (reconcile(oldValue, newValue)) {
-        notify(watchers);
-        if (UNSET === newValue)
-          watchers.clear();
+    add: {
+      value: isArrayLike ? (v) => {
+        addProperty(String(signals.size), v, true);
+      } : (k, v) => {
+        if (!signals.has(k))
+          addProperty(k, v, true);
+        else
+          throw new StoreKeyExistsError(k, valueString(v));
       }
     },
-    sort: (compareFn) => {
-      const entries = Array.from(signals.entries()).map(([key, signal]) => [key, signal.get()]).sort(compareFn ? (a, b) => compareFn(a[1], b[1]) : (a, b) => String(a[1]).localeCompare(String(b[1])));
-      const newOrder = entries.map(([key]) => String(key));
-      const newSignals = new Map;
-      entries.forEach(([key], newIndex) => {
-        const oldKey = String(key);
-        const newKey = isArrayLike ? String(newIndex) : String(key);
-        const signal = signals.get(oldKey);
-        if (signal)
-          newSignals.set(newKey, signal);
-      });
-      signals.clear();
-      newSignals.forEach((signal, key) => signals.set(key, signal));
-      notify(watchers);
-      emit("sort", newOrder);
+    get: {
+      value: () => {
+        subscribe(watchers);
+        return recordToArray(current());
+      }
     },
-    on: (type, listener) => {
-      listeners[type].add(listener);
-      return () => listeners[type].delete(listener);
-    }
-  };
-  return new Proxy({}, {
-    get(_target, prop) {
-      if (prop === Symbol.toStringTag)
-        return TYPE_STORE;
-      if (prop === Symbol.isConcatSpreadable)
-        return isArrayLike;
-      if (prop === Symbol.iterator)
-        return isArrayLike ? function* () {
-          const indexes = getSortedIndexes();
-          for (const index of indexes) {
-            const signal = signals.get(String(index));
-            if (signal)
-              yield signal;
-          }
-        } : function* () {
-          for (const [key, signal] of signals)
-            yield [key, signal];
-        };
-      if (isSymbol(prop))
-        return;
-      if (prop in store)
-        return store[prop];
-      if (prop === "length") {
+    remove: {
+      value: isArrayLike ? (index) => {
+        const currentArray = recordToArray(current());
+        const currentLength = signals.size;
+        if (!Array.isArray(currentArray) || index <= -currentLength || index >= currentLength)
+          throw new StoreKeyRangeError(index);
+        const newArray = [...currentArray];
+        newArray.splice(index, 1);
+        if (reconcile(currentArray, newArray))
+          notify(watchers);
+      } : (k) => {
+        if (signals.has(k))
+          removeProperty(k, true);
+      }
+    },
+    set: {
+      value: (v) => {
+        if (reconcile(current(), v)) {
+          notify(watchers);
+          if (UNSET === v)
+            watchers.clear();
+        }
+      }
+    },
+    update: {
+      value: (fn) => {
+        const oldValue = current();
+        const newValue = fn(recordToArray(oldValue));
+        if (reconcile(oldValue, newValue)) {
+          notify(watchers);
+          if (UNSET === newValue)
+            watchers.clear();
+        }
+      }
+    },
+    sort: {
+      value: (compareFn) => {
+        const entries = Array.from(signals.entries()).map(([key, signal]) => [key, signal.get()]).sort(compareFn ? (a, b) => compareFn(a[1], b[1]) : (a, b) => String(a[1]).localeCompare(String(b[1])));
+        const newOrder = entries.map(([key]) => String(key));
+        const newSignals = new Map;
+        entries.forEach(([key], newIndex) => {
+          const oldKey = String(key);
+          const newKey = isArrayLike ? String(newIndex) : String(key);
+          const signal = signals.get(oldKey);
+          if (signal)
+            newSignals.set(newKey, signal);
+        });
+        signals.clear();
+        newSignals.forEach((signal, key) => signals.set(key, signal));
+        notify(watchers);
+        emit("sort", newOrder);
+      }
+    },
+    on: {
+      value: (type, listener) => {
+        listeners[type].add(listener);
+        return () => listeners[type].delete(listener);
+      }
+    },
+    length: {
+      get() {
         subscribe(watchers);
         return signals.size;
       }
-      return signals.get(prop);
-    },
-    has(_target, prop) {
-      const stringProp = String(prop);
-      return stringProp && signals.has(stringProp) || Object.keys(store).includes(stringProp) || prop === Symbol.toStringTag || prop === Symbol.iterator || prop === Symbol.isConcatSpreadable || prop === "length";
-    },
-    ownKeys() {
-      return isArrayLike ? getSortedIndexes().map((key) => String(key)).concat(["length"]) : Array.from(signals.keys()).map((key) => String(key)).concat(["length"]);
-    },
-    getOwnPropertyDescriptor(_target, prop) {
-      const nonEnumerable = (value) => ({
-        enumerable: false,
-        configurable: true,
-        writable: false,
-        value
-      });
-      if (prop === "length")
-        return {
-          enumerable: isArrayLike,
-          configurable: true,
-          get: () => {
-            subscribe(watchers);
-            return signals.size;
-          }
-        };
-      if (prop === Symbol.isConcatSpreadable)
-        return nonEnumerable(isArrayLike);
-      if (prop === Symbol.toStringTag)
-        return nonEnumerable(TYPE_STORE);
+    }
+  });
+  return new Proxy(store, {
+    get(target, prop) {
+      if (prop in target)
+        return Reflect.get(target, prop);
       if (isSymbol(prop))
         return;
-      if (Object.keys(store).includes(prop))
-        return nonEnumerable(store[prop]);
-      const signal = signals.get(prop);
+      return signals.get(prop);
+    },
+    has(target, prop) {
+      if (prop in target)
+        return true;
+      return signals.has(String(prop));
+    },
+    ownKeys(target) {
+      const staticKeys = Reflect.ownKeys(target);
+      const signalKeys = isArrayLike ? getSortedIndexes().map((key) => String(key)) : Array.from(signals.keys());
+      return [...new Set([...signalKeys, ...staticKeys])];
+    },
+    getOwnPropertyDescriptor(target, prop) {
+      if (prop in target)
+        return Reflect.getOwnPropertyDescriptor(target, prop);
+      const signal = signals.get(String(prop));
       return signal ? {
         enumerable: true,
         configurable: true,

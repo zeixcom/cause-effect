@@ -34,13 +34,13 @@ describe('toSignal', () => {
 			expect(typedResult).toBeDefined()
 		})
 
-		test('converts empty array to Store<Record<string, never>>', () => {
+		test('converts empty array to ArrayStore<never[]>', () => {
 			const result = toSignal([])
 
 			// Runtime behavior
 			expect(isStore(result)).toBe(true)
 			expect(result.length).toBe(0)
-			expect(Object.keys(result).length).toBe(1) // length property
+			expect(Object.keys(result).length).toBe(0)
 		})
 
 		test('converts record to Store<T>', () => {

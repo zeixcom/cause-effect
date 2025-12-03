@@ -6,7 +6,6 @@ import {
 	type UnknownArray,
 	type UnknownRecord,
 } from './diff'
-
 import {
 	InvalidSignalValueError,
 	NullishSignalValueError,
@@ -289,177 +288,164 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 	reconcile({} as T, initialValue, true)
 
 	// Methods and Properties
-	const store: Record<string, unknown> = {
-		add: isArrayLike
-			? (v: ArrayItem<T>): void => {
-					addProperty(String(signals.size), v, true)
-				}
-			: <K extends Extract<keyof T, string>>(k: K, v: T[K]): void => {
-					if (!signals.has(k)) addProperty(k, v, true)
-					else throw new StoreKeyExistsError(k, valueString(v))
-				},
-		get: (): T => {
-			subscribe(watchers)
-			return recordToArray(current()) as T
+	const store: Record<PropertyKey, unknown> = {}
+	Object.defineProperties(store, {
+		[Symbol.toStringTag]: {
+			value: TYPE_STORE,
 		},
-		remove: isArrayLike
-			? (index: number): void => {
-					const currentArray = recordToArray(current()) as T
-					const currentLength = signals.size
-					if (
-						!Array.isArray(currentArray) ||
-						index <= -currentLength ||
-						index >= currentLength
+		[Symbol.isConcatSpreadable]: {
+			value: isArrayLike,
+		},
+		[Symbol.iterator]: {
+			value: isArrayLike
+				? function* () {
+						const indexes = getSortedIndexes()
+						for (const index of indexes) {
+							const signal = signals.get(String(index))
+							if (signal) yield signal
+						}
+					}
+				: function* () {
+						for (const [key, signal] of signals) yield [key, signal]
+					},
+		},
+		add: {
+			value: isArrayLike
+				? (v: ArrayItem<T>): void => {
+						addProperty(String(signals.size), v, true)
+					}
+				: <K extends Extract<keyof T, string>>(k: K, v: T[K]): void => {
+						if (!signals.has(k)) addProperty(k, v, true)
+						else throw new StoreKeyExistsError(k, valueString(v))
+					},
+		},
+		get: {
+			value: (): T => {
+				subscribe(watchers)
+				return recordToArray(current()) as T
+			},
+		},
+		remove: {
+			value: isArrayLike
+				? (index: number): void => {
+						const currentArray = recordToArray(current()) as T
+						const currentLength = signals.size
+						if (
+							!Array.isArray(currentArray) ||
+							index <= -currentLength ||
+							index >= currentLength
+						)
+							throw new StoreKeyRangeError(index)
+						const newArray = [...currentArray]
+						newArray.splice(index, 1)
+
+						if (reconcile(currentArray, newArray as unknown as T))
+							notify(watchers)
+					}
+				: (k: string): void => {
+						if (signals.has(k)) removeProperty(k, true)
+					},
+		},
+		set: {
+			value: (v: T): void => {
+				if (reconcile(current() as T, v)) {
+					notify(watchers)
+					if (UNSET === v) watchers.clear()
+				}
+			},
+		},
+		update: {
+			value: (fn: (v: T) => T): void => {
+				const oldValue = current()
+				const newValue = fn(recordToArray(oldValue) as T)
+				if (reconcile(oldValue as T, newValue)) {
+					notify(watchers)
+					if (UNSET === newValue) watchers.clear()
+				}
+			},
+		},
+		sort: {
+			value: (
+				compareFn?: <
+					U = T extends UnknownArray
+						? ArrayItem<T>
+						: T[Extract<keyof T, string>],
+				>(
+					a: U,
+					b: U,
+				) => number,
+			): void => {
+				// Get all entries as [key, value] pairs
+				const entries = Array.from(signals.entries())
+					.map(([key, signal]) => [key, signal.get()])
+					.sort(
+						compareFn
+							? (a, b) => compareFn(a[1], b[1])
+							: (a, b) =>
+									String(a[1]).localeCompare(String(b[1])),
 					)
-						throw new StoreKeyRangeError(index)
-					const newArray = [...currentArray]
-					newArray.splice(index, 1)
 
-					if (reconcile(currentArray, newArray as unknown as T))
-						notify(watchers)
-				}
-			: (k: string): void => {
-					if (signals.has(k)) removeProperty(k, true)
-				},
-		set: (v: T): void => {
-			if (reconcile(current() as T, v)) {
+				// Create array of original keys in their new sorted order
+				const newOrder: string[] = entries.map(([key]) => String(key))
+				const newSignals = new Map<
+					string,
+					Signal<T[Extract<keyof T, string>] & {}>
+				>()
+
+				entries.forEach(([key], newIndex) => {
+					const oldKey = String(key)
+					const newKey = isArrayLike ? String(newIndex) : String(key)
+					const signal = signals.get(oldKey)
+					if (signal) newSignals.set(newKey, signal)
+				})
+
+				// Replace signals map
+				signals.clear()
+				newSignals.forEach((signal, key) => signals.set(key, signal))
 				notify(watchers)
-				if (UNSET === v) watchers.clear()
-			}
+				emit('sort', newOrder)
+			},
 		},
-		update: (fn: (v: T) => T): void => {
-			const oldValue = current()
-			const newValue = fn(recordToArray(oldValue) as T)
-			if (reconcile(oldValue as T, newValue)) {
-				notify(watchers)
-				if (UNSET === newValue) watchers.clear()
-			}
+		on: {
+			value: <K extends keyof StoreChanges<T>>(
+				type: K,
+				listener: (change: StoreChanges<T>[K]) => void,
+			): Cleanup => {
+				listeners[type].add(listener)
+				return () => listeners[type].delete(listener)
+			},
 		},
-		sort: (
-			compareFn?: <
-				U = T extends UnknownArray
-					? ArrayItem<T>
-					: T[Extract<keyof T, string>],
-			>(
-				a: U,
-				b: U,
-			) => number,
-		): void => {
-			// Get all entries as [key, value] pairs
-			const entries = Array.from(signals.entries())
-				.map(([key, signal]) => [key, signal.get()])
-				.sort(
-					compareFn
-						? (a, b) => compareFn(a[1], b[1])
-						: (a, b) => String(a[1]).localeCompare(String(b[1])),
-				)
-
-			// Create array of original keys in their new sorted order
-			const newOrder: string[] = entries.map(([key]) => String(key))
-			const newSignals = new Map<
-				string,
-				Signal<T[Extract<keyof T, string>] & {}>
-			>()
-
-			entries.forEach(([key], newIndex) => {
-				const oldKey = String(key)
-				const newKey = isArrayLike ? String(newIndex) : String(key)
-				const signal = signals.get(oldKey)
-				if (signal) newSignals.set(newKey, signal)
-			})
-
-			// Replace signals map
-			signals.clear()
-			newSignals.forEach((signal, key) => signals.set(key, signal))
-			notify(watchers)
-			emit('sort', newOrder)
-		},
-		on: <K extends keyof StoreChanges<T>>(
-			type: K,
-			listener: (change: StoreChanges<T>[K]) => void,
-		): Cleanup => {
-			listeners[type].add(listener)
-			return () => listeners[type].delete(listener)
-		},
-	}
-
-	// Return proxy directly with integrated signal methods
-	return new Proxy({} as Store<T>, {
-		get(_target, prop) {
-			// Symbols
-			if (prop === Symbol.toStringTag) return TYPE_STORE
-			if (prop === Symbol.isConcatSpreadable) return isArrayLike
-			if (prop === Symbol.iterator)
-				return isArrayLike
-					? function* () {
-							const indexes = getSortedIndexes()
-							for (const index of indexes) {
-								const signal = signals.get(String(index))
-								if (signal) yield signal
-							}
-						}
-					: function* () {
-							for (const [key, signal] of signals)
-								yield [key, signal]
-						}
-			if (isSymbol(prop)) return undefined
-
-			// Methods and Properties
-			if (prop in store) return store[prop]
-			if (prop === 'length') {
+		length: {
+			get(): number {
 				subscribe(watchers)
 				return signals.size
-			}
+			},
+		},
+	})
 
-			// Signals
+	// Return proxy directly with integrated signal methods
+	return new Proxy(store as Store<T>, {
+		get(target, prop) {
+			if (prop in target) return Reflect.get(target, prop)
+			if (isSymbol(prop)) return undefined
 			return signals.get(prop)
 		},
-		has(_target, prop) {
-			const stringProp = String(prop)
-			return (
-				(stringProp && signals.has(stringProp)) ||
-				Object.keys(store).includes(stringProp) ||
-				prop === Symbol.toStringTag ||
-				prop === Symbol.iterator ||
-				prop === Symbol.isConcatSpreadable ||
-				prop === 'length'
-			)
+		has(target, prop) {
+			if (prop in target) return true
+			return signals.has(String(prop))
 		},
-		ownKeys() {
-			return isArrayLike
-				? getSortedIndexes()
-						.map(key => String(key))
-						.concat(['length'])
+		ownKeys(target) {
+			const staticKeys = Reflect.ownKeys(target)
+			const signalKeys = isArrayLike
+				? getSortedIndexes().map(key => String(key))
 				: Array.from(signals.keys())
-						.map(key => String(key))
-						.concat(['length'])
+			return [...new Set([...signalKeys, ...staticKeys])]
 		},
-		getOwnPropertyDescriptor(_target, prop) {
-			const nonEnumerable = <U>(value: U) => ({
-				enumerable: false,
-				configurable: true,
-				writable: false,
-				value,
-			})
+		getOwnPropertyDescriptor(target, prop) {
+			if (prop in target)
+				return Reflect.getOwnPropertyDescriptor(target, prop)
 
-			if (prop === 'length')
-				return {
-					enumerable: isArrayLike,
-					configurable: true,
-					get: () => {
-						subscribe(watchers)
-						return signals.size
-					},
-				}
-			if (prop === Symbol.isConcatSpreadable)
-				return nonEnumerable(isArrayLike)
-			if (prop === Symbol.toStringTag) return nonEnumerable(TYPE_STORE)
-			if (isSymbol(prop)) return undefined
-
-			if (Object.keys(store).includes(prop))
-				return nonEnumerable(store[prop])
-
-			const signal = signals.get(prop)
+			const signal = signals.get(String(prop))
 			return signal
 				? {
 						enumerable: true,

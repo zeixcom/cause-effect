@@ -956,7 +956,7 @@ describe('store', () => {
 				'length',
 			)
 			expect(lengthDescriptor?.enumerable).toBe(false)
-			expect(lengthDescriptor?.configurable).toBe(true)
+			expect(lengthDescriptor?.configurable).toBe(false)
 
 			// Array store
 			const numbers = createStore([1, 2])
@@ -975,8 +975,8 @@ describe('store', () => {
 				numbers,
 				'length',
 			)
-			expect(arrayLengthDescriptor?.enumerable).toBe(true) // Array stores show length as enumerable
-			expect(arrayLengthDescriptor?.configurable).toBe(true)
+			expect(arrayLengthDescriptor?.enumerable).toBe(false)
+			expect(arrayLengthDescriptor?.configurable).toBe(false)
 		})
 	})
 
