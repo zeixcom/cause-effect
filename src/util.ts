@@ -66,9 +66,7 @@ const toError = /*#__PURE__*/ (reason: unknown): Error =>
 
 const arrayToRecord = /*#__PURE__*/ <T>(array: T[]): Record<string, T> => {
 	const record: Record<string, T> = {}
-	for (let i = 0; i < array.length; i++) {
-		record[String(i)] = array[i]
-	}
+	for (let i = 0; i < array.length; i++) record[String(i)] = array[i]
 	return record
 }
 
@@ -79,9 +77,7 @@ const recordToArray = /*#__PURE__*/ <T>(
 	if (indexes === null) return record
 
 	const array: T[] = []
-	for (const index of indexes) {
-		array.push(record[String(index)])
-	}
+	for (const index of indexes) array.push(record[String(index)])
 	return array
 }
 

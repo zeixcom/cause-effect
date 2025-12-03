@@ -31,55 +31,44 @@ const createState = /*#__PURE__*/ <T extends {}>(initialValue: T): State<T> => {
 	const watchers: Set<Watcher> = new Set()
 	let value: T = initialValue
 
-	const state: State<T> = {
-		[Symbol.toStringTag]: TYPE_STATE,
+	const setValue = (newValue: T) => {
+		if (newValue == null) throw new NullishSignalValueError('state')
+		if (isEqual(value, newValue)) return
+		value = newValue
+		notify(watchers)
 
-		/**
-		 * Get the current value of the state
-		 *
-		 * @since 0.9.0
-		 * @returns {T} - Current value of the state
-		 */
-		get: (): T => {
-			subscribe(watchers)
-			return value
-		},
-
-		/**
-		 * Set a new value of the state
-		 *
-		 * @since 0.9.0
-		 * @param {T} newValue - New value of the state
-		 * @returns {void}
-		 */
-		set: (newValue: T): void => {
-			if (newValue == null) throw new NullishSignalValueError('state')
-			if (isEqual(value, newValue)) return
-			value = newValue
-			notify(watchers)
-
-			// Setting to UNSET clears the watchers so the signal can be garbage collected
-			if (UNSET === value) watchers.clear()
-		},
-
-		/**
-		 * Update the state with a new value using a function
-		 *
-		 * @since 0.10.0
-		 * @param {(v: T) => T} updater - Function to update the state
-		 * @returns {void}
-		 */
-		update: (updater: (oldValue: T) => T): void => {
-			if (!isFunction(updater))
-				throw new InvalidCallbackError(
-					'state update',
-					valueString(updater),
-				)
-			state.set(updater(value))
-		},
+		// Setting to UNSET clears the watchers so the signal can be garbage collected
+		if (UNSET === value) watchers.clear()
 	}
 
-	return state
+	const state: Record<PropertyKey, unknown> = {}
+	Object.defineProperties(state, {
+		[Symbol.toStringTag]: {
+			value: TYPE_STATE,
+		},
+		get: {
+			value: () => {
+				subscribe(watchers)
+				return value
+			},
+		},
+		set: {
+			value: (newValue: T) => {
+				setValue(newValue)
+			},
+		},
+		update: {
+			value: (updater: (oldValue: T) => T) => {
+				if (!isFunction(updater))
+					throw new InvalidCallbackError(
+						'state update',
+						valueString(updater),
+					)
+				setValue(updater(value))
+			},
+		},
+	})
+	return state as State<T>
 }
 
 /**

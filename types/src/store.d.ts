@@ -1,16 +1,16 @@
-import { type UnknownArray, type UnknownRecord, type UnknownRecordOrArray } from './diff';
+import { type PartialRecord, type UnknownArray, type UnknownRecord } from './diff';
 import { type State } from './state';
 import { type Cleanup } from './system';
 type ArrayItem<T> = T extends readonly (infer U extends {})[] ? U : never;
 type StoreChanges<T> = {
-    add: Partial<T>;
-    change: Partial<T>;
-    remove: Partial<T>;
+    add: PartialRecord<T>;
+    change: PartialRecord<T>;
+    remove: PartialRecord<T>;
     sort: string[];
 };
 interface BaseStore {
     readonly [Symbol.toStringTag]: 'Store';
-    readonly size: State<number>;
+    readonly length: number;
 }
 type RecordStore<T extends UnknownRecord> = BaseStore & {
     [K in keyof T]: T[K] extends readonly unknown[] | Record<string, unknown> ? Store<T[K]> : State<T[K]>;
@@ -38,7 +38,6 @@ type ArrayStore<T extends UnknownArray> = BaseStore & {
     sort<U = ArrayItem<T>>(compareFn?: (a: U, b: U) => number): void;
     on<K extends keyof StoreChanges<T>>(type: K, listener: (change: StoreChanges<T>[K]) => void): Cleanup;
     remove(index: number): void;
-    readonly length: number;
 };
 type Store<T extends UnknownRecord | UnknownArray> = T extends UnknownRecord ? RecordStore<T> : T extends UnknownArray ? ArrayStore<T> : never;
 declare const TYPE_STORE = "Store";
@@ -62,5 +61,5 @@ declare const createStore: <T extends UnknownRecord | UnknownArray>(initialValue
  * @param {unknown} value - value to check
  * @returns {boolean} - true if the value is a Store instance, false otherwise
  */
-declare const isStore: <T extends UnknownRecordOrArray>(value: unknown) => value is Store<T>;
+declare const isStore: <T extends UnknownRecord | UnknownArray>(value: unknown) => value is Store<T>;
 export { TYPE_STORE, isStore, createStore, type Store, type StoreChanges };

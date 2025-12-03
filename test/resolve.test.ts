@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { createComputed, resolve, createState, UNSET } from '../'
+import { createComputed, createState, resolve, UNSET } from '..'
 
 /* === Tests === */
 

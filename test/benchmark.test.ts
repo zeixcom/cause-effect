@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test'
-import { batch, createComputed, createEffect, createState } from '../'
+import { batch, createComputed, createEffect, createState } from '..'
 import { Counter, makeGraph, runGraph } from './util/dependency-graph'
 import type { Computed, ReactiveFramework } from './util/reactive-framework'
 

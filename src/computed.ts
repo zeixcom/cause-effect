@@ -145,23 +145,22 @@ const createComputed = <T extends {}>(
 			computing = false
 		}, watcher)
 
-	return {
-		[Symbol.toStringTag]: TYPE_COMPUTED,
-
-		/**
-		 * Get the current value of the computed
-		 *
-		 * @since 0.9.0
-		 * @returns {T} - Current value of the computed
-		 */
-		get: (): T => {
-			subscribe(watchers)
-			flush()
-			if (dirty) compute()
-			if (error) throw error
-			return value
+	const computed: Record<PropertyKey, unknown> = {}
+	Object.defineProperties(computed, {
+		[Symbol.toStringTag]: {
+			value: TYPE_COMPUTED,
 		},
-	}
+		get: {
+			value: (): T => {
+				subscribe(watchers)
+				flush()
+				if (dirty) compute()
+				if (error) throw error
+				return value
+			},
+		},
+	})
+	return computed as Computed<T>
 }
 
 /**

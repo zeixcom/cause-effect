@@ -6,7 +6,7 @@ import {
 	createState,
 	match,
 	resolve,
-} from '../'
+} from '..'
 
 /* === Tests === */
 

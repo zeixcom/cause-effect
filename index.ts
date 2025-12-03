@@ -1,6 +1,6 @@
 /**
  * @name Cause & Effect
- * @version 0.16.0
+ * @version 0.16.1
  * @author Esther Brunner
  */
 
@@ -16,9 +16,9 @@ export {
 	type DiffResult,
 	diff,
 	isEqual,
+	type PartialRecord,
 	type UnknownArray,
 	type UnknownRecord,
-	type UnknownRecordOrArray,
 } from './src/diff'
 export {
 	createEffect,
@@ -67,6 +67,7 @@ export {
 	isAsyncFunction,
 	isFunction,
 	isNumber,
+	isObjectOfType,
 	isRecord,
 	isRecordOrArray,
 	isString,
