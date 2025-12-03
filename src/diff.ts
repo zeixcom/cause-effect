@@ -5,14 +5,10 @@ import { isRecord, isRecordOrArray, UNSET } from './util'
 
 type UnknownRecord = Record<string, unknown & {}>
 type UnknownArray = ReadonlyArray<unknown & {}>
-type ArrayToRecord<T extends UnknownRecord | UnknownArray> =
-	T extends UnknownArray
-		? {
-				[key: string]: T extends Array<infer U extends {}> ? U : never
-			}
-		: T extends UnknownRecord
-			? T
-			: never
+
+type ArrayToRecord<T extends UnknownArray> = {
+	[key: string]: T extends Array<infer U extends {}> ? U : never
+}
 
 type PartialRecord<T> = T extends UnknownArray
 	? Partial<ArrayToRecord<T>>

@@ -1,6 +1,6 @@
 /**
  * @name Cause & Effect
- * @version 0.16.0
+ * @version 0.16.1
  * @author Esther Brunner
  */
 export { type Computed, type ComputedCallback, createComputed, isComputed, isComputedCallback, TYPE_COMPUTED, } from './src/computed';

@@ -1,8 +1,8 @@
 type UnknownRecord = Record<string, unknown & {}>;
 type UnknownArray = ReadonlyArray<unknown & {}>;
-type ArrayToRecord<T extends UnknownRecord | UnknownArray> = T extends UnknownArray ? {
+type ArrayToRecord<T extends UnknownArray> = {
     [key: string]: T extends Array<infer U extends {}> ? U : never;
-} : T extends UnknownRecord ? T : never;
+};
 type PartialRecord<T> = T extends UnknownArray ? Partial<ArrayToRecord<T>> : Partial<T>;
 type DiffResult<T extends UnknownRecord | UnknownArray = UnknownRecord> = {
     changed: boolean;
