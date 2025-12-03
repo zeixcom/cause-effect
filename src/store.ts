@@ -2,9 +2,9 @@ import { isComputed } from './computed'
 import {
 	type ArrayToRecord,
 	diff,
+	type PartialRecord,
 	type UnknownArray,
 	type UnknownRecord,
-	type UnknownRecordOrArray,
 } from './diff'
 
 import {
@@ -40,9 +40,9 @@ import {
 type ArrayItem<T> = T extends readonly (infer U extends {})[] ? U : never
 
 type StoreChanges<T> = {
-	add: Partial<T>
-	change: Partial<T>
-	remove: Partial<T>
+	add: PartialRecord<T>
+	change: PartialRecord<T>
+	remove: PartialRecord<T>
 	sort: string[]
 }
 
@@ -139,9 +139,9 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 
 	const watchers = new Set<Watcher>()
 	const listeners: StoreListeners<T> = {
-		add: new Set<(change: Partial<T>) => void>(),
-		change: new Set<(change: Partial<T>) => void>(),
-		remove: new Set<(change: Partial<T>) => void>(),
+		add: new Set<(change: PartialRecord<T>) => void>(),
+		change: new Set<(change: PartialRecord<T>) => void>(),
+		remove: new Set<(change: PartialRecord<T>) => void>(),
 		sort: new Set<(change: string[]) => void>(),
 	}
 	const signals = new Map<string, Signal<T[Extract<keyof T, string>] & {}>>()
@@ -190,9 +190,9 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 	}
 
 	// Add nested signal and effect
-	const addProperty = <K extends Extract<keyof T, string>>(
-		key: K,
-		value: T[K] | ArrayItem<T>,
+	const addProperty = (
+		key: string,
+		value: ArrayItem<T> | T[keyof T],
 		single = false,
 	): boolean => {
 		if (!isValidValue(key, value)) return false
@@ -206,9 +206,7 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 		signals.set(key, signal)
 		const watcher = createWatcher(() =>
 			observe(() => {
-				emit('change', {
-					[key]: signal.get(),
-				} as unknown as Partial<T>)
+				emit('change', { [key]: signal.get() } as PartialRecord<T>)
 			}, watcher),
 		)
 		watcher()
@@ -216,18 +214,13 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 
 		if (single) {
 			notify(watchers)
-			emit('add', {
-				[key]: value,
-			} as unknown as Partial<T>)
+			emit('add', { [key]: value } as PartialRecord<T>)
 		}
 		return true
 	}
 
 	// Remove nested signal and effect
-	const removeProperty = <K extends Extract<keyof T, string>>(
-		key: K,
-		single = false,
-	) => {
+	const removeProperty = (key: string, single = false) => {
 		const ok = signals.delete(key)
 		if (ok) {
 			const watcher = signalWatchers.get(key)
@@ -237,9 +230,7 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 
 		if (single) {
 			notify(watchers)
-			emit('remove', {
-				[key]: UNSET,
-			} as unknown as Partial<T>)
+			emit('remove', { [key]: UNSET } as PartialRecord<T>)
 		}
 		return ok
 	}
@@ -258,21 +249,16 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 		batch(() => {
 			// Additions
 			if (Object.keys(changes.add).length) {
-				for (const key in changes.add) {
-					const value = changes.add[key] ?? UNSET
-					addProperty(
-						key as Extract<keyof T, string>,
-						value as T[Extract<keyof T, string>] & {},
-					)
-				}
+				for (const key in changes.add)
+					addProperty(key, changes.add[key] ?? UNSET)
 
 				// Queue initial additions event to allow listeners to be added first
 				if (initialRun) {
 					setTimeout(() => {
-						emit('add', changes.add as Partial<T>)
+						emit('add', changes.add)
 					}, 0)
 				} else {
-					emit('add', changes.add as Partial<T>)
+					emit('add', changes.add)
 				}
 			}
 
@@ -282,35 +268,31 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 					const value = changes.change[key]
 					if (!isValidValue(key, value)) continue
 					const signal = signals.get(key as Extract<keyof T, string>)
-					if (isMutableSignal(signal))
-						signal.set(value as T[Extract<keyof T, string>] & {})
+					if (isMutableSignal(signal)) signal.set(value)
 					else
 						throw new StoreKeyReadonlyError(key, valueString(value))
 				}
-				emit('change', changes.change as Partial<T>)
+				emit('change', changes.change)
 			}
 
 			// Removals
 			if (Object.keys(changes.remove).length) {
-				for (const key in changes.remove)
-					removeProperty(key as Extract<keyof T, string>)
-				emit('remove', changes.remove as Partial<T>)
+				for (const key in changes.remove) removeProperty(key)
+				emit('remove', changes.remove)
 			}
 		})
 
 		return changes.changed
 	}
 
-	// Initialize data - convert arrays to records for internal storage
+	// Initialize data
 	reconcile({} as T, initialValue, true)
 
 	// Methods and Properties
 	const store: Record<string, unknown> = {
 		add: isArrayLike
 			? (v: ArrayItem<T>): void => {
-					const nextIndex = signals.size
-					const key = String(nextIndex) as Extract<keyof T, string>
-					addProperty(key, v, true)
+					addProperty(String(signals.size), v, true)
 				}
 			: <K extends Extract<keyof T, string>>(k: K, v: T[K]): void => {
 					if (!signals.has(k)) addProperty(k, v, true)
@@ -336,7 +318,7 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 					if (reconcile(currentArray, newArray as unknown as T))
 						notify(watchers)
 				}
-			: <K extends Extract<keyof T, string>>(k: K): void => {
+			: (k: string): void => {
 					if (signals.has(k)) removeProperty(k, true)
 				},
 		set: (v: T): void => {
@@ -365,13 +347,7 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 		): void => {
 			// Get all entries as [key, value] pairs
 			const entries = Array.from(signals.entries())
-				.map(
-					([key, signal]) =>
-						[key, signal.get()] as [
-							string,
-							T[Extract<keyof T, string>],
-						],
-				)
+				.map(([key, signal]) => [key, signal.get()])
 				.sort(
 					compareFn
 						? (a, b) => compareFn(a[1], b[1])
@@ -388,7 +364,6 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 			entries.forEach(([key], newIndex) => {
 				const oldKey = String(key)
 				const newKey = isArrayLike ? String(newIndex) : String(key)
-
 				const signal = signals.get(oldKey)
 				if (signal) newSignals.set(newKey, signal)
 			})
@@ -419,9 +394,7 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 					? function* () {
 							const indexes = getSortedIndexes()
 							for (const index of indexes) {
-								const signal = signals.get(
-									String(index) as Extract<keyof T, string>,
-								)
+								const signal = signals.get(String(index))
 								if (signal) yield signal
 							}
 						}
@@ -439,13 +412,12 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 			}
 
 			// Signals
-			return signals.get(prop as Extract<keyof T, string>)
+			return signals.get(prop)
 		},
 		has(_target, prop) {
 			const stringProp = String(prop)
 			return (
-				(stringProp &&
-					signals.has(stringProp as Extract<keyof T, string>)) ||
+				(stringProp && signals.has(stringProp)) ||
 				Object.keys(store).includes(stringProp) ||
 				prop === Symbol.toStringTag ||
 				prop === Symbol.iterator ||
@@ -463,7 +435,7 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 						.concat(['length'])
 		},
 		getOwnPropertyDescriptor(_target, prop) {
-			const nonEnumerable = <T>(value: T) => ({
+			const nonEnumerable = <U>(value: U) => ({
 				enumerable: false,
 				configurable: true,
 				writable: false,
@@ -487,7 +459,7 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 			if (Object.keys(store).includes(prop))
 				return nonEnumerable(store[prop])
 
-			const signal = signals.get(prop as Extract<keyof T, string>)
+			const signal = signals.get(prop)
 			return signal
 				? {
 						enumerable: true,
@@ -507,7 +479,7 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
  * @param {unknown} value - value to check
  * @returns {boolean} - true if the value is a Store instance, false otherwise
  */
-const isStore = <T extends UnknownRecordOrArray>(
+const isStore = <T extends UnknownRecord | UnknownArray>(
 	value: unknown,
 ): value is Store<T> => isObjectOfType(value, TYPE_STORE)
 

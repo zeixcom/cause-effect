@@ -5,16 +5,24 @@ import { isRecord, isRecordOrArray, UNSET } from './util'
 
 type UnknownRecord = Record<string, unknown & {}>
 type UnknownArray = ReadonlyArray<unknown & {}>
-type ArrayToRecord<T extends UnknownArray> = {
-	[key: string]: T extends Array<infer U extends {}> ? U : never
-}
-type UnknownRecordOrArray = UnknownRecord | ArrayToRecord<UnknownArray>
+type ArrayToRecord<T extends UnknownRecord | UnknownArray> =
+	T extends UnknownArray
+		? {
+				[key: string]: T extends Array<infer U extends {}> ? U : never
+			}
+		: T extends UnknownRecord
+			? T
+			: never
 
-type DiffResult<T extends UnknownRecordOrArray = UnknownRecord> = {
+type PartialRecord<T> = T extends UnknownArray
+	? Partial<ArrayToRecord<T>>
+	: Partial<T>
+
+type DiffResult<T extends UnknownRecord | UnknownArray = UnknownRecord> = {
 	changed: boolean
-	add: Partial<T>
-	change: Partial<T>
-	remove: Partial<T>
+	add: PartialRecord<T>
+	change: PartialRecord<T>
+	remove: PartialRecord<T>
 }
 
 /* === Functions === */
@@ -88,9 +96,9 @@ const isEqual = <T>(a: T, b: T, visited?: WeakSet<object>): boolean => {
  * @param {T} newObj - The new record to compare
  * @returns {DiffResult<T>} The result of the comparison
  */
-const diff = <T extends UnknownRecordOrArray>(
-	oldObj: T,
-	newObj: T,
+const diff = <T extends UnknownRecord | UnknownArray>(
+	oldObj: T extends UnknownArray ? ArrayToRecord<T> : T,
+	newObj: T extends UnknownArray ? ArrayToRecord<T> : T,
 ): DiffResult<T> => {
 	// Guard against non-objects that can't be diffed properly with Object.keys and 'in' operator
 	const oldValid = isRecordOrArray(oldObj)
@@ -100,17 +108,17 @@ const diff = <T extends UnknownRecordOrArray>(
 		const changed = !Object.is(oldObj, newObj)
 		return {
 			changed,
-			add: changed && newValid ? newObj : {},
-			change: {},
-			remove: changed && oldValid ? oldObj : {},
+			add: changed && newValid ? newObj : ({} as PartialRecord<T>),
+			change: {} as PartialRecord<T>,
+			remove: changed && oldValid ? oldObj : ({} as PartialRecord<T>),
 		}
 	}
 
 	const visited = new WeakSet()
 
-	const add: Partial<T> = {}
-	const change: Partial<T> = {}
-	const remove: Partial<T> = {}
+	const add = {} as PartialRecord<T>
+	const change = {} as PartialRecord<T>
+	const remove = {} as PartialRecord<T>
 
 	const oldKeys = Object.keys(oldObj)
 	const newKeys = Object.keys(newObj)
@@ -121,18 +129,17 @@ const diff = <T extends UnknownRecordOrArray>(
 		const newHas = key in newObj
 
 		if (!oldHas && newHas) {
-			add[key as keyof T] = newObj[key] as T[keyof T]
+			add[key] = newObj[key]
 			continue
 		} else if (oldHas && !newHas) {
-			remove[key as keyof T] = UNSET
+			remove[key] = UNSET
 			continue
 		}
 
-		const oldValue = oldObj[key] as T[keyof T]
-		const newValue = newObj[key] as T[keyof T]
+		const oldValue = oldObj[key]
+		const newValue = newObj[key]
 
-		if (!isEqual(oldValue, newValue, visited))
-			change[key as keyof T] = newValue
+		if (!isEqual(oldValue, newValue, visited)) change[key] = newValue
 	}
 
 	const changed =
@@ -157,5 +164,5 @@ export {
 	isEqual,
 	type UnknownRecord,
 	type UnknownArray,
-	type UnknownRecordOrArray,
+	type PartialRecord,
 }

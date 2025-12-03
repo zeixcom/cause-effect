@@ -1,6 +1,6 @@
 # Cause & Effect
 
-Version 0.16.0
+Version 0.16.1
 
 **Cause & Effect** is a lightweight, reactive state management library for JavaScript applications. It uses fine-grained reactivity with signals to create predictable and efficient data flow in your app.
 

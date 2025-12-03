@@ -71,9 +71,8 @@ var recordToArray = (record) => {
   if (indexes === null)
     return record;
   const array = [];
-  for (const index of indexes) {
+  for (const index of indexes)
     array.push(record[String(index)]);
-  }
   return array;
 };
 var valueString = (value) => isString(value) ? `"${value}"` : !!value && typeof value === "object" ? JSON.stringify(value) : String(value);
@@ -484,17 +483,13 @@ var createStore = (initialValue) => {
     const signal = isState(value) || isStore(value) ? value : isRecord(value) || Array.isArray(value) ? createStore(value) : createState(value);
     signals.set(key, signal);
     const watcher = createWatcher(() => observe(() => {
-      emit("change", {
-        [key]: signal.get()
-      });
+      emit("change", { [key]: signal.get() });
     }, watcher));
     watcher();
     signalWatchers.set(key, watcher);
     if (single) {
       notify(watchers);
-      emit("add", {
-        [key]: value
-      });
+      emit("add", { [key]: value });
     }
     return true;
   };
@@ -508,9 +503,7 @@ var createStore = (initialValue) => {
     }
     if (single) {
       notify(watchers);
-      emit("remove", {
-        [key]: UNSET
-      });
+      emit("remove", { [key]: UNSET });
     }
     return ok;
   };
@@ -518,10 +511,8 @@ var createStore = (initialValue) => {
     const changes = diff(oldValue, newValue);
     batch(() => {
       if (Object.keys(changes.add).length) {
-        for (const key in changes.add) {
-          const value = changes.add[key] ?? UNSET;
-          addProperty(key, value);
-        }
+        for (const key in changes.add)
+          addProperty(key, changes.add[key] ?? UNSET);
         if (initialRun) {
           setTimeout(() => {
             emit("add", changes.add);
@@ -554,9 +545,7 @@ var createStore = (initialValue) => {
   reconcile({}, initialValue, true);
   const store = {
     add: isArrayLike ? (v) => {
-      const nextIndex = signals.size;
-      const key = String(nextIndex);
-      addProperty(key, v, true);
+      addProperty(String(signals.size), v, true);
     } : (k, v) => {
       if (!signals.has(k))
         addProperty(k, v, true);
