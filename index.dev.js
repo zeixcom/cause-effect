@@ -313,18 +313,24 @@ var createComputed = (callback, initialValue = UNSET) => {
       ok(result);
     computing = false;
   }, watcher);
-  return {
-    [Symbol.toStringTag]: TYPE_COMPUTED,
-    get: () => {
-      subscribe(watchers);
-      flush();
-      if (dirty)
-        compute();
-      if (error)
-        throw error;
-      return value;
+  const computed = {};
+  Object.defineProperties(computed, {
+    [Symbol.toStringTag]: {
+      value: TYPE_COMPUTED
+    },
+    get: {
+      value: () => {
+        subscribe(watchers);
+        flush();
+        if (dirty)
+          compute();
+        if (error)
+          throw error;
+        return value;
+      }
     }
-  };
+  });
+  return computed;
 };
 var isComputed = (value) => isObjectOfType(value, TYPE_COMPUTED);
 var isComputedCallback = (value) => isFunction(value) && value.length < 3;
@@ -415,28 +421,40 @@ var createState = (initialValue) => {
     throw new NullishSignalValueError("state");
   const watchers = new Set;
   let value = initialValue;
-  const state = {
-    [Symbol.toStringTag]: TYPE_STATE,
-    get: () => {
-      subscribe(watchers);
-      return value;
-    },
-    set: (newValue) => {
-      if (newValue == null)
-        throw new NullishSignalValueError("state");
-      if (isEqual(value, newValue))
-        return;
-      value = newValue;
-      notify(watchers);
-      if (UNSET === value)
-        watchers.clear();
-    },
-    update: (updater) => {
-      if (!isFunction(updater))
-        throw new InvalidCallbackError("state update", valueString(updater));
-      state.set(updater(value));
-    }
+  const setValue = (newValue) => {
+    if (newValue == null)
+      throw new NullishSignalValueError("state");
+    if (isEqual(value, newValue))
+      return;
+    value = newValue;
+    notify(watchers);
+    if (UNSET === value)
+      watchers.clear();
   };
+  const state = {};
+  Object.defineProperties(state, {
+    [Symbol.toStringTag]: {
+      value: TYPE_STATE
+    },
+    get: {
+      value: () => {
+        subscribe(watchers);
+        return value;
+      }
+    },
+    set: {
+      value: (newValue) => {
+        setValue(newValue);
+      }
+    },
+    update: {
+      value: (updater) => {
+        if (!isFunction(updater))
+          throw new InvalidCallbackError("state update", valueString(updater));
+        setValue(updater(value));
+      }
+    }
+  });
   return state;
 };
 var isState = (value) => isObjectOfType(value, TYPE_STATE);
