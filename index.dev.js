@@ -461,7 +461,7 @@ var isState = (value) => isObjectOfType(value, TYPE_STATE);
 
 // src/store.ts
 var TYPE_STORE = "Store";
-var createStore = (initialValue) => {
+var createStore = (initialValue, keyConfig) => {
   if (initialValue == null)
     throw new NullishSignalValueError("store");
   const watchers = new Set;
@@ -474,6 +474,43 @@ var createStore = (initialValue) => {
   const signals = new Map;
   const signalWatchers = new Map;
   const isArrayLike = Array.isArray(initialValue);
+  let keyCounter = 0;
+  const keyAt = new Map;
+  const indexByKey = new Map;
+  const getSignal = (prop) => {
+    let key = prop;
+    if (isArrayLike) {
+      const index = Number(prop);
+      if (Number.isInteger(index) && index >= 0)
+        key = keyAt.get(index) ?? prop;
+    }
+    return signals.get(key);
+  };
+  const generateKey = (item) => {
+    if (!isArrayLike)
+      return "";
+    const id = keyCounter++;
+    return isString(keyConfig) ? `${keyConfig}${id}` : isFunction(keyConfig) ? keyConfig(item) : String(id);
+  };
+  const arrayToRecord = (array) => {
+    if (!isArrayLike)
+      return array;
+    const record = {};
+    const arrayValue = array;
+    for (let i = 0;i < arrayValue.length; i++) {
+      const value = arrayValue[i];
+      if (value === undefined)
+        continue;
+      let key = keyAt.get(i);
+      if (!key) {
+        key = generateKey(value);
+        keyAt.set(i, key);
+        indexByKey.set(key, i);
+      }
+      record[key] = value;
+    }
+    return record;
+  };
   const current = () => {
     const record = {};
     for (const [key, signal] of signals)
@@ -485,7 +522,7 @@ var createStore = (initialValue) => {
     for (const listener of listeners[key])
       listener(changes);
   };
-  const getSortedIndexes = () => Array.from(signals.keys()).map((k) => Number(k)).filter((n) => Number.isInteger(n)).sort((a, b) => a - b);
+  const getSortedIndexes = () => Array.from(keyAt.keys()).sort((a, b) => a - b);
   const isValidValue = (key, value) => {
     if (value == null)
       throw new NullishSignalValueError(`store for key "${key}"`);
@@ -512,6 +549,13 @@ var createStore = (initialValue) => {
     return true;
   };
   const removeProperty = (key, single = false) => {
+    if (isArrayLike) {
+      const index = indexByKey.get(key);
+      if (index !== undefined) {
+        indexByKey.delete(key);
+        keyAt.delete(index);
+      }
+    }
     const ok = signals.delete(key);
     if (ok) {
       const watcher = signalWatchers.get(key);
@@ -526,11 +570,17 @@ var createStore = (initialValue) => {
     return ok;
   };
   const reconcile = (oldValue, newValue, initialRun) => {
-    const changes = diff(oldValue, newValue);
+    const oldRecord = isArrayLike ? arrayToRecord(oldValue) : oldValue;
+    const newRecord = isArrayLike ? arrayToRecord(newValue) : newValue;
+    const changes = diff(oldRecord, newRecord);
     batch(() => {
       if (Object.keys(changes.add).length) {
-        for (const key in changes.add)
-          addProperty(key, changes.add[key] ?? UNSET);
+        for (const key in changes.add) {
+          const value = changes.add[key];
+          if (value === undefined)
+            continue;
+          addProperty(key, value ?? UNSET, false);
+        }
         if (initialRun) {
           setTimeout(() => {
             emit("add", changes.add);
@@ -560,7 +610,7 @@ var createStore = (initialValue) => {
     });
     return changes.changed;
   };
-  reconcile({}, initialValue, true);
+  reconcile(isArrayLike ? [] : {}, initialValue, true);
   const store = {};
   Object.defineProperties(store, {
     [Symbol.toStringTag]: {
@@ -573,9 +623,9 @@ var createStore = (initialValue) => {
       value: isArrayLike ? function* () {
         const indexes = getSortedIndexes();
         for (const index of indexes) {
-          const signal = signals.get(String(index));
-          if (signal)
-            yield signal;
+          const key = keyAt.get(index);
+          if (key)
+            yield signals.get(key);
         }
       } : function* () {
         for (const [key, signal] of signals)
@@ -584,7 +634,11 @@ var createStore = (initialValue) => {
     },
     add: {
       value: isArrayLike ? (v) => {
-        addProperty(String(signals.size), v, true);
+        const index = keyAt.size;
+        const key = generateKey(v);
+        keyAt.set(index, key);
+        indexByKey.set(key, index);
+        addProperty(key, v, true);
       } : (k, v) => {
         if (!signals.has(k))
           addProperty(k, v, true);
@@ -592,22 +646,69 @@ var createStore = (initialValue) => {
           throw new StoreKeyExistsError(k, valueString(v));
       }
     },
+    byKey: {
+      value(key) {
+        return getSignal(key);
+      }
+    },
+    keyAt: {
+      value(index) {
+        if (!isArrayLike)
+          return;
+        return keyAt.get(index);
+      }
+    },
+    indexByKey: {
+      value(key) {
+        if (!isArrayLike)
+          return;
+        return indexByKey.get(key);
+      }
+    },
     get: {
       value: () => {
         subscribe(watchers);
-        return recordToArray(current());
+        if (isArrayLike) {
+          const array = [];
+          for (const [index, key] of keyAt.entries()) {
+            const signal = signals.get(key);
+            if (signal)
+              array[index] = signal.get();
+          }
+          return array;
+        } else {
+          return current();
+        }
       }
     },
     remove: {
       value: isArrayLike ? (index) => {
-        const currentArray = recordToArray(current());
-        const currentLength = signals.size;
-        if (!Array.isArray(currentArray) || index <= -currentLength || index >= currentLength)
+        if (index < 0 || index >= signals.size)
           throw new StoreKeyRangeError(index);
-        const newArray = [...currentArray];
-        newArray.splice(index, 1);
-        if (reconcile(currentArray, newArray))
-          notify(watchers);
+        const key = keyAt.get(index);
+        if (!key)
+          return;
+        removeProperty(key, false);
+        const newKeyAt = new Map;
+        const newIndexByKey = new Map;
+        let newPos = 0;
+        for (const [pos, k] of keyAt.entries()) {
+          if (pos !== index) {
+            newKeyAt.set(newPos, k);
+            newIndexByKey.set(k, newPos);
+            newPos++;
+          }
+        }
+        keyAt.clear();
+        indexByKey.clear();
+        newKeyAt.forEach((k, pos) => {
+          keyAt.set(pos, k);
+          indexByKey.set(k, pos);
+        });
+        notify(watchers);
+        emit("remove", {
+          [key]: UNSET
+        });
       } : (k) => {
         if (signals.has(k))
           removeProperty(k, true);
@@ -615,7 +716,8 @@ var createStore = (initialValue) => {
     },
     set: {
       value: (v) => {
-        if (reconcile(current(), v)) {
+        const currentValue = isArrayLike ? recordToArray(current()) : current();
+        if (reconcile(currentValue, v)) {
           notify(watchers);
           if (UNSET === v)
             watchers.clear();
@@ -635,20 +737,45 @@ var createStore = (initialValue) => {
     },
     sort: {
       value: (compareFn) => {
-        const entries = Array.from(signals.entries()).map(([key, signal]) => [key, signal.get()]).sort(compareFn ? (a, b) => compareFn(a[1], b[1]) : (a, b) => String(a[1]).localeCompare(String(b[1])));
-        const newOrder = entries.map(([key]) => String(key));
-        const newSignals = new Map;
-        entries.forEach(([key], newIndex) => {
-          const oldKey = String(key);
-          const newKey = isArrayLike ? String(newIndex) : String(key);
-          const signal = signals.get(oldKey);
-          if (signal)
-            newSignals.set(newKey, signal);
-        });
-        signals.clear();
-        newSignals.forEach((signal, key) => signals.set(key, signal));
-        notify(watchers);
-        emit("sort", newOrder);
+        if (isArrayLike) {
+          const entries = Array.from(keyAt.entries()).map(([index, key]) => {
+            const signal = signals.get(key);
+            return [
+              index,
+              key,
+              signal ? signal.get() : undefined
+            ];
+          }).sort(compareFn ? (a, b) => compareFn(a[2], b[2]) : (a, b) => String(a[2]).localeCompare(String(b[2])));
+          const newKeyAt = new Map;
+          const newIndexByKey = new Map;
+          entries.forEach(([_oldIndex, stableKey, _value], newIndex) => {
+            newKeyAt.set(newIndex, stableKey);
+            newIndexByKey.set(stableKey, newIndex);
+          });
+          keyAt.clear();
+          indexByKey.clear();
+          newKeyAt.forEach((key, index) => {
+            keyAt.set(index, key);
+            indexByKey.set(key, index);
+          });
+          const newOrder = entries.map(([oldIndex]) => String(oldIndex));
+          notify(watchers);
+          emit("sort", newOrder);
+        } else {
+          const entries = Array.from(signals.entries()).map(([key, signal]) => [key, signal.get()]).sort(compareFn ? (a, b) => compareFn(a[1], b[1]) : (a, b) => String(a[1]).localeCompare(String(b[1])));
+          const newSignals = new Map;
+          entries.forEach(([key]) => {
+            const keyStr = String(key);
+            const signal = signals.get(keyStr);
+            if (signal)
+              newSignals.set(keyStr, signal);
+          });
+          signals.clear();
+          newSignals.forEach((signal, key) => signals.set(key, signal));
+          const newOrder = entries.map(([key]) => String(key));
+          notify(watchers);
+          emit("sort", newOrder);
+        }
       }
     },
     on: {
@@ -668,9 +795,8 @@ var createStore = (initialValue) => {
     get(target, prop) {
       if (prop in target)
         return Reflect.get(target, prop);
-      if (isSymbol(prop))
-        return;
-      return signals.get(prop);
+      if (!isSymbol(prop))
+        return getSignal(prop);
     },
     has(target, prop) {
       if (prop in target)
@@ -685,7 +811,9 @@ var createStore = (initialValue) => {
     getOwnPropertyDescriptor(target, prop) {
       if (prop in target)
         return Reflect.getOwnPropertyDescriptor(target, prop);
-      const signal = signals.get(String(prop));
+      if (isSymbol(prop))
+        return;
+      const signal = getSignal(prop);
       return signal ? {
         enumerable: true,
         configurable: true,

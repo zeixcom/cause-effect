@@ -11,6 +11,6 @@ export { type MatchHandlers, match } from './src/match';
 export { type ResolveResult, resolve } from './src/resolve';
 export { isMutableSignal, isSignal, type Signal, type SignalValues, toSignal, type UnknownSignalRecord, } from './src/signal';
 export { createState, isState, type State, TYPE_STATE } from './src/state';
-export { createStore, isStore, type Store, type StoreChanges, TYPE_STORE, } from './src/store';
+export { createStore, isStore, type KeyConfig, type Store, type StoreChanges, TYPE_STORE, } from './src/store';
 export { batch, type Cleanup, createWatcher, flush, notify, observe, subscribe, type Watcher, } from './src/system';
 export { isAbortError, isAsyncFunction, isFunction, isNumber, isObjectOfType, isRecord, isRecordOrArray, isString, isSymbol, toError, UNSET, valueString, } from './src/util';

@@ -48,6 +48,7 @@ export { createState, isState, type State, TYPE_STATE } from './src/state'
 export {
 	createStore,
 	isStore,
+	type KeyConfig,
 	type Store,
 	type StoreChanges,
 	TYPE_STORE,

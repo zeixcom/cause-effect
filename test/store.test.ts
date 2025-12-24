@@ -482,7 +482,7 @@ describe('store', () => {
 				arrayRemoveNotification = change
 			})
 			items.remove(1)
-			expect(arrayRemoveNotification[2]).toBe(UNSET) // Last item gets removed in compaction
+			expect(arrayRemoveNotification['1']).toBe(UNSET) // Only the removed item's stable key is reported
 		})
 
 		test('set() correctly handles mixed changes, additions, and removals', () => {
@@ -1126,7 +1126,7 @@ describe('store', () => {
 
 			// Update nested array element
 			store.dashboard.widgets[0].config.color?.set('red')
-			expect(store.get().dashboard.widgets[0].config.color).toBe('red')
+			expect(store.dashboard.widgets[0].config.color?.get()).toBe('red')
 		})
 	})
 
@@ -1334,6 +1334,469 @@ describe('store', () => {
 			expect(receivedUpdate).toEqual(updateData)
 			expect(receivedLogin).toEqual(loginData) // unchanged
 			expect(receivedLogout).toEqual(logoutData) // unchanged
+		})
+	})
+
+	describe('byKey() method', () => {
+		test('works with record stores using property keys', () => {
+			const user = createStore({
+				name: 'Alice',
+				email: 'alice@example.com',
+				age: 30,
+			})
+
+			// Access signals by key
+			const nameSignal = user.byKey('name')
+			const emailSignal = user.byKey('email')
+			const ageSignal = user.byKey('age')
+			// @ts-expect-error deliberate check for invalid key
+			const nonexistentSignal = user.byKey('nonexistent')
+
+			expect(nameSignal?.get()).toBe('Alice')
+			expect(emailSignal?.get()).toBe('alice@example.com')
+			expect(ageSignal?.get()).toBe(30)
+			expect(nonexistentSignal).toBeUndefined()
+
+			// Verify these are the same signals as property access
+			expect(nameSignal).toBe(user.name)
+			expect(emailSignal).toBe(user.email)
+			expect(ageSignal).toBe(user.age)
+		})
+
+		test('works with array stores using stable keys', () => {
+			const numbers = createStore([10, 20, 30])
+
+			// Get the stable keys from internal mappings by checking signal access
+			const signal0 = numbers[0]
+			const signal1 = numbers[1]
+			const signal2 = numbers[2]
+
+			// Find stable keys by checking which keys return these signals
+			let key0: string | undefined
+			let key1: string | undefined
+			let key2: string | undefined
+
+			// Since stable keys are auto-generated as "0", "1", "2" by default
+			for (let i = 0; i < 10; i++) {
+				const key = String(i)
+				if (numbers.byKey(key) === signal0) key0 = key
+				if (numbers.byKey(key) === signal1) key1 = key
+				if (numbers.byKey(key) === signal2) key2 = key
+			}
+
+			expect(key0).toBeDefined()
+			expect(key1).toBeDefined()
+			expect(key2).toBeDefined()
+			// biome-ignore lint/style/noNonNullAssertion: test
+			expect(numbers.byKey(key0!)).toBe(signal0)
+			// biome-ignore lint/style/noNonNullAssertion: test
+			expect(numbers.byKey(key1!)).toBe(signal1)
+			// biome-ignore lint/style/noNonNullAssertion: test
+			expect(numbers.byKey(key2!)).toBe(signal2)
+			expect(numbers.byKey('nonexistent')).toBeUndefined()
+		})
+
+		test('works with array stores using custom string prefix keys', () => {
+			const items = createStore(['apple', 'banana', 'cherry'], 'fruit')
+
+			// Custom keys should be "fruit0", "fruit1", "fruit2"
+			const appleSignal = items.byKey('fruit0')
+			const bananaSignal = items.byKey('fruit1')
+			const cherrySignal = items.byKey('fruit2')
+
+			expect(appleSignal?.get()).toBe('apple')
+			expect(bananaSignal?.get()).toBe('banana')
+			expect(cherrySignal?.get()).toBe('cherry')
+
+			// Should match positional access
+			expect(appleSignal).toBe(items[0])
+			expect(bananaSignal).toBe(items[1])
+			expect(cherrySignal).toBe(items[2])
+
+			// Non-existent keys return undefined
+			expect(items.byKey('fruit3')).toBeUndefined()
+			expect(items.byKey('item0')).toBeUndefined()
+		})
+
+		test('works with array stores using function-based keys', () => {
+			const users = createStore(
+				[
+					{ id: 'u1', name: 'Alice' },
+					{ id: 'u2', name: 'Bob' },
+					{ id: 'u3', name: 'Charlie' },
+				],
+				item => item.id,
+			)
+
+			// Function-based keys should use the id property
+			const aliceSignal = users.byKey('u1')
+			const bobSignal = users.byKey('u2')
+			const charlieSignal = users.byKey('u3')
+
+			expect(aliceSignal?.name.get()).toBe('Alice')
+			expect(bobSignal?.name.get()).toBe('Bob')
+			expect(charlieSignal?.name.get()).toBe('Charlie')
+
+			// Should match positional access
+			expect(aliceSignal).toBe(users[0])
+			expect(bobSignal).toBe(users[1])
+			expect(charlieSignal).toBe(users[2])
+
+			// Non-existent keys return undefined
+			expect(users.byKey('u4')).toBeUndefined()
+			expect(users.byKey('nonexistent')).toBeUndefined()
+		})
+
+		test('stable keys persist after sort operations', () => {
+			const numbers = createStore([30, 10, 20], 'num')
+
+			// Get original signals and their stable keys
+			const signal30 = numbers[0] // num0
+			const signal10 = numbers[1] // num1
+			const signal20 = numbers[2] // num2
+
+			expect(numbers.byKey('num0')).toBe(signal30)
+			expect(numbers.byKey('num1')).toBe(signal10)
+			expect(numbers.byKey('num2')).toBe(signal20)
+
+			// Sort the array
+			numbers.sort((a, b) => a - b)
+			expect(numbers.get()).toEqual([10, 20, 30])
+
+			// Stable keys should still point to same signals
+			expect(numbers.byKey('num0')).toBe(signal30) // Still points to 30
+			expect(numbers.byKey('num1')).toBe(signal10) // Still points to 10
+			expect(numbers.byKey('num2')).toBe(signal20) // Still points to 20
+
+			// But positional access should reflect new order
+			expect(numbers[0]).toBe(signal10) // 10 is now first
+			expect(numbers[1]).toBe(signal20) // 20 is now second
+			expect(numbers[2]).toBe(signal30) // 30 is now third
+		})
+
+		test('stable keys work with add/remove operations', () => {
+			const items = createStore(['first'], 'item')
+
+			// Get original signal
+			const firstSignal = items[0]
+			expect(items.byKey('item0')).toBe(firstSignal)
+
+			// Add new item
+			items.add('second')
+			const secondSignal = items[1]
+			expect(items.byKey('item1')).toBe(secondSignal)
+
+			// Both keys should still work
+			expect(items.byKey('item0')).toBe(firstSignal)
+			expect(items.byKey('item1')).toBe(secondSignal)
+
+			// Remove first item
+			items.remove(0)
+			expect(items.get()).toEqual(['second'])
+
+			// First key should no longer work, second should still work
+			expect(items.byKey('item0')).toBeUndefined()
+			expect(items.byKey('item1')).toBe(secondSignal)
+			expect(items[0]).toBe(secondSignal) // Now at position 0
+		})
+
+		test('works with nested stores', () => {
+			const app = createStore<{
+				users: Array<{ name: string; settings?: { theme: string } }>
+				config: {
+					version: string
+				}
+			}>({
+				users: [
+					{ name: 'Alice', settings: { theme: 'dark' } },
+					{ name: 'Bob', settings: { theme: 'light' } },
+				],
+				config: { version: '1.0' },
+			})
+
+			// Access nested array store by key
+			const usersStore = app.byKey('users')
+			const configStore = app.byKey('config')
+
+			expect(usersStore).toBe(app.users)
+			expect(configStore).toBe(app.config)
+
+			// Access within nested array using stable keys (default numeric)
+			const aliceStore = usersStore?.byKey('0')
+			const bobStore = usersStore?.byKey('1')
+
+			expect(aliceStore?.name.get()).toBe('Alice')
+			expect(bobStore?.name.get()).toBe('Bob')
+			expect(aliceStore?.settings?.get()?.theme).toBe('dark')
+			expect(bobStore?.settings?.get()?.theme).toBe('light')
+		})
+
+		test('byKey is reactive and works with computed signals', () => {
+			const inventory = createStore(
+				[
+					{ id: 'item1', count: 5 },
+					{ id: 'item2', count: 3 },
+				],
+				item => item.id,
+			)
+
+			const item1Signal = inventory.byKey('item1')
+			expect(item1Signal).toBeDefined()
+
+			const item1Count = createComputed(() => {
+				return item1Signal?.count.get() ?? 0
+			})
+
+			expect(item1Count.get()).toBe(5)
+
+			// Update through stable key reference
+			item1Signal?.count.set(10)
+			expect(item1Count.get()).toBe(10)
+
+			// Update through positional reference should also work
+			inventory[0].count.set(15)
+			expect(item1Count.get()).toBe(15)
+		})
+	})
+
+	describe('keyAt() and indexByKey() methods', () => {
+		test('keyAt() returns undefined for record stores', () => {
+			const user = createStore({
+				name: 'John',
+				email: 'john@example.com',
+				age: 30,
+			})
+
+			expect(user.keyAt(0)).toBeUndefined()
+			expect(user.keyAt(1)).toBeUndefined()
+			expect(user.keyAt(-1)).toBeUndefined()
+		})
+
+		test('indexByKey() returns undefined for record stores', () => {
+			const user = createStore({
+				name: 'John',
+				email: 'john@example.com',
+				age: 30,
+			})
+
+			expect(user.indexByKey('name')).toBeUndefined()
+			expect(user.indexByKey('email')).toBeUndefined()
+			expect(user.indexByKey('nonexistent')).toBeUndefined()
+		})
+
+		test('keyAt() works with array stores using default stable keys', () => {
+			const numbers = createStore([10, 20, 30])
+
+			// Get stable keys at each position
+			expect(numbers.keyAt(0)).toBe('0')
+			expect(numbers.keyAt(1)).toBe('1')
+			expect(numbers.keyAt(2)).toBe('2')
+			expect(numbers.keyAt(3)).toBeUndefined()
+			expect(numbers.keyAt(-1)).toBeUndefined()
+		})
+
+		test('indexByKey() works with array stores using default stable keys', () => {
+			const numbers = createStore([10, 20, 30])
+
+			// Get positions by stable keys
+			expect(numbers.indexByKey('0')).toBe(0)
+			expect(numbers.indexByKey('1')).toBe(1)
+			expect(numbers.indexByKey('2')).toBe(2)
+			expect(numbers.indexByKey('3')).toBeUndefined()
+			expect(numbers.indexByKey('nonexistent')).toBeUndefined()
+		})
+
+		test('keyAt() and indexByKey() work with custom string prefix keys', () => {
+			const items = createStore(['apple', 'banana', 'cherry'], 'fruit')
+
+			// Test keyAt with custom prefix
+			expect(items.keyAt(0)).toBe('fruit0')
+			expect(items.keyAt(1)).toBe('fruit1')
+			expect(items.keyAt(2)).toBe('fruit2')
+			expect(items.keyAt(3)).toBeUndefined()
+
+			// Test indexByKey with custom prefix
+			expect(items.indexByKey('fruit0')).toBe(0)
+			expect(items.indexByKey('fruit1')).toBe(1)
+			expect(items.indexByKey('fruit2')).toBe(2)
+			expect(items.indexByKey('fruit3')).toBeUndefined()
+		})
+
+		test('keyAt() and indexByKey() work with function-based keys', () => {
+			const users = createStore(
+				[
+					{ id: 'alice', name: 'Alice' },
+					{ id: 'bob', name: 'Bob' },
+					{ id: 'charlie', name: 'Charlie' },
+				],
+				item => item.id,
+			)
+
+			// Test keyAt with function-based keys
+			expect(users.keyAt(0)).toBe('alice')
+			expect(users.keyAt(1)).toBe('bob')
+			expect(users.keyAt(2)).toBe('charlie')
+			expect(users.keyAt(3)).toBeUndefined()
+
+			// Test indexByKey with function-based keys
+			expect(users.indexByKey('alice')).toBe(0)
+			expect(users.indexByKey('bob')).toBe(1)
+			expect(users.indexByKey('charlie')).toBe(2)
+			expect(users.indexByKey('david')).toBeUndefined()
+		})
+
+		test('stable key mappings persist after sort operations', () => {
+			const numbers = createStore([30, 10, 20])
+
+			// Get original stable keys
+			const key0 = numbers.keyAt(0) // '0' for value 30
+			const key1 = numbers.keyAt(1) // '1' for value 10
+			const key2 = numbers.keyAt(2) // '2' for value 20
+
+			// Sort the array
+			numbers.sort((a, b) => a - b) // [10, 20, 30]
+
+			// Stable keys should still exist but at different positions
+			// biome-ignore lint/style/noNonNullAssertion: test
+			expect(numbers.indexByKey(key1!)).toBe(0) // '1' (value 10) now at position 0
+			// biome-ignore lint/style/noNonNullAssertion: test
+			expect(numbers.indexByKey(key2!)).toBe(1) // '2' (value 20) now at position 1
+			// biome-ignore lint/style/noNonNullAssertion: test
+			expect(numbers.indexByKey(key0!)).toBe(2) // '0' (value 30) now at position 2
+
+			// Position-to-key mappings should be updated
+			expect(numbers.keyAt(0)).toBe(key1) // Position 0 now has key '1'
+			expect(numbers.keyAt(1)).toBe(key2) // Position 1 now has key '2'
+			expect(numbers.keyAt(2)).toBe(key0) // Position 2 now has key '0'
+		})
+
+		test('stable key mappings work with add and remove operations', () => {
+			const items = createStore(['first', 'second'])
+
+			// Get initial stable keys
+			const firstKey = items.keyAt(0)
+			const secondKey = items.keyAt(1)
+
+			// Add a new item
+			items.add('third')
+			const thirdKey = items.keyAt(2)
+
+			// Check all mappings
+			// biome-ignore lint/style/noNonNullAssertion: test
+			expect(items.indexByKey(firstKey!)).toBe(0)
+			// biome-ignore lint/style/noNonNullAssertion: test
+			expect(items.indexByKey(secondKey!)).toBe(1)
+			// biome-ignore lint/style/noNonNullAssertion: test
+			expect(items.indexByKey(thirdKey!)).toBe(2)
+
+			// Remove the first item
+			items.remove(0)
+
+			// Check that second and third items moved up
+			// biome-ignore lint/style/noNonNullAssertion: test
+			expect(items.indexByKey(firstKey!)).toBeUndefined() // Removed
+			// biome-ignore lint/style/noNonNullAssertion: test
+			expect(items.indexByKey(secondKey!)).toBe(0) // Moved to position 0
+			// biome-ignore lint/style/noNonNullAssertion: test
+			expect(items.indexByKey(thirdKey!)).toBe(1) // Moved to position 1
+
+			// Check position-to-key mappings
+			expect(items.keyAt(0)).toBe(secondKey)
+			expect(items.keyAt(1)).toBe(thirdKey)
+			expect(items.keyAt(2)).toBeUndefined()
+		})
+
+		test('keyAt() and indexByKey() work with empty arrays', () => {
+			const empty = createStore<string[]>([])
+
+			expect(empty.keyAt(0)).toBeUndefined()
+			expect(empty.indexByKey('0')).toBeUndefined()
+
+			// Add an item and test
+			empty.add('item')
+			expect(empty.keyAt(0)).toBe('0')
+			expect(empty.indexByKey('0')).toBe(0)
+		})
+
+		test('methods handle invalid inputs gracefully', () => {
+			const numbers = createStore([1, 2, 3])
+
+			// Test keyAt with invalid indices
+			expect(numbers.keyAt(NaN)).toBeUndefined()
+			expect(numbers.keyAt(Infinity)).toBeUndefined()
+			expect(numbers.keyAt(-Infinity)).toBeUndefined()
+
+			// Test indexByKey with invalid keys
+			expect(numbers.indexByKey('')).toBeUndefined()
+		})
+
+		test('round-trip consistency: keyAt(indexByKey(key)) === key', () => {
+			const items = createStore(['a', 'b', 'c'], 'item')
+
+			// Get a stable key
+			const key = items.keyAt(1) // 'item1'
+			expect(key).toBe('item1')
+
+			// Round trip: key -> index -> key
+			// biome-ignore lint/style/noNonNullAssertion: test
+			const index = items.indexByKey(key!)
+			expect(index).toBe(1)
+
+			// biome-ignore lint/style/noNonNullAssertion: test
+			const roundTripKey = items.keyAt(index!)
+			expect(roundTripKey).toBe(key)
+		})
+
+		test('round-trip consistency: indexByKey(keyAt(index)) === index', () => {
+			const numbers = createStore([10, 20, 30])
+
+			// Get an index
+			const index = 2
+
+			// Round trip: index -> key -> index
+			const key = numbers.keyAt(index)
+			expect(key).toBe('2')
+
+			// biome-ignore lint/style/noNonNullAssertion: test
+			const roundTripIndex = numbers.indexByKey(key!)
+			expect(roundTripIndex).toBe(index)
+		})
+
+		test('methods work correctly after multiple operations', () => {
+			const items = createStore(['a', 'b'], 'x')
+
+			// Track initial keys
+			const keyA = items.keyAt(0) // 'x0'
+			const keyB = items.keyAt(1) // 'x1'
+
+			// Add, sort, remove operations
+			items.add('c') // ['a', 'b', 'c']
+			const keyC = items.keyAt(2) // 'x2'
+
+			items.sort() // ['a', 'b', 'c'] (alphabetical)
+
+			// Keys should still map correctly after sort
+			// biome-ignore lint/style/noNonNullAssertion: test
+			expect(items.indexByKey(keyA!)).toBe(0)
+			// biome-ignore lint/style/noNonNullAssertion: test
+			expect(items.indexByKey(keyB!)).toBe(1)
+			// biome-ignore lint/style/noNonNullAssertion: test
+			expect(items.indexByKey(keyC!)).toBe(2)
+
+			// Remove middle item
+			items.remove(1) // ['a', 'c']
+
+			// Check final state
+			// biome-ignore lint/style/noNonNullAssertion: test
+			expect(items.indexByKey(keyA!)).toBe(0)
+			// biome-ignore lint/style/noNonNullAssertion: test
+			expect(items.indexByKey(keyB!)).toBeUndefined() // Removed
+			// biome-ignore lint/style/noNonNullAssertion: test
+			expect(items.indexByKey(keyC!)).toBe(1)
+
+			expect(items.keyAt(0)).toBe(keyA)
+			expect(items.keyAt(1)).toBe(keyC)
+			expect(items.keyAt(2)).toBeUndefined()
 		})
 	})
 })
