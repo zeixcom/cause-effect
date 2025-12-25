@@ -8,7 +8,7 @@ Cause & Effect is a reactive state management library for JavaScript/TypeScript 
 
 - **Signals**: Base reactive primitives with `.get()` method
 - **State**: Mutable signals for primitive values (`createState()`)
-- **Store**: Mutable signals for objects with reactive properties (`createStore()`)
+- **Store**: Mutable signals for objects with reactive properties (`createStore()`), supports stable keys for array-like stores
 - **Computed**: Derived read-only signals with memoization, reducer-like capabilities and async support (`createComputed()`)
 - **Effects**: Side effect handlers that react to signal changes (`createEffect()`)
 
@@ -76,6 +76,10 @@ const actions = createState<'increment' | 'decrement'>('increment')
 // Store for objects
 const user = createStore({ name: 'Alice', age: 30 })
 
+// Array-like stores with stable keys
+const items = createStore(['apple', 'banana', 'cherry'])
+const users = createStore([{ id: 'alice', name: 'Alice' }], user => user.id)
+
 // Computed for derived values
 const doubled = createComputed(() => count.get() * 2)
 
@@ -121,6 +125,31 @@ function isSignal<T extends {}>(value: unknown): value is Signal<T>
 - TypeScript compilation with declaration files
 - Minified production build
 - ES modules only (`"type": "module"`)
+
+## Store Methods and Stable Keys
+
+### Array-like Store Methods
+- `byKey(key)` - Access signals by stable key instead of index
+- `keyAt(index)` - Get stable key at specific position
+- `indexOfKey(key)` - Get position of stable key in current order
+- `splice(start, deleteCount, ...items)` - Array-like splicing with stable key preservation
+- `sort(compareFn)` - Sort items while maintaining stable key associations
+
+### Stable Keys Usage
+```typescript
+// Default auto-incrementing keys
+const items = createStore(['a', 'b', 'c'])
+
+// String prefix keys
+const fruits = createStore(['apple', 'banana'], 'fruit')
+// Creates keys: 'fruit0', 'fruit1'
+
+// Function-based keys
+const users = createStore([
+  { id: 'user1', name: 'Alice' },
+  { id: 'user2', name: 'Bob' }
+], user => user.id) // Uses user.id as stable key
+```
 
 ## When suggesting code:
 1. Follow the established patterns for signal creation and usage

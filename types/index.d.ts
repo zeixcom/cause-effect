@@ -1,12 +1,12 @@
 /**
  * @name Cause & Effect
- * @version 0.16.1
+ * @version 0.16.2
  * @author Esther Brunner
  */
 export { type Computed, type ComputedCallback, createComputed, isComputed, isComputedCallback, TYPE_COMPUTED, } from './src/computed';
 export { type DiffResult, diff, isEqual, type PartialRecord, type UnknownArray, type UnknownRecord, } from './src/diff';
 export { createEffect, type EffectCallback, type MaybeCleanup, } from './src/effect';
-export { CircularDependencyError, InvalidCallbackError, InvalidSignalValueError, NullishSignalValueError, StoreKeyExistsError, StoreKeyRangeError, StoreKeyReadonlyError, } from './src/errors';
+export { CircularDependencyError, ForbiddenMethodCallError, InvalidCallbackError, InvalidSignalValueError, NullishSignalValueError, StoreIndexRangeError, StoreKeyExistsError, StoreKeyReadonlyError, } from './src/errors';
 export { type MatchHandlers, match } from './src/match';
 export { type ResolveResult, resolve } from './src/resolve';
 export { isMutableSignal, isSignal, type Signal, type SignalValues, toSignal, type UnknownSignalRecord, } from './src/signal';

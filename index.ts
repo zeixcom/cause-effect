@@ -1,6 +1,6 @@
 /**
  * @name Cause & Effect
- * @version 0.16.1
+ * @version 0.16.2
  * @author Esther Brunner
  */
 
@@ -27,11 +27,12 @@ export {
 } from './src/effect'
 export {
 	CircularDependencyError,
+	ForbiddenMethodCallError,
 	InvalidCallbackError,
 	InvalidSignalValueError,
 	NullishSignalValueError,
+	StoreIndexRangeError,
 	StoreKeyExistsError,
-	StoreKeyRangeError,
 	StoreKeyReadonlyError,
 } from './src/errors'
 export { type MatchHandlers, match } from './src/match'

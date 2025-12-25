@@ -1,6 +1,6 @@
 # Cause & Effect
 
-Version 0.16.1
+Version 0.16.2
 
 **Cause & Effect** is a lightweight, reactive state management library for JavaScript applications. It uses fine-grained reactivity with signals to create predictable and efficient data flow in your app.
 
@@ -149,7 +149,7 @@ The `add()` and `remove()` methods are optimized for performance:
 
 #### Array-like Stores
 
-Stores created from arrays behave like arrays with reactive properties. They support duck-typing with length property, single-parameter `add()`, and efficient sorting:
+Stores created from arrays behave like arrays with reactive properties. They support duck-typing with length property, single-parameter `add()`, `splice()`, and efficient sorting:
 
 ```js
 import { createStore, createEffect } from '@zeix/cause-effect'
@@ -169,13 +169,45 @@ createEffect(() => {
 items.add('date') // Adds at index 3
 console.log(items.get()) // ['banana', 'apple', 'cherry', 'date']
 
+// Splice allows removal and insertion at specific indices
+items.splice(1, 1, 'orange') // Removes 'apple' and inserts 'orange' at index 1
+console.log(items.get()) // ['banana', 'orange', 'cherry', 'date']
+
 // Efficient sorting preserves signal references
 items.sort() // Default: string comparison
-console.log(items.get()) // ['apple', 'banana', 'cherry', 'date']
+console.log(items.get()) // ['apple', 'banana', 'cherry', 'date', 'orange']
 
 // Custom sorting
 items.sort((a, b) => b.localeCompare(a)) // Reverse alphabetical
-console.log(items.get()) // ['date', 'cherry', 'banana', 'apple']
+console.log(items.get()) // ['orange', 'date', 'cherry', 'banana', 'apple']
+```
+
+Array-like stores have stable unique keys for entries. This means that the keys for each item in the store will not change even if the items are reordered. Keys default to a string representation of an auto-incrementing number. You can customize keys by passing a prefix string or a function to derive the key from the entry value as the second argument to `createStore()`:
+
+```js
+const items = createStore(['banana', 'apple', 'cherry', 'date'], 'item-')
+
+// Add returns the key of the added item
+const orangeKey = items.add('orange')
+
+// Sort preserves signal references
+items.sort()
+console.log(items.get()) // ['apple', 'banana', 'cherry', 'date', 'orange']
+
+// Access items by key
+console.log(items.byKey(orangeKey)) // 'orange'
+
+const users = createStore([{ id: 'bob', name: 'Bob' }, { id: 'alice', name: 'Alice' }], v => v.id)
+
+// Sort preserves signal references
+users.sort((a, b) => a.name.localeCompare(b.name)) // Alphabetical by name
+console.log(users.get()) // [{ id: 'alice', name: 'Alice' }, { id: 'bob', name: 'Bob' }]
+
+// Get current positional index for an item
+console.log(users.indexOfKey('alice')) // 0
+
+// Get key at index
+console.log(users.keyAt(1)) // 'bob'
 ```
 
 #### Store Change Notifications
@@ -215,7 +247,7 @@ const offSort = items.on('sort', (newOrder) => {
 })
 ```
 
-Notifications are also fired when using `set()` or `update()` methods on the entire store:
+Notifications are also fired when using `set()`, `update()`, or `splice()` methods:
 
 ```js
 // This will fire multiple notifications based on what changed

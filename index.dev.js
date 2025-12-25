@@ -1,53 +1,3 @@
-// src/errors.ts
-class CircularDependencyError extends Error {
-  constructor(where) {
-    super(`Circular dependency detected in ${where}`);
-    this.name = "CircularDependencyError";
-  }
-}
-
-class InvalidCallbackError extends TypeError {
-  constructor(where, value) {
-    super(`Invalid ${where} callback ${value}`);
-    this.name = "InvalidCallbackError";
-  }
-}
-
-class InvalidSignalValueError extends TypeError {
-  constructor(where, value) {
-    super(`Invalid signal value ${value} in ${where}`);
-    this.name = "InvalidSignalValueError";
-  }
-}
-
-class NullishSignalValueError extends TypeError {
-  constructor(where) {
-    super(`Nullish signal values are not allowed in ${where}`);
-    this.name = "NullishSignalValueError";
-  }
-}
-
-class StoreKeyExistsError extends Error {
-  constructor(key, value) {
-    super(`Could not add store key "${key}" with value ${value} because it already exists`);
-    this.name = "StoreKeyExistsError";
-  }
-}
-
-class StoreKeyRangeError extends RangeError {
-  constructor(index) {
-    super(`Could not remove store index ${String(index)} because it is out of range`);
-    this.name = "StoreKeyRangeError";
-  }
-}
-
-class StoreKeyReadonlyError extends Error {
-  constructor(key, value) {
-    super(`Could not set store key "${key}" to ${value} because it is readonly`);
-    this.name = "StoreKeyReadonlyError";
-  }
-}
-
 // src/util.ts
 var UNSET = Symbol();
 var isString = (value) => typeof value === "string";
@@ -61,6 +11,63 @@ var isRecordOrArray = (value) => isRecord(value) || Array.isArray(value);
 var isAbortError = (error) => error instanceof DOMException && error.name === "AbortError";
 var toError = (reason) => reason instanceof Error ? reason : Error(String(reason));
 var valueString = (value) => isString(value) ? `"${value}"` : !!value && typeof value === "object" ? JSON.stringify(value) : String(value);
+
+// src/errors.ts
+class CircularDependencyError extends Error {
+  constructor(where) {
+    super(`Circular dependency detected in ${where}`);
+    this.name = "CircularDependencyError";
+  }
+}
+
+class ForbiddenMethodCallError extends Error {
+  constructor(method, where, reason) {
+    super(`Forbidden method call ${method} in ${where} because ${reason}`);
+    this.name = "ForbiddenMethodCallError";
+  }
+}
+
+class InvalidCallbackError extends TypeError {
+  constructor(where, value) {
+    super(`Invalid ${where} callback ${valueString(value)}`);
+    this.name = "InvalidCallbackError";
+  }
+}
+
+class InvalidSignalValueError extends TypeError {
+  constructor(where, value) {
+    super(`Invalid signal value ${valueString(value)} in ${where}`);
+    this.name = "InvalidSignalValueError";
+  }
+}
+
+class NullishSignalValueError extends TypeError {
+  constructor(where) {
+    super(`Nullish signal values are not allowed in ${where}`);
+    this.name = "NullishSignalValueError";
+  }
+}
+
+class StoreIndexRangeError extends RangeError {
+  constructor(index) {
+    super(`Could not remove store index ${String(index)} because it is out of range`);
+    this.name = "StoreKeyRangeError";
+  }
+}
+
+class StoreKeyExistsError extends Error {
+  constructor(key, value) {
+    super(`Could not add store key "${key}" with value ${valueString(value)} because it already exists`);
+    this.name = "StoreKeyExistsError";
+  }
+}
+
+class StoreKeyReadonlyError extends Error {
+  constructor(key, value) {
+    super(`Could not set store key "${key}" to ${valueString(value)} because it is read-only`);
+    this.name = "StoreKeyReadonlyError";
+  }
+}
 
 // src/diff.ts
 var isEqual = (a, b, visited) => {
@@ -214,7 +221,7 @@ var observe = (run, watcher) => {
 var TYPE_COMPUTED = "Computed";
 var createComputed = (callback, initialValue = UNSET) => {
   if (!isComputedCallback(callback))
-    throw new InvalidCallbackError("computed", valueString(callback));
+    throw new InvalidCallbackError("computed", callback);
   if (initialValue == null)
     throw new NullishSignalValueError("computed");
   const watchers = new Set;
@@ -321,7 +328,7 @@ var isComputedCallback = (value) => isFunction(value) && value.length < 3;
 // src/effect.ts
 var createEffect = (callback) => {
   if (!isFunction(callback) || callback.length > 1)
-    throw new InvalidCallbackError("effect", valueString(callback));
+    throw new InvalidCallbackError("effect", callback);
   const isAsync = isAsyncFunction(callback);
   let running = false;
   let controller;
@@ -434,7 +441,7 @@ var createState = (initialValue) => {
     update: {
       value: (updater) => {
         if (!isFunction(updater))
-          throw new InvalidCallbackError("state update", valueString(updater));
+          throw new InvalidCallbackError("state update", updater);
         setValue(updater(value));
       }
     }
@@ -514,7 +521,7 @@ var createStore = (initialValue, keyConfig) => {
     if (value === UNSET)
       return true;
     if (isSymbol(value) || isFunction(value) || isComputed(value))
-      throw new InvalidSignalValueError(`store for key "${key}"`, valueString(value));
+      throw new InvalidSignalValueError(`store for key "${key}"`, value);
     return true;
   };
   const addProperty = (key, value, single = false) => {
@@ -573,7 +580,7 @@ var createStore = (initialValue, keyConfig) => {
           if (isMutableSignal(signal))
             signal.set(value);
           else
-            throw new StoreKeyReadonlyError(key, valueString(value));
+            throw new StoreKeyReadonlyError(key, value);
         }
         emit("change", changes.change);
       });
@@ -606,16 +613,17 @@ var createStore = (initialValue, keyConfig) => {
       }
     },
     add: {
-      value: isArrayLike ? (v) => {
-        const index = order.length;
-        const key = generateKey(v);
-        order[index] = key;
-        addProperty(key, v, true);
-      } : (k, v) => {
-        if (!signals.has(k))
-          addProperty(k, v, true);
+      value: isArrayLike ? (value) => {
+        const key = generateKey(value);
+        if (!signals.has(key))
+          addProperty(key, value, true);
         else
-          throw new StoreKeyExistsError(k, valueString(v));
+          throw new StoreKeyExistsError(key, value);
+      } : (key, value) => {
+        if (!signals.has(key))
+          addProperty(key, value, true);
+        else
+          throw new StoreKeyExistsError(key, value);
       }
     },
     byKey: {
@@ -644,7 +652,7 @@ var createStore = (initialValue, keyConfig) => {
         let key = String(keyOrIndex);
         if (isNumber(keyOrIndex)) {
           if (!order[keyOrIndex])
-            throw new StoreKeyRangeError(keyOrIndex);
+            throw new StoreIndexRangeError(keyOrIndex);
           key = order[keyOrIndex];
         }
         if (signals.has(key))
@@ -689,7 +697,7 @@ var createStore = (initialValue, keyConfig) => {
     splice: {
       value: (start, deleteCount, ...items) => {
         if (!isArrayLike)
-          throw new Error("Cannot splice non-array-like object");
+          throw new ForbiddenMethodCallError("splice", "store", "it is only supported for array-like stores");
         const length = signals.size;
         const actualStart = start < 0 ? Math.max(0, length + start) : Math.min(start, length);
         const actualDeleteCount = Math.max(0, Math.min(deleteCount ?? Math.max(0, length - Math.max(0, actualStart)), length - actualStart));
@@ -820,10 +828,11 @@ export {
   TYPE_STATE,
   TYPE_COMPUTED,
   StoreKeyReadonlyError,
-  StoreKeyRangeError,
   StoreKeyExistsError,
+  StoreIndexRangeError,
   NullishSignalValueError,
   InvalidSignalValueError,
   InvalidCallbackError,
+  ForbiddenMethodCallError,
   CircularDependencyError
 };

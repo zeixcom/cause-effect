@@ -1,3 +1,5 @@
+import { valueString } from './util'
+
 class CircularDependencyError extends Error {
 	constructor(where: string) {
 		super(`Circular dependency detected in ${where}`)
@@ -5,16 +7,23 @@ class CircularDependencyError extends Error {
 	}
 }
 
+class ForbiddenMethodCallError extends Error {
+	constructor(method: string, where: string, reason: string) {
+		super(`Forbidden method call ${method} in ${where} because ${reason}`)
+		this.name = 'ForbiddenMethodCallError'
+	}
+}
+
 class InvalidCallbackError extends TypeError {
-	constructor(where: string, value: string) {
-		super(`Invalid ${where} callback ${value}`)
+	constructor(where: string, value: unknown) {
+		super(`Invalid ${where} callback ${valueString(value)}`)
 		this.name = 'InvalidCallbackError'
 	}
 }
 
 class InvalidSignalValueError extends TypeError {
-	constructor(where: string, value: string) {
-		super(`Invalid signal value ${value} in ${where}`)
+	constructor(where: string, value: unknown) {
+		super(`Invalid signal value ${valueString(value)} in ${where}`)
 		this.name = 'InvalidSignalValueError'
 	}
 }
@@ -26,16 +35,7 @@ class NullishSignalValueError extends TypeError {
 	}
 }
 
-class StoreKeyExistsError extends Error {
-	constructor(key: string, value: string) {
-		super(
-			`Could not add store key "${key}" with value ${value} because it already exists`,
-		)
-		this.name = 'StoreKeyExistsError'
-	}
-}
-
-class StoreKeyRangeError extends RangeError {
+class StoreIndexRangeError extends RangeError {
 	constructor(index: number) {
 		super(
 			`Could not remove store index ${String(index)} because it is out of range`,
@@ -44,10 +44,19 @@ class StoreKeyRangeError extends RangeError {
 	}
 }
 
-class StoreKeyReadonlyError extends Error {
-	constructor(key: string, value: string) {
+class StoreKeyExistsError extends Error {
+	constructor(key: string, value: unknown) {
 		super(
-			`Could not set store key "${key}" to ${value} because it is readonly`,
+			`Could not add store key "${key}" with value ${valueString(value)} because it already exists`,
+		)
+		this.name = 'StoreKeyExistsError'
+	}
+}
+
+class StoreKeyReadonlyError extends Error {
+	constructor(key: string, value: unknown) {
+		super(
+			`Could not set store key "${key}" to ${valueString(value)} because it is read-only`,
 		)
 		this.name = 'StoreKeyReadonlyError'
 	}
@@ -55,10 +64,11 @@ class StoreKeyReadonlyError extends Error {
 
 export {
 	CircularDependencyError,
+	ForbiddenMethodCallError,
 	InvalidCallbackError,
 	InvalidSignalValueError,
 	NullishSignalValueError,
+	StoreIndexRangeError,
 	StoreKeyExistsError,
-	StoreKeyRangeError,
 	StoreKeyReadonlyError,
 }

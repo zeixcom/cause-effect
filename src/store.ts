@@ -8,10 +8,11 @@ import {
 	type UnknownRecord,
 } from './diff'
 import {
+	ForbiddenMethodCallError,
 	InvalidSignalValueError,
 	NullishSignalValueError,
+	StoreIndexRangeError,
 	StoreKeyExistsError,
-	StoreKeyRangeError,
 	StoreKeyReadonlyError,
 } from './errors'
 import { isMutableSignal, type Signal } from './signal'
@@ -33,7 +34,6 @@ import {
 	isString,
 	isSymbol,
 	UNSET,
-	valueString,
 } from './util'
 
 /* === Types === */
@@ -72,7 +72,7 @@ type RecordStore<T extends UnknownRecord> = BaseStore & {
 	[Symbol.iterator](): IterableIterator<
 		[Extract<keyof T, string>, StoreKeySignal<T[Extract<keyof T, string>]>]
 	>
-	add<K extends Extract<keyof T, string>>(key: K, value: T[K]): void
+	add<K extends Extract<keyof T, string>>(key: K, value: T[K]): K
 	byKey<K extends Extract<keyof T, string>>(key: K): StoreKeySignal<T[K]>
 	get(): T
 	keyAt(index: number): string | undefined
@@ -93,7 +93,7 @@ type ArrayStore<T extends UnknownArray> = BaseStore & {
 	[Symbol.iterator](): IterableIterator<StoreKeySignal<ArrayItem<T>>>
 	readonly [Symbol.isConcatSpreadable]: boolean
 	[n: number]: StoreKeySignal<ArrayItem<T>>
-	add(value: ArrayItem<T>): void
+	add(value: ArrayItem<T>): string
 	byKey(key: string): StoreKeySignal<ArrayItem<T>> | undefined
 	get(): T
 	keyAt(index: number): string | undefined
@@ -244,10 +244,7 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 			throw new NullishSignalValueError(`store for key "${key}"`)
 		if (value === UNSET) return true
 		if (isSymbol(value) || isFunction(value) || isComputed(value))
-			throw new InvalidSignalValueError(
-				`store for key "${key}"`,
-				valueString(value),
-			)
+			throw new InvalidSignalValueError(`store for key "${key}"`, value)
 		return true
 	}
 
@@ -330,8 +327,7 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 
 					const signal = signals.get(key)
 					if (isMutableSignal(signal)) signal.set(value)
-					else
-						throw new StoreKeyReadonlyError(key, valueString(value))
+					else throw new StoreKeyReadonlyError(key, value)
 				}
 				emit('change', changes.change)
 			})
@@ -395,15 +391,21 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 		},
 		add: {
 			value: isArrayLike
-				? (v: ArrayItem<T>): void => {
-						const index = order.length
-						const key = generateKey(v as ArrayItem<T>)
-						order[index] = key
-						addProperty(key, v, true)
+				? (value: ArrayItem<T>): string => {
+						const key = generateKey(value as ArrayItem<T>)
+						if (!signals.has(key)) {
+							addProperty(key, value, true)
+							return key
+						} else throw new StoreKeyExistsError(key, value)
 					}
-				: <K extends Extract<keyof T, string>>(k: K, v: T[K]): void => {
-						if (!signals.has(k)) addProperty(k, v, true)
-						else throw new StoreKeyExistsError(k, valueString(v))
+				: <K extends Extract<keyof T, string>>(
+						key: K,
+						value: T[K],
+					): K => {
+						if (!signals.has(key)) {
+							addProperty(key, value, true)
+							return key
+						} else throw new StoreKeyExistsError(key, value)
 					},
 		},
 		byKey: {
@@ -432,7 +434,7 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 				let key = String(keyOrIndex)
 				if (isNumber(keyOrIndex)) {
 					if (!order[keyOrIndex])
-						throw new StoreKeyRangeError(keyOrIndex)
+						throw new StoreIndexRangeError(keyOrIndex)
 					key = order[keyOrIndex]
 				}
 				if (signals.has(key)) removeProperty(key, true)
@@ -497,7 +499,11 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 				...items: ArrayItem<T>[]
 			): ArrayItem<T>[] => {
 				if (!isArrayLike)
-					throw new Error('Cannot splice non-array-like object')
+					throw new ForbiddenMethodCallError(
+						'splice',
+						'store',
+						'it is only supported for array-like stores',
+					)
 
 				// Normalize start and deleteCount
 				const length = signals.size

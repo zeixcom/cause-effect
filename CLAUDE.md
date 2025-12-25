@@ -17,6 +17,7 @@ Think of signals as **observable cells** in a spreadsheet:
 - **State signals** are like input cells where you can directly enter values
 - **Computed signals** are like formula cells that automatically recalculate when their dependencies change
 - **Store signals** are like structured data tables where individual columns (properties) are reactive
+- **Array-like stores** with stable keys are like tables with persistent row IDs that survive sorting and reordering
 - **Effects** are like event handlers that trigger side effects when cells change
 
 The key insight is that the system tracks which cells (signals) are read during computation, creating an automatic dependency graph that ensures minimal and correct updates.
@@ -49,7 +50,7 @@ The generic constraint `T extends {}` is crucial - it excludes `null` and `undef
 
 ### Store Signal Deep Dive
 
-Store signals are the most complex part of the system. They transform plain objects into reactive data structures:
+Store signals are the most complex part of the system. They transform plain objects or arrays into reactive data structures:
 
 1. **Property Proxification**: Each property becomes its own signal
 2. **Nested Reactivity**: Objects within objects recursively become stores
@@ -61,6 +62,8 @@ Key implementation details:
 - Maintains internal signal instances for each property
 - Supports change notifications for fine-grained updates
 - Handles edge cases like symbol properties and prototype chain
+- For array-like stores: maintains stable keys that persist through sorting, splicing, and reordering
+- Provides specialized methods: `byKey()`, `keyAt()`, `indexOfKey()`, `splice()` for array manipulation
 
 ### Computed Signal Memoization Strategy
 
@@ -92,6 +95,7 @@ const user = createState<User>({ id: 1, name: 'John Doe', email: 'john@example.c
 - Nested data structures
 - Form state where fields update individually
 - Configuration objects with multiple settings
+- Arrays where item order may change but items need persistent identity
 
 ```typescript
 const form = createStore({
@@ -100,6 +104,19 @@ const form = createStore({
   errors: { email: null, password: null }
 })
 // form.email.set('user@example.com') // Only email subscribers react
+
+// Array-like stores with stable keys
+const todoList = createStore([
+  { id: 'task1', text: 'Learn signals' },
+  { id: 'task2', text: 'Build app' }
+], todo => todo.id) // Use todo.id as stable key
+
+// Access by stable key instead of index
+const firstTodo = todoList.byKey('task1')
+firstTodo?.text.set('Learn signals deeply')
+
+// Sort while maintaining stable references
+todoList.sort((a, b) => a.text.localeCompare(b.text))
 ```
 
 **Computed Signals (`createComputed`)**:
@@ -303,6 +320,30 @@ on('userLogin', (data) => {
 
 // Component B emits user events
 eventBus.userLogin.set({ userId: 123, timestamp: Date.now() })
+```
+
+### Stable Keys for Persistent Item Identity
+```typescript
+// Managing a list of items where order matters but identity persists
+const playlist = createStore([
+  { id: 'track1', title: 'Song A', duration: 180 },
+  { id: 'track2', title: 'Song B', duration: 210 }
+], track => track.id)
+
+// Get persistent reference to a specific track
+const firstTrackSignal = playlist.byKey('track1')
+const firstTrack = firstTrackSignal?.get()
+
+// Reorder playlist while maintaining references
+playlist.sort((a, b) => a.title.localeCompare(b.title))
+// firstTrackSignal still points to the same track!
+
+// Insert new track at specific position
+playlist.splice(1, 0, { id: 'track3', title: 'Song C', duration: 195 })
+
+// Find current position of a track by its stable key
+const track1Position = playlist.indexOfKey('track1')
+const keyAtPosition2 = playlist.keyAt(2)
 ```
 
 **Component ownership principle**: The component that emits events should own and initialize the event store. This creates clear boundaries and prevents coupling issues.

@@ -19,7 +19,6 @@ import {
 	isObjectOfType,
 	toError,
 	UNSET,
-	valueString,
 } from './util'
 
 /* === Types === */
@@ -50,7 +49,7 @@ const createComputed = <T extends {}>(
 	initialValue: T = UNSET,
 ): Computed<T> => {
 	if (!isComputedCallback(callback))
-		throw new InvalidCallbackError('computed', valueString(callback))
+		throw new InvalidCallbackError('computed', callback)
 	if (initialValue == null) throw new NullishSignalValueError('computed')
 
 	const watchers: Set<Watcher> = new Set()

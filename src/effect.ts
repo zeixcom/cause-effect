@@ -1,6 +1,6 @@
 import { CircularDependencyError, InvalidCallbackError } from './errors'
 import { type Cleanup, createWatcher, observe } from './system'
-import { isAbortError, isAsyncFunction, isFunction, valueString } from './util'
+import { isAbortError, isAsyncFunction, isFunction } from './util'
 
 /* === Types === */
 
@@ -26,7 +26,7 @@ type EffectCallback =
  */
 const createEffect = (callback: EffectCallback): Cleanup => {
 	if (!isFunction(callback) || callback.length > 1)
-		throw new InvalidCallbackError('effect', valueString(callback))
+		throw new InvalidCallbackError('effect', callback)
 
 	const isAsync = isAsyncFunction(callback)
 	let running = false

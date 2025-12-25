@@ -1,7 +1,7 @@
 import { isEqual } from './diff'
 import { InvalidCallbackError, NullishSignalValueError } from './errors'
 import { notify, subscribe, type Watcher } from './system'
-import { isFunction, isObjectOfType, UNSET, valueString } from './util'
+import { isFunction, isObjectOfType, UNSET } from './util'
 
 /* === Types === */
 
@@ -60,10 +60,7 @@ const createState = /*#__PURE__*/ <T extends {}>(initialValue: T): State<T> => {
 		update: {
 			value: (updater: (oldValue: T) => T) => {
 				if (!isFunction(updater))
-					throw new InvalidCallbackError(
-						'state update',
-						valueString(updater),
-					)
+					throw new InvalidCallbackError('state update', updater)
 				setValue(updater(value))
 			},
 		},

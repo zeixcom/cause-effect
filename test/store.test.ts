@@ -1809,7 +1809,7 @@ describe('store', () => {
 
 			// @ts-expect-error deliberate call with non-array-like object
 			expect(() => user.splice(0, 1)).toThrow(
-				'Cannot splice non-array-like object',
+				'Forbidden method call splice in store because it is only supported for array-like stores',
 			)
 		})
 
