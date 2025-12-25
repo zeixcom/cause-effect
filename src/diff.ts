@@ -138,16 +138,15 @@ const diff = <T extends UnknownRecord | UnknownArray>(
 		if (!isEqual(oldValue, newValue, visited)) change[key] = newValue
 	}
 
-	const changed =
-		Object.keys(add).length > 0 ||
-		Object.keys(change).length > 0 ||
-		Object.keys(remove).length > 0
-
 	return {
-		changed,
 		add,
 		change,
 		remove,
+		changed: !!(
+			Object.keys(add).length ||
+			Object.keys(change).length ||
+			Object.keys(remove).length
+		),
 	}
 }
 

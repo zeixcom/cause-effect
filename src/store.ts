@@ -1,6 +1,7 @@
 import { isComputed } from './computed'
 import {
 	type ArrayToRecord,
+	type DiffResult,
 	diff,
 	type PartialRecord,
 	type UnknownArray,
@@ -166,7 +167,7 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 	let keyCounter = 0
 	let order: string[] = []
 
-	// Get signal by key or index (for array-like stores only)
+	// Get signal by key or index
 	const getSignal = (
 		prop: string,
 	): Signal<T[Extract<keyof T, string>] & {}> | undefined => {
@@ -258,20 +259,18 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 	): boolean => {
 		if (!isValidValue(key, value)) return false
 
+		// Create signal for key
 		const signal =
 			isState(value) || isStore(value)
 				? value
 				: isRecord(value) || Array.isArray(value)
 					? createStore(value)
 					: createState(value)
+
+		// Set internal states
 		// @ts-expect-error non-matching signal types
 		signals.set(key, signal)
-
-		// Add to order array for all stores
-		if (!order.includes(key)) {
-			order.push(key)
-		}
-
+		if (!order.includes(key)) order.push(key)
 		const watcher = createWatcher(() =>
 			observe(() => {
 				emit('change', { [key]: signal.get() } as PartialRecord<T>)
@@ -289,63 +288,42 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 
 	// Remove nested signal and effect
 	const removeProperty = (key: string, single = false) => {
-		// Remove from order array for all stores
-		const index = order.indexOf(key)
-		if (index >= 0) {
-			order = [...order.slice(0, index), ...order.slice(index + 1)]
-			if (single) order = [...order]
-		}
-
+		// Remove signal for key
 		const ok = signals.delete(key)
-		if (ok) {
-			const watcher = signalWatchers.get(key)
-			if (watcher) watcher.cleanup()
-			signalWatchers.delete(key)
-		}
+		if (!ok) return
+
+		// Clean up internal states
+		const index = order.indexOf(key)
+		if (index >= 0) order.splice(index, 1)
+		const watcher = signalWatchers.get(key)
+		if (watcher) watcher.cleanup()
+		signalWatchers.delete(key)
 
 		if (single) {
+			order = order.filter(() => true) // Compact array
 			notify(watchers)
 			emit('remove', { [key]: UNSET } as PartialRecord<T>)
 		}
 	}
 
-	// Reconcile data and dispatch events
-	const reconcile = (
-		oldValue: T,
-		newValue: T,
-		initialRun?: boolean,
-	): boolean => {
-		const oldRecord = isArrayLike ? arrayToRecord(oldValue) : oldValue
-		const newRecord = isArrayLike ? arrayToRecord(newValue) : newValue
+	// Commit batched changes and emit notifications
+	const batchChanges = (changes: DiffResult<T>, initialRun?: boolean) => {
+		// Additions
+		if (Object.keys(changes.add).length) {
+			for (const key in changes.add)
+				addProperty(key, changes.add[key] ?? UNSET, false)
 
-		const changes = diff(
-			oldRecord as T extends UnknownArray ? ArrayToRecord<T> : T,
-			newRecord as T extends UnknownArray ? ArrayToRecord<T> : T,
-		)
-
-		batch(() => {
-			// Additions
-			if (Object.keys(changes.add).length) {
-				for (const key in changes.add) {
-					const value = changes.add[key]
-					// Skip undefined values in sparse arrays
-					if (value === undefined) continue
-
-					addProperty(key, value ?? UNSET, false)
-				}
-
-				// Queue initial additions event to allow listeners to be added first
-				if (initialRun) {
-					setTimeout(() => {
-						emit('add', changes.add)
-					}, 0)
-				} else {
+			// Queue initial additions event to allow listeners to be added first
+			if (initialRun)
+				setTimeout(() => {
 					emit('add', changes.add)
-				}
-			}
+				}, 0)
+			else emit('add', changes.add)
+		}
 
-			// Changes
-			if (Object.keys(changes.change).length) {
+		// Changes
+		if (Object.keys(changes.change).length) {
+			batch(() => {
 				for (const key in changes.change) {
 					const value = changes.change[key]
 					if (!isValidValue(key, value)) continue
@@ -356,18 +334,40 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 						throw new StoreKeyReadonlyError(key, valueString(value))
 				}
 				emit('change', changes.change)
-			}
+			})
+		}
 
-			// Removals
-			if (Object.keys(changes.remove).length) {
-				for (const key in changes.remove) removeProperty(key)
-				order = order.filter(() => true)
-				emit('remove', changes.remove)
-			}
-		})
+		// Removals
+		if (Object.keys(changes.remove).length) {
+			for (const key in changes.remove) removeProperty(key)
+			order = order.filter(() => true)
+			emit('remove', changes.remove)
+		}
 
 		return changes.changed
 	}
+
+	// Reconcile data and dispatch events
+	const reconcile = (
+		oldValue: T,
+		newValue: T,
+		initialRun?: boolean,
+	): boolean =>
+		batchChanges(
+			diff(
+				(isArrayLike
+					? arrayToRecord(oldValue)
+					: oldValue) as T extends UnknownArray
+					? ArrayToRecord<T>
+					: T,
+				(isArrayLike
+					? arrayToRecord(newValue)
+					: newValue) as T extends UnknownArray
+					? ArrayToRecord<T>
+					: T,
+			),
+			initialRun,
+		)
 
 	// Initialize data
 	reconcile(
@@ -386,20 +386,12 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 			value: isArrayLike,
 		},
 		[Symbol.iterator]: {
-			value: isArrayLike
-				? function* () {
-						const indexes = order.keys()
-						for (const index of indexes) {
-							const key = order[index]
-							if (key) yield signals.get(key)
-						}
-					}
-				: function* () {
-						for (const key of order) {
-							const signal = signals.get(key)
-							if (signal) yield [key, signal]
-						}
-					},
+			value: function* () {
+				for (const key of order) {
+					const signal = signals.get(key)
+					if (signal) yield isArrayLike ? signal : [key, signal]
+				}
+			},
 		},
 		add: {
 			value: isArrayLike
@@ -432,19 +424,13 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 		get: {
 			value: (): T => {
 				subscribe(watchers)
-				if (isArrayLike) {
-					return order
-						.map(key => signals.get(key)?.get())
-						.filter(v => v !== undefined) as unknown as T
-				} else {
-					return current() as T
-				}
+				return current()
 			},
 		},
 		remove: {
 			value: (keyOrIndex: string | number): void => {
 				let key = String(keyOrIndex)
-				if (isArrayLike && isNumber(keyOrIndex)) {
+				if (isNumber(keyOrIndex)) {
 					if (!order[keyOrIndex])
 						throw new StoreKeyRangeError(keyOrIndex)
 					key = order[keyOrIndex]
@@ -453,15 +439,15 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 			},
 		},
 		set: {
-			value: (v: T): void => {
-				if (reconcile(current(), v)) {
+			value: (newValue: T): void => {
+				if (reconcile(current(), newValue)) {
 					notify(watchers)
-					if (UNSET === v) watchers.clear()
+					if (UNSET === newValue) watchers.clear()
 				}
 			},
 		},
 		update: {
-			value: (fn: (v: T) => T): void => {
+			value: (fn: (oldValue: T) => T): void => {
 				const oldValue = current()
 				const newValue = fn(oldValue)
 				if (reconcile(oldValue, newValue)) {
@@ -497,11 +483,11 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 									String(a[2]).localeCompare(String(b[2])),
 					)
 
-				// Create new positional mappings
+				// Set new order
 				order = entries.map(([_, key]) => key)
 
 				notify(watchers)
-				emit('sort', order)
+				emit('sort', [...order]) // Make copy for notification payload will be frozen
 			},
 		},
 		splice: {
@@ -513,91 +499,65 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 				if (!isArrayLike)
 					throw new Error('Cannot splice non-array-like object')
 
+				// Normalize start and deleteCount
 				const length = signals.size
-				if (deleteCount === undefined)
-					deleteCount = Math.max(0, length - Math.max(0, start))
-
-				// Normalize start index
 				const actualStart =
 					start < 0
 						? Math.max(0, length + start)
 						: Math.min(start, length)
-
-				// Normalize deleteCount
 				const actualDeleteCount = Math.max(
 					0,
-					Math.min(deleteCount, length - actualStart),
+					Math.min(
+						deleteCount ??
+							Math.max(0, length - Math.max(0, actualStart)),
+						length - actualStart,
+					),
 				)
 
-				const deleted: ArrayItem<T>[] = []
-				const deletedKeys: string[] = []
-
-				// Work with a copy of order to avoid mutation during operation
-				const originalOrder = [...order]
+				const add = {} as PartialRecord<T>
+				const remove = {} as PartialRecord<T>
 
 				// Collect items to delete and their keys
 				for (let i = 0; i < actualDeleteCount; i++) {
 					const index = actualStart + i
-					const key = originalOrder[index]
+					const key = order[index]
 					if (key) {
 						const signal = signals.get(key)
-						if (signal) {
-							deleted.push(signal.get() as ArrayItem<T>)
-							deletedKeys.push(key)
-						}
+						if (signal) remove[key] = signal.get()
 					}
 				}
 
-				// Remove deleted items from signals map
-				deletedKeys.forEach(key => {
-					signals.delete(key)
-					const watcher = signalWatchers.get(key)
-					if (watcher) watcher.cleanup()
-					signalWatchers.delete(key)
-				})
-
 				// Build new order: items before splice point
-				const newOrder = originalOrder.slice(0, actualStart)
+				const newOrder = order.slice(0, actualStart)
 
 				// Add new items
-				const addedKeys: string[] = []
 				for (const item of items) {
 					const key = generateKey(item)
 					newOrder.push(key)
-					addProperty(key, item, false)
-					addedKeys.push(key)
+					add[key] = item
 				}
 
 				// Add items after splice point
-				newOrder.push(
-					...originalOrder.slice(actualStart + actualDeleteCount),
-				)
+				newOrder.push(...order.slice(actualStart + actualDeleteCount))
 
 				// Update the order array
-				order = newOrder
+				order = newOrder.filter(() => true) // Compact array
 
-				// Emit events for changes
-				if (deletedKeys.length > 0) {
-					const removeChange = {} as PartialRecord<T>
-					deletedKeys.forEach(key => {
-						removeChange[key] = UNSET
+				const changed = !!(
+					Object.keys(add).length || Object.keys(remove).length
+				)
+
+				if (changed)
+					batchChanges({
+						add,
+						change: {} as PartialRecord<T>,
+						remove,
+						changed,
 					})
-					emit('remove', removeChange)
-				}
 
-				if (addedKeys.length > 0) {
-					const addChange = {} as PartialRecord<T>
-					addedKeys.forEach(key => {
-						const signal = signals.get(key)
-						if (signal) addChange[key] = signal.get()
-					})
-					emit('add', addChange)
-				}
-
-				// Notify watchers
 				notify(watchers)
 
-				return deleted
+				return Object.values(remove) as ArrayItem<T>[]
 			},
 		},
 		on: {

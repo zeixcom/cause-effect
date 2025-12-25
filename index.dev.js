@@ -111,12 +111,12 @@ var diff = (oldObj, newObj) => {
   const oldValid = isRecordOrArray(oldObj);
   const newValid = isRecordOrArray(newObj);
   if (!oldValid || !newValid) {
-    const changed2 = !Object.is(oldObj, newObj);
+    const changed = !Object.is(oldObj, newObj);
     return {
-      changed: changed2,
-      add: changed2 && newValid ? newObj : {},
+      changed,
+      add: changed && newValid ? newObj : {},
       change: {},
-      remove: changed2 && oldValid ? oldObj : {}
+      remove: changed && oldValid ? oldObj : {}
     };
   }
   const visited = new WeakSet;
@@ -141,12 +141,11 @@ var diff = (oldObj, newObj) => {
     if (!isEqual(oldValue, newValue, visited))
       change[key] = newValue;
   }
-  const changed = Object.keys(add).length > 0 || Object.keys(change).length > 0 || Object.keys(remove).length > 0;
   return {
-    changed,
     add,
     change,
-    remove
+    remove,
+    changed: !!(Object.keys(add).length || Object.keys(change).length || Object.keys(remove).length)
   };
 };
 
@@ -523,9 +522,8 @@ var createStore = (initialValue, keyConfig) => {
       return false;
     const signal = isState(value) || isStore(value) ? value : isRecord(value) || Array.isArray(value) ? createStore(value) : createState(value);
     signals.set(key, signal);
-    if (!order.includes(key)) {
+    if (!order.includes(key))
       order.push(key);
-    }
     const watcher = createWatcher(() => observe(() => {
       emit("change", { [key]: signal.get() });
     }, watcher));
@@ -538,45 +536,35 @@ var createStore = (initialValue, keyConfig) => {
     return true;
   };
   const removeProperty = (key, single = false) => {
-    const index = order.indexOf(key);
-    if (index >= 0) {
-      order = [...order.slice(0, index), ...order.slice(index + 1)];
-      if (single)
-        order = [...order];
-    }
     const ok = signals.delete(key);
-    if (ok) {
-      const watcher = signalWatchers.get(key);
-      if (watcher)
-        watcher.cleanup();
-      signalWatchers.delete(key);
-    }
+    if (!ok)
+      return;
+    const index = order.indexOf(key);
+    if (index >= 0)
+      order.splice(index, 1);
+    const watcher = signalWatchers.get(key);
+    if (watcher)
+      watcher.cleanup();
+    signalWatchers.delete(key);
     if (single) {
+      order = order.filter(() => true);
       notify(watchers);
       emit("remove", { [key]: UNSET });
     }
   };
-  const reconcile = (oldValue, newValue, initialRun) => {
-    const oldRecord = isArrayLike ? arrayToRecord(oldValue) : oldValue;
-    const newRecord = isArrayLike ? arrayToRecord(newValue) : newValue;
-    const changes = diff(oldRecord, newRecord);
-    batch(() => {
-      if (Object.keys(changes.add).length) {
-        for (const key in changes.add) {
-          const value = changes.add[key];
-          if (value === undefined)
-            continue;
-          addProperty(key, value ?? UNSET, false);
-        }
-        if (initialRun) {
-          setTimeout(() => {
-            emit("add", changes.add);
-          }, 0);
-        } else {
+  const batchChanges = (changes, initialRun) => {
+    if (Object.keys(changes.add).length) {
+      for (const key in changes.add)
+        addProperty(key, changes.add[key] ?? UNSET, false);
+      if (initialRun)
+        setTimeout(() => {
           emit("add", changes.add);
-        }
-      }
-      if (Object.keys(changes.change).length) {
+        }, 0);
+      else
+        emit("add", changes.add);
+    }
+    if (Object.keys(changes.change).length) {
+      batch(() => {
         for (const key in changes.change) {
           const value = changes.change[key];
           if (!isValidValue(key, value))
@@ -588,16 +576,17 @@ var createStore = (initialValue, keyConfig) => {
             throw new StoreKeyReadonlyError(key, valueString(value));
         }
         emit("change", changes.change);
-      }
-      if (Object.keys(changes.remove).length) {
-        for (const key in changes.remove)
-          removeProperty(key);
-        order = order.filter(() => true);
-        emit("remove", changes.remove);
-      }
-    });
+      });
+    }
+    if (Object.keys(changes.remove).length) {
+      for (const key in changes.remove)
+        removeProperty(key);
+      order = order.filter(() => true);
+      emit("remove", changes.remove);
+    }
     return changes.changed;
   };
+  const reconcile = (oldValue, newValue, initialRun) => batchChanges(diff(isArrayLike ? arrayToRecord(oldValue) : oldValue, isArrayLike ? arrayToRecord(newValue) : newValue), initialRun);
   reconcile(isArrayLike ? [] : {}, initialValue, true);
   const store = {};
   Object.defineProperties(store, {
@@ -608,18 +597,11 @@ var createStore = (initialValue, keyConfig) => {
       value: isArrayLike
     },
     [Symbol.iterator]: {
-      value: isArrayLike ? function* () {
-        const indexes = order.keys();
-        for (const index of indexes) {
-          const key = order[index];
-          if (key)
-            yield signals.get(key);
-        }
-      } : function* () {
+      value: function* () {
         for (const key of order) {
           const signal = signals.get(key);
           if (signal)
-            yield [key, signal];
+            yield isArrayLike ? signal : [key, signal];
         }
       }
     },
@@ -654,17 +636,13 @@ var createStore = (initialValue, keyConfig) => {
     get: {
       value: () => {
         subscribe(watchers);
-        if (isArrayLike) {
-          return order.map((key) => signals.get(key)?.get()).filter((v) => v !== undefined);
-        } else {
-          return current();
-        }
+        return current();
       }
     },
     remove: {
       value: (keyOrIndex) => {
         let key = String(keyOrIndex);
-        if (isArrayLike && isNumber(keyOrIndex)) {
+        if (isNumber(keyOrIndex)) {
           if (!order[keyOrIndex])
             throw new StoreKeyRangeError(keyOrIndex);
           key = order[keyOrIndex];
@@ -674,10 +652,10 @@ var createStore = (initialValue, keyConfig) => {
       }
     },
     set: {
-      value: (v) => {
-        if (reconcile(current(), v)) {
+      value: (newValue) => {
+        if (reconcile(current(), newValue)) {
           notify(watchers);
-          if (UNSET === v)
+          if (UNSET === newValue)
             watchers.clear();
         }
       }
@@ -705,7 +683,7 @@ var createStore = (initialValue, keyConfig) => {
         }).sort(compareFn ? (a, b) => compareFn(a[2], b[2]) : (a, b) => String(a[2]).localeCompare(String(b[2])));
         order = entries.map(([_, key]) => key);
         notify(watchers);
-        emit("sort", order);
+        emit("sort", [...order]);
       }
     },
     splice: {
@@ -713,59 +691,37 @@ var createStore = (initialValue, keyConfig) => {
         if (!isArrayLike)
           throw new Error("Cannot splice non-array-like object");
         const length = signals.size;
-        if (deleteCount === undefined)
-          deleteCount = Math.max(0, length - Math.max(0, start));
         const actualStart = start < 0 ? Math.max(0, length + start) : Math.min(start, length);
-        const actualDeleteCount = Math.max(0, Math.min(deleteCount, length - actualStart));
-        const deleted = [];
-        const deletedKeys = [];
-        const originalOrder = [...order];
+        const actualDeleteCount = Math.max(0, Math.min(deleteCount ?? Math.max(0, length - Math.max(0, actualStart)), length - actualStart));
+        const add = {};
+        const remove = {};
         for (let i = 0;i < actualDeleteCount; i++) {
           const index = actualStart + i;
-          const key = originalOrder[index];
+          const key = order[index];
           if (key) {
             const signal = signals.get(key);
-            if (signal) {
-              deleted.push(signal.get());
-              deletedKeys.push(key);
-            }
+            if (signal)
+              remove[key] = signal.get();
           }
         }
-        deletedKeys.forEach((key) => {
-          signals.delete(key);
-          const watcher = signalWatchers.get(key);
-          if (watcher)
-            watcher.cleanup();
-          signalWatchers.delete(key);
-        });
-        const newOrder = originalOrder.slice(0, actualStart);
-        const addedKeys = [];
+        const newOrder = order.slice(0, actualStart);
         for (const item of items) {
           const key = generateKey(item);
           newOrder.push(key);
-          addProperty(key, item, false);
-          addedKeys.push(key);
+          add[key] = item;
         }
-        newOrder.push(...originalOrder.slice(actualStart + actualDeleteCount));
-        order = newOrder;
-        if (deletedKeys.length > 0) {
-          const removeChange = {};
-          deletedKeys.forEach((key) => {
-            removeChange[key] = UNSET;
+        newOrder.push(...order.slice(actualStart + actualDeleteCount));
+        order = newOrder.filter(() => true);
+        const changed = !!(Object.keys(add).length || Object.keys(remove).length);
+        if (changed)
+          batchChanges({
+            add,
+            change: {},
+            remove,
+            changed
           });
-          emit("remove", removeChange);
-        }
-        if (addedKeys.length > 0) {
-          const addChange = {};
-          addedKeys.forEach((key) => {
-            const signal = signals.get(key);
-            if (signal)
-              addChange[key] = signal.get();
-          });
-          emit("add", addChange);
-        }
         notify(watchers);
-        return deleted;
+        return Object.values(remove);
       }
     },
     on: {
