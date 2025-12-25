@@ -38,18 +38,6 @@ const isRecordOrArray = /*#__PURE__*/ <
 	value: unknown,
 ): value is T => isRecord(value) || Array.isArray(value)
 
-const validArrayIndexes = /*#__PURE__*/ (
-	keys: Array<PropertyKey>,
-): number[] | null => {
-	if (!keys.length) return null
-	const indexes = keys.map(k =>
-		isString(k) ? parseInt(k, 10) : isNumber(k) ? k : NaN,
-	)
-	return indexes.every(index => Number.isFinite(index) && index >= 0)
-		? indexes.sort((a, b) => a - b)
-		: null
-}
-
 const hasMethod = /*#__PURE__*/ <
 	T extends object & Record<string, (...args: unknown[]) => unknown>,
 >(
@@ -63,23 +51,6 @@ const isAbortError = /*#__PURE__*/ (error: unknown): boolean =>
 
 const toError = /*#__PURE__*/ (reason: unknown): Error =>
 	reason instanceof Error ? reason : Error(String(reason))
-
-const arrayToRecord = /*#__PURE__*/ <T>(array: T[]): Record<string, T> => {
-	const record: Record<string, T> = {}
-	for (let i = 0; i < array.length; i++) record[String(i)] = array[i]
-	return record
-}
-
-const recordToArray = /*#__PURE__*/ <T>(
-	record: Record<string | number, T>,
-): Record<string, T> | T[] => {
-	const indexes = validArrayIndexes(Object.keys(record))
-	if (indexes === null) return record
-
-	const array: T[] = []
-	for (const index of indexes) array.push(record[String(index)])
-	return array
-}
 
 const valueString = /*#__PURE__*/ (value: unknown): string =>
 	isString(value)
@@ -103,7 +74,5 @@ export {
 	hasMethod,
 	isAbortError,
 	toError,
-	arrayToRecord,
-	recordToArray,
 	valueString,
 }

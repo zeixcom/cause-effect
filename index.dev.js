@@ -58,23 +58,8 @@ var isAsyncFunction = (fn) => isFunction(fn) && fn.constructor.name === "AsyncFu
 var isObjectOfType = (value, type) => Object.prototype.toString.call(value) === `[object ${type}]`;
 var isRecord = (value) => isObjectOfType(value, "Object");
 var isRecordOrArray = (value) => isRecord(value) || Array.isArray(value);
-var validArrayIndexes = (keys) => {
-  if (!keys.length)
-    return null;
-  const indexes = keys.map((k) => isString(k) ? parseInt(k, 10) : isNumber(k) ? k : NaN);
-  return indexes.every((index) => Number.isFinite(index) && index >= 0) ? indexes.sort((a, b) => a - b) : null;
-};
 var isAbortError = (error) => error instanceof DOMException && error.name === "AbortError";
 var toError = (reason) => reason instanceof Error ? reason : Error(String(reason));
-var recordToArray = (record) => {
-  const indexes = validArrayIndexes(Object.keys(record));
-  if (indexes === null)
-    return record;
-  const array = [];
-  for (const index of indexes)
-    array.push(record[String(index)]);
-  return array;
-};
 var valueString = (value) => isString(value) ? `"${value}"` : !!value && typeof value === "object" ? JSON.stringify(value) : String(value);
 
 // src/diff.ts
@@ -475,14 +460,13 @@ var createStore = (initialValue, keyConfig) => {
   const signalWatchers = new Map;
   const isArrayLike = Array.isArray(initialValue);
   let keyCounter = 0;
-  const keyAt = new Map;
-  const indexByKey = new Map;
+  let order = [];
   const getSignal = (prop) => {
     let key = prop;
     if (isArrayLike) {
       const index = Number(prop);
       if (Number.isInteger(index) && index >= 0)
-        key = keyAt.get(index) ?? prop;
+        key = order[index] ?? prop;
     }
     return signals.get(key);
   };
@@ -493,28 +477,31 @@ var createStore = (initialValue, keyConfig) => {
     return isString(keyConfig) ? `${keyConfig}${id}` : isFunction(keyConfig) ? keyConfig(item) : String(id);
   };
   const arrayToRecord = (array) => {
-    if (!isArrayLike)
+    if (!Array.isArray(array))
       return array;
     const record = {};
-    const arrayValue = array;
-    for (let i = 0;i < arrayValue.length; i++) {
-      const value = arrayValue[i];
+    for (let i = 0;i < array.length; i++) {
+      const value = array[i];
       if (value === undefined)
         continue;
-      let key = keyAt.get(i);
+      let key = order[i];
       if (!key) {
         key = generateKey(value);
-        keyAt.set(i, key);
-        indexByKey.set(key, i);
+        order[i] = key;
       }
       record[key] = value;
     }
     return record;
   };
   const current = () => {
+    if (isArrayLike)
+      return order.map((key) => signals.get(key)?.get()).filter((v) => v !== undefined);
     const record = {};
-    for (const [key, signal] of signals)
-      record[key] = signal.get();
+    for (const key of order) {
+      const signal = signals.get(key);
+      if (signal)
+        record[key] = signal.get();
+    }
     return record;
   };
   const emit = (key, changes) => {
@@ -522,7 +509,6 @@ var createStore = (initialValue, keyConfig) => {
     for (const listener of listeners[key])
       listener(changes);
   };
-  const getSortedIndexes = () => Array.from(keyAt.keys()).sort((a, b) => a - b);
   const isValidValue = (key, value) => {
     if (value == null)
       throw new NullishSignalValueError(`store for key "${key}"`);
@@ -537,6 +523,9 @@ var createStore = (initialValue, keyConfig) => {
       return false;
     const signal = isState(value) || isStore(value) ? value : isRecord(value) || Array.isArray(value) ? createStore(value) : createState(value);
     signals.set(key, signal);
+    if (!order.includes(key)) {
+      order.push(key);
+    }
     const watcher = createWatcher(() => observe(() => {
       emit("change", { [key]: signal.get() });
     }, watcher));
@@ -549,12 +538,11 @@ var createStore = (initialValue, keyConfig) => {
     return true;
   };
   const removeProperty = (key, single = false) => {
-    if (isArrayLike) {
-      const index = indexByKey.get(key);
-      if (index !== undefined) {
-        indexByKey.delete(key);
-        keyAt.delete(index);
-      }
+    const index = order.indexOf(key);
+    if (index >= 0) {
+      order = [...order.slice(0, index), ...order.slice(index + 1)];
+      if (single)
+        order = [...order];
     }
     const ok = signals.delete(key);
     if (ok) {
@@ -567,7 +555,6 @@ var createStore = (initialValue, keyConfig) => {
       notify(watchers);
       emit("remove", { [key]: UNSET });
     }
-    return ok;
   };
   const reconcile = (oldValue, newValue, initialRun) => {
     const oldRecord = isArrayLike ? arrayToRecord(oldValue) : oldValue;
@@ -605,6 +592,7 @@ var createStore = (initialValue, keyConfig) => {
       if (Object.keys(changes.remove).length) {
         for (const key in changes.remove)
           removeProperty(key);
+        order = order.filter(() => true);
         emit("remove", changes.remove);
       }
     });
@@ -621,23 +609,25 @@ var createStore = (initialValue, keyConfig) => {
     },
     [Symbol.iterator]: {
       value: isArrayLike ? function* () {
-        const indexes = getSortedIndexes();
+        const indexes = order.keys();
         for (const index of indexes) {
-          const key = keyAt.get(index);
+          const key = order[index];
           if (key)
             yield signals.get(key);
         }
       } : function* () {
-        for (const [key, signal] of signals)
-          yield [key, signal];
+        for (const key of order) {
+          const signal = signals.get(key);
+          if (signal)
+            yield [key, signal];
+        }
       }
     },
     add: {
       value: isArrayLike ? (v) => {
-        const index = keyAt.size;
+        const index = order.length;
         const key = generateKey(v);
-        keyAt.set(index, key);
-        indexByKey.set(key, index);
+        order[index] = key;
         addProperty(key, v, true);
       } : (k, v) => {
         if (!signals.has(k))
@@ -653,71 +643,39 @@ var createStore = (initialValue, keyConfig) => {
     },
     keyAt: {
       value(index) {
-        if (!isArrayLike)
-          return;
-        return keyAt.get(index);
+        return order[index];
       }
     },
-    indexByKey: {
+    indexOfKey: {
       value(key) {
-        if (!isArrayLike)
-          return;
-        return indexByKey.get(key);
+        return order.indexOf(key);
       }
     },
     get: {
       value: () => {
         subscribe(watchers);
         if (isArrayLike) {
-          const array = [];
-          for (const [index, key] of keyAt.entries()) {
-            const signal = signals.get(key);
-            if (signal)
-              array[index] = signal.get();
-          }
-          return array;
+          return order.map((key) => signals.get(key)?.get()).filter((v) => v !== undefined);
         } else {
           return current();
         }
       }
     },
     remove: {
-      value: isArrayLike ? (index) => {
-        if (index < 0 || index >= signals.size)
-          throw new StoreKeyRangeError(index);
-        const key = keyAt.get(index);
-        if (!key)
-          return;
-        removeProperty(key, false);
-        const newKeyAt = new Map;
-        const newIndexByKey = new Map;
-        let newPos = 0;
-        for (const [pos, k] of keyAt.entries()) {
-          if (pos !== index) {
-            newKeyAt.set(newPos, k);
-            newIndexByKey.set(k, newPos);
-            newPos++;
-          }
+      value: (keyOrIndex) => {
+        let key = String(keyOrIndex);
+        if (isArrayLike && isNumber(keyOrIndex)) {
+          if (!order[keyOrIndex])
+            throw new StoreKeyRangeError(keyOrIndex);
+          key = order[keyOrIndex];
         }
-        keyAt.clear();
-        indexByKey.clear();
-        newKeyAt.forEach((k, pos) => {
-          keyAt.set(pos, k);
-          indexByKey.set(k, pos);
-        });
-        notify(watchers);
-        emit("remove", {
-          [key]: UNSET
-        });
-      } : (k) => {
-        if (signals.has(k))
-          removeProperty(k, true);
+        if (signals.has(key))
+          removeProperty(key, true);
       }
     },
     set: {
       value: (v) => {
-        const currentValue = isArrayLike ? recordToArray(current()) : current();
-        if (reconcile(currentValue, v)) {
+        if (reconcile(current(), v)) {
           notify(watchers);
           if (UNSET === v)
             watchers.clear();
@@ -727,7 +685,7 @@ var createStore = (initialValue, keyConfig) => {
     update: {
       value: (fn) => {
         const oldValue = current();
-        const newValue = fn(recordToArray(oldValue));
+        const newValue = fn(oldValue);
         if (reconcile(oldValue, newValue)) {
           notify(watchers);
           if (UNSET === newValue)
@@ -737,45 +695,77 @@ var createStore = (initialValue, keyConfig) => {
     },
     sort: {
       value: (compareFn) => {
-        if (isArrayLike) {
-          const entries = Array.from(keyAt.entries()).map(([index, key]) => {
+        const entries = order.map((key, index) => {
+          const signal = signals.get(key);
+          return [
+            index,
+            key,
+            signal ? signal.get() : undefined
+          ];
+        }).sort(compareFn ? (a, b) => compareFn(a[2], b[2]) : (a, b) => String(a[2]).localeCompare(String(b[2])));
+        order = entries.map(([_, key]) => key);
+        notify(watchers);
+        emit("sort", order);
+      }
+    },
+    splice: {
+      value: (start, deleteCount, ...items) => {
+        if (!isArrayLike)
+          throw new Error("Cannot splice non-array-like object");
+        const length = signals.size;
+        if (deleteCount === undefined)
+          deleteCount = Math.max(0, length - Math.max(0, start));
+        const actualStart = start < 0 ? Math.max(0, length + start) : Math.min(start, length);
+        const actualDeleteCount = Math.max(0, Math.min(deleteCount, length - actualStart));
+        const deleted = [];
+        const deletedKeys = [];
+        const originalOrder = [...order];
+        for (let i = 0;i < actualDeleteCount; i++) {
+          const index = actualStart + i;
+          const key = originalOrder[index];
+          if (key) {
             const signal = signals.get(key);
-            return [
-              index,
-              key,
-              signal ? signal.get() : undefined
-            ];
-          }).sort(compareFn ? (a, b) => compareFn(a[2], b[2]) : (a, b) => String(a[2]).localeCompare(String(b[2])));
-          const newKeyAt = new Map;
-          const newIndexByKey = new Map;
-          entries.forEach(([_oldIndex, stableKey, _value], newIndex) => {
-            newKeyAt.set(newIndex, stableKey);
-            newIndexByKey.set(stableKey, newIndex);
-          });
-          keyAt.clear();
-          indexByKey.clear();
-          newKeyAt.forEach((key, index) => {
-            keyAt.set(index, key);
-            indexByKey.set(key, index);
-          });
-          const newOrder = entries.map(([oldIndex]) => String(oldIndex));
-          notify(watchers);
-          emit("sort", newOrder);
-        } else {
-          const entries = Array.from(signals.entries()).map(([key, signal]) => [key, signal.get()]).sort(compareFn ? (a, b) => compareFn(a[1], b[1]) : (a, b) => String(a[1]).localeCompare(String(b[1])));
-          const newSignals = new Map;
-          entries.forEach(([key]) => {
-            const keyStr = String(key);
-            const signal = signals.get(keyStr);
-            if (signal)
-              newSignals.set(keyStr, signal);
-          });
-          signals.clear();
-          newSignals.forEach((signal, key) => signals.set(key, signal));
-          const newOrder = entries.map(([key]) => String(key));
-          notify(watchers);
-          emit("sort", newOrder);
+            if (signal) {
+              deleted.push(signal.get());
+              deletedKeys.push(key);
+            }
+          }
         }
+        deletedKeys.forEach((key) => {
+          signals.delete(key);
+          const watcher = signalWatchers.get(key);
+          if (watcher)
+            watcher.cleanup();
+          signalWatchers.delete(key);
+        });
+        const newOrder = originalOrder.slice(0, actualStart);
+        const addedKeys = [];
+        for (const item of items) {
+          const key = generateKey(item);
+          newOrder.push(key);
+          addProperty(key, item, false);
+          addedKeys.push(key);
+        }
+        newOrder.push(...originalOrder.slice(actualStart + actualDeleteCount));
+        order = newOrder;
+        if (deletedKeys.length > 0) {
+          const removeChange = {};
+          deletedKeys.forEach((key) => {
+            removeChange[key] = UNSET;
+          });
+          emit("remove", removeChange);
+        }
+        if (addedKeys.length > 0) {
+          const addChange = {};
+          addedKeys.forEach((key) => {
+            const signal = signals.get(key);
+            if (signal)
+              addChange[key] = signal.get();
+          });
+          emit("add", addChange);
+        }
+        notify(watchers);
+        return deleted;
       }
     },
     on: {
@@ -805,8 +795,7 @@ var createStore = (initialValue, keyConfig) => {
     },
     ownKeys(target) {
       const staticKeys = Reflect.ownKeys(target);
-      const signalKeys = isArrayLike ? getSortedIndexes().map((key) => String(key)) : Array.from(signals.keys());
-      return [...new Set([...signalKeys, ...staticKeys])];
+      return [...new Set([...order, ...staticKeys])];
     },
     getOwnPropertyDescriptor(target, prop) {
       if (prop in target)

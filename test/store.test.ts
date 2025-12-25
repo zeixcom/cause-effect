@@ -1559,29 +1559,32 @@ describe('store', () => {
 		})
 	})
 
-	describe('keyAt() and indexByKey() methods', () => {
-		test('keyAt() returns undefined for record stores', () => {
+	describe('keyAt() and indexOfKey() methods', () => {
+		test('keyAt() works with record stores using order array', () => {
 			const user = createStore({
 				name: 'John',
 				email: 'john@example.com',
 				age: 30,
 			})
 
-			expect(user.keyAt(0)).toBeUndefined()
-			expect(user.keyAt(1)).toBeUndefined()
+			expect(user.keyAt(0)).toBe('name')
+			expect(user.keyAt(1)).toBe('email')
+			expect(user.keyAt(2)).toBe('age')
+			expect(user.keyAt(3)).toBeUndefined()
 			expect(user.keyAt(-1)).toBeUndefined()
 		})
 
-		test('indexByKey() returns undefined for record stores', () => {
+		test('indexOfKey() works with record stores using order array', () => {
 			const user = createStore({
 				name: 'John',
 				email: 'john@example.com',
 				age: 30,
 			})
 
-			expect(user.indexByKey('name')).toBeUndefined()
-			expect(user.indexByKey('email')).toBeUndefined()
-			expect(user.indexByKey('nonexistent')).toBeUndefined()
+			expect(user.indexOfKey('name')).toBe(0)
+			expect(user.indexOfKey('email')).toBe(1)
+			expect(user.indexOfKey('age')).toBe(2)
+			expect(user.indexOfKey('nonexistent')).toBe(-1)
 		})
 
 		test('keyAt() works with array stores using default stable keys', () => {
@@ -1595,18 +1598,18 @@ describe('store', () => {
 			expect(numbers.keyAt(-1)).toBeUndefined()
 		})
 
-		test('indexByKey() works with array stores using default stable keys', () => {
+		test('indexOfKey() works with array stores using default stable keys', () => {
 			const numbers = createStore([10, 20, 30])
 
 			// Get positions by stable keys
-			expect(numbers.indexByKey('0')).toBe(0)
-			expect(numbers.indexByKey('1')).toBe(1)
-			expect(numbers.indexByKey('2')).toBe(2)
-			expect(numbers.indexByKey('3')).toBeUndefined()
-			expect(numbers.indexByKey('nonexistent')).toBeUndefined()
+			expect(numbers.indexOfKey('0')).toBe(0)
+			expect(numbers.indexOfKey('1')).toBe(1)
+			expect(numbers.indexOfKey('2')).toBe(2)
+			expect(numbers.indexOfKey('3')).toBe(-1)
+			expect(numbers.indexOfKey('nonexistent')).toBe(-1)
 		})
 
-		test('keyAt() and indexByKey() work with custom string prefix keys', () => {
+		test('keyAt() and indexOfKey() work with custom string prefix keys', () => {
 			const items = createStore(['apple', 'banana', 'cherry'], 'fruit')
 
 			// Test keyAt with custom prefix
@@ -1615,14 +1618,14 @@ describe('store', () => {
 			expect(items.keyAt(2)).toBe('fruit2')
 			expect(items.keyAt(3)).toBeUndefined()
 
-			// Test indexByKey with custom prefix
-			expect(items.indexByKey('fruit0')).toBe(0)
-			expect(items.indexByKey('fruit1')).toBe(1)
-			expect(items.indexByKey('fruit2')).toBe(2)
-			expect(items.indexByKey('fruit3')).toBeUndefined()
+			// Test indexOfKey with custom prefix
+			expect(items.indexOfKey('fruit0')).toBe(0)
+			expect(items.indexOfKey('fruit1')).toBe(1)
+			expect(items.indexOfKey('fruit2')).toBe(2)
+			expect(items.indexOfKey('fruit3')).toBe(-1)
 		})
 
-		test('keyAt() and indexByKey() work with function-based keys', () => {
+		test('keyAt() and indexOfKey() work with function-based keys', () => {
 			const users = createStore(
 				[
 					{ id: 'alice', name: 'Alice' },
@@ -1638,11 +1641,11 @@ describe('store', () => {
 			expect(users.keyAt(2)).toBe('charlie')
 			expect(users.keyAt(3)).toBeUndefined()
 
-			// Test indexByKey with function-based keys
-			expect(users.indexByKey('alice')).toBe(0)
-			expect(users.indexByKey('bob')).toBe(1)
-			expect(users.indexByKey('charlie')).toBe(2)
-			expect(users.indexByKey('david')).toBeUndefined()
+			// Test indexOfKey with function-based keys
+			expect(users.indexOfKey('alice')).toBe(0)
+			expect(users.indexOfKey('bob')).toBe(1)
+			expect(users.indexOfKey('charlie')).toBe(2)
+			expect(users.indexOfKey('david')).toBe(-1)
 		})
 
 		test('stable key mappings persist after sort operations', () => {
@@ -1658,11 +1661,11 @@ describe('store', () => {
 
 			// Stable keys should still exist but at different positions
 			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(numbers.indexByKey(key1!)).toBe(0) // '1' (value 10) now at position 0
+			expect(numbers.indexOfKey(key1!)).toBe(0) // '1' (value 10) now at position 0
 			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(numbers.indexByKey(key2!)).toBe(1) // '2' (value 20) now at position 1
+			expect(numbers.indexOfKey(key2!)).toBe(1) // '2' (value 20) now at position 1
 			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(numbers.indexByKey(key0!)).toBe(2) // '0' (value 30) now at position 2
+			expect(numbers.indexOfKey(key0!)).toBe(2) // '0' (value 30) now at position 2
 
 			// Position-to-key mappings should be updated
 			expect(numbers.keyAt(0)).toBe(key1) // Position 0 now has key '1'
@@ -1683,22 +1686,22 @@ describe('store', () => {
 
 			// Check all mappings
 			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(items.indexByKey(firstKey!)).toBe(0)
+			expect(items.indexOfKey(firstKey!)).toBe(0)
 			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(items.indexByKey(secondKey!)).toBe(1)
+			expect(items.indexOfKey(secondKey!)).toBe(1)
 			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(items.indexByKey(thirdKey!)).toBe(2)
+			expect(items.indexOfKey(thirdKey!)).toBe(2)
 
 			// Remove the first item
 			items.remove(0)
 
 			// Check that second and third items moved up
 			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(items.indexByKey(firstKey!)).toBeUndefined() // Removed
+			expect(items.indexOfKey(firstKey!)).toBe(-1) // Removed
 			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(items.indexByKey(secondKey!)).toBe(0) // Moved to position 0
+			expect(items.indexOfKey(secondKey!)).toBe(0) // Moved to position 0
 			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(items.indexByKey(thirdKey!)).toBe(1) // Moved to position 1
+			expect(items.indexOfKey(thirdKey!)).toBe(1) // Moved to position 1
 
 			// Check position-to-key mappings
 			expect(items.keyAt(0)).toBe(secondKey)
@@ -1706,16 +1709,16 @@ describe('store', () => {
 			expect(items.keyAt(2)).toBeUndefined()
 		})
 
-		test('keyAt() and indexByKey() work with empty arrays', () => {
+		test('keyAt() and indexOfKey() work with empty arrays', () => {
 			const empty = createStore<string[]>([])
 
 			expect(empty.keyAt(0)).toBeUndefined()
-			expect(empty.indexByKey('0')).toBeUndefined()
+			expect(empty.indexOfKey('0')).toBe(-1)
 
 			// Add an item and test
 			empty.add('item')
 			expect(empty.keyAt(0)).toBe('0')
-			expect(empty.indexByKey('0')).toBe(0)
+			expect(empty.indexOfKey('0')).toBe(0)
 		})
 
 		test('methods handle invalid inputs gracefully', () => {
@@ -1726,11 +1729,11 @@ describe('store', () => {
 			expect(numbers.keyAt(Infinity)).toBeUndefined()
 			expect(numbers.keyAt(-Infinity)).toBeUndefined()
 
-			// Test indexByKey with invalid keys
-			expect(numbers.indexByKey('')).toBeUndefined()
+			// Test indexOfKey with invalid keys
+			expect(numbers.indexOfKey('')).toBe(-1)
 		})
 
-		test('round-trip consistency: keyAt(indexByKey(key)) === key', () => {
+		test('round-trip consistency: keyAt(indexOfKey(key)) === key', () => {
 			const items = createStore(['a', 'b', 'c'], 'item')
 
 			// Get a stable key
@@ -1739,7 +1742,7 @@ describe('store', () => {
 
 			// Round trip: key -> index -> key
 			// biome-ignore lint/style/noNonNullAssertion: test
-			const index = items.indexByKey(key!)
+			const index = items.indexOfKey(key!)
 			expect(index).toBe(1)
 
 			// biome-ignore lint/style/noNonNullAssertion: test
@@ -1747,7 +1750,7 @@ describe('store', () => {
 			expect(roundTripKey).toBe(key)
 		})
 
-		test('round-trip consistency: indexByKey(keyAt(index)) === index', () => {
+		test('round-trip consistency: indexOfKey(keyAt(index)) === index', () => {
 			const numbers = createStore([10, 20, 30])
 
 			// Get an index
@@ -1758,7 +1761,7 @@ describe('store', () => {
 			expect(key).toBe('2')
 
 			// biome-ignore lint/style/noNonNullAssertion: test
-			const roundTripIndex = numbers.indexByKey(key!)
+			const roundTripIndex = numbers.indexOfKey(key!)
 			expect(roundTripIndex).toBe(index)
 		})
 
@@ -1777,26 +1780,237 @@ describe('store', () => {
 
 			// Keys should still map correctly after sort
 			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(items.indexByKey(keyA!)).toBe(0)
+			expect(items.indexOfKey(keyA!)).toBe(0)
 			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(items.indexByKey(keyB!)).toBe(1)
+			expect(items.indexOfKey(keyB!)).toBe(1)
 			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(items.indexByKey(keyC!)).toBe(2)
+			expect(items.indexOfKey(keyC!)).toBe(2)
 
 			// Remove middle item
 			items.remove(1) // ['a', 'c']
 
 			// Check final state
 			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(items.indexByKey(keyA!)).toBe(0)
+			expect(items.indexOfKey(keyA!)).toBe(0)
 			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(items.indexByKey(keyB!)).toBeUndefined() // Removed
+			expect(items.indexOfKey(keyB!)).toBe(-1) // Removed
 			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(items.indexByKey(keyC!)).toBe(1)
+			expect(items.indexOfKey(keyC!)).toBe(1)
 
 			expect(items.keyAt(0)).toBe(keyA)
 			expect(items.keyAt(1)).toBe(keyC)
 			expect(items.keyAt(2)).toBeUndefined()
+		})
+	})
+
+	describe('splice() method', () => {
+		test('splice() throws error for record stores', () => {
+			const user = createStore({ name: 'Alice', age: 30 })
+
+			// @ts-expect-error deliberate call with non-array-like object
+			expect(() => user.splice(0, 1)).toThrow(
+				'Cannot splice non-array-like object',
+			)
+		})
+
+		test('splice() removes elements without adding new ones', () => {
+			const numbers = createStore([10, 20, 30, 40, 50])
+
+			const deleted = numbers.splice(1, 2)
+
+			expect(deleted).toEqual([20, 30])
+			expect(numbers.get()).toEqual([10, 40, 50])
+			expect(numbers.length).toBe(3)
+		})
+
+		test('splice() adds elements without removing any', () => {
+			const numbers = createStore([10, 20, 30])
+
+			const deleted = numbers.splice(1, 0, 15, 17)
+
+			expect(deleted).toEqual([])
+			expect(numbers.get()).toEqual([10, 15, 17, 20, 30])
+			expect(numbers.length).toBe(5)
+		})
+
+		test('splice() replaces elements (remove and add)', () => {
+			const numbers = createStore([10, 20, 30, 40, 50])
+
+			const deleted = numbers.splice(1, 2, 25, 35)
+
+			expect(deleted).toEqual([20, 30])
+			expect(numbers.get()).toEqual([10, 25, 35, 40, 50])
+			expect(numbers.length).toBe(5)
+		})
+
+		test('splice() handles negative start index', () => {
+			const numbers = createStore([10, 20, 30, 40, 50])
+
+			const deleted = numbers.splice(-2, 1, 45)
+
+			expect(deleted).toEqual([40])
+			expect(numbers.get()).toEqual([10, 20, 30, 45, 50])
+		})
+
+		test('splice() handles start index beyond array length', () => {
+			const numbers = createStore([10, 20, 30])
+
+			const deleted = numbers.splice(10, 1, 40, 50)
+
+			expect(deleted).toEqual([])
+			expect(numbers.get()).toEqual([10, 20, 30, 40, 50])
+		})
+
+		test('splice() handles deleteCount beyond available elements', () => {
+			const numbers = createStore([10, 20, 30])
+
+			const deleted = numbers.splice(1, 10, 25)
+
+			expect(deleted).toEqual([20, 30])
+			expect(numbers.get()).toEqual([10, 25])
+		})
+
+		test('splice() with no arguments behaves like empty splice', () => {
+			const numbers = createStore([10, 20, 30])
+
+			const deleted = numbers.splice(0)
+
+			expect(deleted).toEqual([10, 20, 30])
+			expect(numbers.get()).toEqual([])
+			expect(numbers.length).toBe(0)
+		})
+
+		test('splice() maintains stable keys correctly', () => {
+			const items = createStore(['a', 'b', 'c', 'd'])
+
+			// Get keys before splice
+			const keyA = items.keyAt(0)
+			const keyD = items.keyAt(3)
+
+			// Splice in the middle
+			items.splice(1, 2, 'x', 'y')
+
+			// Keys that weren't removed should still exist
+			// biome-ignore lint/style/noNonNullAssertion: test
+			expect(items.byKey(keyA!)).toBeDefined()
+			// biome-ignore lint/style/noNonNullAssertion: test
+			expect(items.byKey(keyA!)?.get()).toBe('a')
+			// biome-ignore lint/style/noNonNullAssertion: test
+			expect(items.byKey(keyD!)).toBeDefined()
+			// biome-ignore lint/style/noNonNullAssertion: test
+			expect(items.byKey(keyD!)?.get()).toBe('d')
+
+			// Check final array
+			expect(items.get()).toEqual(['a', 'x', 'y', 'd'])
+		})
+
+		test('splice() emits correct notifications', () => {
+			const numbers = createStore([10, 20, 30, 40])
+
+			let addNotification: Record<string, unknown> | undefined
+			let removeNotification: Record<string, unknown> | undefined
+
+			numbers.on('add', change => {
+				addNotification = change
+			})
+
+			numbers.on('remove', change => {
+				removeNotification = change
+			})
+
+			const deleted = numbers.splice(1, 2, 25, 35)
+
+			expect(deleted).toEqual([20, 30])
+			expect(removeNotification).toBeDefined()
+			expect(addNotification).toBeDefined()
+
+			// Check that the right number of keys were added/removed
+			if (removeNotification)
+				expect(Object.keys(removeNotification)).toHaveLength(2)
+			if (addNotification)
+				expect(Object.keys(addNotification)).toHaveLength(2)
+		})
+
+		test('splice() is reactive', () => {
+			const numbers = createStore([10, 20, 30])
+
+			let lastValue: number[] = []
+			let effectRuns = 0
+
+			createEffect(() => {
+				lastValue = numbers.get()
+				effectRuns++
+			})
+
+			// Initial effect run
+			expect(effectRuns).toBe(1)
+			expect(lastValue).toEqual([10, 20, 30])
+
+			// Splice should trigger reactivity
+			numbers.splice(1, 1, 25, 35)
+
+			expect(effectRuns).toBe(2)
+			expect(lastValue).toEqual([10, 25, 35, 30])
+		})
+
+		test('splice() works with nested objects', () => {
+			type User = { name: string; active: boolean }
+			const userData: User[] = [
+				{ name: 'Alice', active: true },
+				{ name: 'Bob', active: false },
+				{ name: 'Charlie', active: true },
+			]
+			const users = createStore(userData)
+
+			const newUser = { name: 'David', active: false }
+			const deleted = users.splice(1, 1, newUser)
+
+			expect(deleted).toHaveLength(1)
+			expect(deleted[0].name).toBe('Bob')
+			expect(deleted[0].active).toBe(false)
+
+			expect(users.get()).toHaveLength(3)
+			expect(users[1].name.get()).toBe('David')
+			expect(users[1].active.get()).toBe(false)
+		})
+
+		test('splice() handles edge case of empty array', () => {
+			const empty = createStore<number[]>([])
+
+			const deleted = empty.splice(0, 0, 10, 20)
+
+			expect(deleted).toEqual([])
+			expect(empty.get()).toEqual([10, 20])
+			expect(empty.length).toBe(2)
+		})
+
+		test('splice() handles insertion at the end', () => {
+			const numbers = createStore([10, 20, 30])
+
+			const deleted = numbers.splice(3, 0, 40, 50)
+
+			expect(deleted).toEqual([])
+			expect(numbers.get()).toEqual([10, 20, 30, 40, 50])
+		})
+
+		test('splice() preserves existing signals after modifications', () => {
+			const numbers = createStore([10, 20, 30, 40])
+
+			// Get signal reference before splice
+			const signal0 = numbers[0]
+			const signal3 = numbers[3]
+
+			// Splice in the middle
+			numbers.splice(1, 2, 25)
+
+			// Original signals at positions 0 and 3 should still work
+			expect(signal0.get()).toBe(10)
+			expect(signal3.get()).toBe(40)
+
+			// Array should be [10, 25, 40]
+			expect(numbers.get()).toEqual([10, 25, 40])
+			expect(numbers[0]).toBe(signal0)
+			expect(numbers[2]).toBe(signal3) // signal3 moved to position 2
 		})
 	})
 })

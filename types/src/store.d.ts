@@ -24,8 +24,8 @@ type RecordStore<T extends UnknownRecord> = BaseStore & {
     add<K extends Extract<keyof T, string>>(key: K, value: T[K]): void;
     byKey<K extends Extract<keyof T, string>>(key: K): StoreKeySignal<T[K]>;
     get(): T;
-    keyAt(index: number): undefined;
-    indexByKey(key: string): undefined;
+    keyAt(index: number): string | undefined;
+    indexOfKey(key: string): number;
     set(value: T): void;
     update(fn: (value: T) => T): void;
     sort<U = T[Extract<keyof T, string>]>(compareFn?: (a: U, b: U) => number): void;
@@ -40,10 +40,11 @@ type ArrayStore<T extends UnknownArray> = BaseStore & {
     byKey(key: string): StoreKeySignal<ArrayItem<T>> | undefined;
     get(): T;
     keyAt(index: number): string | undefined;
-    indexByKey(key: string): number | undefined;
+    indexOfKey(key: string): number;
     set(value: T): void;
     update(fn: (value: T) => T): void;
     sort<U = ArrayItem<T>>(compareFn?: (a: U, b: U) => number): void;
+    splice(start: number, deleteCount?: number, ...items: ArrayItem<T>[]): ArrayItem<T>[];
     on<K extends keyof StoreChanges<T>>(type: K, listener: (change: StoreChanges<T>[K]) => void): Cleanup;
     remove(index: number): void;
 };

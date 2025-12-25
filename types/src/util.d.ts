@@ -10,7 +10,5 @@ declare const isRecordOrArray: <T extends Record<string | number, unknown> | Rea
 declare const hasMethod: <T extends object & Record<string, (...args: unknown[]) => unknown>>(obj: T, methodName: string) => obj is T & Record<string, (...args: unknown[]) => unknown>;
 declare const isAbortError: (error: unknown) => boolean;
 declare const toError: (reason: unknown) => Error;
-declare const arrayToRecord: <T>(array: T[]) => Record<string, T>;
-declare const recordToArray: <T>(record: Record<string | number, T>) => Record<string, T> | T[];
 declare const valueString: (value: unknown) => string;
-export { UNSET, isString, isNumber, isSymbol, isFunction, isAsyncFunction, isObjectOfType, isRecord, isRecordOrArray, hasMethod, isAbortError, toError, arrayToRecord, recordToArray, valueString, };
+export { UNSET, isString, isNumber, isSymbol, isFunction, isAsyncFunction, isObjectOfType, isRecord, isRecordOrArray, hasMethod, isAbortError, toError, valueString, };

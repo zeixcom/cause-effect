@@ -165,17 +165,6 @@ describe('toSignal', () => {
 			expect(result['1'].get()).toBe('hello')
 			expect(result['2'].get()).toEqual({ key: 'value' })
 		})
-
-		test('handles sparse arrays', () => {
-			const sparseArr = new Array(3)
-			sparseArr[1] = 'middle'
-			const result = toSignal(sparseArr)
-
-			expect(isStore(result)).toBe(true)
-			expect('0' in result).toBe(false)
-			expect(result['1'].get()).toBe('middle')
-			expect('2' in result).toBe(false)
-		})
 	})
 })
 
