@@ -1,9 +1,12 @@
+import type { Collection } from './collection';
 import { type Computed, type ComputedCallback } from './computed';
+import type { UnknownArray } from './diff';
 import { type State } from './state';
 import { type Store } from './store';
 type Signal<T extends {}> = {
     get(): T;
 };
+type ReadonlySignal<T extends {}> = T extends UnknownArray ? Collection<T> : Computed<T>;
 type UnknownSignalRecord = Record<string, Signal<unknown & {}>>;
 type SignalValues<S extends UnknownSignalRecord> = {
     [K in keyof S]: S[K] extends Signal<infer T> ? T : never;
@@ -34,4 +37,4 @@ declare const isMutableSignal: <T extends {}>(value: unknown) => value is State<
 declare function toSignal<T extends {}>(value: T): T extends Store<infer U> ? Store<U> : T extends State<infer U> ? State<U> : T extends Computed<infer U> ? Computed<U> : T extends Signal<infer U> ? Signal<U> : T extends ReadonlyArray<infer U extends {}> ? Store<U[]> : T extends Record<string, unknown & {}> ? Store<{
     [K in keyof T]: T[K];
 }> : T extends ComputedCallback<infer U extends {}> ? Computed<U> : State<T>;
-export { type Signal, type UnknownSignalRecord, type SignalValues, isSignal, isMutableSignal, toSignal, };
+export { type Signal, type ReadonlySignal, type UnknownSignalRecord, type SignalValues, isSignal, isMutableSignal, toSignal, };

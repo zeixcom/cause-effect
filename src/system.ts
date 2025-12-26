@@ -8,6 +8,21 @@ type Watcher = {
 	cleanup(): void
 }
 
+type Notifications = {
+	add: readonly string[]
+	change: readonly string[]
+	remove: readonly string[]
+	sort: readonly string[]
+}
+
+type Listener<K extends keyof Notifications> = (
+	payload: Notifications[K],
+) => void
+
+type Listeners = {
+	[K in keyof Notifications]: Set<Listener<K>>
+}
+
 /* === Internal === */
 
 // Currently active watcher
@@ -108,15 +123,32 @@ const observe = (run: () => void, watcher?: Watcher): void => {
 	}
 }
 
+/**
+ * Emit a notification to listeners
+ *
+ * @param {Set<Listener>} listeners - Listeners to be notified
+ * @param {Notifications[keyof Notifications]} payload - Payload to be sent to listeners
+ */
+const emit = <T extends keyof Notifications>(
+	listeners: Set<Listener<T>>,
+	payload: Notifications[T],
+) => {
+	for (const listener of listeners) listener(payload)
+}
+
 /* === Exports === */
 
 export {
 	type Cleanup,
 	type Watcher,
+	type Notifications,
+	type Listener,
+	type Listeners,
 	subscribe,
 	notify,
 	flush,
 	batch,
 	createWatcher,
 	observe,
+	emit,
 }

@@ -20,6 +20,13 @@ class CircularDependencyError extends Error {
   }
 }
 
+class DuplicateKeyError extends Error {
+  constructor(where, key, value) {
+    super(`Could not add ${where} key "${key}" ${value && `with value ${valueString(value)}`}because it already exists`);
+    this.name = "StoreKeyExistsError";
+  }
+}
+
 class ForbiddenMethodCallError extends Error {
   constructor(method, where, reason) {
     super(`Forbidden method call ${method} in ${where} because ${reason}`);
@@ -52,13 +59,6 @@ class StoreIndexRangeError extends RangeError {
   constructor(index) {
     super(`Could not remove store index ${String(index)} because it is out of range`);
     this.name = "StoreKeyRangeError";
-  }
-}
-
-class StoreKeyExistsError extends Error {
-  constructor(key, value) {
-    super(`Could not add store key "${key}" with value ${valueString(value)} because it already exists`);
-    this.name = "StoreKeyExistsError";
   }
 }
 
@@ -215,6 +215,11 @@ var observe = (run, watcher) => {
   } finally {
     activeWatcher = prev;
   }
+};
+var emit = (listeners, payload) => {
+  Object.freeze(payload);
+  for (const listener of listeners)
+    listener(payload);
 };
 
 // src/computed.ts
@@ -450,6 +455,180 @@ var createState = (initialValue) => {
 };
 var isState = (value) => isObjectOfType(value, TYPE_STATE);
 
+// src/collection.ts
+var TYPE_COLLECTION = "Collection";
+var createCollection = (origin, callback) => {
+  const watchers = new Set;
+  const listeners = {
+    add: new Set,
+    change: new Set,
+    remove: new Set,
+    sort: new Set
+  };
+  const signals = new Map;
+  const signalWatchers = new Map;
+  let order = [];
+  const addProperty = (key) => {
+    const signal = createComputed(callback);
+    signals.set(key, signal);
+    if (!order.includes(key))
+      order.push(key);
+    const watcher = createWatcher(() => observe(() => {
+      emit(listeners.change, [key]);
+    }, watcher));
+    watcher();
+    signalWatchers.set(key, watcher);
+    return true;
+  };
+  const removeProperty = (key) => {
+    const ok = signals.delete(key);
+    if (!ok)
+      return;
+    const index = order.indexOf(key);
+    if (index >= 0)
+      order.splice(index, 1);
+    const watcher = signalWatchers.get(key);
+    if (watcher)
+      watcher.cleanup();
+    signalWatchers.delete(key);
+  };
+  for (let i = 0;i < origin.length; i++) {
+    const key = origin.keyAt(i);
+    if (!key)
+      continue;
+    addProperty(key);
+  }
+  origin.on("add", (additions) => {
+    for (const key of additions) {
+      if (!signals.has(key))
+        addProperty(key);
+      else
+        throw new DuplicateKeyError("collection", key);
+    }
+    notify(watchers);
+    emit(listeners.add, additions);
+  });
+  origin.on("remove", (removals) => {
+    for (const key of Object.keys(removals)) {
+      if (!signals.has(key))
+        continue;
+      removeProperty(key);
+    }
+    order = order.filter(() => true);
+    notify(watchers);
+    emit(listeners.remove, removals);
+  });
+  origin.on("sort", (newOrder) => {
+    order = [...newOrder];
+    notify(watchers);
+    emit(listeners.sort, newOrder);
+  });
+  const getSignal = (prop) => {
+    let key = prop;
+    const index = Number(prop);
+    if (Number.isInteger(index) && index >= 0)
+      key = order[index] ?? prop;
+    return signals.get(key);
+  };
+  const current = () => order.map((key) => signals.get(key)?.get()).filter((v) => v !== undefined);
+  const collection = {};
+  Object.defineProperties(collection, {
+    [Symbol.toStringTag]: {
+      value: TYPE_COLLECTION
+    },
+    [Symbol.isConcatSpreadable]: {
+      value: true
+    },
+    [Symbol.iterator]: {
+      value: function* () {
+        for (const key of order) {
+          const signal = signals.get(key);
+          if (signal)
+            yield signal;
+        }
+      }
+    },
+    byKey: {
+      value(key) {
+        return getSignal(key);
+      }
+    },
+    keyAt: {
+      value(index) {
+        return order[index];
+      }
+    },
+    indexOfKey: {
+      value(key) {
+        return order.indexOf(key);
+      }
+    },
+    get: {
+      value: () => {
+        subscribe(watchers);
+        return current();
+      }
+    },
+    sort: {
+      value: (compareFn) => {
+        const entries = order.map((key, index) => {
+          const signal = signals.get(key);
+          return [
+            index,
+            key,
+            signal ? signal.get() : undefined
+          ];
+        }).sort(compareFn ? (a, b) => compareFn(a[2], b[2]) : (a, b) => String(a[2]).localeCompare(String(b[2])));
+        order = entries.map(([_, key]) => key);
+        notify(watchers);
+        emit(listeners.sort, [...order]);
+      }
+    },
+    on: {
+      value: (type, listener) => {
+        listeners[type].add(listener);
+        return () => listeners[type].delete(listener);
+      }
+    },
+    length: {
+      get() {
+        subscribe(watchers);
+        return signals.size;
+      }
+    }
+  });
+  return new Proxy(collection, {
+    get(target, prop) {
+      if (prop in target)
+        return Reflect.get(target, prop);
+      if (!isSymbol(prop))
+        return getSignal(prop);
+    },
+    has(target, prop) {
+      if (prop in target)
+        return true;
+      return signals.has(String(prop));
+    },
+    ownKeys(target) {
+      const staticKeys = Reflect.ownKeys(target);
+      return [...new Set([...order, ...staticKeys])];
+    },
+    getOwnPropertyDescriptor(target, prop) {
+      if (prop in target)
+        return Reflect.getOwnPropertyDescriptor(target, prop);
+      if (isSymbol(prop))
+        return;
+      const signal = getSignal(prop);
+      return signal ? {
+        enumerable: true,
+        configurable: true,
+        writable: true,
+        value: signal
+      } : undefined;
+    }
+  });
+};
+
 // src/store.ts
 var TYPE_STORE = "Store";
 var createStore = (initialValue, keyConfig) => {
@@ -510,11 +689,6 @@ var createStore = (initialValue, keyConfig) => {
     }
     return record;
   };
-  const emit = (key, changes) => {
-    Object.freeze(changes);
-    for (const listener of listeners[key])
-      listener(changes);
-  };
   const isValidValue = (key, value) => {
     if (value == null)
       throw new NullishSignalValueError(`store for key "${key}"`);
@@ -532,13 +706,14 @@ var createStore = (initialValue, keyConfig) => {
     if (!order.includes(key))
       order.push(key);
     const watcher = createWatcher(() => observe(() => {
-      emit("change", { [key]: signal.get() });
+      signal.get();
+      emit(listeners.change, [key]);
     }, watcher));
     watcher();
     signalWatchers.set(key, watcher);
     if (single) {
       notify(watchers);
-      emit("add", { [key]: value });
+      emit(listeners.add, [key]);
     }
     return true;
   };
@@ -556,7 +731,7 @@ var createStore = (initialValue, keyConfig) => {
     if (single) {
       order = order.filter(() => true);
       notify(watchers);
-      emit("remove", { [key]: UNSET });
+      emit(listeners.remove, [key]);
     }
   };
   const batchChanges = (changes, initialRun) => {
@@ -565,10 +740,10 @@ var createStore = (initialValue, keyConfig) => {
         addProperty(key, changes.add[key] ?? UNSET, false);
       if (initialRun)
         setTimeout(() => {
-          emit("add", changes.add);
+          emit(listeners.add, Object.keys(changes.add));
         }, 0);
       else
-        emit("add", changes.add);
+        emit(listeners.add, Object.keys(changes.add));
     }
     if (Object.keys(changes.change).length) {
       batch(() => {
@@ -582,21 +757,21 @@ var createStore = (initialValue, keyConfig) => {
           else
             throw new StoreKeyReadonlyError(key, value);
         }
-        emit("change", changes.change);
+        emit(listeners.change, Object.keys(changes.change));
       });
     }
     if (Object.keys(changes.remove).length) {
       for (const key in changes.remove)
         removeProperty(key);
       order = order.filter(() => true);
-      emit("remove", changes.remove);
+      emit(listeners.remove, Object.keys(changes.remove));
     }
     return changes.changed;
   };
   const reconcile = (oldValue, newValue, initialRun) => batchChanges(diff(isArrayLike ? arrayToRecord(oldValue) : oldValue, isArrayLike ? arrayToRecord(newValue) : newValue), initialRun);
   reconcile(isArrayLike ? [] : {}, initialValue, true);
-  const store = {};
-  Object.defineProperties(store, {
+  const prototype = {};
+  Object.defineProperties(prototype, {
     [Symbol.toStringTag]: {
       value: TYPE_STORE
     },
@@ -615,20 +790,30 @@ var createStore = (initialValue, keyConfig) => {
     add: {
       value: isArrayLike ? (value) => {
         const key = generateKey(value);
-        if (!signals.has(key))
+        if (!signals.has(key)) {
           addProperty(key, value, true);
-        else
-          throw new StoreKeyExistsError(key, value);
+          return key;
+        } else
+          throw new DuplicateKeyError("store", key, value);
       } : (key, value) => {
-        if (!signals.has(key))
+        if (!signals.has(key)) {
           addProperty(key, value, true);
-        else
-          throw new StoreKeyExistsError(key, value);
+          return key;
+        } else
+          throw new DuplicateKeyError("store", key, value);
       }
     },
     byKey: {
-      value(key) {
+      value: (key) => {
         return getSignal(key);
+      }
+    },
+    deriveCollection: {
+      value: (mapFn) => {
+        if (!isArrayLike)
+          throw new ForbiddenMethodCallError("deriveCollection", "store", "it is only supported for array-like stores");
+        const collection = createCollection(store, mapFn);
+        return collection;
       }
     },
     keyAt: {
@@ -691,7 +876,7 @@ var createStore = (initialValue, keyConfig) => {
         }).sort(compareFn ? (a, b) => compareFn(a[2], b[2]) : (a, b) => String(a[2]).localeCompare(String(b[2])));
         order = entries.map(([_, key]) => key);
         notify(watchers);
-        emit("sort", [...order]);
+        emit(listeners.sort, [...order]);
       }
     },
     splice: {
@@ -745,7 +930,7 @@ var createStore = (initialValue, keyConfig) => {
       }
     }
   });
-  return new Proxy(store, {
+  const store = new Proxy(prototype, {
     get(target, prop) {
       if (prop in target)
         return Reflect.get(target, prop);
@@ -775,6 +960,7 @@ var createStore = (initialValue, keyConfig) => {
       } : undefined;
     }
   });
+  return store;
 };
 var isStore = (value) => isObjectOfType(value, TYPE_STORE);
 
@@ -816,6 +1002,7 @@ export {
   isAsyncFunction,
   isAbortError,
   flush,
+  emit,
   diff,
   createWatcher,
   createStore,
@@ -828,11 +1015,11 @@ export {
   TYPE_STATE,
   TYPE_COMPUTED,
   StoreKeyReadonlyError,
-  StoreKeyExistsError,
   StoreIndexRangeError,
   NullishSignalValueError,
   InvalidSignalValueError,
   InvalidCallbackError,
   ForbiddenMethodCallError,
+  DuplicateKeyError,
   CircularDependencyError
 };

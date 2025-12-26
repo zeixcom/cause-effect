@@ -27,13 +27,14 @@ type Computed<T extends {}> = {
 	readonly [Symbol.toStringTag]: 'Computed'
 	get(): T
 }
+
 type ComputedCallback<T extends {} & { then?: undefined }> =
 	| ((oldValue: T, abort: AbortSignal) => Promise<T>)
 	| ((oldValue: T) => T)
 
 /* === Constants === */
 
-const TYPE_COMPUTED = 'Computed'
+const TYPE_COMPUTED = 'Computed' as const
 
 /* === Functions === */
 

@@ -1,26 +1,34 @@
+import { type Computed, type ComputedCallback } from './computed';
 import type { UnknownArray } from './diff';
-import { type Store, type StoreChanges } from './store';
-import { type Cleanup } from './system';
+import type { ArrayItem, ArrayStore } from './store';
+import { type Cleanup, type Listener, type Notifications } from './system';
+type CollectionKeySignal<T extends {}> = T extends UnknownArray ? Collection<T> : Computed<T>;
 type Collection<T extends UnknownArray> = {
-    readonly [Symbol.toStringTag]: 'Collection';
+    readonly [Symbol.toStringTag]: typeof TYPE_COLLECTION;
+    readonly [Symbol.isConcatSpreadable]: boolean;
+    [Symbol.iterator](): IterableIterator<CollectionKeySignal<ArrayItem<T>>>;
+    readonly [n: number]: CollectionKeySignal<ArrayItem<T>>;
+    readonly length: number;
+    byKey(key: string): CollectionKeySignal<ArrayItem<T>[]> | undefined;
     get(): T;
-    on<K extends keyof StoreChanges<T>>(type: K, listener: (change: StoreChanges<T>[K]) => void): Cleanup;
+    keyAt(index: number): string | undefined;
+    indexOfKey(key: string): number;
+    on<K extends keyof Notifications>(type: K, listener: Listener<K>): Cleanup;
+    sort(compareFn?: (a: ArrayItem<T>, b: ArrayItem<T>) => number): void;
 };
-type CollectionCallback<T extends UnknownArray> = (store: Store<T>) => T;
-declare const TYPE_COLLECTION = "Collection";
+declare const TYPE_COLLECTION: "Collection";
 /**
- * Create a collection signal
+ * Collections - Read-Only Derived Array-Like Stores
  *
- * @param {CollectionCallback<T>} fn - callback function to create the collection
- * @returns {Collection<T>} - collection signal
- */
-declare const createCollection: <T extends UnknownArray>(fn: CollectionCallback<T>) => Collection<T>;
-/**
- * Check if a value is a collection signal
+ * Collections are the read-only, derived counterpart to array-like Stores.
+ * They provide reactive, memoized, and lazily-evaluated array transformations
+ * while maintaining the familiar array-like store interface.
  *
- * @since 0.16.0
- * @param {unknown} value - value to check
- * @returns {boolean} - true if value is a computed state, false otherwise
+ * @since 0.16.2
+ * @param {ArrayStore<O> | Collection<O>} origin - Origin of collection to derive values from
+ * @param {ComputedCallback<ArrayItem<T>>} callback - Callback function to transform array items
+ * @returns {Collection<T>} - New collection with reactive properties that preserves the original type T
  */
+declare const createCollection: <T extends UnknownArray, O extends UnknownArray>(origin: ArrayStore<O> | Collection<O>, callback: ComputedCallback<ArrayItem<T>>) => Collection<T>;
 declare const isCollection: <T extends UnknownArray>(value: unknown) => value is Collection<T>;
-export { TYPE_COLLECTION, createCollection, isCollection, type Collection };
+export { type Collection, createCollection, isCollection, TYPE_COLLECTION };

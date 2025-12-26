@@ -1,6 +1,9 @@
 declare class CircularDependencyError extends Error {
     constructor(where: string);
 }
+declare class DuplicateKeyError extends Error {
+    constructor(where: string, key: string, value?: unknown);
+}
 declare class ForbiddenMethodCallError extends Error {
     constructor(method: string, where: string, reason: string);
 }
@@ -16,10 +19,7 @@ declare class NullishSignalValueError extends TypeError {
 declare class StoreIndexRangeError extends RangeError {
     constructor(index: number);
 }
-declare class StoreKeyExistsError extends Error {
-    constructor(key: string, value: unknown);
-}
 declare class StoreKeyReadonlyError extends Error {
     constructor(key: string, value: unknown);
 }
-export { CircularDependencyError, ForbiddenMethodCallError, InvalidCallbackError, InvalidSignalValueError, NullishSignalValueError, StoreIndexRangeError, StoreKeyExistsError, StoreKeyReadonlyError, };
+export { CircularDependencyError, DuplicateKeyError, ForbiddenMethodCallError, InvalidCallbackError, InvalidSignalValueError, NullishSignalValueError, StoreIndexRangeError, StoreKeyReadonlyError, };

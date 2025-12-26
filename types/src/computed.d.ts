@@ -5,7 +5,7 @@ type Computed<T extends {}> = {
 type ComputedCallback<T extends {} & {
     then?: undefined;
 }> = ((oldValue: T, abort: AbortSignal) => Promise<T>) | ((oldValue: T) => T);
-declare const TYPE_COMPUTED = "Computed";
+declare const TYPE_COMPUTED: "Computed";
 /**
  * Create a derived signal from existing signals
  *

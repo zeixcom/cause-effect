@@ -27,12 +27,12 @@ export {
 } from './src/effect'
 export {
 	CircularDependencyError,
+	DuplicateKeyError,
 	ForbiddenMethodCallError,
 	InvalidCallbackError,
 	InvalidSignalValueError,
 	NullishSignalValueError,
 	StoreIndexRangeError,
-	StoreKeyExistsError,
 	StoreKeyReadonlyError,
 } from './src/errors'
 export { type MatchHandlers, match } from './src/match'
@@ -51,14 +51,17 @@ export {
 	isStore,
 	type KeyConfig,
 	type Store,
-	type StoreChanges,
 	TYPE_STORE,
 } from './src/store'
 export {
 	batch,
 	type Cleanup,
 	createWatcher,
+	emit,
 	flush,
+	type Listener,
+	type Listeners,
+	type Notifications,
 	notify,
 	observe,
 	subscribe,

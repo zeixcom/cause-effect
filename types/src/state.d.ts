@@ -4,7 +4,7 @@ type State<T extends {}> = {
     set(newValue: T): void;
     update(updater: (oldValue: T) => T): void;
 };
-declare const TYPE_STATE = "State";
+declare const TYPE_STATE: "State";
 /**
  * Create a new state signal
  *

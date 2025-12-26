@@ -378,7 +378,7 @@ describe('store', () => {
 	describe('change tracking and notifications', () => {
 		test('emits add notifications for both store types', () => {
 			// Record store - initial creation
-			let addNotification: Record<string, unknown>
+			let addNotification: readonly string[]
 			const user = createStore({ name: 'John' })
 			user.on('add', change => {
 				addNotification = change
@@ -386,48 +386,50 @@ describe('store', () => {
 
 			// Wait for initial add event
 			setTimeout(() => {
-				expect(addNotification.name).toBe('John')
+				expect(addNotification).toContain('name')
 			}, 0)
 
 			// Record store - new property
 			const userWithEmail = createStore<{ name: string; email?: string }>(
 				{ name: 'John' },
 			)
-			let newAddNotification: Record<string, unknown> = {}
+			let newAddNotification: readonly string[] = []
 			userWithEmail.on('add', change => {
 				newAddNotification = change
 			})
 			userWithEmail.add('email', 'john@example.com')
-			expect(newAddNotification.email).toBe('john@example.com')
+			expect(newAddNotification).toContain('email')
 
 			// Array store
 			const numbers = createStore([1, 2])
-			let arrayAddNotification = {}
+			let arrayAddNotification: readonly string[] = []
 			numbers.on('add', change => {
 				arrayAddNotification = change
 			})
 			numbers.add(3)
-			expect(arrayAddNotification[2]).toBe(3)
+			expect(arrayAddNotification).toHaveLength(1)
+			// The exact key will be a generated stable key, we just verify one key was added
 		})
 
 		test('emits change notifications when properties are modified', () => {
 			// Record store
 			const user = createStore({ name: 'John' })
-			let changeNotification: Record<string, unknown> = {}
+			let changeNotification: readonly string[] = []
 			user.on('change', change => {
 				changeNotification = change
 			})
 			user.name.set('Jane')
-			expect(changeNotification.name).toBe('Jane')
+			expect(changeNotification).toContain('name')
 
 			// Array store
 			const items = createStore(['a', 'b'])
-			let arrayChangeNotification = {}
+			let arrayChangeNotification: readonly string[] = []
 			items.on('change', change => {
 				arrayChangeNotification = change
 			})
 			items[0].set('alpha')
-			expect(arrayChangeNotification[0]).toBe('alpha')
+			expect(arrayChangeNotification).toHaveLength(1)
+			// The exact key will be a generated stable key for index 0
 		})
 
 		test('emits change notifications for nested property changes', () => {
@@ -439,27 +441,22 @@ describe('store', () => {
 					notifications: true,
 				},
 			})
-			let changeNotification: Record<string, unknown> = {}
+			let changeNotification: readonly string[] = []
 			user.on('change', change => {
 				changeNotification = change
 			})
 			user.preferences.theme.set('dark')
-			expect(changeNotification.preferences).toEqual({
-				theme: 'dark',
-				notifications: true,
-			})
+			expect(changeNotification).toContain('preferences')
 
 			// Array store with nested objects
 			const users = createStore([{ name: 'Alice', role: 'admin' }])
-			let arrayChangeNotification: Record<number, unknown> = []
+			let arrayChangeNotification: readonly string[] = []
 			users.on('change', change => {
 				arrayChangeNotification = change
 			})
 			users[0].name.set('Alicia')
-			expect(arrayChangeNotification[0]).toEqual({
-				name: 'Alicia',
-				role: 'admin',
-			})
+			expect(arrayChangeNotification).toHaveLength(1)
+			// The exact key will be a generated stable key for index 0
 		})
 
 		test('emits remove notifications when properties are removed', () => {
@@ -468,21 +465,22 @@ describe('store', () => {
 				name: 'John',
 				email: 'john@example.com',
 			})
-			let removeNotification: Record<string, unknown> = {}
+			let removeNotification: readonly string[] = []
 			user.on('remove', change => {
 				removeNotification = change
 			})
 			user.remove('email')
-			expect(removeNotification.email).toBe(UNSET)
+			expect(removeNotification).toContain('email')
 
 			// Array store
 			const items = createStore(['a', 'b', 'c'])
-			let arrayRemoveNotification: Record<number, unknown> = []
+			let arrayRemoveNotification: readonly string[] = []
 			items.on('remove', change => {
 				arrayRemoveNotification = change
 			})
 			items.remove(1)
-			expect(arrayRemoveNotification['1']).toBe(UNSET) // Only the removed item's stable key is reported
+			expect(arrayRemoveNotification).toHaveLength(1)
+			// The exact key will be a generated stable key for index 1
 		})
 
 		test('set() correctly handles mixed changes, additions, and removals', () => {
@@ -502,9 +500,9 @@ describe('store', () => {
 				},
 			})
 
-			let changeNotification: Record<string, unknown> | undefined
-			let addNotification: Record<string, unknown> | undefined
-			let removeNotification: Record<string, unknown> | undefined
+			let changeNotification: readonly string[] | undefined
+			let addNotification: readonly string[] | undefined
+			let removeNotification: readonly string[] | undefined
 			user.on('change', change => {
 				changeNotification = change
 			})
@@ -523,9 +521,9 @@ describe('store', () => {
 				age: 30, // added
 			} as { name: string; preferences: { theme: string }; age: number })
 
-			expect(changeNotification?.preferences).toEqual({ theme: 'dark' })
-			expect(addNotification?.age).toBe(30)
-			expect(removeNotification?.email).toBe(UNSET)
+			expect(changeNotification).toContain('preferences')
+			expect(addNotification).toContain('age')
+			expect(removeNotification).toContain('email')
 		})
 
 		test('notification listeners can be removed', () => {
@@ -829,7 +827,7 @@ describe('store', () => {
 			const numbers = createStore([3, 1, 2])
 			let sortNotification: string[] = []
 			numbers.on('sort', change => {
-				sortNotification = change
+				sortNotification = [...change]
 			})
 
 			numbers.sort((a, b) => a - b)
@@ -1907,8 +1905,8 @@ describe('store', () => {
 		test('splice() emits correct notifications', () => {
 			const numbers = createStore([10, 20, 30, 40])
 
-			let addNotification: Record<string, unknown> | undefined
-			let removeNotification: Record<string, unknown> | undefined
+			let addNotification: readonly string[] | undefined
+			let removeNotification: readonly string[] | undefined
 
 			numbers.on('add', change => {
 				addNotification = change
@@ -1925,10 +1923,8 @@ describe('store', () => {
 			expect(addNotification).toBeDefined()
 
 			// Check that the right number of keys were added/removed
-			if (removeNotification)
-				expect(Object.keys(removeNotification)).toHaveLength(2)
-			if (addNotification)
-				expect(Object.keys(addNotification)).toHaveLength(2)
+			if (removeNotification) expect(removeNotification).toHaveLength(2)
+			if (addNotification) expect(addNotification).toHaveLength(2)
 		})
 
 		test('splice() is reactive', () => {

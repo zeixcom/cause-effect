@@ -1,4 +1,5 @@
-import { isComputed } from './computed'
+import { type Collection, createCollection } from './collection'
+import { type ComputedCallback, isComputed } from './computed'
 import {
 	type ArrayToRecord,
 	type DiffResult,
@@ -8,11 +9,11 @@ import {
 	type UnknownRecord,
 } from './diff'
 import {
+	DuplicateKeyError,
 	ForbiddenMethodCallError,
 	InvalidSignalValueError,
 	NullishSignalValueError,
 	StoreIndexRangeError,
-	StoreKeyExistsError,
 	StoreKeyReadonlyError,
 } from './errors'
 import { isMutableSignal, type Signal } from './signal'
@@ -21,6 +22,10 @@ import {
 	batch,
 	type Cleanup,
 	createWatcher,
+	emit,
+	type Listener,
+	type Listeners,
+	type Notifications,
 	notify,
 	observe,
 	subscribe,
@@ -48,17 +53,6 @@ type StoreKeySignal<T extends {}> = T extends
 
 type KeyConfig<T> = string | ((item: ArrayItem<T>) => string)
 
-type StoreChanges<T> = {
-	add: PartialRecord<T>
-	change: PartialRecord<T>
-	remove: PartialRecord<T>
-	sort: string[]
-}
-
-type StoreListeners<T> = {
-	[K in keyof StoreChanges<T>]: Set<(change: StoreChanges<T>[K]) => void>
-}
-
 interface BaseStore {
 	readonly [Symbol.toStringTag]: 'Store'
 	readonly length: number
@@ -82,10 +76,7 @@ type RecordStore<T extends UnknownRecord> = BaseStore & {
 	sort<U = T[Extract<keyof T, string>]>(
 		compareFn?: (a: U, b: U) => number,
 	): void
-	on<K extends keyof StoreChanges<T>>(
-		type: K,
-		listener: (change: StoreChanges<T>[K]) => void,
-	): Cleanup
+	on<K extends keyof Notifications>(type: K, listener: Listener<K>): Cleanup
 	remove<K extends Extract<keyof T, string>>(key: K): void
 }
 
@@ -95,6 +86,9 @@ type ArrayStore<T extends UnknownArray> = BaseStore & {
 	[n: number]: StoreKeySignal<ArrayItem<T>>
 	add(value: ArrayItem<T>): string
 	byKey(key: string): StoreKeySignal<ArrayItem<T>> | undefined
+	deriveCollection<U extends UnknownArray>(
+		mapFn: ComputedCallback<ArrayItem<U>>,
+	): Collection<U>
 	get(): T
 	keyAt(index: number): string | undefined
 	indexOfKey(key: string): number
@@ -106,10 +100,7 @@ type ArrayStore<T extends UnknownArray> = BaseStore & {
 		deleteCount?: number,
 		...items: ArrayItem<T>[]
 	): ArrayItem<T>[]
-	on<K extends keyof StoreChanges<T>>(
-		type: K,
-		listener: (change: StoreChanges<T>[K]) => void,
-	): Cleanup
+	on<K extends keyof Notifications>(type: K, listener: Listener<K>): Cleanup
 	remove(index: number): void
 }
 
@@ -121,7 +112,7 @@ type Store<T extends UnknownRecord | UnknownArray> = T extends UnknownRecord
 
 /* === Constants === */
 
-const TYPE_STORE = 'Store'
+const TYPE_STORE = 'Store' as const
 
 /* === Functions === */
 
@@ -151,11 +142,11 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 	if (initialValue == null) throw new NullishSignalValueError('store')
 
 	const watchers = new Set<Watcher>()
-	const listeners: StoreListeners<T> = {
-		add: new Set<(change: PartialRecord<T>) => void>(),
-		change: new Set<(change: PartialRecord<T>) => void>(),
-		remove: new Set<(change: PartialRecord<T>) => void>(),
-		sort: new Set<(change: string[]) => void>(),
+	const listeners: Listeners = {
+		add: new Set<Listener<'add'>>(),
+		change: new Set<Listener<'change'>>(),
+		remove: new Set<Listener<'remove'>>(),
+		sort: new Set<Listener<'sort'>>(),
 	}
 	const signals = new Map<string, Signal<T[Extract<keyof T, string>] & {}>>()
 	const signalWatchers = new Map<string, Watcher>()
@@ -186,7 +177,7 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 		const id = keyCounter++
 		return isString(keyConfig)
 			? `${keyConfig}${id}`
-			: isFunction(keyConfig)
+			: isFunction<string>(keyConfig)
 				? keyConfig(item)
 				: String(id)
 	}
@@ -226,15 +217,6 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 		return record as unknown as T
 	}
 
-	// Emit change notifications
-	const emit = <K extends keyof StoreChanges<T>>(
-		key: K,
-		changes: StoreChanges<T>[K],
-	) => {
-		Object.freeze(changes)
-		for (const listener of listeners[key]) listener(changes)
-	}
-
 	// Validate input
 	const isValidValue = <T>(
 		key: string,
@@ -268,9 +250,12 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 		// @ts-expect-error non-matching signal types
 		signals.set(key, signal)
 		if (!order.includes(key)) order.push(key)
+
+		// Create a watcher to detect changes in the nested signal
 		const watcher = createWatcher(() =>
 			observe(() => {
-				emit('change', { [key]: signal.get() } as PartialRecord<T>)
+				signal.get() // Subscribe to the signal
+				emit(listeners.change, [key])
 			}, watcher),
 		)
 		watcher()
@@ -278,7 +263,7 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 
 		if (single) {
 			notify(watchers)
-			emit('add', { [key]: value } as PartialRecord<T>)
+			emit(listeners.add, [key])
 		}
 		return true
 	}
@@ -299,7 +284,7 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 		if (single) {
 			order = order.filter(() => true) // Compact array
 			notify(watchers)
-			emit('remove', { [key]: UNSET } as PartialRecord<T>)
+			emit(listeners.remove, [key])
 		}
 	}
 
@@ -313,9 +298,9 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 			// Queue initial additions event to allow listeners to be added first
 			if (initialRun)
 				setTimeout(() => {
-					emit('add', changes.add)
+					emit(listeners.add, Object.keys(changes.add))
 				}, 0)
-			else emit('add', changes.add)
+			else emit(listeners.add, Object.keys(changes.add))
 		}
 
 		// Changes
@@ -329,7 +314,7 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 					if (isMutableSignal(signal)) signal.set(value)
 					else throw new StoreKeyReadonlyError(key, value)
 				}
-				emit('change', changes.change)
+				emit(listeners.change, Object.keys(changes.change))
 			})
 		}
 
@@ -337,7 +322,7 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 		if (Object.keys(changes.remove).length) {
 			for (const key in changes.remove) removeProperty(key)
 			order = order.filter(() => true)
-			emit('remove', changes.remove)
+			emit(listeners.remove, Object.keys(changes.remove))
 		}
 
 		return changes.changed
@@ -373,8 +358,8 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 	)
 
 	// Methods and Properties
-	const store: Record<PropertyKey, unknown> = {}
-	Object.defineProperties(store, {
+	const prototype: Record<PropertyKey, unknown> = {}
+	Object.defineProperties(prototype, {
 		[Symbol.toStringTag]: {
 			value: TYPE_STORE,
 		},
@@ -396,7 +381,7 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 						if (!signals.has(key)) {
 							addProperty(key, value, true)
 							return key
-						} else throw new StoreKeyExistsError(key, value)
+						} else throw new DuplicateKeyError('store', key, value)
 					}
 				: <K extends Extract<keyof T, string>>(
 						key: K,
@@ -405,12 +390,30 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 						if (!signals.has(key)) {
 							addProperty(key, value, true)
 							return key
-						} else throw new StoreKeyExistsError(key, value)
+						} else throw new DuplicateKeyError('store', key, value)
 					},
 		},
 		byKey: {
-			value(key: string) {
+			value: (key: string) => {
 				return getSignal(key)
+			},
+		},
+		deriveCollection: {
+			value: <U extends UnknownArray>(
+				mapFn: ComputedCallback<ArrayItem<U>>,
+			): Collection<U> => {
+				if (!isArrayLike)
+					throw new ForbiddenMethodCallError(
+						'deriveCollection',
+						'store',
+						'it is only supported for array-like stores',
+					)
+
+				const collection = createCollection(
+					store as T extends UnknownArray ? ArrayStore<T> : never,
+					mapFn,
+				)
+				return collection
 			},
 		},
 		keyAt: {
@@ -489,7 +492,7 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 				order = entries.map(([_, key]) => key)
 
 				notify(watchers)
-				emit('sort', [...order]) // Make copy for notification payload will be frozen
+				emit(listeners.sort, order)
 			},
 		},
 		splice: {
@@ -567,9 +570,9 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 			},
 		},
 		on: {
-			value: <K extends keyof StoreChanges<T>>(
+			value: <K extends keyof Notifications>(
 				type: K,
-				listener: (change: StoreChanges<T>[K]) => void,
+				listener: Listener<K>,
 			): Cleanup => {
 				listeners[type].add(listener)
 				return () => listeners[type].delete(listener)
@@ -584,7 +587,7 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 	})
 
 	// Return proxy directly with integrated signal methods
-	return new Proxy(store as Store<T>, {
+	const store = new Proxy(prototype as Store<T>, {
 		get(target, prop) {
 			if (prop in target) return Reflect.get(target, prop)
 			if (!isSymbol(prop)) return getSignal(prop)
@@ -613,6 +616,7 @@ const createStore = <T extends UnknownRecord | UnknownArray>(
 				: undefined
 		},
 	})
+	return store
 }
 
 /**
@@ -632,7 +636,8 @@ export {
 	TYPE_STORE,
 	isStore,
 	createStore,
+	type ArrayItem,
+	type ArrayStore,
 	type Store,
-	type StoreChanges,
 	type KeyConfig,
 }

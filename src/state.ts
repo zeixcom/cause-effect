@@ -14,7 +14,7 @@ type State<T extends {}> = {
 
 /* === Constants === */
 
-const TYPE_STATE = 'State'
+const TYPE_STATE = 'State' as const
 
 /* === Functions === */
 

@@ -7,6 +7,15 @@ class CircularDependencyError extends Error {
 	}
 }
 
+class DuplicateKeyError extends Error {
+	constructor(where: string, key: string, value?: unknown) {
+		super(
+			`Could not add ${where} key "${key}" ${value && `with value ${valueString(value)}`}because it already exists`,
+		)
+		this.name = 'StoreKeyExistsError'
+	}
+}
+
 class ForbiddenMethodCallError extends Error {
 	constructor(method: string, where: string, reason: string) {
 		super(`Forbidden method call ${method} in ${where} because ${reason}`)
@@ -44,15 +53,6 @@ class StoreIndexRangeError extends RangeError {
 	}
 }
 
-class StoreKeyExistsError extends Error {
-	constructor(key: string, value: unknown) {
-		super(
-			`Could not add store key "${key}" with value ${valueString(value)} because it already exists`,
-		)
-		this.name = 'StoreKeyExistsError'
-	}
-}
-
 class StoreKeyReadonlyError extends Error {
 	constructor(key: string, value: unknown) {
 		super(
@@ -64,11 +64,11 @@ class StoreKeyReadonlyError extends Error {
 
 export {
 	CircularDependencyError,
+	DuplicateKeyError,
 	ForbiddenMethodCallError,
 	InvalidCallbackError,
 	InvalidSignalValueError,
 	NullishSignalValueError,
 	StoreIndexRangeError,
-	StoreKeyExistsError,
 	StoreKeyReadonlyError,
 }

@@ -1,3 +1,4 @@
+import type { Collection } from './collection'
 import {
 	type Computed,
 	type ComputedCallback,
@@ -5,6 +6,7 @@ import {
 	isComputed,
 	isComputedCallback,
 } from './computed'
+import type { UnknownArray } from './diff'
 import { createState, isState, type State } from './state'
 import { createStore, isStore, type Store } from './store'
 import { isRecord } from './util'
@@ -14,6 +16,10 @@ import { isRecord } from './util'
 type Signal<T extends {}> = {
 	get(): T
 }
+
+type ReadonlySignal<T extends {}> = T extends UnknownArray
+	? Collection<T>
+	: Computed<T>
 
 type UnknownSignalRecord = Record<string, Signal<unknown & {}>>
 
@@ -80,6 +86,7 @@ function toSignal<T extends {}>(value: T) {
 
 export {
 	type Signal,
+	type ReadonlySignal,
 	type UnknownSignalRecord,
 	type SignalValues,
 	isSignal,
