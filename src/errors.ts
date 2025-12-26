@@ -10,9 +10,11 @@ class CircularDependencyError extends Error {
 class DuplicateKeyError extends Error {
 	constructor(where: string, key: string, value?: unknown) {
 		super(
-			`Could not add ${where} key "${key}" ${value && `with value ${valueString(value)}`}because it already exists`,
+			`Could not add ${where} key "${key}"${
+				value ? ` with value ${valueString(value)}` : ''
+			} because it already exists`,
 		)
-		this.name = 'StoreKeyExistsError'
+		this.name = 'DuplicateKeyError'
 	}
 }
 
@@ -49,7 +51,7 @@ class StoreIndexRangeError extends RangeError {
 		super(
 			`Could not remove store index ${String(index)} because it is out of range`,
 		)
-		this.name = 'StoreKeyRangeError'
+		this.name = 'StoreIndexRangeError'
 	}
 }
 

@@ -22,8 +22,8 @@ class CircularDependencyError extends Error {
 
 class DuplicateKeyError extends Error {
   constructor(where, key, value) {
-    super(`Could not add ${where} key "${key}" ${value && `with value ${valueString(value)}`}because it already exists`);
-    this.name = "StoreKeyExistsError";
+    super(`Could not add ${where} key "${key}"${value ? ` with value ${valueString(value)}` : ""} because it already exists`);
+    this.name = "DuplicateKeyError";
   }
 }
 
@@ -58,7 +58,7 @@ class NullishSignalValueError extends TypeError {
 class StoreIndexRangeError extends RangeError {
   constructor(index) {
     super(`Could not remove store index ${String(index)} because it is out of range`);
-    this.name = "StoreKeyRangeError";
+    this.name = "StoreIndexRangeError";
   }
 }
 
@@ -217,7 +217,6 @@ var observe = (run, watcher) => {
   }
 };
 var emit = (listeners, payload) => {
-  Object.freeze(payload);
   for (const listener of listeners)
     listener(payload);
 };
@@ -330,48 +329,7 @@ var createComputed = (callback, initialValue = UNSET) => {
 };
 var isComputed = (value) => isObjectOfType(value, TYPE_COMPUTED);
 var isComputedCallback = (value) => isFunction(value) && value.length < 3;
-// src/effect.ts
-var createEffect = (callback) => {
-  if (!isFunction(callback) || callback.length > 1)
-    throw new InvalidCallbackError("effect", callback);
-  const isAsync = isAsyncFunction(callback);
-  let running = false;
-  let controller;
-  const watcher = createWatcher(() => observe(() => {
-    if (running)
-      throw new CircularDependencyError("effect");
-    running = true;
-    controller?.abort();
-    controller = undefined;
-    let cleanup;
-    try {
-      if (isAsync) {
-        controller = new AbortController;
-        const currentController = controller;
-        callback(controller.signal).then((cleanup2) => {
-          if (isFunction(cleanup2) && controller === currentController)
-            watcher.unwatch(cleanup2);
-        }).catch((error) => {
-          if (!isAbortError(error))
-            console.error("Async effect error:", error);
-        });
-      } else {
-        cleanup = callback();
-        if (isFunction(cleanup))
-          watcher.unwatch(cleanup);
-      }
-    } catch (error) {
-      if (!isAbortError(error))
-        console.error("Effect callback error:", error);
-    }
-    running = false;
-  }, watcher));
-  watcher();
-  return () => {
-    controller?.abort();
-    watcher.cleanup();
-  };
-};
+
 // src/match.ts
 function match(result, handlers) {
   try {
@@ -388,6 +346,7 @@ function match(result, handlers) {
       throw error;
   }
 }
+
 // src/resolve.ts
 function resolve(signals) {
   const errors = [];
@@ -410,50 +369,6 @@ function resolve(signals) {
     return { ok: false, errors };
   return { ok: true, values };
 }
-// src/state.ts
-var TYPE_STATE = "State";
-var createState = (initialValue) => {
-  if (initialValue == null)
-    throw new NullishSignalValueError("state");
-  const watchers = new Set;
-  let value = initialValue;
-  const setValue = (newValue) => {
-    if (newValue == null)
-      throw new NullishSignalValueError("state");
-    if (isEqual(value, newValue))
-      return;
-    value = newValue;
-    notify(watchers);
-    if (UNSET === value)
-      watchers.clear();
-  };
-  const state = {};
-  Object.defineProperties(state, {
-    [Symbol.toStringTag]: {
-      value: TYPE_STATE
-    },
-    get: {
-      value: () => {
-        subscribe(watchers);
-        return value;
-      }
-    },
-    set: {
-      value: (newValue) => {
-        setValue(newValue);
-      }
-    },
-    update: {
-      value: (updater) => {
-        if (!isFunction(updater))
-          throw new InvalidCallbackError("state update", updater);
-        setValue(updater(value));
-      }
-    }
-  });
-  return state;
-};
-var isState = (value) => isObjectOfType(value, TYPE_STATE);
 
 // src/collection.ts
 var TYPE_COLLECTION = "Collection";
@@ -469,11 +384,41 @@ var createCollection = (origin, callback) => {
   const signalWatchers = new Map;
   let order = [];
   const addProperty = (key) => {
-    const signal = createComputed(callback);
+    const computedCallback = isAsyncFunction(callback) ? async (_, abort) => {
+      const originSignal = origin.byKey(key);
+      if (!originSignal)
+        return UNSET;
+      let result = UNSET;
+      match(resolve({ originSignal }), {
+        ok: async ({ originSignal: originValue }) => {
+          result = await callback(originValue, abort);
+        },
+        err: (errors) => {
+          console.log(errors);
+        }
+      });
+      return result;
+    } : () => {
+      const originSignal = origin.byKey(key);
+      if (!originSignal)
+        return UNSET;
+      let result = UNSET;
+      match(resolve({ originSignal }), {
+        ok: ({ originSignal: originValue }) => {
+          result = callback(originValue);
+        },
+        err: (errors) => {
+          console.log(errors);
+        }
+      });
+      return result;
+    };
+    const signal = createComputed(computedCallback);
     signals.set(key, signal);
     if (!order.includes(key))
       order.push(key);
     const watcher = createWatcher(() => observe(() => {
+      signal.get();
       emit(listeners.change, [key]);
     }, watcher));
     watcher();
@@ -502,8 +447,6 @@ var createCollection = (origin, callback) => {
     for (const key of additions) {
       if (!signals.has(key))
         addProperty(key);
-      else
-        throw new DuplicateKeyError("collection", key);
     }
     notify(watchers);
     emit(listeners.add, additions);
@@ -530,7 +473,7 @@ var createCollection = (origin, callback) => {
       key = order[index] ?? prop;
     return signals.get(key);
   };
-  const current = () => order.map((key) => signals.get(key)?.get()).filter((v) => v !== undefined);
+  const current = () => order.map((key) => signals.get(key)?.get()).filter((v) => v !== UNSET);
   const collection = {};
   Object.defineProperties(collection, {
     [Symbol.toStringTag]: {
@@ -581,7 +524,7 @@ var createCollection = (origin, callback) => {
         }).sort(compareFn ? (a, b) => compareFn(a[2], b[2]) : (a, b) => String(a[2]).localeCompare(String(b[2])));
         order = entries.map(([_, key]) => key);
         notify(watchers);
-        emit(listeners.sort, [...order]);
+        emit(listeners.sort, order);
       }
     },
     on: {
@@ -628,10 +571,97 @@ var createCollection = (origin, callback) => {
     }
   });
 };
+var isCollection = (value) => isObjectOfType(value, TYPE_COLLECTION);
+// src/effect.ts
+var createEffect = (callback) => {
+  if (!isFunction(callback) || callback.length > 1)
+    throw new InvalidCallbackError("effect", callback);
+  const isAsync = isAsyncFunction(callback);
+  let running = false;
+  let controller;
+  const watcher = createWatcher(() => observe(() => {
+    if (running)
+      throw new CircularDependencyError("effect");
+    running = true;
+    controller?.abort();
+    controller = undefined;
+    let cleanup;
+    try {
+      if (isAsync) {
+        controller = new AbortController;
+        const currentController = controller;
+        callback(controller.signal).then((cleanup2) => {
+          if (isFunction(cleanup2) && controller === currentController)
+            watcher.unwatch(cleanup2);
+        }).catch((error) => {
+          if (!isAbortError(error))
+            console.error("Async effect error:", error);
+        });
+      } else {
+        cleanup = callback();
+        if (isFunction(cleanup))
+          watcher.unwatch(cleanup);
+      }
+    } catch (error) {
+      if (!isAbortError(error))
+        console.error("Effect callback error:", error);
+    }
+    running = false;
+  }, watcher));
+  watcher();
+  return () => {
+    controller?.abort();
+    watcher.cleanup();
+  };
+};
+// src/state.ts
+var TYPE_STATE = "State";
+var createState = (initialValue) => {
+  if (initialValue == null)
+    throw new NullishSignalValueError("state");
+  const watchers = new Set;
+  let value = initialValue;
+  const setValue = (newValue) => {
+    if (newValue == null)
+      throw new NullishSignalValueError("state");
+    if (isEqual(value, newValue))
+      return;
+    value = newValue;
+    notify(watchers);
+    if (UNSET === value)
+      watchers.clear();
+  };
+  const state = {};
+  Object.defineProperties(state, {
+    [Symbol.toStringTag]: {
+      value: TYPE_STATE
+    },
+    get: {
+      value: () => {
+        subscribe(watchers);
+        return value;
+      }
+    },
+    set: {
+      value: (newValue) => {
+        setValue(newValue);
+      }
+    },
+    update: {
+      value: (updater) => {
+        if (!isFunction(updater))
+          throw new InvalidCallbackError("state update", updater);
+        setValue(updater(value));
+      }
+    }
+  });
+  return state;
+};
+var isState = (value) => isObjectOfType(value, TYPE_STATE);
 
 // src/store.ts
 var TYPE_STORE = "Store";
-var createStore = (initialValue, keyConfig) => {
+var createStore = (initialValue) => {
   if (initialValue == null)
     throw new NullishSignalValueError("store");
   const watchers = new Set;
@@ -643,44 +673,8 @@ var createStore = (initialValue, keyConfig) => {
   };
   const signals = new Map;
   const signalWatchers = new Map;
-  const isArrayLike = Array.isArray(initialValue);
-  let keyCounter = 0;
   let order = [];
-  const getSignal = (prop) => {
-    let key = prop;
-    if (isArrayLike) {
-      const index = Number(prop);
-      if (Number.isInteger(index) && index >= 0)
-        key = order[index] ?? prop;
-    }
-    return signals.get(key);
-  };
-  const generateKey = (item) => {
-    if (!isArrayLike)
-      return "";
-    const id = keyCounter++;
-    return isString(keyConfig) ? `${keyConfig}${id}` : isFunction(keyConfig) ? keyConfig(item) : String(id);
-  };
-  const arrayToRecord = (array) => {
-    if (!Array.isArray(array))
-      return array;
-    const record = {};
-    for (let i = 0;i < array.length; i++) {
-      const value = array[i];
-      if (value === undefined)
-        continue;
-      let key = order[i];
-      if (!key) {
-        key = generateKey(value);
-        order[i] = key;
-      }
-      record[key] = value;
-    }
-    return record;
-  };
   const current = () => {
-    if (isArrayLike)
-      return order.map((key) => signals.get(key)?.get()).filter((v) => v !== undefined);
     const record = {};
     for (const key of order) {
       const signal = signals.get(key);
@@ -737,7 +731,7 @@ var createStore = (initialValue, keyConfig) => {
   const batchChanges = (changes, initialRun) => {
     if (Object.keys(changes.add).length) {
       for (const key in changes.add)
-        addProperty(key, changes.add[key] ?? UNSET, false);
+        addProperty(key, changes.add[key], false);
       if (initialRun)
         setTimeout(() => {
           emit(listeners.add, Object.keys(changes.add));
@@ -768,34 +762,305 @@ var createStore = (initialValue, keyConfig) => {
     }
     return changes.changed;
   };
-  const reconcile = (oldValue, newValue, initialRun) => batchChanges(diff(isArrayLike ? arrayToRecord(oldValue) : oldValue, isArrayLike ? arrayToRecord(newValue) : newValue), initialRun);
-  reconcile(isArrayLike ? [] : {}, initialValue, true);
+  const reconcile = (oldValue, newValue, initialRun) => batchChanges(diff(oldValue, newValue), initialRun);
+  reconcile({}, initialValue, true);
   const prototype = {};
   Object.defineProperties(prototype, {
     [Symbol.toStringTag]: {
       value: TYPE_STORE
-    },
-    [Symbol.isConcatSpreadable]: {
-      value: isArrayLike
     },
     [Symbol.iterator]: {
       value: function* () {
         for (const key of order) {
           const signal = signals.get(key);
           if (signal)
-            yield isArrayLike ? signal : [key, signal];
+            yield [key, signal];
         }
       }
     },
     add: {
-      value: isArrayLike ? (value) => {
-        const key = generateKey(value);
+      value: (key, value) => {
         if (!signals.has(key)) {
           addProperty(key, value, true);
           return key;
         } else
           throw new DuplicateKeyError("store", key, value);
-      } : (key, value) => {
+      }
+    },
+    byKey: {
+      value: (key) => {
+        return signals.get(key);
+      }
+    },
+    keyAt: {
+      value(index) {
+        return order[index];
+      }
+    },
+    indexOfKey: {
+      value(key) {
+        return order.indexOf(key);
+      }
+    },
+    get: {
+      value: () => {
+        subscribe(watchers);
+        return current();
+      }
+    },
+    remove: {
+      value: (keyOrIndex) => {
+        let key = String(keyOrIndex);
+        if (isNumber(keyOrIndex)) {
+          if (!order[keyOrIndex])
+            throw new StoreIndexRangeError(keyOrIndex);
+          key = order[keyOrIndex];
+        }
+        if (signals.has(key))
+          removeProperty(key, true);
+      }
+    },
+    set: {
+      value: (newValue) => {
+        if (reconcile(current(), newValue)) {
+          notify(watchers);
+          if (UNSET === newValue)
+            watchers.clear();
+        }
+      }
+    },
+    update: {
+      value: (fn) => {
+        const oldValue = current();
+        const newValue = fn(oldValue);
+        if (reconcile(oldValue, newValue)) {
+          notify(watchers);
+          if (UNSET === newValue)
+            watchers.clear();
+        }
+      }
+    },
+    sort: {
+      value: (compareFn) => {
+        const entries = order.map((key, index) => {
+          const signal = signals.get(key);
+          return [
+            index,
+            key,
+            signal ? signal.get() : undefined
+          ];
+        }).sort(compareFn ? (a, b) => compareFn(a[2], b[2]) : (a, b) => String(a[2]).localeCompare(String(b[2])));
+        order = entries.map(([_, key]) => key);
+        notify(watchers);
+        emit(listeners.sort, order);
+      }
+    },
+    on: {
+      value: (type, listener) => {
+        listeners[type].add(listener);
+        return () => listeners[type].delete(listener);
+      }
+    },
+    length: {
+      get() {
+        subscribe(watchers);
+        return signals.size;
+      }
+    }
+  });
+  const store = new Proxy(prototype, {
+    get(target, prop) {
+      if (prop in target)
+        return Reflect.get(target, prop);
+      if (!isSymbol(prop))
+        return signals.get(prop);
+    },
+    has(target, prop) {
+      if (prop in target)
+        return true;
+      return signals.has(String(prop));
+    },
+    ownKeys(target) {
+      const staticKeys = Reflect.ownKeys(target);
+      return [...new Set([...order, ...staticKeys])];
+    },
+    getOwnPropertyDescriptor(target, prop) {
+      if (prop in target)
+        return Reflect.getOwnPropertyDescriptor(target, prop);
+      if (isSymbol(prop))
+        return;
+      const signal = signals.get(prop);
+      return signal ? {
+        enumerable: true,
+        configurable: true,
+        writable: true,
+        value: signal
+      } : undefined;
+    }
+  });
+  return store;
+};
+var isStore = (value) => isObjectOfType(value, TYPE_STORE);
+
+// src/signal.ts
+var isSignal = (value) => isState(value) || isComputed(value) || isStore(value);
+var isMutableSignal = (value) => isState(value) || isStore(value) || isList(value);
+function toSignal(value) {
+  if (isSignal(value))
+    return value;
+  if (isComputedCallback(value))
+    return createComputed(value);
+  if (Array.isArray(value))
+    return createList(value);
+  if (isRecord(value))
+    return createStore(value);
+  return createState(value);
+}
+
+// src/list.ts
+var TYPE_LIST = "List";
+var createList = (initialValue, keyConfig) => {
+  if (initialValue == null)
+    throw new NullishSignalValueError("store");
+  const watchers = new Set;
+  const listeners = {
+    add: new Set,
+    change: new Set,
+    remove: new Set,
+    sort: new Set
+  };
+  const signals = new Map;
+  const signalWatchers = new Map;
+  let keyCounter = 0;
+  let order = [];
+  const getSignal = (prop) => {
+    let key = prop;
+    const index = Number(prop);
+    if (Number.isInteger(index) && index >= 0)
+      key = order[index] ?? prop;
+    return signals.get(key);
+  };
+  const generateKey = (item) => {
+    const id = keyCounter++;
+    return isString(keyConfig) ? `${keyConfig}${id}` : isFunction(keyConfig) ? keyConfig(item) : String(id);
+  };
+  const arrayToRecord = (array) => {
+    const record = {};
+    for (let i = 0;i < array.length; i++) {
+      const value = array[i];
+      if (value === undefined)
+        continue;
+      let key = order[i];
+      if (!key) {
+        key = generateKey(value);
+        order[i] = key;
+      }
+      record[key] = value;
+    }
+    return record;
+  };
+  const current = () => order.map((key) => signals.get(key)?.get()).filter((v) => v !== undefined);
+  const isValidValue = (key, value) => {
+    if (value == null)
+      throw new NullishSignalValueError(`store for key "${key}"`);
+    if (value === UNSET)
+      return true;
+    if (isSymbol(value) || isFunction(value) || isComputed(value))
+      throw new InvalidSignalValueError(`store for key "${key}"`, value);
+    return true;
+  };
+  const addProperty = (key, value, single = false) => {
+    if (!isValidValue(key, value))
+      return false;
+    const signal = isState(value) || isStore(value) || isList(value) ? value : isRecord(value) ? createStore(value) : Array.isArray(value) ? createList(value) : createState(value);
+    signals.set(key, signal);
+    if (!order.includes(key))
+      order.push(key);
+    const watcher = createWatcher(() => observe(() => {
+      signal.get();
+      emit(listeners.change, [key]);
+    }, watcher));
+    watcher();
+    signalWatchers.set(key, watcher);
+    if (single) {
+      notify(watchers);
+      emit(listeners.add, [key]);
+    }
+    return true;
+  };
+  const removeProperty = (key, single = false) => {
+    const ok = signals.delete(key);
+    if (!ok)
+      return;
+    const index = order.indexOf(key);
+    if (index >= 0)
+      order.splice(index, 1);
+    const watcher = signalWatchers.get(key);
+    if (watcher)
+      watcher.cleanup();
+    signalWatchers.delete(key);
+    if (single) {
+      order = order.filter(() => true);
+      notify(watchers);
+      emit(listeners.remove, [key]);
+    }
+  };
+  const batchChanges = (changes, initialRun) => {
+    if (Object.keys(changes.add).length) {
+      for (const key in changes.add)
+        addProperty(key, changes.add[key], false);
+      if (initialRun)
+        setTimeout(() => {
+          emit(listeners.add, Object.keys(changes.add));
+        }, 0);
+      else
+        emit(listeners.add, Object.keys(changes.add));
+    }
+    if (Object.keys(changes.change).length) {
+      batch(() => {
+        for (const key in changes.change) {
+          const value = changes.change[key];
+          if (!isValidValue(key, value))
+            continue;
+          const signal = signals.get(key);
+          if (isMutableSignal(signal))
+            signal.set(value);
+          else
+            throw new StoreKeyReadonlyError(key, value);
+        }
+        emit(listeners.change, Object.keys(changes.change));
+      });
+    }
+    if (Object.keys(changes.remove).length) {
+      for (const key in changes.remove)
+        removeProperty(key);
+      order = order.filter(() => true);
+      emit(listeners.remove, Object.keys(changes.remove));
+    }
+    return changes.changed;
+  };
+  const reconcile = (oldValue, newValue, initialRun) => batchChanges(diff(arrayToRecord(oldValue), arrayToRecord(newValue)), initialRun);
+  reconcile([], initialValue, true);
+  const prototype = {};
+  Object.defineProperties(prototype, {
+    [Symbol.toStringTag]: {
+      value: TYPE_LIST
+    },
+    [Symbol.isConcatSpreadable]: {
+      value: true
+    },
+    [Symbol.iterator]: {
+      value: function* () {
+        for (const key of order) {
+          const signal = signals.get(key);
+          if (signal)
+            yield signal;
+        }
+      }
+    },
+    add: {
+      value: (value) => {
+        const key = generateKey(value);
         if (!signals.has(key)) {
           addProperty(key, value, true);
           return key;
@@ -809,10 +1074,8 @@ var createStore = (initialValue, keyConfig) => {
       }
     },
     deriveCollection: {
-      value: (mapFn) => {
-        if (!isArrayLike)
-          throw new ForbiddenMethodCallError("deriveCollection", "store", "it is only supported for array-like stores");
-        const collection = createCollection(store, mapFn);
+      value: (callback) => {
+        const collection = createCollection(list, callback);
         return collection;
       }
     },
@@ -876,13 +1139,11 @@ var createStore = (initialValue, keyConfig) => {
         }).sort(compareFn ? (a, b) => compareFn(a[2], b[2]) : (a, b) => String(a[2]).localeCompare(String(b[2])));
         order = entries.map(([_, key]) => key);
         notify(watchers);
-        emit(listeners.sort, [...order]);
+        emit(listeners.sort, order);
       }
     },
     splice: {
       value: (start, deleteCount, ...items) => {
-        if (!isArrayLike)
-          throw new ForbiddenMethodCallError("splice", "store", "it is only supported for array-like stores");
         const length = signals.size;
         const actualStart = start < 0 ? Math.max(0, length + start) : Math.min(start, length);
         const actualDeleteCount = Math.max(0, Math.min(deleteCount ?? Math.max(0, length - Math.max(0, actualStart)), length - actualStart));
@@ -930,7 +1191,7 @@ var createStore = (initialValue, keyConfig) => {
       }
     }
   });
-  const store = new Proxy(prototype, {
+  const list = new Proxy(prototype, {
     get(target, prop) {
       if (prop in target)
         return Reflect.get(target, prop);
@@ -960,22 +1221,9 @@ var createStore = (initialValue, keyConfig) => {
       } : undefined;
     }
   });
-  return store;
+  return list;
 };
-var isStore = (value) => isObjectOfType(value, TYPE_STORE);
-
-// src/signal.ts
-var isSignal = (value) => isState(value) || isComputed(value) || isStore(value);
-var isMutableSignal = (value) => isState(value) || isStore(value);
-function toSignal(value) {
-  if (isSignal(value))
-    return value;
-  if (isComputedCallback(value))
-    return createComputed(value);
-  if (Array.isArray(value) || isRecord(value))
-    return createStore(value);
-  return createState(value);
-}
+var isList = (value) => isObjectOfType(value, TYPE_LIST);
 export {
   valueString,
   toSignal,
@@ -995,10 +1243,12 @@ export {
   isObjectOfType,
   isNumber,
   isMutableSignal,
+  isList,
   isFunction,
   isEqual,
   isComputedCallback,
   isComputed,
+  isCollection,
   isAsyncFunction,
   isAbortError,
   flush,
@@ -1007,13 +1257,17 @@ export {
   createWatcher,
   createStore,
   createState,
+  createList,
   createEffect,
   createComputed,
+  createCollection,
   batch,
   UNSET,
   TYPE_STORE,
   TYPE_STATE,
+  TYPE_LIST,
   TYPE_COMPUTED,
+  TYPE_COLLECTION,
   StoreKeyReadonlyError,
   StoreIndexRangeError,
   NullishSignalValueError,

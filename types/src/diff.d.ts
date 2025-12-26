@@ -3,12 +3,11 @@ type UnknownArray = ReadonlyArray<unknown & {}>;
 type ArrayToRecord<T extends UnknownArray> = {
     [key: string]: T extends Array<infer U extends {}> ? U : never;
 };
-type PartialRecord<T> = T extends UnknownArray ? Partial<ArrayToRecord<T>> : Partial<T>;
-type DiffResult<T extends UnknownRecord | UnknownArray = UnknownRecord> = {
+type DiffResult = {
     changed: boolean;
-    add: PartialRecord<T>;
-    change: PartialRecord<T>;
-    remove: PartialRecord<T>;
+    add: Record<string, unknown & {}>;
+    change: Record<string, unknown & {}>;
+    remove: Record<string, unknown & {}>;
 };
 /**
  * Checks if two values are equal with cycle detection
@@ -26,7 +25,7 @@ declare const isEqual: <T>(a: T, b: T, visited?: WeakSet<object>) => boolean;
  * @since 0.15.0
  * @param {T} oldObj - The old record to compare
  * @param {T} newObj - The new record to compare
- * @returns {DiffResult<T>} The result of the comparison
+ * @returns {DiffResult} The result of the comparison
  */
-declare const diff: <T extends UnknownRecord | UnknownArray>(oldObj: T extends UnknownArray ? ArrayToRecord<T> : T, newObj: T extends UnknownArray ? ArrayToRecord<T> : T) => DiffResult<T>;
-export { type ArrayToRecord, type DiffResult, diff, isEqual, type UnknownRecord, type UnknownArray, type PartialRecord, };
+declare const diff: <T extends UnknownRecord>(oldObj: T, newObj: T) => DiffResult;
+export { type ArrayToRecord, type DiffResult, diff, isEqual, type UnknownRecord, type UnknownArray, };

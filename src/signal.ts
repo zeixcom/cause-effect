@@ -7,6 +7,7 @@ import {
 	isComputedCallback,
 } from './computed'
 import type { UnknownArray } from './diff'
+import { createList, isList, type List } from './list'
 import { createState, isState, type State } from './state'
 import { createStore, isStore, type Store } from './store'
 import { isRecord } from './util'
@@ -41,15 +42,16 @@ const isSignal = /*#__PURE__*/ <T extends {}>(
 ): value is Signal<T> => isState(value) || isComputed(value) || isStore(value)
 
 /**
- * Check whether a value is a State or Store
+ * Check whether a value is a State, Store, or List
  *
  * @since 0.15.2
- * @param {unknown} value - value to check
- * @returns {boolean} - true if value is a State or Store, false otherwise
+ * @param {unknown} value - Value to check
+ * @returns {boolean} - True if value is a State, Store, or List, false otherwise
  */
 const isMutableSignal = /*#__PURE__*/ <T extends {}>(
 	value: unknown,
-): value is State<T> | Store<T> => isState(value) || isStore(value)
+): value is State<T> | Store<T> | List<T> =>
+	isState(value) || isStore(value) || isList(value)
 
 /**
  * Convert a value to a Signal if it's not already a Signal
@@ -69,7 +71,7 @@ function toSignal<T extends {}>(
 			: T extends Signal<infer U>
 				? Signal<U>
 				: T extends ReadonlyArray<infer U extends {}>
-					? Store<U[]>
+					? List<U>
 					: T extends Record<string, unknown & {}>
 						? Store<{ [K in keyof T]: T[K] }>
 						: T extends ComputedCallback<infer U extends {}>
@@ -78,7 +80,8 @@ function toSignal<T extends {}>(
 function toSignal<T extends {}>(value: T) {
 	if (isSignal<T>(value)) return value
 	if (isComputedCallback(value)) return createComputed(value)
-	if (Array.isArray(value) || isRecord(value)) return createStore(value)
+	if (Array.isArray(value)) return createList(value)
+	if (isRecord(value)) return createStore(value)
 	return createState(value)
 }
 

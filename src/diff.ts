@@ -6,19 +6,11 @@ import { isRecord, isRecordOrArray, UNSET } from './util'
 type UnknownRecord = Record<string, unknown & {}>
 type UnknownArray = ReadonlyArray<unknown & {}>
 
-type ArrayToRecord<T extends UnknownArray> = {
-	[key: string]: T extends Array<infer U extends {}> ? U : never
-}
-
-type PartialRecord<T> = T extends UnknownArray
-	? Partial<ArrayToRecord<T>>
-	: Partial<T>
-
-type DiffResult<T extends UnknownRecord | UnknownArray = UnknownRecord> = {
+type DiffResult = {
 	changed: boolean
-	add: PartialRecord<T>
-	change: PartialRecord<T>
-	remove: PartialRecord<T>
+	add: Record<string, unknown & {}>
+	change: Record<string, unknown & {}>
+	remove: Record<string, unknown & {}>
 }
 
 /* === Functions === */
@@ -90,12 +82,9 @@ const isEqual = <T>(a: T, b: T, visited?: WeakSet<object>): boolean => {
  * @since 0.15.0
  * @param {T} oldObj - The old record to compare
  * @param {T} newObj - The new record to compare
- * @returns {DiffResult<T>} The result of the comparison
+ * @returns {DiffResult} The result of the comparison
  */
-const diff = <T extends UnknownRecord | UnknownArray>(
-	oldObj: T extends UnknownArray ? ArrayToRecord<T> : T,
-	newObj: T extends UnknownArray ? ArrayToRecord<T> : T,
-): DiffResult<T> => {
+const diff = <T extends UnknownRecord>(oldObj: T, newObj: T): DiffResult => {
 	// Guard against non-objects that can't be diffed properly with Object.keys and 'in' operator
 	const oldValid = isRecordOrArray(oldObj)
 	const newValid = isRecordOrArray(newObj)
@@ -104,17 +93,17 @@ const diff = <T extends UnknownRecord | UnknownArray>(
 		const changed = !Object.is(oldObj, newObj)
 		return {
 			changed,
-			add: changed && newValid ? newObj : ({} as PartialRecord<T>),
-			change: {} as PartialRecord<T>,
-			remove: changed && oldValid ? oldObj : ({} as PartialRecord<T>),
+			add: changed && newValid ? newObj : {},
+			change: {},
+			remove: changed && oldValid ? oldObj : {},
 		}
 	}
 
 	const visited = new WeakSet()
 
-	const add = {} as PartialRecord<T>
-	const change = {} as PartialRecord<T>
-	const remove = {} as PartialRecord<T>
+	const add = {} as Record<string, unknown & {}>
+	const change = {} as Record<string, unknown & {}>
+	const remove = {} as Record<string, unknown & {}>
 
 	const oldKeys = Object.keys(oldObj)
 	const newKeys = Object.keys(newObj)
@@ -153,11 +142,9 @@ const diff = <T extends UnknownRecord | UnknownArray>(
 /* === Exports === */
 
 export {
-	type ArrayToRecord,
 	type DiffResult,
 	diff,
 	isEqual,
 	type UnknownRecord,
 	type UnknownArray,
-	type PartialRecord,
 }

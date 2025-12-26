@@ -1,17 +1,14 @@
-import { type Collection } from './collection';
-import { type ComputedCallback } from './computed';
-import { type UnknownArray, type UnknownRecord } from './diff';
+import { type UnknownRecord } from './diff';
+import type { List } from './list';
 import { type State } from './state';
 import { type Cleanup, type Listener, type Notifications } from './system';
-type ArrayItem<T> = T extends readonly (infer U extends {})[] ? U : never;
-type StoreKeySignal<T extends {}> = T extends readonly unknown[] | Record<string, unknown> ? Store<T> : State<T>;
-type KeyConfig<T> = string | ((item: ArrayItem<T>) => string);
+type StoreKeySignal<T extends {}> = T extends readonly (infer U extends {})[] ? List<U> : T extends UnknownRecord ? Store<T> : State<T>;
 interface BaseStore {
     readonly [Symbol.toStringTag]: 'Store';
     readonly length: number;
 }
-type RecordStore<T extends UnknownRecord> = BaseStore & {
-    [K in keyof T]: T[K] extends readonly unknown[] | Record<string, unknown> ? Store<T[K]> : State<T[K]>;
+type Store<T extends UnknownRecord> = BaseStore & {
+    [K in keyof T]: T[K] extends readonly (infer U extends {})[] ? List<U> : T extends Record<string, unknown> ? Store<T[K]> : State<T[K]>;
 } & {
     [Symbol.iterator](): IterableIterator<[
         Extract<keyof T, string>,
@@ -28,24 +25,6 @@ type RecordStore<T extends UnknownRecord> = BaseStore & {
     on<K extends keyof Notifications>(type: K, listener: Listener<K>): Cleanup;
     remove<K extends Extract<keyof T, string>>(key: K): void;
 };
-type ArrayStore<T extends UnknownArray> = BaseStore & {
-    [Symbol.iterator](): IterableIterator<StoreKeySignal<ArrayItem<T>>>;
-    readonly [Symbol.isConcatSpreadable]: boolean;
-    [n: number]: StoreKeySignal<ArrayItem<T>>;
-    add(value: ArrayItem<T>): string;
-    byKey(key: string): StoreKeySignal<ArrayItem<T>> | undefined;
-    deriveCollection<U extends UnknownArray>(mapFn: ComputedCallback<ArrayItem<U>>): Collection<U>;
-    get(): T;
-    keyAt(index: number): string | undefined;
-    indexOfKey(key: string): number;
-    set(value: T): void;
-    update(fn: (value: T) => T): void;
-    sort<U = ArrayItem<T>>(compareFn?: (a: U, b: U) => number): void;
-    splice(start: number, deleteCount?: number, ...items: ArrayItem<T>[]): ArrayItem<T>[];
-    on<K extends keyof Notifications>(type: K, listener: Listener<K>): Cleanup;
-    remove(index: number): void;
-};
-type Store<T extends UnknownRecord | UnknownArray> = T extends UnknownRecord ? RecordStore<T> : T extends UnknownArray ? ArrayStore<T> : never;
 declare const TYPE_STORE: "Store";
 /**
  * Create a new store with deeply nested reactive properties
@@ -61,18 +40,15 @@ declare const TYPE_STORE: "Store";
  *
  * @since 0.15.0
  * @param {T} initialValue - initial object or array value of the store
- * @param {KeyConfig<T>} keyConfig - optional key configuration for array-like stores:
- *   - string: used as prefix for auto-incrementing IDs (e.g., "item" → "item0", "item1")
- *   - function: computes key from array item at creation time
  * @returns {Store<T>} - new store with reactive properties that preserves the original type T
  */
-declare const createStore: <T extends UnknownRecord | UnknownArray>(initialValue: T, keyConfig?: T extends UnknownArray ? KeyConfig<T> : never) => Store<T>;
+declare const createStore: <T extends UnknownRecord>(initialValue: T) => Store<T>;
 /**
  * Check if the provided value is a Store instance
  *
  * @since 0.15.0
- * @param {unknown} value - value to check
- * @returns {boolean} - true if the value is a Store instance, false otherwise
+ * @param {unknown} value - Value to check
+ * @returns {boolean} - True if the value is a Store instance, false otherwise
  */
-declare const isStore: <T extends UnknownRecord | UnknownArray>(value: unknown) => value is Store<T>;
-export { TYPE_STORE, isStore, createStore, type ArrayItem, type ArrayStore, type Store, type KeyConfig, };
+declare const isStore: <T extends UnknownRecord>(value: unknown) => value is Store<T>;
+export { TYPE_STORE, isStore, createStore, type Store };

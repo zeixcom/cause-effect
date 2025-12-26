@@ -2009,4 +2009,315 @@ describe('store', () => {
 			expect(numbers[2]).toBe(signal3) // signal3 moved to position 2
 		})
 	})
+
+	describe('deriveCollection() method', () => {
+		test('throws error for record stores', () => {
+			const user = createStore({ name: 'John', age: 30 })
+			expect(() => {
+				// @ts-expect-error - testing runtime error
+				user.deriveCollection(item => item)
+			}).toThrow(
+				'Forbidden method call deriveCollection in store because it is only supported for array-like stores',
+			)
+		})
+
+		test('creates collection with sync transformation - double numbers', () => {
+			const numbers = createStore([1, 2, 3])
+			const doubled = numbers.deriveCollection(item => item * 2)
+
+			expect(doubled.length).toBe(3)
+			expect(doubled.get()).toEqual([2, 4, 6])
+
+			// Test individual access
+			expect(doubled[0].get()).toBe(2)
+			expect(doubled[1].get()).toBe(4)
+			expect(doubled[2].get()).toBe(6)
+		})
+
+		test('creates collection with sync transformation - uppercase strings', () => {
+			const words = createStore(['hello', 'world', 'test'])
+			const uppercased = words.deriveCollection(item =>
+				typeof item === 'string' ? item.toUpperCase() : item,
+			)
+
+			expect(uppercased.get()).toEqual(['HELLO', 'WORLD', 'TEST'])
+			expect(uppercased[1].get()).toBe('WORLD')
+		})
+
+		test('collection reacts to source store changes', () => {
+			const numbers = createStore([1, 2])
+			const doubled = numbers.deriveCollection(item => item * 2)
+
+			expect(doubled.get()).toEqual([2, 4])
+
+			// Add item to source
+			numbers.add(3)
+			expect(doubled.get()).toEqual([2, 4, 6])
+
+			// Remove item from source
+			numbers.remove(0)
+			expect(doubled.get()).toEqual([4, 6])
+		})
+
+		test('collection is reactive to individual item changes', () => {
+			const numbers = createStore([1, 2, 3])
+			const doubled = numbers.deriveCollection(item => item * 2)
+
+			let lastValue: number[] = []
+			let effectRuns = 0
+			createEffect(() => {
+				lastValue = doubled.get()
+				effectRuns++
+			})
+
+			expect(lastValue).toEqual([2, 4, 6])
+			expect(effectRuns).toBe(1)
+
+			// Change individual item
+			numbers[1].set(5)
+			expect(lastValue).toEqual([2, 10, 6])
+			expect(effectRuns).toBe(2)
+		})
+
+		test('collection handles async transformation with timeout', async () => {
+			const numbers = createStore([1, 2, 3])
+
+			const asyncTransformed = numbers.deriveCollection(
+				async (item, signal) => {
+					// Simulate async work with random timeout
+					const delay = Math.random() * 10 + 5 // 5-15ms
+					await new Promise(resolve => {
+						const timeout = setTimeout(resolve, delay)
+						signal?.addEventListener('abort', () => {
+							clearTimeout(timeout)
+						})
+					})
+
+					if (signal?.aborted) {
+						throw new Error('Aborted')
+					}
+
+					return item * 10
+				},
+			)
+
+			// Wait for async computation to complete
+			await new Promise(resolve => setTimeout(resolve, 50))
+
+			expect(asyncTransformed.get()).toEqual([10, 20, 30])
+		}, 1000)
+
+		/* test('rapid mutations abort previous async operations', async () => {
+			const numbers = createStore([1])
+			let computationStarted = 0
+			let computationCompleted = 0
+			let computationAborted = 0
+
+			const asyncTransformed = numbers.deriveCollection(
+				async (item, signal) => {
+					computationStarted++
+
+					// Longer async operation
+					try {
+						await new Promise((resolve, reject) => {
+							const timeout = setTimeout(resolve, 20)
+							signal?.addEventListener('abort', () => {
+								clearTimeout(timeout)
+								reject(new Error('Aborted'))
+							})
+						})
+
+						if (signal?.aborted) {
+							throw new Error('Aborted')
+						}
+
+						computationCompleted++
+						return item * 100
+					} catch (error) {
+						if (
+							error instanceof Error &&
+							error.message === 'Aborted'
+						) {
+							computationAborted++
+							throw error
+						}
+						throw error
+					}
+				},
+			)
+
+			// Rapidly change the value multiple times
+			numbers[0].set(2)
+			numbers[0].set(3)
+			numbers[0].set(4)
+			numbers[0].set(5)
+
+			// Wait for all operations to settle
+			await new Promise(resolve => setTimeout(resolve, 100))
+
+			// Should have started multiple computations but only completed the last one
+			expect(computationStarted).toBeGreaterThan(1)
+			expect(computationCompleted).toBeLessThan(computationStarted)
+			expect(computationAborted).toBeGreaterThan(0)
+
+			// Final result should be the last value
+			expect(asyncTransformed.get()).toEqual([500])
+		}, 1000) */
+
+		test('collection supports iteration and enumeration', () => {
+			const fruits = createStore(['apple', 'banana', 'cherry'])
+			const uppercased = fruits.deriveCollection(item =>
+				typeof item === 'string' ? item.toUpperCase() : item,
+			)
+
+			// Test for...of iteration
+			const signals = []
+			for (const signal of uppercased) {
+				signals.push(signal.get())
+			}
+			expect(signals).toEqual(['APPLE', 'BANANA', 'CHERRY'])
+
+			// Test spread operator
+			const spread = [...uppercased]
+			expect(spread.map(s => s.get())).toEqual([
+				'APPLE',
+				'BANANA',
+				'CHERRY',
+			])
+		})
+
+		test('collection supports key-based access methods', () => {
+			const items = createStore(['a', 'b', 'c'], 'item')
+			const uppercased = items.deriveCollection(item =>
+				typeof item === 'string' ? item.toUpperCase() : item,
+			)
+
+			// Test key access methods inherited from array store pattern
+			const key0 = uppercased.keyAt(0)
+			const key1 = uppercased.keyAt(1)
+
+			expect(key0).toBeTruthy()
+			expect(key1).toBeTruthy()
+
+			if (key0 && key1) {
+				expect(uppercased.indexOfKey(key0)).toBe(0)
+				expect(uppercased.indexOfKey(key1)).toBe(1)
+
+				// Test byKey access
+				expect(uppercased.byKey(key0)?.get()).toBe('A')
+				expect(uppercased.byKey(key1)?.get()).toBe('B')
+			}
+		})
+
+		/* test('collection supports local sorting', () => {
+			const numbers = createStore([3, 1, 4, 1, 5])
+			const doubled = numbers.deriveCollection(item => item * 2)
+
+			expect(doubled.get()).toEqual([6, 2, 8, 2, 10])
+
+			// Sort collection locally
+			doubled.sort((a, b) => a - b)
+			expect(doubled.get()).toEqual([2, 2, 6, 8, 10])
+
+			// Add item to source - should override local sort
+			numbers.add(0)
+			expect(doubled.get()).toEqual([6, 2, 8, 2, 10, 0]) // Back to source order + new item
+		}) */
+
+		test('collection emits notifications for changes', () => {
+			const numbers = createStore([1, 2, 3])
+			const doubled = numbers.deriveCollection(item => item * 2)
+
+			let addNotifications: readonly string[] = []
+			let removeNotifications: readonly string[] = []
+			let sortNotifications: readonly string[] = []
+
+			doubled.on('add', keys => {
+				addNotifications = keys
+			})
+			doubled.on('remove', keys => {
+				removeNotifications = keys
+			})
+			doubled.on('sort', keys => {
+				sortNotifications = keys
+			})
+
+			// Add to source
+			numbers.add(4)
+			expect(addNotifications.length).toBe(1)
+
+			// Remove from source
+			numbers.remove(0)
+			expect(removeNotifications.length).toBe(1)
+
+			// Sort collection
+			doubled.sort()
+			expect(sortNotifications.length).toBe(doubled.length)
+		})
+
+		test('collection with nested objects', () => {
+			const users = createStore([
+				{ name: 'Alice', age: 25 },
+				{ name: 'Bob', age: 30 },
+			])
+
+			const userSummaries = users.deriveCollection<{
+				summary: string
+				isAdult: boolean
+			}>(user => ({
+				summary: `${user.name} (${user.age} years old)`,
+				isAdult: user.age >= 18,
+			}))
+
+			const summaries = userSummaries.get()
+			expect(summaries[0].summary).toBe('Alice (25 years old)')
+			expect(summaries[0].isAdult).toBe(true)
+			expect(summaries[1].summary).toBe('Bob (30 years old)')
+			expect(summaries[1].isAdult).toBe(true)
+
+			// Test reactivity to nested changes
+			users[0].age.set(16)
+			expect(userSummaries[0].get().summary).toBe('Alice (16 years old)')
+			expect(userSummaries[0].get().isAdult).toBe(false)
+		})
+
+		test('collection cleanup when no longer watched', () => {
+			const numbers = createStore([1, 2, 3])
+			const doubled = numbers.deriveCollection(item => item * 2)
+
+			let effectRuns = 0
+			const cleanup = createEffect(() => {
+				doubled.get() // Subscribe to collection
+				effectRuns++
+			})
+
+			expect(effectRuns).toBe(1)
+
+			// Change source - should trigger effect
+			numbers[0].set(5)
+			expect(effectRuns).toBe(2)
+
+			// Cleanup effect
+			cleanup()
+
+			// Change source - should not trigger effect anymore
+			numbers[0].set(10)
+			expect(effectRuns).toBe(2) // Should not increment
+		})
+
+		test('multiple collections from same source', () => {
+			const numbers = createStore([1, 2, 3])
+
+			const doubled = numbers.deriveCollection(item => item * 2)
+			const squared = numbers.deriveCollection(item => item * item)
+
+			expect(doubled.get()).toEqual([2, 4, 6])
+			expect(squared.get()).toEqual([1, 4, 9])
+
+			// Both should react to source changes
+			numbers[1].set(5)
+			expect(doubled.get()).toEqual([2, 10, 6])
+			expect(squared.get()).toEqual([1, 25, 9])
+		})
+	})
 })

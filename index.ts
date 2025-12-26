@@ -5,6 +5,12 @@
  */
 
 export {
+	type Collection,
+	createCollection,
+	isCollection,
+	TYPE_COLLECTION,
+} from './src/collection'
+export {
 	type Computed,
 	type ComputedCallback,
 	createComputed,
@@ -16,7 +22,6 @@ export {
 	type DiffResult,
 	diff,
 	isEqual,
-	type PartialRecord,
 	type UnknownArray,
 	type UnknownRecord,
 } from './src/diff'
@@ -35,6 +40,14 @@ export {
 	StoreIndexRangeError,
 	StoreKeyReadonlyError,
 } from './src/errors'
+export {
+	type ArrayToRecord,
+	createList,
+	isList,
+	type KeyConfig,
+	type List,
+	TYPE_LIST,
+} from './src/list'
 export { type MatchHandlers, match } from './src/match'
 export { type ResolveResult, resolve } from './src/resolve'
 export {
@@ -46,13 +59,7 @@ export {
 	type UnknownSignalRecord,
 } from './src/signal'
 export { createState, isState, type State, TYPE_STATE } from './src/state'
-export {
-	createStore,
-	isStore,
-	type KeyConfig,
-	type Store,
-	TYPE_STORE,
-} from './src/store'
+export { createStore, isStore, type Store, TYPE_STORE } from './src/store'
 export {
 	batch,
 	type Cleanup,

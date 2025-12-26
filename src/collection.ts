@@ -1,12 +1,9 @@
-import {
-	type Computed,
-	type ComputedCallback,
-	createComputed,
-} from './computed'
+import { type Computed, createComputed } from './computed'
 import type { UnknownArray } from './diff'
-import { DuplicateKeyError } from './errors'
+import type { List } from './list'
+import { match } from './match'
+import { resolve } from './resolve'
 import type { Signal } from './signal'
-import type { ArrayItem, ArrayStore } from './store'
 import {
 	type Cleanup,
 	createWatcher,
@@ -19,7 +16,7 @@ import {
 	subscribe,
 	type Watcher,
 } from './system'
-import { isObjectOfType, isSymbol } from './util'
+import { isAsyncFunction, isObjectOfType, isSymbol, UNSET } from './util'
 
 /* === Types === */
 
@@ -27,19 +24,23 @@ type CollectionKeySignal<T extends {}> = T extends UnknownArray
 	? Collection<T>
 	: Computed<T>
 
-type Collection<T extends UnknownArray> = {
+type CollectionCallback<T extends {} & { then?: undefined }, O extends {}> =
+	| ((originValue: O, abort: AbortSignal) => Promise<T>)
+	| ((originValue: O) => T)
+
+type Collection<T extends {}> = {
 	readonly [Symbol.toStringTag]: typeof TYPE_COLLECTION
 	readonly [Symbol.isConcatSpreadable]: boolean
-	[Symbol.iterator](): IterableIterator<CollectionKeySignal<ArrayItem<T>>>
-	readonly [n: number]: CollectionKeySignal<ArrayItem<T>>
+	[Symbol.iterator](): IterableIterator<CollectionKeySignal<T>>
+	readonly [n: number]: CollectionKeySignal<T>
 	readonly length: number
 
-	byKey(key: string): CollectionKeySignal<ArrayItem<T>[]> | undefined
-	get(): T
+	byKey(key: string): CollectionKeySignal<T> | undefined
+	get(): T[]
 	keyAt(index: number): string | undefined
 	indexOfKey(key: string): number
 	on<K extends keyof Notifications>(type: K, listener: Listener<K>): Cleanup
-	sort(compareFn?: (a: ArrayItem<T>, b: ArrayItem<T>) => number): void
+	sort(compareFn?: (a: T, b: T) => number): void
 }
 
 /* === Constants === */
@@ -56,13 +57,13 @@ const TYPE_COLLECTION = 'Collection' as const
  * while maintaining the familiar array-like store interface.
  *
  * @since 0.16.2
- * @param {ArrayStore<O> | Collection<O>} origin - Origin of collection to derive values from
+ * @param {List<O> | Collection<O>} origin - Origin of collection to derive values from
  * @param {ComputedCallback<ArrayItem<T>>} callback - Callback function to transform array items
  * @returns {Collection<T>} - New collection with reactive properties that preserves the original type T
  */
-const createCollection = <T extends UnknownArray, O extends UnknownArray>(
-	origin: ArrayStore<O> | Collection<O>,
-	callback: ComputedCallback<ArrayItem<T>>,
+const createCollection = <T extends {}, O extends {}>(
+	origin: List<O> | Collection<O>,
+	callback: CollectionCallback<T, O>,
 ): Collection<T> => {
 	const watchers = new Set<Watcher>()
 	const listeners: Listeners = {
@@ -71,21 +72,55 @@ const createCollection = <T extends UnknownArray, O extends UnknownArray>(
 		remove: new Set<Listener<'remove'>>(),
 		sort: new Set<Listener<'sort'>>(),
 	}
-	const signals = new Map<string, Signal<ArrayItem<T> & {}>>()
+	const signals = new Map<string, Signal<T>>()
 	const signalWatchers = new Map<string, Watcher>()
 
 	let order: string[] = []
 
 	// Add nested signal and effect
 	const addProperty = (key: string): boolean => {
-		// Create signal for key
-		const signal = createComputed(callback)
+		const computedCallback = isAsyncFunction(callback)
+			? async (_: T, abort: AbortSignal) => {
+					const originSignal = origin.byKey(key)
+					if (!originSignal) return UNSET
+
+					let result = UNSET
+					match(resolve({ originSignal }), {
+						ok: async ({ originSignal: originValue }) => {
+							result = await callback(originValue, abort)
+						},
+						err: (errors: readonly Error[]) => {
+							console.log(errors)
+						},
+					})
+					return result
+				}
+			: () => {
+					const originSignal = origin.byKey(key)
+					if (!originSignal) return UNSET
+
+					let result = UNSET
+					match(resolve({ originSignal }), {
+						ok: ({ originSignal: originValue }) => {
+							result = (callback as (originValue: O) => T)(
+								originValue as unknown as O,
+							)
+						},
+						err: (errors: readonly Error[]) => {
+							console.log(errors)
+						},
+					})
+					return result
+				}
+
+		const signal = createComputed(computedCallback)
 
 		// Set internal states
 		signals.set(key, signal)
 		if (!order.includes(key)) order.push(key)
 		const watcher = createWatcher(() =>
 			observe(() => {
+				signal.get() // Subscribe to the signal
 				emit(listeners.change, [key])
 			}, watcher),
 		)
@@ -117,7 +152,6 @@ const createCollection = <T extends UnknownArray, O extends UnknownArray>(
 	origin.on('add', additions => {
 		for (const key of additions) {
 			if (!signals.has(key)) addProperty(key)
-			else throw new DuplicateKeyError('collection', key)
 		}
 		notify(watchers)
 		emit(listeners.add, additions)
@@ -138,7 +172,7 @@ const createCollection = <T extends UnknownArray, O extends UnknownArray>(
 	})
 
 	// Get signal by key or index
-	const getSignal = (prop: string): Signal<ArrayItem<T> & {}> | undefined => {
+	const getSignal = (prop: string): Signal<T> | undefined => {
 		let key = prop
 		const index = Number(prop)
 		if (Number.isInteger(index) && index >= 0) key = order[index] ?? prop
@@ -149,7 +183,7 @@ const createCollection = <T extends UnknownArray, O extends UnknownArray>(
 	const current = (): T =>
 		order
 			.map(key => signals.get(key)?.get())
-			.filter(v => v !== undefined) as unknown as T
+			.filter(v => v !== UNSET) as unknown as T
 
 	// Methods and Properties
 	const collection: Record<PropertyKey, unknown> = {}
@@ -190,9 +224,7 @@ const createCollection = <T extends UnknownArray, O extends UnknownArray>(
 			},
 		},
 		sort: {
-			value: (
-				compareFn?: (a: ArrayItem<T>, b: ArrayItem<T>) => number,
-			): void => {
+			value: (compareFn?: (a: T, b: T) => number): void => {
 				const entries = order
 					.map((key, index) => {
 						const signal = signals.get(key)
@@ -200,7 +232,7 @@ const createCollection = <T extends UnknownArray, O extends UnknownArray>(
 							index,
 							key,
 							signal ? signal.get() : undefined,
-						] as [number, string, ArrayItem<T>]
+						] as [number, string, T]
 					})
 					.sort(
 						compareFn
@@ -269,4 +301,10 @@ const isCollection = /*#__PURE__*/ <T extends UnknownArray>(
 	value: unknown,
 ): value is Collection<T> => isObjectOfType(value, TYPE_COLLECTION)
 
-export { type Collection, createCollection, isCollection, TYPE_COLLECTION }
+export {
+	type Collection,
+	type CollectionCallback,
+	createCollection,
+	isCollection,
+	TYPE_COLLECTION,
+}

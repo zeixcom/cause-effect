@@ -1,5 +1,15 @@
+import {
+	type Collection,
+	type CollectionCallback,
+	createCollection,
+} from './collection'
 import { isComputed } from './computed'
-import { type DiffResult, diff, type UnknownRecord } from './diff'
+import {
+	type DiffResult,
+	diff,
+	type UnknownArray,
+	type UnknownRecord,
+} from './diff'
 import {
 	DuplicateKeyError,
 	InvalidSignalValueError,
@@ -7,9 +17,9 @@ import {
 	StoreIndexRangeError,
 	StoreKeyReadonlyError,
 } from './errors'
-import type { List } from './list'
-import { isMutableSignal, type Signal } from './signal'
+import { isMutableSignal } from './signal'
 import { createState, isState, type State } from './state'
+import { createStore, isStore, type Store } from './store'
 import {
 	batch,
 	type Cleanup,
@@ -28,70 +38,67 @@ import {
 	isNumber,
 	isObjectOfType,
 	isRecord,
+	isString,
 	isSymbol,
 	UNSET,
 } from './util'
 
 /* === Types === */
 
-type StoreKeySignal<T extends {}> = T extends readonly (infer U extends {})[]
+type ArrayToRecord<T extends UnknownArray> = {
+	[key: string]: T extends Array<infer U extends {}> ? U : never
+}
+
+type ListItemSignal<T extends {}> = T extends readonly (infer U extends {})[]
 	? List<U>
 	: T extends UnknownRecord
 		? Store<T>
 		: State<T>
 
-interface BaseStore {
-	readonly [Symbol.toStringTag]: 'Store'
-	readonly length: number
-}
+type KeyConfig<T> = string | ((item: T) => string)
 
-type Store<T extends UnknownRecord> = BaseStore & {
-	[K in keyof T]: T[K] extends readonly (infer U extends {})[]
-		? List<U>
-		: T extends Record<string, unknown>
-			? Store<T[K]>
-			: State<T[K]>
-} & {
-	[Symbol.iterator](): IterableIterator<
-		[Extract<keyof T, string>, StoreKeySignal<T[Extract<keyof T, string>]>]
-	>
-	add<K extends Extract<keyof T, string>>(key: K, value: T[K]): K
-	byKey<K extends Extract<keyof T, string>>(key: K): StoreKeySignal<T[K]>
+type List<T extends {}> = {
+	readonly [Symbol.toStringTag]: 'List'
+	[Symbol.iterator](): IterableIterator<ListItemSignal<T>>
+	readonly [Symbol.isConcatSpreadable]: boolean
+	[n: number]: ListItemSignal<T>
+	readonly length: number
+	add(value: T): string
+	byKey(key: string): ListItemSignal<T> | undefined
+	deriveCollection<U extends {}>(
+		callback: CollectionCallback<U, T extends UnknownArray ? T : never>,
+	): Collection<U>
 	get(): T
 	keyAt(index: number): string | undefined
 	indexOfKey(key: string): number
 	set(value: T): void
 	update(fn: (value: T) => T): void
-	sort<U = T[Extract<keyof T, string>]>(
-		compareFn?: (a: U, b: U) => number,
-	): void
+	sort<U = T>(compareFn?: (a: U, b: U) => number): void
+	splice(start: number, deleteCount?: number, ...items: T[]): T[]
 	on<K extends keyof Notifications>(type: K, listener: Listener<K>): Cleanup
-	remove<K extends Extract<keyof T, string>>(key: K): void
+	remove(index: number): void
 }
 
 /* === Constants === */
 
-const TYPE_STORE = 'Store' as const
+const TYPE_LIST = 'List' as const
 
 /* === Functions === */
 
 /**
- * Create a new store with deeply nested reactive properties
+ * Create a new list with deeply nested reactive list items
  *
- * Supports both objects and arrays as initial values. Arrays are converted
- * to records internally for storage but maintain their array type through
- * the .get() method, which automatically converts objects with consecutive
- * numeric keys back to arrays.
- *
- * For array-like stores, an optional keyConfig parameter can be provided to
- * generate stable keys for array items. This creates persistent references
- * that remain stable across sort and compact operations.
- *
- * @since 0.15.0
- * @param {T} initialValue - initial object or array value of the store
- * @returns {Store<T>} - new store with reactive properties that preserves the original type T
+ * @since 0.16.2
+ * @param {T} initialValue - Initial array of the list
+ * @param {KeyConfig<T>} keyConfig - Optional key configuration:
+ *   - string: used as prefix for auto-incrementing IDs (e.g., "item" → "item0", "item1")
+ *   - function: computes key from array item at creation time
+ * @returns {List<T>} - New list with reactive items of type T
  */
-const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
+const createList = <T extends {}>(
+	initialValue: T[],
+	keyConfig?: KeyConfig<T>,
+): List<T> => {
 	if (initialValue == null) throw new NullishSignalValueError('store')
 
 	const watchers = new Set<Watcher>()
@@ -101,20 +108,54 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 		remove: new Set<Listener<'remove'>>(),
 		sort: new Set<Listener<'sort'>>(),
 	}
-	const signals = new Map<string, Signal<T[Extract<keyof T, string>] & {}>>()
+	const signals = new Map<string, ListItemSignal<T>>()
 	const signalWatchers = new Map<string, Watcher>()
 
+	// Stable key support for array-like stores
+	let keyCounter = 0
 	let order: string[] = []
 
-	// Get current record
-	const current = (): T => {
-		const record = {} as Record<string, unknown>
-		for (const key of order) {
-			const signal = signals.get(key)
-			if (signal) record[key] = signal.get()
-		}
-		return record as T
+	// Get signal by key or index
+	const getSignal = (prop: string): ListItemSignal<T> | undefined => {
+		let key = prop
+		const index = Number(prop)
+		if (Number.isInteger(index) && index >= 0) key = order[index] ?? prop
+		return signals.get(key)
 	}
+
+	// Generate stable key for array items
+	const generateKey = (item: T): string => {
+		const id = keyCounter++
+		return isString(keyConfig)
+			? `${keyConfig}${id}`
+			: isFunction<string>(keyConfig)
+				? keyConfig(item)
+				: String(id)
+	}
+
+	// Convert array to record with stable keys
+	const arrayToRecord = (array: T[]): ArrayToRecord<T[]> => {
+		const record = {} as Record<string, T>
+
+		for (let i = 0; i < array.length; i++) {
+			const value = array[i]
+			if (value === undefined) continue // Skip sparse array positions
+
+			let key = order[i]
+			if (!key) {
+				key = generateKey(value)
+				order[i] = key
+			}
+			record[key] = value
+		}
+		return record
+	}
+
+	// Get current record
+	const current = (): T[] =>
+		order
+			.map(key => signals.get(key)?.get())
+			.filter(v => v !== undefined) as T[]
 
 	// Validate input
 	const isValidValue = <T>(
@@ -130,20 +171,18 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 	}
 
 	// Add nested signal and effect
-	const addProperty = (
-		key: string,
-		value: T[keyof T],
-		single = false,
-	): boolean => {
+	const addProperty = (key: string, value: T, single = false): boolean => {
 		if (!isValidValue(key, value)) return false
 
 		// Create signal for key
 		const signal =
-			isState(value) || isStore(value)
+			isState(value) || isStore(value) || isList(value)
 				? value
-				: isRecord(value) || Array.isArray(value)
+				: isRecord(value)
 					? createStore(value)
-					: createState(value)
+					: Array.isArray(value)
+						? createList(value)
+						: createState(value)
 
 		// Set internal states
 		// @ts-expect-error non-matching signal types
@@ -192,11 +231,7 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 		// Additions
 		if (Object.keys(changes.add).length) {
 			for (const key in changes.add)
-				addProperty(
-					key,
-					changes.add[key] as T[Extract<keyof T, string>],
-					false,
-				)
+				addProperty(key, changes.add[key] as T, false)
 
 			// Queue initial additions event to allow listeners to be added first
 			if (initialRun)
@@ -233,33 +268,38 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 
 	// Reconcile data and dispatch events
 	const reconcile = (
-		oldValue: T,
-		newValue: T,
+		oldValue: T[],
+		newValue: T[],
 		initialRun?: boolean,
-	): boolean => batchChanges(diff(oldValue, newValue), initialRun)
+	): boolean =>
+		batchChanges(
+			diff(arrayToRecord(oldValue), arrayToRecord(newValue)),
+			initialRun,
+		)
 
 	// Initialize data
-	reconcile({} as T, initialValue, true)
+	reconcile([] as T[], initialValue, true)
 
 	// Methods and Properties
 	const prototype: Record<PropertyKey, unknown> = {}
 	Object.defineProperties(prototype, {
 		[Symbol.toStringTag]: {
-			value: TYPE_STORE,
+			value: TYPE_LIST,
+		},
+		[Symbol.isConcatSpreadable]: {
+			value: true,
 		},
 		[Symbol.iterator]: {
 			value: function* () {
 				for (const key of order) {
 					const signal = signals.get(key)
-					if (signal) yield [key, signal]
+					if (signal) yield signal
 				}
 			},
 		},
 		add: {
-			value: <K extends Extract<keyof T, string>>(
-				key: K,
-				value: T[K],
-			): K => {
+			value: (value: T): string => {
+				const key = generateKey(value)
 				if (!signals.has(key)) {
 					addProperty(key, value, true)
 					return key
@@ -268,7 +308,15 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 		},
 		byKey: {
 			value: (key: string) => {
-				return signals.get(key)
+				return getSignal(key)
+			},
+		},
+		deriveCollection: {
+			value: <U extends {}>(
+				callback: CollectionCallback<U, T>,
+			): Collection<U> => {
+				const collection = createCollection(list, callback)
+				return collection
 			},
 		},
 		keyAt: {
@@ -282,7 +330,7 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 			},
 		},
 		get: {
-			value: (): T => {
+			value: (): T[] => {
 				subscribe(watchers)
 				return current()
 			},
@@ -299,7 +347,7 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 			},
 		},
 		set: {
-			value: (newValue: T): void => {
+			value: (newValue: T[]): void => {
 				if (reconcile(current(), newValue)) {
 					notify(watchers)
 					if (UNSET === newValue) watchers.clear()
@@ -307,7 +355,7 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 			},
 		},
 		update: {
-			value: (fn: (oldValue: T) => T): void => {
+			value: (fn: (oldValue: T[]) => T[]): void => {
 				const oldValue = current()
 				const newValue = fn(oldValue)
 				if (reconcile(oldValue, newValue)) {
@@ -318,7 +366,11 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 		},
 		sort: {
 			value: (
-				compareFn?: <U = T[Extract<keyof T, string>]>(
+				compareFn?: <
+					U = T extends UnknownArray
+						? T
+						: T[Extract<keyof T, string>],
+				>(
 					a: U,
 					b: U,
 				) => number,
@@ -346,6 +398,73 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 				emit(listeners.sort, order)
 			},
 		},
+		splice: {
+			value: (
+				start: number,
+				deleteCount?: number,
+				...items: T[]
+			): T[] => {
+				// Normalize start and deleteCount
+				const length = signals.size
+				const actualStart =
+					start < 0
+						? Math.max(0, length + start)
+						: Math.min(start, length)
+				const actualDeleteCount = Math.max(
+					0,
+					Math.min(
+						deleteCount ??
+							Math.max(0, length - Math.max(0, actualStart)),
+						length - actualStart,
+					),
+				)
+
+				const add = {} as Record<string, T>
+				const remove = {} as Record<string, T>
+
+				// Collect items to delete and their keys
+				for (let i = 0; i < actualDeleteCount; i++) {
+					const index = actualStart + i
+					const key = order[index]
+					if (key) {
+						const signal = signals.get(key)
+						if (signal) remove[key] = signal.get() as T
+					}
+				}
+
+				// Build new order: items before splice point
+				const newOrder = order.slice(0, actualStart)
+
+				// Add new items
+				for (const item of items) {
+					const key = generateKey(item)
+					newOrder.push(key)
+					add[key] = item as T
+				}
+
+				// Add items after splice point
+				newOrder.push(...order.slice(actualStart + actualDeleteCount))
+
+				// Update the order array
+				order = newOrder.filter(() => true) // Compact array
+
+				const changed = !!(
+					Object.keys(add).length || Object.keys(remove).length
+				)
+
+				if (changed)
+					batchChanges({
+						add,
+						change: {} as Record<string, T>,
+						remove,
+						changed,
+					})
+
+				notify(watchers)
+
+				return Object.values(remove) as T[]
+			},
+		},
 		on: {
 			value: <K extends keyof Notifications>(
 				type: K,
@@ -364,10 +483,10 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 	})
 
 	// Return proxy directly with integrated signal methods
-	const store = new Proxy(prototype as Store<T>, {
+	const list = new Proxy(prototype as List<T>, {
 		get(target, prop) {
 			if (prop in target) return Reflect.get(target, prop)
-			if (!isSymbol(prop)) return signals.get(prop)
+			if (!isSymbol(prop)) return getSignal(prop)
 		},
 		has(target, prop) {
 			if (prop in target) return true
@@ -382,7 +501,7 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 				return Reflect.getOwnPropertyDescriptor(target, prop)
 			if (isSymbol(prop)) return undefined
 
-			const signal = signals.get(prop)
+			const signal = getSignal(prop)
 			return signal
 				? {
 						enumerable: true,
@@ -393,19 +512,26 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 				: undefined
 		},
 	})
-	return store
+	return list
 }
 
 /**
- * Check if the provided value is a Store instance
+ * Check if the provided value is a List instance
  *
  * @since 0.15.0
- * @param {unknown} value - Value to check
- * @returns {boolean} - True if the value is a Store instance, false otherwise
+ * @param {unknown} value - value to check
+ * @returns {boolean} - true if the value is a List instance, false otherwise
  */
-const isStore = <T extends UnknownRecord>(value: unknown): value is Store<T> =>
-	isObjectOfType(value, TYPE_STORE)
+const isList = <T extends {}>(value: unknown): value is List<T> =>
+	isObjectOfType(value, TYPE_LIST)
 
 /* === Exports === */
 
-export { TYPE_STORE, isStore, createStore, type Store }
+export {
+	TYPE_LIST,
+	isList,
+	createList,
+	type ArrayToRecord,
+	type List,
+	type KeyConfig,
+}

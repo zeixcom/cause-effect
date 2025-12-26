@@ -5,8 +5,10 @@ import {
 	createState,
 	createStore,
 	isComputed,
+	isList,
 	isState,
 	isStore,
+	type List,
 	type Signal,
 	type State,
 	type Store,
@@ -25,12 +27,12 @@ describe('toSignal', () => {
 			])
 
 			// Runtime behavior
-			expect(isStore(result)).toBe(true)
+			expect(isList(result)).toBe(true)
 			expect(result['0'].get()).toEqual({ id: 1, name: 'Alice' })
 			expect(result['1'].get()).toEqual({ id: 2, name: 'Bob' })
 
 			// Type inference test - now correctly returns Store<Record<number, {id: number, name: string}>>
-			const typedResult: Store<{ id: number; name: string }[]> = result
+			const typedResult: List<{ id: number; name: string }> = result
 			expect(typedResult).toBeDefined()
 		})
 
@@ -146,7 +148,7 @@ describe('toSignal', () => {
 				[3, 4],
 			])
 
-			expect(isStore(result)).toBe(true)
+			expect(isList(result)).toBe(true)
 			// With the fixed behavior, nested arrays should be recovered as arrays
 			const firstElement = result[0].get()
 			const secondElement = result[1].get()
@@ -237,12 +239,12 @@ describe('Type precision tests', () => {
 			const result = toSignal([{ id: 1 }, { id: 2 }])
 
 			// Let's verify the actual behavior
-			expect(isStore(result)).toBe(true)
+			expect(isList(result)).toBe(true)
 			expect(result['0'].get()).toEqual({ id: 1 })
 			expect(result['1'].get()).toEqual({ id: 2 })
 
 			// Type assertion test - this should now work with correct typing
-			const typedResult: Store<{ id: number }[]> = result
+			const typedResult: List<{ id: number }> = result
 			expect(typedResult).toBeDefined()
 
 			// Simulate external library usage where P[K] represents element type
@@ -277,12 +279,12 @@ describe('Type precision tests', () => {
 			const secondItemSignal = signal['1']
 
 			// Runtime behavior works correctly
-			expect(isStore(signal)).toBe(true)
+			expect(isList(signal)).toBe(true)
 			expect(firstItemSignal.get()).toEqual({ id: 1, name: 'Alice' })
 			expect(secondItemSignal.get()).toEqual({ id: 2, name: 'Bob' })
 
 			// Type inference should now work correctly:
-			const properlyTyped: Store<{ id: number; name: string }[]> = signal
+			const properlyTyped: List<{ id: number; name: string }> = signal
 			expect(properlyTyped).toBeDefined()
 
 			// These should work without type errors in external libraries
