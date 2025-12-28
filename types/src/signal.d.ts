@@ -1,9 +1,9 @@
-import type { Collection } from './collection';
-import { type Computed, type ComputedCallback } from './computed';
 import type { UnknownArray } from './diff';
-import { type List } from './list';
-import { type State } from './state';
-import { type Store } from './store';
+import type { Collection } from './signals/collection';
+import { type Computed, type ComputedCallback } from './signals/computed';
+import { type List } from './signals/list';
+import { type State } from './signals/state';
+import { type Store } from './signals/store';
 type Signal<T extends {}> = {
     get(): T;
 };

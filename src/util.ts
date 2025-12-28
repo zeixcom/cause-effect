@@ -23,6 +23,11 @@ const isAsyncFunction = /*#__PURE__*/ <T>(
 ): fn is (...args: unknown[]) => Promise<T> =>
 	isFunction(fn) && fn.constructor.name === 'AsyncFunction'
 
+const isSyncFunction = /*#__PURE__*/ <T extends unknown & { then?: undefined }>(
+	fn: unknown,
+): fn is (...args: unknown[]) => T =>
+	isFunction(fn) && fn.constructor.name !== 'AsyncFunction'
+
 const isObjectOfType = /*#__PURE__*/ <T>(
 	value: unknown,
 	type: string,
@@ -68,6 +73,7 @@ export {
 	isSymbol,
 	isFunction,
 	isAsyncFunction,
+	isSyncFunction,
 	isObjectOfType,
 	isRecord,
 	isRecordOrArray,

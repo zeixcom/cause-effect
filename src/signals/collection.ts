@@ -1,22 +1,22 @@
-import { type Computed, createComputed } from './computed'
-import type { UnknownArray } from './diff'
-import type { List } from './list'
-import { match } from './match'
-import { resolve } from './resolve'
-import type { Signal } from './signal'
+import type { UnknownArray } from '../diff'
+import { match } from '../match'
+import { resolve } from '../resolve'
+import type { Signal } from '../signal'
 import {
 	type Cleanup,
 	createWatcher,
-	emit,
+	emitNotification,
 	type Listener,
 	type Listeners,
 	type Notifications,
-	notify,
-	observe,
-	subscribe,
+	notifyWatchers,
+	trackSignalReads,
 	type Watcher,
-} from './system'
-import { isAsyncFunction, isObjectOfType, isSymbol, UNSET } from './util'
+	subscribeActiveWatcher,
+} from '../system'
+import { isAsyncFunction, isObjectOfType, isSymbol, UNSET } from '../util'
+import { type Computed, createComputed } from './computed'
+import type { List } from './list'
 
 /* === Types === */
 
@@ -119,10 +119,10 @@ const createCollection = <T extends {}, O extends {}>(
 		signals.set(key, signal)
 		if (!order.includes(key)) order.push(key)
 		const watcher = createWatcher(() =>
-			observe(() => {
+			trackSignalReads(watcher, () => {
 				signal.get() // Subscribe to the signal
-				emit(listeners.change, [key])
-			}, watcher),
+				emitNotification(listeners.change, [key])
+			}),
 		)
 		watcher()
 		signalWatchers.set(key, watcher)
@@ -139,8 +139,10 @@ const createCollection = <T extends {}, O extends {}>(
 		const index = order.indexOf(key)
 		if (index >= 0) order.splice(index, 1)
 		const watcher = signalWatchers.get(key)
-		if (watcher) watcher.cleanup()
-		signalWatchers.delete(key)
+		if (watcher) {
+			watcher.stop()
+			signalWatchers.delete(key)
+		}
 	}
 
 	// Initialize properties
@@ -153,8 +155,8 @@ const createCollection = <T extends {}, O extends {}>(
 		for (const key of additions) {
 			if (!signals.has(key)) addProperty(key)
 		}
-		notify(watchers)
-		emit(listeners.add, additions)
+		notifyWatchers(watchers)
+		emitNotification(listeners.add, additions)
 	})
 	origin.on('remove', removals => {
 		for (const key of Object.keys(removals)) {
@@ -162,13 +164,13 @@ const createCollection = <T extends {}, O extends {}>(
 			removeProperty(key)
 		}
 		order = order.filter(() => true) // Compact array
-		notify(watchers)
-		emit(listeners.remove, removals)
+		notifyWatchers(watchers)
+		emitNotification(listeners.remove, removals)
 	})
 	origin.on('sort', newOrder => {
 		order = [...newOrder]
-		notify(watchers)
-		emit(listeners.sort, newOrder)
+		notifyWatchers(watchers)
+		emitNotification(listeners.sort, newOrder)
 	})
 
 	// Get signal by key or index
@@ -219,7 +221,7 @@ const createCollection = <T extends {}, O extends {}>(
 		},
 		get: {
 			value: (): T => {
-				subscribe(watchers)
+				subscribeActiveWatcher(watchers)
 				return current()
 			},
 		},
@@ -244,8 +246,8 @@ const createCollection = <T extends {}, O extends {}>(
 				// Set new order
 				order = entries.map(([_, key]) => key)
 
-				notify(watchers)
-				emit(listeners.sort, order)
+				notifyWatchers(watchers)
+				emitNotification(listeners.sort, order)
 			},
 		},
 		on: {
@@ -259,7 +261,7 @@ const createCollection = <T extends {}, O extends {}>(
 		},
 		length: {
 			get(): number {
-				subscribe(watchers)
+				subscribeActiveWatcher(watchers)
 				return signals.size
 			},
 		},

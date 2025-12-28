@@ -5,20 +5,6 @@
  */
 
 export {
-	type Collection,
-	createCollection,
-	isCollection,
-	TYPE_COLLECTION,
-} from './src/collection'
-export {
-	type Computed,
-	type ComputedCallback,
-	createComputed,
-	isComputed,
-	isComputedCallback,
-	TYPE_COMPUTED,
-} from './src/computed'
-export {
 	type DiffResult,
 	diff,
 	isEqual,
@@ -40,14 +26,6 @@ export {
 	StoreIndexRangeError,
 	StoreKeyReadonlyError,
 } from './src/errors'
-export {
-	type ArrayToRecord,
-	createList,
-	isList,
-	type KeyConfig,
-	type List,
-	TYPE_LIST,
-} from './src/list'
 export { type MatchHandlers, match } from './src/match'
 export { type ResolveResult, resolve } from './src/resolve'
 export {
@@ -58,8 +36,40 @@ export {
 	toSignal,
 	type UnknownSignalRecord,
 } from './src/signal'
-export { createState, isState, type State, TYPE_STATE } from './src/state'
-export { createStore, isStore, type Store, TYPE_STORE } from './src/store'
+export {
+	type Collection,
+	createCollection,
+	isCollection,
+	TYPE_COLLECTION,
+} from './src/signals/collection'
+export {
+	type Computed,
+	type ComputedCallback,
+	createComputed,
+	isComputed,
+	isComputedCallback,
+	TYPE_COMPUTED,
+} from './src/signals/computed'
+export {
+	type ArrayToRecord,
+	createList,
+	isList,
+	type KeyConfig,
+	type List,
+	TYPE_LIST,
+} from './src/signals/list'
+export {
+	createState,
+	isState,
+	type State,
+	TYPE_STATE,
+} from './src/signals/state'
+export {
+	createStore,
+	isStore,
+	type Store,
+	TYPE_STORE,
+} from './src/signals/store'
 export {
 	batch,
 	type Cleanup,
@@ -70,9 +80,9 @@ export {
 	type Listeners,
 	type Notifications,
 	notify,
-	observe,
-	subscribe,
+	track,
 	type Watcher,
+	watch,
 } from './src/system'
 export {
 	isAbortError,

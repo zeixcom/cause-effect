@@ -1,36 +1,28 @@
-import { isComputed } from './computed'
-import { type DiffResult, diff, type UnknownRecord } from './diff'
+import { type DiffResult, diff, type UnknownRecord } from '../diff'
 import {
 	DuplicateKeyError,
 	InvalidSignalValueError,
 	NullishSignalValueError,
-	StoreIndexRangeError,
 	StoreKeyReadonlyError,
-} from './errors'
-import type { List } from './list'
-import { isMutableSignal, type Signal } from './signal'
-import { createState, isState, type State } from './state'
+} from '../errors'
+import { isMutableSignal, type Signal } from '../signal'
 import {
-	batch,
+	batchSignalWrites,
 	type Cleanup,
 	createWatcher,
-	emit,
+	emitNotification,
 	type Listener,
 	type Listeners,
 	type Notifications,
-	notify,
-	observe,
-	subscribe,
+	notifyWatchers,
+	subscribeActiveWatcher,
+	trackSignalReads,
 	type Watcher,
-} from './system'
-import {
-	isFunction,
-	isNumber,
-	isObjectOfType,
-	isRecord,
-	isSymbol,
-	UNSET,
-} from './util'
+} from '../system'
+import { isFunction, isObjectOfType, isRecord, isSymbol, UNSET } from '../util'
+import { isComputed } from './computed'
+import type { List } from './list'
+import { createState, isState, type State } from './state'
 
 /* === Types === */
 
@@ -40,18 +32,14 @@ type StoreKeySignal<T extends {}> = T extends readonly (infer U extends {})[]
 		? Store<T>
 		: State<T>
 
-interface BaseStore {
-	readonly [Symbol.toStringTag]: 'Store'
-	readonly length: number
-}
-
-type Store<T extends UnknownRecord> = BaseStore & {
+type Store<T extends UnknownRecord> = {
 	[K in keyof T]: T[K] extends readonly (infer U extends {})[]
 		? List<U>
 		: T extends Record<string, unknown>
 			? Store<T[K]>
 			: State<T[K]>
 } & {
+	readonly [Symbol.toStringTag]: 'Store'
 	[Symbol.iterator](): IterableIterator<
 		[Extract<keyof T, string>, StoreKeySignal<T[Extract<keyof T, string>]>]
 	>
@@ -95,24 +83,18 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 	if (initialValue == null) throw new NullishSignalValueError('store')
 
 	const watchers = new Set<Watcher>()
-	const listeners: Listeners = {
+	const listeners: Omit<Listeners, 'sort'> = {
 		add: new Set<Listener<'add'>>(),
 		change: new Set<Listener<'change'>>(),
 		remove: new Set<Listener<'remove'>>(),
-		sort: new Set<Listener<'sort'>>(),
 	}
 	const signals = new Map<string, Signal<T[Extract<keyof T, string>] & {}>>()
-	const signalWatchers = new Map<string, Watcher>()
-
-	let order: string[] = []
+	const ownWatchers = new Map<string, Watcher>()
 
 	// Get current record
 	const current = (): T => {
 		const record = {} as Record<string, unknown>
-		for (const key of order) {
-			const signal = signals.get(key)
-			if (signal) record[key] = signal.get()
-		}
+		for (const [key, signal] of signals) record[key] = signal.get()
 		return record as T
 	}
 
@@ -129,18 +111,32 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 		return true
 	}
 
+	// Add own watcher for nested signal
+	const addOwnWatcher = <K extends keyof T & string>(
+		key: K,
+		signal: Signal<T[K] & {}>,
+	) => {
+		const watcher = createWatcher(() => {
+			trackSignalReads(watcher, () => {
+				signal.get() // Subscribe to the signal
+				emitNotification(listeners.change, [key])
+			})
+		})
+		ownWatchers.set(key, watcher)
+	}
+
 	// Add nested signal and effect
-	const addProperty = (
-		key: string,
-		value: T[keyof T],
+	const addProperty = <K extends keyof T & string>(
+		key: K,
+		value: T[K] & {},
 		single = false,
 	): boolean => {
 		if (!isValidValue(key, value)) return false
 
 		// Create signal for key
-		const signal =
+		const signal: Signal<T[K] & {}> =
 			isState(value) || isStore(value)
-				? value
+				? (value as unknown as Signal<T[K] & {}>)
 				: isRecord(value) || Array.isArray(value)
 					? createStore(value)
 					: createState(value)
@@ -148,21 +144,11 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 		// Set internal states
 		// @ts-expect-error non-matching signal types
 		signals.set(key, signal)
-		if (!order.includes(key)) order.push(key)
-
-		// Create a watcher to detect changes in the nested signal
-		const watcher = createWatcher(() =>
-			observe(() => {
-				signal.get() // Subscribe to the signal
-				emit(listeners.change, [key])
-			}, watcher),
-		)
-		watcher()
-		signalWatchers.set(key, watcher)
+		if (listeners.change.size) addOwnWatcher(key, signal)
 
 		if (single) {
-			notify(watchers)
-			emit(listeners.add, [key])
+			notifyWatchers(watchers)
+			emitNotification(listeners.add, [key])
 		}
 		return true
 	}
@@ -174,16 +160,15 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 		if (!ok) return
 
 		// Clean up internal states
-		const index = order.indexOf(key)
-		if (index >= 0) order.splice(index, 1)
-		const watcher = signalWatchers.get(key)
-		if (watcher) watcher.cleanup()
-		signalWatchers.delete(key)
+		const watcher = ownWatchers.get(key)
+		if (watcher) {
+			watcher.stop()
+			ownWatchers.delete(key)
+		}
 
 		if (single) {
-			order = order.filter(() => true) // Compact array
-			notify(watchers)
-			emit(listeners.remove, [key])
+			notifyWatchers(watchers)
+			emitNotification(listeners.remove, [key])
 		}
 	}
 
@@ -201,14 +186,14 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 			// Queue initial additions event to allow listeners to be added first
 			if (initialRun)
 				setTimeout(() => {
-					emit(listeners.add, Object.keys(changes.add))
+					emitNotification(listeners.add, Object.keys(changes.add))
 				}, 0)
-			else emit(listeners.add, Object.keys(changes.add))
+			else emitNotification(listeners.add, Object.keys(changes.add))
 		}
 
 		// Changes
 		if (Object.keys(changes.change).length) {
-			batch(() => {
+			batchSignalWrites(() => {
 				for (const key in changes.change) {
 					const value = changes.change[key]
 					if (!isValidValue(key, value)) continue
@@ -217,15 +202,14 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 					if (isMutableSignal(signal)) signal.set(value)
 					else throw new StoreKeyReadonlyError(key, value)
 				}
-				emit(listeners.change, Object.keys(changes.change))
+				emitNotification(listeners.change, Object.keys(changes.change))
 			})
 		}
 
 		// Removals
 		if (Object.keys(changes.remove).length) {
 			for (const key in changes.remove) removeProperty(key)
-			order = order.filter(() => true)
-			emit(listeners.remove, Object.keys(changes.remove))
+			emitNotification(listeners.remove, Object.keys(changes.remove))
 		}
 
 		return changes.changed
@@ -249,10 +233,7 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 		},
 		[Symbol.iterator]: {
 			value: function* () {
-				for (const key of order) {
-					const signal = signals.get(key)
-					if (signal) yield [key, signal]
-				}
+				for (const [key, signal] of signals) yield [key, signal]
 			},
 		},
 		add: {
@@ -260,10 +241,11 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 				key: K,
 				value: T[K],
 			): K => {
-				if (!signals.has(key)) {
-					addProperty(key, value, true)
-					return key
-				} else throw new DuplicateKeyError('store', key, value)
+				if (signals.has(key))
+					throw new DuplicateKeyError('store', key, value)
+
+				addProperty(key, value, true)
+				return key
 			},
 		},
 		byKey: {
@@ -271,94 +253,50 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 				return signals.get(key)
 			},
 		},
-		keyAt: {
-			value(index: number): string | undefined {
-				return order[index]
-			},
-		},
-		indexOfKey: {
-			value(key: string): number {
-				return order.indexOf(key)
-			},
-		},
 		get: {
 			value: (): T => {
-				subscribe(watchers)
+				subscribeActiveWatcher(watchers)
 				return current()
 			},
 		},
 		remove: {
-			value: (keyOrIndex: string | number): void => {
-				let key = String(keyOrIndex)
-				if (isNumber(keyOrIndex)) {
-					if (!order[keyOrIndex])
-						throw new StoreIndexRangeError(keyOrIndex)
-					key = order[keyOrIndex]
-				}
+			value: (key: string): void => {
 				if (signals.has(key)) removeProperty(key, true)
 			},
 		},
 		set: {
 			value: (newValue: T): void => {
 				if (reconcile(current(), newValue)) {
-					notify(watchers)
+					notifyWatchers(watchers)
 					if (UNSET === newValue) watchers.clear()
 				}
 			},
 		},
 		update: {
 			value: (fn: (oldValue: T) => T): void => {
-				const oldValue = current()
-				const newValue = fn(oldValue)
-				if (reconcile(oldValue, newValue)) {
-					notify(watchers)
-					if (UNSET === newValue) watchers.clear()
-				}
-			},
-		},
-		sort: {
-			value: (
-				compareFn?: <U = T[Extract<keyof T, string>]>(
-					a: U,
-					b: U,
-				) => number,
-			): void => {
-				const entries = order
-					.map((key, index) => {
-						const signal = signals.get(key)
-						return [
-							index,
-							key,
-							signal ? signal.get() : undefined,
-						] as [number, string, unknown]
-					})
-					.sort(
-						compareFn
-							? (a, b) => compareFn(a[2], b[2])
-							: (a, b) =>
-									String(a[2]).localeCompare(String(b[2])),
-					)
-
-				// Set new order
-				order = entries.map(([_, key]) => key)
-
-				notify(watchers)
-				emit(listeners.sort, order)
+				store.set(fn(current()))
 			},
 		},
 		on: {
-			value: <K extends keyof Notifications>(
+			value: <K extends keyof Omit<Listeners, 'sort'>>(
 				type: K,
 				listener: Listener<K>,
 			): Cleanup => {
 				listeners[type].add(listener)
-				return () => listeners[type].delete(listener)
-			},
-		},
-		length: {
-			get(): number {
-				subscribe(watchers)
-				return signals.size
+				if (type === 'change' && !ownWatchers.size) {
+					for (const [key, signal] of signals)
+						addOwnWatcher(key, signal)
+				}
+				return () => {
+					listeners[type].delete(listener)
+					if (type === 'change' && !listeners.change.size) {
+						if (ownWatchers.size) {
+							for (const watcher of ownWatchers.values())
+								watcher.stop()
+							ownWatchers.clear()
+						}
+					}
+				}
 			},
 		},
 	})
@@ -375,7 +313,7 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 		},
 		ownKeys(target) {
 			const staticKeys = Reflect.ownKeys(target)
-			return [...new Set([...order, ...staticKeys])]
+			return [...new Set([...signals.keys(), ...staticKeys])]
 		},
 		getOwnPropertyDescriptor(target, prop) {
 			if (prop in target)

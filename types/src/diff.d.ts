@@ -1,8 +1,5 @@
 type UnknownRecord = Record<string, unknown & {}>;
 type UnknownArray = ReadonlyArray<unknown & {}>;
-type ArrayToRecord<T extends UnknownArray> = {
-    [key: string]: T extends Array<infer U extends {}> ? U : never;
-};
 type DiffResult = {
     changed: boolean;
     add: Record<string, unknown & {}>;
@@ -28,4 +25,4 @@ declare const isEqual: <T>(a: T, b: T, visited?: WeakSet<object>) => boolean;
  * @returns {DiffResult} The result of the comparison
  */
 declare const diff: <T extends UnknownRecord>(oldObj: T, newObj: T) => DiffResult;
-export { type ArrayToRecord, type DiffResult, diff, isEqual, type UnknownRecord, type UnknownArray, };
+export { type DiffResult, diff, isEqual, type UnknownRecord, type UnknownArray, };

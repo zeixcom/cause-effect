@@ -1,15 +1,15 @@
-import type { Collection } from './collection'
+import type { UnknownArray } from './diff'
+import type { Collection } from './signals/collection'
 import {
 	type Computed,
 	type ComputedCallback,
 	createComputed,
 	isComputed,
 	isComputedCallback,
-} from './computed'
-import type { UnknownArray } from './diff'
-import { createList, isList, type List } from './list'
-import { createState, isState, type State } from './state'
-import { createStore, isStore, type Store } from './store'
+} from './signals/computed'
+import { createList, isList, type List } from './signals/list'
+import { createState, isState, type State } from './signals/state'
+import { createStore, isStore, type Store } from './signals/store'
 import { isRecord } from './util'
 
 /* === Types === */
