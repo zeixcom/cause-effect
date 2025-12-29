@@ -379,7 +379,7 @@ describe('diff', () => {
 		type OptionalKeysType = {
 			required: string
 			optional?: number
-			maybeUndefined?: string | undefined
+			maybeNull?: string | null
 		}
 
 		test('should handle optional keys correctly', () => {
@@ -399,16 +399,16 @@ describe('diff', () => {
 		test('should handle undefined optional keys', () => {
 			const obj1: OptionalKeysType = {
 				required: 'test',
-				maybeUndefined: 'defined',
+				maybeNull: 'defined',
 			}
 			const obj2: OptionalKeysType = {
 				required: 'test',
-				maybeUndefined: undefined,
+				maybeNull: null,
 			}
 			const result = diff(obj1, obj2)
 
 			expect(result.changed).toBe(true)
-			expect(result.change).toEqual({ maybeUndefined: undefined })
+			expect(result.change).toEqual({ maybeNull: null })
 		})
 	})
 

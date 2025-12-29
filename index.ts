@@ -1,9 +1,31 @@
 /**
  * @name Cause & Effect
- * @version 0.16.2
+ * @version 0.17.0
  * @author Esther Brunner
  */
 
+export {
+	type Computed,
+	createComputed,
+	isComputed,
+	isMemoCallback,
+	isTaskCallback,
+	Memo,
+	type MemoCallback,
+	Task,
+	type TaskCallback,
+	TYPE_COMPUTED,
+} from './src/classes/computed'
+export {
+	type ArrayToRecord,
+	createList,
+	isList,
+	type KeyConfig,
+	List,
+	TYPE_LIST,
+} from './src/classes/list'
+export { createState, isState, State, TYPE_STATE } from './src/classes/state'
+export { createStore, isStore, Store, TYPE_STORE } from './src/classes/store'
 export {
 	type DiffResult,
 	diff,
@@ -19,21 +41,19 @@ export {
 export {
 	CircularDependencyError,
 	DuplicateKeyError,
-	ForbiddenMethodCallError,
 	InvalidCallbackError,
 	InvalidSignalValueError,
 	NullishSignalValueError,
-	StoreIndexRangeError,
-	StoreKeyReadonlyError,
+	ReadonlySignalError,
 } from './src/errors'
 export { type MatchHandlers, match } from './src/match'
 export { type ResolveResult, resolve } from './src/resolve'
 export {
+	createSignal,
 	isMutableSignal,
 	isSignal,
 	type Signal,
 	type SignalValues,
-	toSignal,
 	type UnknownSignalRecord,
 } from './src/signal'
 export {
@@ -43,46 +63,18 @@ export {
 	TYPE_COLLECTION,
 } from './src/signals/collection'
 export {
-	type Computed,
-	type ComputedCallback,
-	createComputed,
-	isComputed,
-	isComputedCallback,
-	TYPE_COMPUTED,
-} from './src/signals/computed'
-export {
-	type ArrayToRecord,
-	createList,
-	isList,
-	type KeyConfig,
-	type List,
-	TYPE_LIST,
-} from './src/signals/list'
-export {
-	createState,
-	isState,
-	type State,
-	TYPE_STATE,
-} from './src/signals/state'
-export {
-	createStore,
-	isStore,
-	type Store,
-	TYPE_STORE,
-} from './src/signals/store'
-export {
-	batch,
+	batchSignalWrites,
 	type Cleanup,
 	createWatcher,
-	emit,
-	flush,
+	emitNotification,
+	flushPendingReactions,
 	type Listener,
 	type Listeners,
 	type Notifications,
-	notify,
-	track,
+	notifyWatchers,
+	subscribeActiveWatcher,
+	trackSignalReads,
 	type Watcher,
-	watch,
 } from './src/system'
 export {
 	isAbortError,

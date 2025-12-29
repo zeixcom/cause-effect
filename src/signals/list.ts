@@ -1,12 +1,15 @@
-import { type DiffResult, diff, type UnknownArray } from '../diff'
+import { type DiffResult, diff, isEqual, type UnknownArray } from '../diff'
 import {
 	DuplicateKeyError,
 	InvalidSignalValueError,
 	NullishSignalValueError,
-	StoreIndexRangeError,
-	StoreKeyReadonlyError,
+	ReadonlySignalError,
 } from '../errors'
-import { isMutableSignal, type Signal } from '../signal'
+import {
+	createMutableSignal,
+	isMutableSignal,
+	type MutableSignal,
+} from '../signal'
 import {
 	batchSignalWrites,
 	type Cleanup,
@@ -24,7 +27,6 @@ import {
 	isFunction,
 	isNumber,
 	isObjectOfType,
-	isRecord,
 	isString,
 	isSymbol,
 	UNSET,
@@ -35,8 +37,6 @@ import {
 	createCollection,
 } from './collection'
 import { isComputed } from './computed'
-import { createState, isState } from './state'
-import { createStore, isStore } from './store'
 
 /* === Types === */
 
@@ -48,12 +48,12 @@ type KeyConfig<T> = string | ((item: T) => string)
 
 type List<T extends {}> = {
 	readonly [Symbol.toStringTag]: 'List'
-	[Symbol.iterator](): IterableIterator<Signal<T>>
+	[Symbol.iterator](): IterableIterator<MutableSignal<T>>
 	readonly [Symbol.isConcatSpreadable]: boolean
-	[n: number]: Signal<T>
+	[n: number]: MutableSignal<T>
 	readonly length: number
 	add(value: T): string
-	byKey(key: string): Signal<T> | undefined
+	byKey(key: string): MutableSignal<T> | undefined
 	deriveCollection<U extends {}>(
 		callback: CollectionCallback<U, T extends UnknownArray ? T : never>,
 	): Collection<U>
@@ -97,7 +97,7 @@ const createList = <T extends {}>(
 		remove: new Set<Listener<'remove'>>(),
 		sort: new Set<Listener<'sort'>>(),
 	}
-	const signals = new Map<string, Signal<T>>()
+	const signals = new Map<string, MutableSignal<T>>()
 	const ownWatchers = new Map<string, Watcher>()
 
 	// Stable key support for array-like stores
@@ -105,7 +105,7 @@ const createList = <T extends {}>(
 	let order: string[] = []
 
 	// Get signal by key or index
-	const getSignal = (prop: string): Signal<T> | undefined => {
+	const getSignal = (prop: string): MutableSignal<T> | undefined => {
 		let key = prop
 		const index = Number(prop)
 		if (Number.isInteger(index) && index >= 0) key = order[index] ?? prop
@@ -160,7 +160,7 @@ const createList = <T extends {}>(
 	}
 
 	// Add own watcher for nested signal
-	const addOwnWatcher = (key: string, signal: Signal<T>) => {
+	const addOwnWatcher = (key: string, signal: MutableSignal<T>) => {
 		const watcher = createWatcher(() => {
 			trackSignalReads(watcher, () => {
 				signal.get() // Subscribe to the signal
@@ -175,20 +175,11 @@ const createList = <T extends {}>(
 		if (!isValidValue(key, value)) return false
 
 		// Create signal for key
-		const signal =
-			isState(value) || isStore(value) || isList(value)
-				? (value as unknown as Signal<T>)
-				: isRecord(value)
-					? createStore(value)
-					: Array.isArray(value)
-						? createList(value)
-						: createState(value)
+		const signal = createMutableSignal(value)
 
 		// Set internal states
-		// @ts-expect-error non-matching signal types
 		signals.set(key, signal)
 		if (!order.includes(key)) order.push(key)
-		// @ts-expect-error non-matching signal types
 		if (listeners.change.size) addOwnWatcher(key, signal)
 
 		if (single) {
@@ -239,12 +230,12 @@ const createList = <T extends {}>(
 		if (Object.keys(changes.change).length) {
 			batchSignalWrites(() => {
 				for (const key in changes.change) {
-					const value = changes.change[key]
+					const value = changes.change[key] as T
 					if (!isValidValue(key, value)) continue
 
 					const signal = signals.get(key)
 					if (isMutableSignal(signal)) signal.set(value)
-					else throw new StoreKeyReadonlyError(key, value)
+					else throw new ReadonlySignalError(key, value)
 				}
 				emitNotification(listeners.change, Object.keys(changes.change))
 			})
@@ -304,12 +295,12 @@ const createList = <T extends {}>(
 			},
 		},
 		at: {
-			value(index: number): Signal<T> | undefined {
+			value(index: number): MutableSignal<T> | undefined {
 				return signals.get(order[index])
 			},
 		},
 		byKey: {
-			value: (key: string): Signal<T> | undefined => {
+			value: (key: string): MutableSignal<T> | undefined => {
 				return getSignal(key)
 			},
 		},
@@ -366,13 +357,10 @@ const createList = <T extends {}>(
 		},
 		remove: {
 			value: (keyOrIndex: string | number): void => {
-				let key = String(keyOrIndex)
-				if (isNumber(keyOrIndex)) {
-					if (!order[keyOrIndex])
-						throw new StoreIndexRangeError(keyOrIndex)
-					key = order[keyOrIndex]
-				}
-				if (signals.has(key)) removeProperty(key, true)
+				const key = isNumber(keyOrIndex)
+					? order[keyOrIndex]
+					: keyOrIndex
+				if (key && signals.has(key)) removeProperty(key, true)
 			},
 		},
 		sort: {
@@ -387,26 +375,21 @@ const createList = <T extends {}>(
 				) => number,
 			): void => {
 				const entries = order
-					.map((key, index) => {
-						const signal = signals.get(key)
-						return [
-							index,
-							key,
-							signal ? signal.get() : undefined,
-						] as [number, string, unknown]
-					})
+					.map(key => [key, signals.get(key)?.get()] as [string, T])
 					.sort(
 						compareFn
-							? (a, b) => compareFn(a[2], b[2])
+							? (a, b) => compareFn(a[1], b[1])
 							: (a, b) =>
-									String(a[2]).localeCompare(String(b[2])),
+									String(a[1]).localeCompare(String(b[1])),
 					)
 
 				// Set new order
-				order = entries.map(([_, key]) => key)
-
-				notifyWatchers(watchers)
-				emitNotification(listeners.sort, order)
+				const newOrder = entries.map(([key]) => key)
+				if (!isEqual(newOrder, order)) {
+					order = newOrder
+					notifyWatchers(watchers)
+					emitNotification(listeners.sort, order)
+				}
 			},
 		},
 		splice: {

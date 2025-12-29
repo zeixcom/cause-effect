@@ -62,7 +62,7 @@ const createMemo = <T extends {}>(
 	const compute = () =>
 		trackSignalReads(watcher, () => {
 			if (computing) throw new CircularDependencyError('memo')
-			let result: T | Promise<T>
+			let result: T
 			computing = true
 			try {
 				result = callback(value)

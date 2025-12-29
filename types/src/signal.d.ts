@@ -1,13 +1,13 @@
-import type { UnknownArray } from './diff';
+import { type Computed, Memo, Task } from './classes/computed';
+import { type List } from './classes/list';
+import { State } from './classes/state';
+import { type Store } from './classes/store';
 import type { Collection } from './signals/collection';
-import { type Computed, type ComputedCallback } from './signals/computed';
-import { type List } from './signals/list';
-import { type State } from './signals/state';
-import { type Store } from './signals/store';
 type Signal<T extends {}> = {
     get(): T;
 };
-type ReadonlySignal<T extends {}> = T extends UnknownArray ? Collection<T> : Computed<T>;
+type MutableSignal<T extends {}> = State<T> | Store<T> | List<T>;
+type ReadonlySignal<T extends {}> = Computed<T> | Collection<T>;
 type UnknownSignalRecord = Record<string, Signal<unknown & {}>>;
 type SignalValues<S extends UnknownSignalRecord> = {
     [K in keyof S]: S[K] extends Signal<infer T> ? T : never;
@@ -27,15 +27,15 @@ declare const isSignal: <T extends {}>(value: unknown) => value is Signal<T>;
  * @param {unknown} value - Value to check
  * @returns {boolean} - True if value is a State, Store, or List, false otherwise
  */
-declare const isMutableSignal: <T extends {}>(value: unknown) => value is State<T> | Store<T> | List<T>;
+declare const isMutableSignal: <T extends {}>(value: unknown) => value is MutableSignal<T>;
 /**
  * Convert a value to a Signal if it's not already a Signal
  *
  * @since 0.9.6
  * @param {T} value - value to convert
- * @returns {Signal<T>} - Signal instance
  */
-declare function toSignal<T extends {}>(value: T): T extends Store<infer U> ? Store<U> : T extends State<infer U> ? State<U> : T extends Computed<infer U> ? Computed<U> : T extends Signal<infer U> ? Signal<U> : T extends ReadonlyArray<infer U extends {}> ? List<U> : T extends Record<string, unknown & {}> ? Store<{
-    [K in keyof T]: T[K];
-}> : T extends ComputedCallback<infer U extends {}> ? Computed<U> : State<T>;
-export { type Signal, type ReadonlySignal, type UnknownSignalRecord, type SignalValues, isSignal, isMutableSignal, toSignal, };
+declare const createSignal: <T extends {}>(value: T) => List<any> | State<never> | Memo<{
+    then?: undefined;
+}> | Task<{}> | Store<T>;
+declare const createMutableSignal: <T extends {}>(value: T) => List<any> | Store<T> | State<never>;
+export { createMutableSignal, createSignal, isMutableSignal, isSignal, type MutableSignal, type ReadonlySignal, type Signal, type SignalValues, type UnknownSignalRecord, };

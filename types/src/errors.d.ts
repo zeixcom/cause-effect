@@ -1,11 +1,9 @@
+import { type MutableSignal } from './signal';
 declare class CircularDependencyError extends Error {
     constructor(where: string);
 }
 declare class DuplicateKeyError extends Error {
     constructor(where: string, key: string, value?: unknown);
-}
-declare class ForbiddenMethodCallError extends Error {
-    constructor(method: string, where: string, reason: string);
 }
 declare class InvalidCallbackError extends TypeError {
     constructor(where: string, value: unknown);
@@ -16,10 +14,10 @@ declare class InvalidSignalValueError extends TypeError {
 declare class NullishSignalValueError extends TypeError {
     constructor(where: string);
 }
-declare class StoreIndexRangeError extends RangeError {
-    constructor(index: number);
+declare class ReadonlySignalError extends Error {
+    constructor(what: string, value: unknown);
 }
-declare class StoreKeyReadonlyError extends Error {
-    constructor(key: string, value: unknown);
-}
-export { CircularDependencyError, DuplicateKeyError, ForbiddenMethodCallError, InvalidCallbackError, InvalidSignalValueError, NullishSignalValueError, StoreIndexRangeError, StoreKeyReadonlyError, };
+declare const validateCallback: (where: string, value: unknown, guard?: (value: unknown) => boolean) => void;
+declare const validateSignalValue: (where: string, value: unknown, guard?: (value: unknown) => boolean) => void;
+declare const guardMutableSignal: <T extends {}>(what: string, value: unknown, signal: unknown) => signal is MutableSignal<T>;
+export { CircularDependencyError, DuplicateKeyError, InvalidCallbackError, InvalidSignalValueError, NullishSignalValueError, ReadonlySignalError, validateCallback, validateSignalValue, guardMutableSignal, };

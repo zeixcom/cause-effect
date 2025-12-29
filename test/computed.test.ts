@@ -231,7 +231,7 @@ describe('Computed', () => {
 		const c = createComputed(() => b.get() + a.get())
 		expect(() => {
 			b.get() // This should trigger the circular dependency
-		}).toThrow('Circular dependency detected in computed')
+		}).toThrow('Circular dependency detected in memo')
 		expect(a.get()).toBe(1)
 	})
 
@@ -428,39 +428,39 @@ describe('Computed', () => {
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
 				createComputed(null)
-			}).toThrow('Invalid computed callback null')
+			}).toThrow('Invalid memo callback null')
 
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
 				createComputed(undefined)
-			}).toThrow('Invalid computed callback undefined')
+			}).toThrow('Invalid memo callback undefined')
 
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
 				createComputed(42)
-			}).toThrow('Invalid computed callback 42')
+			}).toThrow('Invalid memo callback 42')
 
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
 				createComputed('not a function')
-			}).toThrow('Invalid computed callback "not a function"')
+			}).toThrow('Invalid memo callback "not a function"')
 
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
 				createComputed({ not: 'a function' })
-			}).toThrow('Invalid computed callback {"not":"a function"}')
+			}).toThrow('Invalid memo callback {"not":"a function"}')
 
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
 				createComputed((_a: unknown, _b: unknown, _c: unknown) => 42)
-			}).toThrow('Invalid computed callback (_a, _b, _c) => 42')
+			}).toThrow('Invalid memo callback (_a, _b, _c) => 42')
 		})
 
 		test('should throw NullishSignalValueError when initialValue is null', () => {
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
 				createComputed(() => 42, null)
-			}).toThrow('Nullish signal values are not allowed in computed')
+			}).toThrow('Nullish signal values are not allowed in memo')
 		})
 
 		test('should throw specific error types for invalid inputs', () => {
@@ -471,7 +471,7 @@ describe('Computed', () => {
 			} catch (error) {
 				expect(error).toBeInstanceOf(TypeError)
 				expect(error.name).toBe('InvalidCallbackError')
-				expect(error.message).toBe('Invalid computed callback null')
+				expect(error.message).toBe('Invalid memo callback null')
 			}
 
 			try {
@@ -482,7 +482,7 @@ describe('Computed', () => {
 				expect(error).toBeInstanceOf(TypeError)
 				expect(error.name).toBe('NullishSignalValueError')
 				expect(error.message).toBe(
-					'Nullish signal values are not allowed in computed',
+					'Nullish signal values are not allowed in memo',
 				)
 			}
 		})

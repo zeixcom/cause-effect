@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
-	batch,
+	batchSignalWrites,
 	createComputed,
 	createEffect,
 	createState,
@@ -19,7 +19,7 @@ describe('Batch', () => {
 			result = cause.get()
 			count++
 		})
-		batch(() => {
+		batchSignalWrites(() => {
 			for (let i = 1; i <= 10; i++) {
 				cause.set(i)
 			}
@@ -45,7 +45,7 @@ describe('Batch', () => {
 				err: () => {},
 			})
 		})
-		batch(() => {
+		batchSignalWrites(() => {
 			a.set(6)
 			b.set(8)
 			c.set(10)
@@ -89,7 +89,7 @@ describe('Batch', () => {
 		expect(result).toBe(10)
 
 		// Batch: apply changes to all signals in a single transaction
-		batch(() => {
+		batchSignalWrites(() => {
 			signals.forEach(signal => signal.update(v => v * 2))
 		})
 

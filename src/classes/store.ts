@@ -1,13 +1,10 @@
 import { type DiffResult, diff, type UnknownRecord } from '../diff'
 import {
 	DuplicateKeyError,
-	InvalidSignalValueError,
-	NullishSignalValueError,
-	StoreKeyReadonlyError,
+	guardMutableSignal,
+	validateSignalValue,
 } from '../errors'
-import { isMutableSignal, type Signal } from '../signal'
-import { isComputed } from '../signals/computed'
-import type { List } from '../signals/list'
+import { createMutableSignal } from '../signal'
 import {
 	batchSignalWrites,
 	type Cleanup,
@@ -20,11 +17,13 @@ import {
 	trackSignalReads,
 	type Watcher,
 } from '../system'
-import { isFunction, isObjectOfType, isRecord, isSymbol, UNSET } from '../util'
-import { createList, isList } from './list'
-import { isState, State } from './state'
+import { isObjectOfType, isRecord, isSymbol, UNSET } from '../util'
+import type { List } from './list'
+import type { State } from './state'
 
 /* === Types === */
+
+type MutableSignal<T extends {}> = State<T> | Store<T> | List<T>
 
 /* === Constants === */
 
@@ -41,62 +40,60 @@ class Store<T extends UnknownRecord> {
 	}
 	protected signals = new Map<
 		string,
-		Signal<T[Extract<keyof T, string>] & {}>
+		MutableSignal<T[Extract<keyof T, string>] & {}>
 	>()
 	protected ownWatchers = new Map<string, Watcher>()
+	protected batching = false
 
+	/**
+	 * Create a new store with the given initial value.
+	 *
+	 * @param {T} initialValue - The initial value of the store
+	 * @throws {NullishSignalValueError} - If the initial value is null or undefined
+	 * @throws {InvalidSignalValueError} - If the initial value is not an object
+	 */
 	constructor(initialValue: T) {
-		if (initialValue == null) throw new NullishSignalValueError('store')
-
-		// Initialize data
+		validateSignalValue('store', initialValue, isRecord)
 		this.reconcile({} as T, initialValue, true)
 	}
 
 	// Validate input
-	protected isValidValue<V>(key: string, value: V): value is NonNullable<V> {
-		if (value == null)
-			throw new NullishSignalValueError(`store for key "${key}"`)
-		if (value === UNSET) return true
-		if (isSymbol(value) || isFunction(value) || isComputed(value))
-			throw new InvalidSignalValueError(`store for key "${key}"`, value)
+	protected isValidValue<K extends keyof T & string>(
+		key: K,
+		value: unknown,
+	): value is NonNullable<T[K]> {
+		validateSignalValue(`store for key "${key}"`, value)
 		return true
 	}
 
 	protected addOwnWatcher<K extends keyof T & string>(
 		key: K,
-		signal: Signal<T[K]>,
+		signal: MutableSignal<T[K]>,
 	) {
 		const watcher = createWatcher(() => {
 			trackSignalReads(watcher, () => {
 				signal.get() // Subscribe to the signal
-				emitNotification(this.listeners.change, [key])
+				if (!this.batching)
+					emitNotification(this.listeners.change, [key])
 			})
 		})
 		this.ownWatchers.set(key, watcher)
+		watcher()
 	}
 
 	// Add nested signal and effect
 	protected addProperty<K extends keyof T & string>(
 		key: K,
-		value: T[K] & {},
+		value: T[K],
 		single = false,
 	): boolean {
-		if (!this.isValidValue(key, value)) return false
+		validateSignalValue(`store for key "${key}"`, value)
 
-		// Create signal for key
-		const signal =
-			isState(value) || isStore(value) || isList(value)
-				? (value as unknown as Signal<T>)
-				: isRecord(value)
-					? createStore(value)
-					: Array.isArray(value)
-						? createList(value)
-						: new State(value)
+		const signal = createMutableSignal(value)
 
 		// Set internal states
 		// @ts-expect-error non-matching signal types
 		this.signals.set(key, signal)
-		// @ts-expect-error non-matching signal types
 		if (this.listeners.change.size) this.addOwnWatcher(key, signal)
 
 		if (single) {
@@ -152,20 +149,19 @@ class Store<T extends UnknownRecord> {
 
 		// Changes
 		if (Object.keys(changes.change).length) {
+			this.batching = true
 			batchSignalWrites(() => {
 				for (const key in changes.change) {
 					const value = changes.change[key]
 					if (!this.isValidValue(key, value)) continue
 
 					const signal = this.signals.get(key)
-					if (isMutableSignal(signal)) signal.set(value)
-					else throw new StoreKeyReadonlyError(key, value)
+					if (guardMutableSignal(`store key "${key}"`, value, signal))
+						signal.set(value as T[Extract<keyof T, string>])
 				}
-				emitNotification(
-					this.listeners.change,
-					Object.keys(changes.change),
-				)
 			})
+			this.batching = false
+			emitNotification(this.listeners.change, Object.keys(changes.change))
 		}
 
 		// Removals
@@ -191,8 +187,12 @@ class Store<T extends UnknownRecord> {
 		return TYPE_STORE
 	}
 
+	get [Symbol.isConcatSpreadable](): boolean {
+		return false
+	}
+
 	*[Symbol.iterator](): IterableIterator<
-		[string, Signal<T[Extract<keyof T, string>]>]
+		[string, MutableSignal<T[Extract<keyof T, string>]>]
 	> {
 		for (const [key, signal] of this.signals) yield [key, signal]
 	}
@@ -227,7 +227,7 @@ class Store<T extends UnknownRecord> {
 		if (this.signals.has(key))
 			throw new DuplicateKeyError('store', key, value)
 
-		this.addProperty(key, value ?? UNSET, true)
+		this.addProperty(key, value, true)
 		return key
 	}
 
@@ -241,8 +241,14 @@ class Store<T extends UnknownRecord> {
 	): Cleanup {
 		this.listeners[type].add(listener)
 		if (type === 'change' && !this.ownWatchers.size) {
+			// Set up watchers for existing signals
+			this.batching = true
 			for (const [key, signal] of this.signals)
-				this.addOwnWatcher(key, signal)
+				this.addOwnWatcher(key, signal as MutableSignal<T[string]>)
+
+			// Start watchers after setup is complete
+			for (const watcher of this.ownWatchers.values()) watcher()
+			this.batching = false
 		}
 		return () => {
 			this.listeners[type].delete(listener)
@@ -285,7 +291,12 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 		getOwnPropertyDescriptor(target, prop) {
 			if (isSymbol(prop)) return undefined
 
-			const signal = target.byKey(prop)
+			// Check if it's a property on the target first
+			if (prop in target) {
+				return Reflect.getOwnPropertyDescriptor(target, prop)
+			}
+
+			const signal = target.byKey(String(prop))
 			return signal
 				? {
 						enumerable: true,
@@ -316,4 +327,11 @@ const isStore = <T extends UnknownRecord>(value: unknown): value is Store<T> =>
 
 /* === Exports === */
 
-export { createStore, isStore, Store, TYPE_STORE }
+export {
+	createStore,
+	isStore,
+	Store,
+	TYPE_STORE,
+	createMutableSignal,
+	type MutableSignal,
+}

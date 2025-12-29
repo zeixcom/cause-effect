@@ -1,56 +1,82 @@
 import { isEqual } from '../diff'
-import { InvalidCallbackError, NullishSignalValueError } from '../errors'
+import { validateCallback, validateSignalValue } from '../errors'
 import { notifyWatchers, subscribeActiveWatcher, type Watcher } from '../system'
-import { isFunction, isObjectOfType, UNSET } from '../util'
+import { isObjectOfType, UNSET } from '../util'
 
 /* === Constants === */
 
 const TYPE_STATE = 'State' as const
 
-/* === Class  */
+/* === Class === */
 
 /**
- * Create a new state signal
+ * Create a new state signal.
  *
  * @since 0.17.0
- * @param {T} initialValue - Initial value of the state
- * @returns {State<T>} - New state signal
  */
 class State<T extends {}> {
-	watchers = new Set<Watcher>()
-	value: T
+	#watchers = new Set<Watcher>()
+	#value: T
 
+	/**
+	 * Create a new state signal.
+	 *
+	 * @param {T} initialValue - Initial value of the state
+	 * @throws {NullishSignalValueError} - If the initial value is null or undefined
+	 * @throws {InvalidSignalValueError} - If the initial value is invalid
+	 */
 	constructor(initialValue: T) {
-		if (initialValue == null) throw new NullishSignalValueError('state')
+		validateSignalValue('state', initialValue)
 
-		this.value = initialValue
+		this.#value = initialValue
 	}
 
-	get [Symbol.toStringTag]() {
+	get [Symbol.toStringTag](): string {
 		return TYPE_STATE
 	}
 
+	/**
+	 * Get the current value of the state signal.
+	 *
+	 * @returns {T} - Current value of the state
+	 */
 	get(): T {
-		subscribeActiveWatcher(this.watchers)
-		return this.value
+		subscribeActiveWatcher(this.#watchers)
+		return this.#value
 	}
 
-	set(newValue: T) {
-		if (newValue == null) throw new NullishSignalValueError('state')
+	/**
+	 * Set the value of the state signal.
+	 *
+	 * @param {T} newValue - New value of the state
+	 * @returns {void}
+	 * @throws {NullishSignalValueError} - If the initial value is null or undefined
+	 * @throws {InvalidSignalValueError} - If the initial value is invalid
+	 */
+	set(newValue: T): void {
+		validateSignalValue('state', newValue)
 
-		if (isEqual(this.value, newValue)) return
-		this.value = newValue
-		notifyWatchers(this.watchers)
+		if (isEqual(this.#value, newValue)) return
+		this.#value = newValue
+		notifyWatchers(this.#watchers)
 
 		// Setting to UNSET clears the watchers so the signal can be garbage collected
-		if (UNSET === this.value) this.watchers.clear()
+		if (UNSET === this.#value) this.#watchers.clear()
 	}
 
-	update(updater: (oldValue: T) => T) {
-		if (!isFunction(updater))
-			throw new InvalidCallbackError('state update', updater)
+	/**
+	 * Update the value of the state signal.
+	 *
+	 * @param {Function} updater - Function that takes the current value and returns the new value
+	 * @returns {void}
+	 * @throws {InvalidCallbackError} - If the updater function is not a function
+	 * @throws {NullishSignalValueError} - If the initial value is null or undefined
+	 * @throws {InvalidSignalValueError} - If the initial value is invalid
+	 */
+	update(updater: (oldValue: T) => T): void {
+		validateCallback('state update', updater)
 
-		this.set(updater(this.value))
+		this.set(updater(this.#value))
 	}
 }
 

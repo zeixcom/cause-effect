@@ -10,9 +10,9 @@ import {
 	type Listeners,
 	type Notifications,
 	notifyWatchers,
+	subscribeActiveWatcher,
 	trackSignalReads,
 	type Watcher,
-	subscribeActiveWatcher,
 } from '../system'
 import { isAsyncFunction, isObjectOfType, isSymbol, UNSET } from '../util'
 import { type Computed, createComputed } from './computed'

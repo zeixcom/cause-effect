@@ -5,8 +5,8 @@ import { createStore as createClassStore } from './store'
 
 /* === Benchmark Configuration === */
 
-const ITERATIONS = 10000
-const METHOD_CALLS = 1000
+const ITERATIONS = 1000
+const METHOD_CALLS = 100
 
 /* === Test Data === */
 

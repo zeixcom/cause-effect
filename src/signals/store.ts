@@ -3,7 +3,7 @@ import {
 	DuplicateKeyError,
 	InvalidSignalValueError,
 	NullishSignalValueError,
-	StoreKeyReadonlyError,
+	ReadonlySignalError,
 } from '../errors'
 import { isMutableSignal, type Signal } from '../signal'
 import {
@@ -195,12 +195,16 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 		if (Object.keys(changes.change).length) {
 			batchSignalWrites(() => {
 				for (const key in changes.change) {
-					const value = changes.change[key]
+					const value = changes.change[key] as T[Extract<
+						keyof T,
+						string
+					>]
 					if (!isValidValue(key, value)) continue
 
 					const signal = signals.get(key)
-					if (isMutableSignal(signal)) signal.set(value)
-					else throw new StoreKeyReadonlyError(key, value)
+					if (isMutableSignal<T[Extract<keyof T, string>]>(signal))
+						signal.set(value)
+					else throw new ReadonlySignalError(key, value)
 				}
 				emitNotification(listeners.change, Object.keys(changes.change))
 			})

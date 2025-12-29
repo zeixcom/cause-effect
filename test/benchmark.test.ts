@@ -1,5 +1,10 @@
 import { describe, expect, mock, test } from 'bun:test'
-import { batch, createComputed, createEffect, createState } from '..'
+import {
+	batchSignalWrites,
+	createComputed,
+	createEffect,
+	createState,
+} from '..'
 import { Counter, makeGraph, runGraph } from './util/dependency-graph'
 import type { Computed, ReactiveFramework } from './util/reactive-framework'
 
@@ -28,7 +33,7 @@ const framework = {
 		}
 	},
 	effect: (fn: () => undefined) => createEffect(fn),
-	withBatch: (fn: () => undefined) => batch(fn),
+	withBatch: (fn: () => undefined) => batchSignalWrites(fn),
 	withBuild: <T>(fn: () => T) => fn(),
 }
 const testPullCounts = true

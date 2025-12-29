@@ -1,7 +1,7 @@
-import { type Computed } from './computed';
 import type { UnknownArray } from '../diff';
-import type { List } from './list';
 import { type Cleanup, type Listener, type Notifications } from '../system';
+import { type Computed } from './computed';
+import type { List } from './list';
 type CollectionKeySignal<T extends {}> = T extends UnknownArray ? Collection<T> : Computed<T>;
 type CollectionCallback<T extends {} & {
     then?: undefined;

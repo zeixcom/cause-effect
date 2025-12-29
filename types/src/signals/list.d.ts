@@ -1,21 +1,19 @@
-import { type UnknownArray, type UnknownRecord } from '../diff';
+import { type UnknownArray } from '../diff';
+import { type MutableSignal } from '../signal';
 import { type Cleanup, type Listener, type Notifications } from '../system';
 import { type Collection, type CollectionCallback } from './collection';
-import { type State } from './state';
-import { type Store } from './store';
 type ArrayToRecord<T extends UnknownArray> = {
     [key: string]: T extends Array<infer U extends {}> ? U : never;
 };
-type ListItemSignal<T extends {}> = T extends readonly (infer U extends {})[] ? List<U> : T extends UnknownRecord ? Store<T> : State<T>;
 type KeyConfig<T> = string | ((item: T) => string);
 type List<T extends {}> = {
     readonly [Symbol.toStringTag]: 'List';
-    [Symbol.iterator](): IterableIterator<ListItemSignal<T>>;
+    [Symbol.iterator](): IterableIterator<MutableSignal<T>>;
     readonly [Symbol.isConcatSpreadable]: boolean;
-    [n: number]: ListItemSignal<T>;
+    [n: number]: MutableSignal<T>;
     readonly length: number;
     add(value: T): string;
-    byKey(key: string): ListItemSignal<T> | undefined;
+    byKey(key: string): MutableSignal<T> | undefined;
     deriveCollection<U extends {}>(callback: CollectionCallback<U, T extends UnknownArray ? T : never>): Collection<U>;
     get(): T;
     keyAt(index: number): string | undefined;

@@ -1,15 +1,15 @@
-import type { UnknownArray } from './diff'
-import type { Collection } from './signals/collection'
 import {
 	type Computed,
-	type ComputedCallback,
-	createComputed,
 	isComputed,
-	isComputedCallback,
-} from './signals/computed'
-import { createList, isList, type List } from './signals/list'
-import { createState, isState, type State } from './signals/state'
-import { createStore, isStore, type Store } from './signals/store'
+	isMemoCallback,
+	isTaskCallback,
+	Memo,
+	Task,
+} from './classes/computed'
+import { createList, isList, type List } from './classes/list'
+import { isState, State } from './classes/state'
+import { createStore, isStore, type Store } from './classes/store'
+import type { Collection } from './signals/collection'
 import { isRecord } from './util'
 
 /* === Types === */
@@ -18,9 +18,8 @@ type Signal<T extends {}> = {
 	get(): T
 }
 
-type ReadonlySignal<T extends {}> = T extends UnknownArray
-	? Collection<T>
-	: Computed<T>
+type MutableSignal<T extends {}> = State<T> | Store<T> | List<T>
+type ReadonlySignal<T extends {}> = Computed<T> | Collection<T>
 
 type UnknownSignalRecord = Record<string, Signal<unknown & {}>>
 
@@ -50,7 +49,7 @@ const isSignal = /*#__PURE__*/ <T extends {}>(
  */
 const isMutableSignal = /*#__PURE__*/ <T extends {}>(
 	value: unknown,
-): value is State<T> | Store<T> | List<T> =>
+): value is MutableSignal<T> =>
 	isState(value) || isStore(value) || isList(value)
 
 /**
@@ -58,41 +57,31 @@ const isMutableSignal = /*#__PURE__*/ <T extends {}>(
  *
  * @since 0.9.6
  * @param {T} value - value to convert
- * @returns {Signal<T>} - Signal instance
  */
-function toSignal<T extends {}>(
-	value: T,
-): T extends Store<infer U>
-	? Store<U>
-	: T extends State<infer U>
-		? State<U>
-		: T extends Computed<infer U>
-			? Computed<U>
-			: T extends Signal<infer U>
-				? Signal<U>
-				: T extends ReadonlyArray<infer U extends {}>
-					? List<U>
-					: T extends Record<string, unknown & {}>
-						? Store<{ [K in keyof T]: T[K] }>
-						: T extends ComputedCallback<infer U extends {}>
-							? Computed<U>
-							: State<T>
-function toSignal<T extends {}>(value: T) {
-	if (isSignal<T>(value)) return value
-	if (isComputedCallback(value)) return createComputed(value)
+const createSignal = <T extends {}>(value: T) => {
+	if (isMemoCallback(value)) return new Memo(value)
+	if (isTaskCallback(value)) return new Task(value)
 	if (Array.isArray(value)) return createList(value)
 	if (isRecord(value)) return createStore(value)
-	return createState(value)
+	return new State(value)
+}
+
+const createMutableSignal = <T extends {}>(value: T) => {
+	if (Array.isArray(value)) return createList(value)
+	if (isRecord(value)) return createStore(value)
+	return new State(value)
 }
 
 /* === Exports === */
 
 export {
-	type Signal,
-	type ReadonlySignal,
-	type UnknownSignalRecord,
-	type SignalValues,
-	isSignal,
+	createMutableSignal,
+	createSignal,
 	isMutableSignal,
-	toSignal,
+	isSignal,
+	type MutableSignal,
+	type ReadonlySignal,
+	type Signal,
+	type SignalValues,
+	type UnknownSignalRecord,
 }

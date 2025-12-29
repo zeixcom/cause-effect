@@ -62,7 +62,7 @@ const createEffect = (callback: EffectCallback): Cleanup => {
 								console.error('Async effect error:', error)
 						})
 				} else {
-					cleanup = (callback as () => MaybeCleanup)()
+					cleanup = callback()
 					if (isFunction(cleanup)) watcher.onCleanup(cleanup)
 				}
 			} catch (error) {

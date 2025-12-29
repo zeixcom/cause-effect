@@ -1,18 +1,15 @@
-import { type DiffResult, diff, type UnknownArray } from '../diff'
+import { type DiffResult, diff, isEqual, type UnknownArray } from '../diff'
 import {
 	DuplicateKeyError,
-	InvalidSignalValueError,
-	NullishSignalValueError,
-	StoreIndexRangeError,
-	StoreKeyReadonlyError,
+	guardMutableSignal,
+	validateSignalValue,
 } from '../errors'
-import { isMutableSignal, type Signal } from '../signal'
+import { createMutableSignal, type MutableSignal } from '../signal'
 import {
 	type Collection,
 	type CollectionCallback,
 	createCollection,
 } from '../signals/collection'
-import { isComputed } from '../signals/computed'
 import {
 	batchSignalWrites,
 	type Cleanup,
@@ -30,13 +27,10 @@ import {
 	isFunction,
 	isNumber,
 	isObjectOfType,
-	isRecord,
 	isString,
 	isSymbol,
 	UNSET,
 } from '../util'
-import { isState, State } from './state'
-import { createStore, isStore } from './store'
 
 /* === Types === */
 
@@ -60,18 +54,17 @@ class List<T extends {}> {
 		remove: new Set<Listener<'remove'>>(),
 		sort: new Set<Listener<'sort'>>(),
 	}
-	protected signals = new Map<string, Signal<T>>()
-	protected _order: string[] = []
+	protected signals = new Map<string, MutableSignal<T>>()
+	protected order: string[] = []
 	protected ownWatchers = new Map<string, Watcher>()
+	protected batching = false
 	protected keyCounter = 0
 	protected keyConfig?: KeyConfig<T>
 
 	constructor(initialValue: T[], keyConfig?: KeyConfig<T>) {
-		if (initialValue == null) throw new NullishSignalValueError('store')
+		validateSignalValue('list', initialValue, Array.isArray)
 
 		this.keyConfig = keyConfig
-
-		// Initialize data
 		this.reconcile([] as T[], initialValue, true)
 	}
 
@@ -93,10 +86,10 @@ class List<T extends {}> {
 			const value = array[i]
 			if (value === undefined) continue // Skip sparse array positions
 
-			let key = this._order[i]
+			let key = this.order[i]
 			if (!key) {
 				key = this.generateKey(value)
-				this._order[i] = key
+				this.order[i] = key
 			}
 			record[key] = value
 		}
@@ -104,45 +97,36 @@ class List<T extends {}> {
 	}
 
 	// Validate input
-	protected isValidValue<V>(key: string, value: V): value is NonNullable<V> {
-		if (value == null)
-			throw new NullishSignalValueError(`store for key "${key}"`)
-		if (value === UNSET) return true
-		if (isSymbol(value) || isFunction(value) || isComputed(value))
-			throw new InvalidSignalValueError(`store for key "${key}"`, value)
+	protected isValidValue(
+		key: string,
+		value: unknown,
+	): value is NonNullable<T> {
+		validateSignalValue(`list for key "${key}"`, value)
 		return true
 	}
 
 	// Add own watcher for nested signal
-	protected addOwnWatcher(key: string, signal: Signal<T>) {
+	protected addOwnWatcher(key: string, signal: MutableSignal<T>) {
 		const watcher = createWatcher(() => {
 			trackSignalReads(watcher, () => {
 				signal.get() // Subscribe to the signal
-				emitNotification(this.listeners.change, [key])
+				if (!this.batching)
+					emitNotification(this.listeners.change, [key])
 			})
 		})
 		this.ownWatchers.set(key, watcher)
+		watcher()
 	}
 
 	// Add nested signal and own watcher
 	protected addProperty(key: string, value: T, single = false): boolean {
 		if (!this.isValidValue(key, value)) return false
 
-		// Create signal for key
-		const signal =
-			isState(value) || isStore(value) || isList(value)
-				? (value as unknown as Signal<T>)
-				: isRecord(value)
-					? createStore(value)
-					: Array.isArray(value)
-						? createList(value)
-						: new State(value)
+		const signal = createMutableSignal(value)
 
 		// Set internal states
-		// @ts-expect-error non-matching signal types
 		this.signals.set(key, signal)
-		if (!this._order.includes(key)) this._order.push(key)
-		// @ts-expect-error non-matching signal types
+		if (!this.order.includes(key)) this.order.push(key)
 		if (this.listeners.change.size) this.addOwnWatcher(key, signal)
 
 		if (single) {
@@ -159,8 +143,8 @@ class List<T extends {}> {
 		if (!ok) return
 
 		// Clean up internal states
-		const index = this._order.indexOf(key)
-		if (index >= 0) this._order.splice(index, 1)
+		const index = this.order.indexOf(key)
+		if (index >= 0) this.order.splice(index, 1)
 		const watcher = this.ownWatchers.get(key)
 		if (watcher) {
 			watcher.stop()
@@ -168,7 +152,7 @@ class List<T extends {}> {
 		}
 
 		if (single) {
-			this._order = this._order.filter(() => true) // Compact array
+			this.order = this.order.filter(() => true) // Compact array
 			notifyWatchers(this.watchers)
 			emitNotification(this.listeners.remove, [key])
 		}
@@ -194,26 +178,25 @@ class List<T extends {}> {
 
 		// Changes
 		if (Object.keys(changes.change).length) {
+			this.batching = true
 			batchSignalWrites(() => {
 				for (const key in changes.change) {
 					const value = changes.change[key]
 					if (!this.isValidValue(key, value)) continue
 
 					const signal = this.signals.get(key)
-					if (isMutableSignal(signal)) signal.set(value)
-					else throw new StoreKeyReadonlyError(key, value)
+					if (guardMutableSignal(`list item "${key}"`, value, signal))
+						signal.set(value)
 				}
-				emitNotification(
-					this.listeners.change,
-					Object.keys(changes.change),
-				)
 			})
+			this.batching = false
+			emitNotification(this.listeners.change, Object.keys(changes.change))
 		}
 
 		// Removals
 		if (Object.keys(changes.remove).length) {
 			for (const key in changes.remove) this.removeProperty(key)
-			this._order = this._order.filter(() => true)
+			this.order = this.order.filter(() => true)
 			emitNotification(this.listeners.remove, Object.keys(changes.remove))
 		}
 
@@ -241,8 +224,8 @@ class List<T extends {}> {
 		return true
 	}
 
-	*[Symbol.iterator](): IterableIterator<Signal<T>> {
-		for (const key of this._order) {
+	*[Symbol.iterator](): IterableIterator<MutableSignal<T>> {
+		for (const key of this.order) {
 			const signal = this.signals.get(key)
 			if (signal) yield signal
 		}
@@ -253,14 +236,9 @@ class List<T extends {}> {
 		return this.signals.size
 	}
 
-	get order(): string[] {
-		subscribeActiveWatcher(this.watchers)
-		return this._order
-	}
-
 	get(): T[] {
 		subscribeActiveWatcher(this.watchers)
-		return this._order
+		return this.order
 			.map(key => this.signals.get(key)?.get())
 			.filter(v => v !== undefined) as T[]
 	}
@@ -276,20 +254,24 @@ class List<T extends {}> {
 		this.set(fn(this.get()))
 	}
 
-	at(index: number): Signal<T> | undefined {
-		return this.signals.get(this._order[index])
+	at(index: number): MutableSignal<T> | undefined {
+		return this.signals.get(this.order[index])
 	}
 
-	byKey(key: string): Signal<T> | undefined {
+	keys(): IterableIterator<string> {
+		return this.order.values()
+	}
+
+	byKey(key: string): MutableSignal<T> | undefined {
 		return this.signals.get(key)
 	}
 
 	keyAt(index: number): string | undefined {
-		return this._order[index]
+		return this.order[index]
 	}
 
 	indexOfKey(key: string): number {
-		return this._order.indexOf(key)
+		return this.order.indexOf(key)
 	}
 
 	add(value: T): string {
@@ -301,32 +283,25 @@ class List<T extends {}> {
 	}
 
 	remove(keyOrIndex: string | number): void {
-		let key = String(keyOrIndex)
-		if (isNumber(keyOrIndex)) {
-			if (!this._order[keyOrIndex])
-				throw new StoreIndexRangeError(keyOrIndex)
-			key = this._order[keyOrIndex]
-		}
-		if (this.signals.has(key)) this.removeProperty(key, true)
+		const key = isNumber(keyOrIndex) ? this.order[keyOrIndex] : keyOrIndex
+		if (key && this.signals.has(key)) this.removeProperty(key, true)
 	}
 
 	sort(compareFn?: (a: T, b: T) => number): void {
-		const entries = this._order
-			.map((key, index) => {
-				const signal = this.signals.get(key)
-				return [index, key, signal?.get()] as [number, string, T]
-			})
+		const entries = this.order
+			.map(key => [key, this.signals.get(key)?.get()] as [string, T])
 			.sort(
-				compareFn
-					? (a, b) => compareFn(a[2], b[2])
-					: (a, b) => String(a[2]).localeCompare(String(b[2])),
+				isFunction(compareFn)
+					? (a, b) => compareFn(a[1], b[1])
+					: (a, b) => String(a[1]).localeCompare(String(b[1])),
 			)
+		const newOrder = entries.map(([key]) => key)
 
-		// Set new order
-		this._order = entries.map(([_, key]) => key)
-
-		notifyWatchers(this.watchers)
-		emitNotification(this.listeners.sort, this._order)
+		if (!isEqual(this.order, newOrder)) {
+			this.order = newOrder
+			notifyWatchers(this.watchers)
+			emitNotification(this.listeners.sort, this.order)
+		}
 	}
 
 	splice(start: number, deleteCount?: number, ...items: T[]): T[] {
@@ -348,7 +323,7 @@ class List<T extends {}> {
 		// Collect items to delete and their keys
 		for (let i = 0; i < actualDeleteCount; i++) {
 			const index = actualStart + i
-			const key = this._order[index]
+			const key = this.order[index]
 			if (key) {
 				const signal = this.signals.get(key)
 				if (signal) remove[key] = signal.get() as T
@@ -356,7 +331,7 @@ class List<T extends {}> {
 		}
 
 		// Build new order: items before splice point
-		const newOrder = this._order.slice(0, actualStart)
+		const newOrder = this.order.slice(0, actualStart)
 
 		// Add new items
 		for (const item of items) {
@@ -366,10 +341,10 @@ class List<T extends {}> {
 		}
 
 		// Add items after splice point
-		newOrder.push(...this._order.slice(actualStart + actualDeleteCount))
+		newOrder.push(...this.order.slice(actualStart + actualDeleteCount))
 
 		// Update the order array
-		this._order = newOrder.filter(() => true) // Compact array
+		this.order = newOrder.filter(() => true) // Compact array
 
 		const changed = !!(
 			Object.keys(add).length || Object.keys(remove).length
@@ -391,8 +366,14 @@ class List<T extends {}> {
 	on<K extends keyof Notifications>(type: K, listener: Listener<K>): Cleanup {
 		this.listeners[type].add(listener)
 		if (type === 'change' && !this.ownWatchers.size) {
+			// Set up watchers for existing signals
+			this.batching = true
 			for (const [key, signal] of this.signals)
 				this.addOwnWatcher(key, signal)
+
+			// Start watchers after setup is complete
+			for (const watcher of this.ownWatchers.values()) watcher()
+			this.batching = false
 		}
 		return () => {
 			this.listeners[type].delete(listener)
@@ -450,26 +431,41 @@ const createList = <T extends {}>(
 			return !isSymbol(prop) ? getSignal(prop) !== undefined : false
 		},
 		ownKeys(target) {
-			const staticKeys = Reflect.ownKeys(target)
-			return [...new Set([...target.order, ...staticKeys])]
+			return Object.getOwnPropertyNames(target.keys())
 		},
 		getOwnPropertyDescriptor(target, prop) {
-			if (prop in target)
-				return Reflect.getOwnPropertyDescriptor(target, prop)
 			if (isSymbol(prop)) return undefined
 
-			const signal = getSignal(prop)
-			return signal
-				? {
-						enumerable: true,
-						configurable: true,
-						writable: true,
-						value: signal,
-					}
-				: undefined
+			if (prop === 'length') {
+				return {
+					enumerable: false,
+					configurable: false,
+					writable: false,
+					value: target.length,
+				}
+			}
+
+			const index = Number(prop)
+			if (
+				Number.isInteger(index) &&
+				index >= 0 &&
+				index < target.length
+			) {
+				const signal = target.at(index)
+				return signal
+					? {
+							enumerable: true,
+							configurable: true,
+							writable: true,
+							value: signal,
+						}
+					: undefined
+			}
+
+			return undefined
 		},
 	}) as List<T> & {
-		[n: number]: Signal<T>
+		[n: number]: MutableSignal<T>
 	}
 }
 

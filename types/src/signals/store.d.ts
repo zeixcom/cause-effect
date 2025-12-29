@@ -3,13 +3,10 @@ import { type Cleanup, type Listener, type Notifications } from '../system';
 import type { List } from './list';
 import { type State } from './state';
 type StoreKeySignal<T extends {}> = T extends readonly (infer U extends {})[] ? List<U> : T extends UnknownRecord ? Store<T> : State<T>;
-interface BaseStore {
-    readonly [Symbol.toStringTag]: 'Store';
-    readonly length: number;
-}
-type Store<T extends UnknownRecord> = BaseStore & {
+type Store<T extends UnknownRecord> = {
     [K in keyof T]: T[K] extends readonly (infer U extends {})[] ? List<U> : T extends Record<string, unknown> ? Store<T[K]> : State<T[K]>;
 } & {
+    readonly [Symbol.toStringTag]: 'Store';
     [Symbol.iterator](): IterableIterator<[
         Extract<keyof T, string>,
         StoreKeySignal<T[Extract<keyof T, string>]>

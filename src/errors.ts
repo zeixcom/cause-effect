@@ -1,4 +1,5 @@
-import { valueString } from './util'
+import { isMutableSignal, type MutableSignal } from './signal'
+import { isFunction, isSymbol, UNSET, valueString } from './util'
 
 class CircularDependencyError extends Error {
 	constructor(where: string) {
@@ -15,13 +16,6 @@ class DuplicateKeyError extends Error {
 			} because it already exists`,
 		)
 		this.name = 'DuplicateKeyError'
-	}
-}
-
-class ForbiddenMethodCallError extends Error {
-	constructor(method: string, where: string, reason: string) {
-		super(`Forbidden method call ${method} in ${where} because ${reason}`)
-		this.name = 'ForbiddenMethodCallError'
 	}
 }
 
@@ -46,31 +40,50 @@ class NullishSignalValueError extends TypeError {
 	}
 }
 
-class StoreIndexRangeError extends RangeError {
-	constructor(index: number) {
+class ReadonlySignalError extends Error {
+	constructor(what: string, value: unknown) {
 		super(
-			`Could not remove store index ${String(index)} because it is out of range`,
+			`Could not set ${what} to ${valueString(value)} because signal is read-only`,
 		)
-		this.name = 'StoreIndexRangeError'
+		this.name = 'ReadonlySignalError'
 	}
 }
 
-class StoreKeyReadonlyError extends Error {
-	constructor(key: string, value: unknown) {
-		super(
-			`Could not set store key "${key}" to ${valueString(value)} because it is read-only`,
-		)
-		this.name = 'StoreKeyReadonlyError'
-	}
+const validateCallback = (
+	where: string,
+	value: unknown,
+	guard: (value: unknown) => boolean = isFunction,
+): void => {
+	if (!guard(value)) throw new InvalidCallbackError(where, value)
+}
+
+const validateSignalValue = (
+	where: string,
+	value: unknown,
+	guard: (value: unknown) => boolean = () =>
+		!(isSymbol(value) && value !== UNSET) || isFunction(value),
+): void => {
+	if (value == null) throw new NullishSignalValueError(where)
+	if (!guard(value)) throw new InvalidSignalValueError(where, value)
+}
+
+const guardMutableSignal = <T extends {}>(
+	what: string,
+	value: unknown,
+	signal: unknown,
+): signal is MutableSignal<T> => {
+	if (!isMutableSignal(signal)) throw new ReadonlySignalError(what, value)
+	return true
 }
 
 export {
 	CircularDependencyError,
 	DuplicateKeyError,
-	ForbiddenMethodCallError,
 	InvalidCallbackError,
 	InvalidSignalValueError,
 	NullishSignalValueError,
-	StoreIndexRangeError,
-	StoreKeyReadonlyError,
+	ReadonlySignalError,
+	validateCallback,
+	validateSignalValue,
+	guardMutableSignal,
 }
