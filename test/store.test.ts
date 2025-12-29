@@ -264,7 +264,12 @@ describe('store', () => {
 		})
 
 		test('set() correctly handles mixed changes, additions, and removals', () => {
-			const user = createStore({
+			const user = createStore<{
+				name: string
+				email?: string
+				preferences: { theme?: string }
+				age?: number
+			}>({
 				name: 'John',
 				email: 'john@example.com',
 				preferences: {
@@ -382,7 +387,10 @@ describe('store', () => {
 			const user = createStore({
 				name: 'John',
 			})
-			let lastValue = { name: '' }
+			let lastValue: {
+				name: string
+				email?: string
+			} = { name: '' }
 			let effectRuns = 0
 			createEffect(() => {
 				lastValue = user.get()
@@ -406,7 +414,11 @@ describe('store', () => {
 				email: 'john@example.com',
 				age: 30,
 			})
-			let lastValue = { name: '', email: '', age: 0 }
+			let lastValue: {
+				name: string
+				email?: string
+				age?: number
+			} = { name: '', email: '', age: 0 }
 			let effectRuns = 0
 			createEffect(() => {
 				lastValue = user.get()
@@ -534,7 +546,10 @@ describe('store', () => {
 		})
 
 		test('is reactive and works with computed signals', () => {
-			const user = createStore({
+			const user = createStore<{
+				name: string
+				age: number
+			}>({
 				name: 'Alice',
 				age: 30,
 			})
@@ -611,8 +626,10 @@ describe('store', () => {
 			}
 
 			const store = createStore(complexData)
-			expect(store.dashboard.widgets[0].config.color.get()).toBe('blue')
-			expect(store.dashboard.widgets[1].config.rows.get()).toBe(10)
+			// biome-ignore lint/style/noNonNullAssertion: test
+			expect(store.dashboard.widgets[0]!.config.color!.get()).toBe('blue')
+			// biome-ignore lint/style/noNonNullAssertion: test
+			expect(store.dashboard.widgets[1]!.config.rows!.get()).toBe(10)
 		})
 	})
 

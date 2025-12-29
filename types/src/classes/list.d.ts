@@ -1,13 +1,18 @@
-import { type DiffResult, type UnknownArray } from '../diff';
+import { type DiffResult, type UnknownArray, type UnknownRecord } from '../diff';
 import { type MutableSignal } from '../signal';
 import { type Collection, type CollectionCallback } from '../signals/collection';
 import { type Cleanup, type Listener, type Listeners, type Notifications, type Watcher } from '../system';
+import type { State } from './state';
+import type { Store } from './store';
 type ArrayToRecord<T extends UnknownArray> = {
     [key: string]: T extends Array<infer U extends {}> ? U : never;
 };
 type KeyConfig<T> = string | ((item: T) => string);
+type List<T extends {}> = BaseList<T> & {
+    [n: number]: T extends readonly (infer U extends {})[] ? List<U> : T extends UnknownRecord ? Store<T> : State<T>;
+};
 declare const TYPE_LIST: "List";
-declare class List<T extends {}> {
+declare class BaseList<T extends {}> {
     protected watchers: Set<Watcher>;
     protected listeners: Listeners;
     protected signals: Map<string, MutableSignal<T>>;
@@ -63,4 +68,4 @@ declare const createList: <T extends {}>(initialValue: T[], keyConfig?: KeyConfi
  * @returns {boolean} - True if the value is a List instance, false otherwise
  */
 declare const isList: <T extends {}>(value: unknown) => value is List<T>;
-export { createList, isList, List, TYPE_LIST, type ArrayToRecord, type KeyConfig, };
+export { createList, isList, BaseList, TYPE_LIST, type ArrayToRecord, type KeyConfig, type List, };

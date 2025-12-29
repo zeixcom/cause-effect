@@ -175,7 +175,7 @@ const createList = <T extends {}>(
 		if (!isValidValue(key, value)) return false
 
 		// Create signal for key
-		const signal = createMutableSignal(value)
+		const signal = createMutableSignal<T>(value) as MutableSignal<T>
 
 		// Set internal states
 		signals.set(key, signal)

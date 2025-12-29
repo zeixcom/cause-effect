@@ -11,7 +11,6 @@ import {
 	type Signal,
 	type State,
 	type Store,
-	type UnknownRecord,
 } from '..'
 
 /* === Tests === */
@@ -56,48 +55,6 @@ describe('createSignal', () => {
 			const typedResult: Store<{ name: string; age: number }> = result
 			expect(typedResult).toBeDefined()
 		})
-
-		/* test('passes through existing Store unchanged', () => {
-			const originalStore = createStore({ count: 5 })
-			const result = toSignal(originalStore)
-
-			// Runtime behavior
-			expect(result).toBe(originalStore) // Should be the same instance
-			expect(isStore(result)).toBe(true)
-			expect(result.count.get()).toBe(5)
-
-			// Type inference test - should remain Store<{count: number}>
-			const typedResult: Store<{ count: number }> = result
-			expect(typedResult).toBeDefined()
-		})
-
-		test('passes through existing State unchanged', () => {
-			const originalState = createState(42)
-			const result = toSignal(originalState)
-
-			// Runtime behavior
-			expect(result).toBe(originalState) // Should be the same instance
-			expect(isState(result)).toBe(true)
-			expect(result.get()).toBe(42)
-
-			// Type inference test - should remain State<number>
-			const typedResult: State<number> = result
-			expect(typedResult).toBeDefined()
-		})
-
-		test('passes through existing Computed unchanged', () => {
-			const originalComputed = createComputed(() => 'hello world')
-			const result = toSignal(originalComputed)
-
-			// Runtime behavior
-			expect(result).toBe(originalComputed) // Should be the same instance
-			expect(isComputed(result)).toBe(true)
-			expect(result.get()).toBe('hello world')
-
-			// Type inference test - should remain Computed<string>
-			const typedResult: Computed<string> = result
-			expect(typedResult).toBeDefined()
-			}) */
 
 		test('converts function to Computed<T>', () => {
 			const fn = () => Math.random()
@@ -246,8 +203,10 @@ describe('Type precision tests', () => {
 			expect(typedResult).toBeDefined()
 
 			// Simulate external library usage where P[K] represents element type
-			interface ExternalLibraryConstraint<P extends UnknownRecord> {
-				process<K extends keyof P>(signal: Signal<P[K]>): void
+			interface ExternalLibraryConstraint<
+				P extends Record<string, unknown & {}>,
+			> {
+				process<K extends keyof P>(signal: Signal<P[K] & {}>): void
 			}
 
 			// This should work if types are correct
@@ -255,7 +214,7 @@ describe('Type precision tests', () => {
 				Record<string, { id: number }>
 			> = {
 				process: <K extends keyof Record<string, { id: number }>>(
-					signal: Signal<Record<string, { id: number }>[K]>,
+					signal: Signal<Record<string, { id: number }>[K] & {}>,
 				) => {
 					// Process the signal
 					const value = signal.get()
@@ -287,8 +246,11 @@ describe('Type precision tests', () => {
 
 			// These should work without type errors in external libraries
 			// that expect Signal<P[K]> where P[K] is the individual element type
-			interface ExternalAPI<P extends UnknownRecord> {
-				process<K extends keyof P>(key: K, signal: Signal<P[K]>): P[K]
+			interface ExternalAPI<P extends Record<string, object>> {
+				process<K extends keyof P>(
+					key: K,
+					signal: Signal<P[K] & object>,
+				): P[K]
 			}
 
 			const api: ExternalAPI<

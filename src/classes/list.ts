@@ -1,4 +1,10 @@
-import { type DiffResult, diff, isEqual, type UnknownArray } from '../diff'
+import {
+	type DiffResult,
+	diff,
+	isEqual,
+	type UnknownArray,
+	type UnknownRecord,
+} from '../diff'
 import {
 	DuplicateKeyError,
 	guardMutableSignal,
@@ -31,6 +37,8 @@ import {
 	isSymbol,
 	UNSET,
 } from '../util'
+import type { State } from './state'
+import type { Store } from './store'
 
 /* === Types === */
 
@@ -40,13 +48,21 @@ type ArrayToRecord<T extends UnknownArray> = {
 
 type KeyConfig<T> = string | ((item: T) => string)
 
+type List<T extends {}> = BaseList<T> & {
+	[n: number]: T extends readonly (infer U extends {})[]
+		? List<U>
+		: T extends UnknownRecord
+			? Store<T>
+			: State<T>
+}
+
 /* === Constants === */
 
 const TYPE_LIST = 'List' as const
 
-/* === List Implementation === */
+/* === Class === */
 
-class List<T extends {}> {
+class BaseList<T extends {}> {
 	protected watchers = new Set<Watcher>()
 	protected listeners: Listeners = {
 		add: new Set<Listener<'add'>>(),
@@ -122,7 +138,7 @@ class List<T extends {}> {
 	protected addProperty(key: string, value: T, single = false): boolean {
 		if (!this.isValidValue(key, value)) return false
 
-		const signal = createMutableSignal(value)
+		const signal = createMutableSignal(value) as MutableSignal<T>
 
 		// Set internal states
 		this.signals.set(key, signal)
@@ -227,7 +243,7 @@ class List<T extends {}> {
 	*[Symbol.iterator](): IterableIterator<MutableSignal<T>> {
 		for (const key of this.order) {
 			const signal = this.signals.get(key)
-			if (signal) yield signal
+			if (signal) yield signal as MutableSignal<T>
 		}
 	}
 
@@ -411,7 +427,7 @@ const createList = <T extends {}>(
 	initialValue: T[],
 	keyConfig?: KeyConfig<T>,
 ): List<T> => {
-	const instance = new List(initialValue, keyConfig)
+	const instance = new BaseList(initialValue, keyConfig)
 
 	const getSignal = (prop: string) => {
 		const index = Number(prop)
@@ -464,9 +480,7 @@ const createList = <T extends {}>(
 
 			return undefined
 		},
-	}) as List<T> & {
-		[n: number]: MutableSignal<T>
-	}
+	}) as List<T>
 }
 
 /**
@@ -484,8 +498,9 @@ const isList = <T extends {}>(value: unknown): value is List<T> =>
 export {
 	createList,
 	isList,
-	List,
+	BaseList,
 	TYPE_LIST,
 	type ArrayToRecord,
 	type KeyConfig,
+	type List,
 }

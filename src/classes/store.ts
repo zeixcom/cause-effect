@@ -23,7 +23,15 @@ import type { State } from './state'
 
 /* === Types === */
 
-type MutableSignal<T extends {}> = State<T> | Store<T> | List<T>
+type MutableSignal<T extends {}> = State<T> | BaseStore<T> | List<T>
+
+type Store<T extends UnknownRecord> = BaseStore<T> & {
+	[K in keyof T]: T[K] extends readonly (infer U extends {})[]
+		? List<U>
+		: T[K] extends Record<string, unknown & {}>
+			? Store<T[K]>
+			: State<T[K] & {}>
+}
 
 /* === Constants === */
 
@@ -31,7 +39,7 @@ const TYPE_STORE = 'Store' as const
 
 /* === Store Implementation === */
 
-class Store<T extends UnknownRecord> {
+class BaseStore<T extends UnknownRecord> {
 	protected watchers = new Set<Watcher>()
 	protected listeners: Omit<Listeners, 'sort'> = {
 		add: new Set<Listener<'add'>>(),
@@ -68,7 +76,7 @@ class Store<T extends UnknownRecord> {
 
 	protected addOwnWatcher<K extends keyof T & string>(
 		key: K,
-		signal: MutableSignal<T[K]>,
+		signal: MutableSignal<T[K] & {}>,
 	) {
 		const watcher = createWatcher(() => {
 			trackSignalReads(watcher, () => {
@@ -89,10 +97,10 @@ class Store<T extends UnknownRecord> {
 	): boolean {
 		validateSignalValue(`store for key "${key}"`, value)
 
-		const signal = createMutableSignal(value)
+		const signal = createMutableSignal(value as T[K] & {})
 
 		// Set internal states
-		// @ts-expect-error non-matching signal types
+		// @ts-expect-error complex conditional type inference
 		this.signals.set(key, signal)
 		if (this.listeners.change.size) this.addOwnWatcher(key, signal)
 
@@ -132,7 +140,7 @@ class Store<T extends UnknownRecord> {
 			for (const key in changes.add)
 				this.addProperty(
 					key,
-					changes.add[key] as T[Extract<keyof T, string>],
+					changes.add[key] as T[Extract<keyof T, string>] & {},
 					false,
 				)
 
@@ -152,12 +160,15 @@ class Store<T extends UnknownRecord> {
 			this.batching = true
 			batchSignalWrites(() => {
 				for (const key in changes.change) {
-					const value = changes.change[key]
+					const value = changes.change[key] as T[Extract<
+						keyof T,
+						string
+					>] & {}
 					if (!this.isValidValue(key, value)) continue
 
 					const signal = this.signals.get(key)
 					if (guardMutableSignal(`store key "${key}"`, value, signal))
-						signal.set(value as T[Extract<keyof T, string>])
+						signal.set(value)
 				}
 			})
 			this.batching = false
@@ -192,7 +203,7 @@ class Store<T extends UnknownRecord> {
 	}
 
 	*[Symbol.iterator](): IterableIterator<
-		[string, MutableSignal<T[Extract<keyof T, string>]>]
+		[string, MutableSignal<T[Extract<keyof T, string>] & {}>]
 	> {
 		for (const [key, signal] of this.signals) yield [key, signal]
 	}
@@ -244,7 +255,7 @@ class Store<T extends UnknownRecord> {
 			// Set up watchers for existing signals
 			this.batching = true
 			for (const [key, signal] of this.signals)
-				this.addOwnWatcher(key, signal as MutableSignal<T[string]>)
+				this.addOwnWatcher(key, signal as MutableSignal<T[string] & {}>)
 
 			// Start watchers after setup is complete
 			for (const watcher of this.ownWatchers.values()) watcher()
@@ -273,7 +284,7 @@ class Store<T extends UnknownRecord> {
  * @returns {Store<T>} - New store with reactive properties that preserves the original type T
  */
 const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
-	const instance = new Store(initialValue)
+	const instance = new BaseStore(initialValue)
 
 	// Return proxy for property access
 	return new Proxy(instance, {
@@ -306,13 +317,7 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 					}
 				: undefined
 		},
-	}) as Store<T> & {
-		[K in keyof T]: T[K] extends readonly (infer U extends {})[]
-			? List<U>
-			: T extends Record<string, unknown>
-				? Store<T[K]>
-				: State<T[K]>
-	}
+	}) as Store<T>
 }
 
 /**
@@ -322,16 +327,18 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
  * @param {unknown} value - Value to check
  * @returns {boolean} - True if the value is a Store instance, false otherwise
  */
-const isStore = <T extends UnknownRecord>(value: unknown): value is Store<T> =>
-	isObjectOfType(value, TYPE_STORE)
+const isStore = <T extends UnknownRecord>(
+	value: unknown,
+): value is BaseStore<T> => isObjectOfType(value, TYPE_STORE)
 
 /* === Exports === */
 
 export {
 	createStore,
 	isStore,
-	Store,
+	BaseStore,
 	TYPE_STORE,
 	createMutableSignal,
 	type MutableSignal,
+	type Store,
 }

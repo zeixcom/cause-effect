@@ -1,10 +1,10 @@
-type UnknownRecord = Record<string, unknown & {}>;
+type UnknownRecord = Record<string, unknown>;
 type UnknownArray = ReadonlyArray<unknown & {}>;
 type DiffResult = {
     changed: boolean;
-    add: Record<string, unknown & {}>;
-    change: Record<string, unknown & {}>;
-    remove: Record<string, unknown & {}>;
+    add: UnknownRecord;
+    change: UnknownRecord;
+    remove: UnknownRecord;
 };
 /**
  * Checks if two values are equal with cycle detection
@@ -25,4 +25,4 @@ declare const isEqual: <T>(a: T, b: T, visited?: WeakSet<object>) => boolean;
  * @returns {DiffResult} The result of the comparison
  */
 declare const diff: <T extends UnknownRecord>(oldObj: T, newObj: T) => DiffResult;
-export { type DiffResult, diff, isEqual, type UnknownRecord, type UnknownArray, };
+export { type DiffResult, diff, isEqual, type UnknownRecord, type UnknownArray };

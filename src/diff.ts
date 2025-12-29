@@ -1,16 +1,16 @@
 import { CircularDependencyError } from './errors'
-import { isRecord, isRecordOrArray, UNSET } from './util'
+import { isNonNullObject, isRecord, isRecordOrArray, UNSET } from './util'
 
 /* === Types === */
 
-type UnknownRecord = Record<string, unknown & {}>
+type UnknownRecord = Record<string, unknown>
 type UnknownArray = ReadonlyArray<unknown & {}>
 
 type DiffResult = {
 	changed: boolean
-	add: Record<string, unknown & {}>
-	change: Record<string, unknown & {}>
-	remove: Record<string, unknown & {}>
+	add: UnknownRecord
+	change: UnknownRecord
+	remove: UnknownRecord
 }
 
 /* === Functions === */
@@ -28,14 +28,14 @@ const isEqual = <T>(a: T, b: T, visited?: WeakSet<object>): boolean => {
 	// Fast paths
 	if (Object.is(a, b)) return true
 	if (typeof a !== typeof b) return false
-	if (typeof a !== 'object' || a === null || b === null) return false
+	if (!isNonNullObject(a) || !isNonNullObject(b)) return false
 
 	// Cycle detection
 	if (!visited) visited = new WeakSet()
 	if (visited.has(a as object) || visited.has(b as object))
 		throw new CircularDependencyError('isEqual')
-	visited.add(a as object)
-	visited.add(b as object)
+	visited.add(a)
+	visited.add(b)
 
 	try {
 		if (Array.isArray(a) && Array.isArray(b)) {
@@ -55,14 +55,7 @@ const isEqual = <T>(a: T, b: T, visited?: WeakSet<object>): boolean => {
 			if (aKeys.length !== bKeys.length) return false
 			for (const key of aKeys) {
 				if (!(key in b)) return false
-				if (
-					!isEqual(
-						(a as Record<string, unknown>)[key],
-						(b as Record<string, unknown>)[key],
-						visited,
-					)
-				)
-					return false
+				if (!isEqual(a[key], b[key], visited)) return false
 			}
 			return true
 		}
@@ -71,8 +64,8 @@ const isEqual = <T>(a: T, b: T, visited?: WeakSet<object>): boolean => {
 		// (which would have been caught by Object.is at the beginning)
 		return false
 	} finally {
-		visited.delete(a as object)
-		visited.delete(b as object)
+		visited.delete(a)
+		visited.delete(b)
 	}
 }
 
@@ -101,9 +94,9 @@ const diff = <T extends UnknownRecord>(oldObj: T, newObj: T): DiffResult => {
 
 	const visited = new WeakSet()
 
-	const add = {} as Record<string, unknown & {}>
-	const change = {} as Record<string, unknown & {}>
-	const remove = {} as Record<string, unknown & {}>
+	const add = {} as UnknownRecord
+	const change = {} as UnknownRecord
+	const remove = {} as UnknownRecord
 
 	const oldKeys = Object.keys(oldObj)
 	const newKeys = Object.keys(newObj)
@@ -141,10 +134,4 @@ const diff = <T extends UnknownRecord>(oldObj: T, newObj: T): DiffResult => {
 
 /* === Exports === */
 
-export {
-	type DiffResult,
-	diff,
-	isEqual,
-	type UnknownRecord,
-	type UnknownArray,
-}
+export { type DiffResult, diff, isEqual, type UnknownRecord, type UnknownArray }

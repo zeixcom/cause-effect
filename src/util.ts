@@ -28,6 +28,10 @@ const isSyncFunction = /*#__PURE__*/ <T extends unknown & { then?: undefined }>(
 ): fn is (...args: unknown[]) => T =>
 	isFunction(fn) && fn.constructor.name !== 'AsyncFunction'
 
+const isNonNullObject = /*#__PURE__*/ (
+	value: unknown,
+): value is NonNullable<object> => value != null && typeof value === 'object'
+
 const isObjectOfType = /*#__PURE__*/ <T>(
 	value: unknown,
 	type: string,
@@ -42,6 +46,11 @@ const isRecordOrArray = /*#__PURE__*/ <
 >(
 	value: unknown,
 ): value is T => isRecord(value) || Array.isArray(value)
+
+const isUniformArray = <T>(
+	value: unknown,
+	guard = (item: T): item is T & {} => item != null,
+): value is T[] => Array.isArray(value) && value.every(guard)
 
 const hasMethod = /*#__PURE__*/ <
 	T extends object & Record<string, (...args: unknown[]) => unknown>,
@@ -74,9 +83,11 @@ export {
 	isFunction,
 	isAsyncFunction,
 	isSyncFunction,
+	isNonNullObject,
 	isObjectOfType,
 	isRecord,
 	isRecordOrArray,
+	isUniformArray,
 	hasMethod,
 	isAbortError,
 	toError,

@@ -6,9 +6,11 @@ var isSymbol = (value) => typeof value === "symbol";
 var isFunction = (fn) => typeof fn === "function";
 var isAsyncFunction = (fn) => isFunction(fn) && fn.constructor.name === "AsyncFunction";
 var isSyncFunction = (fn) => isFunction(fn) && fn.constructor.name !== "AsyncFunction";
+var isNonNullObject = (value) => value != null && typeof value === "object";
 var isObjectOfType = (value, type) => Object.prototype.toString.call(value) === `[object ${type}]`;
 var isRecord = (value) => isObjectOfType(value, "Object");
 var isRecordOrArray = (value) => isRecord(value) || Array.isArray(value);
+var isUniformArray = (value, guard = (item) => item != null) => Array.isArray(value) && value.every(guard);
 var isAbortError = (error) => error instanceof DOMException && error.name === "AbortError";
 var toError = (reason) => reason instanceof Error ? reason : Error(String(reason));
 var valueString = (value) => isString(value) ? `"${value}"` : !!value && typeof value === "object" ? JSON.stringify(value) : String(value);
@@ -433,7 +435,7 @@ var isCollection = (value) => isObjectOfType(value, TYPE_COLLECTION);
 // src/classes/list.ts
 var TYPE_LIST = "List";
 
-class List {
+class BaseList {
   watchers = new Set;
   listeners = {
     add: new Set,
@@ -684,7 +686,7 @@ class List {
   }
 }
 var createList = (initialValue, keyConfig) => {
-  const instance = new List(initialValue, keyConfig);
+  const instance = new BaseList(initialValue, keyConfig);
   const getSignal = (prop) => {
     const index = Number(prop);
     return Number.isInteger(index) && index >= 0 ? instance.at(index) : instance.byKey(prop);
@@ -767,7 +769,7 @@ var isState = (value) => isObjectOfType(value, TYPE_STATE);
 // src/classes/store.ts
 var TYPE_STORE = "Store";
 
-class Store {
+class BaseStore {
   watchers = new Set;
   listeners = {
     add: new Set,
@@ -924,7 +926,7 @@ class Store {
   }
 }
 var createStore = (initialValue) => {
-  const instance = new Store(initialValue);
+  const instance = new BaseStore(initialValue);
   return new Proxy(instance, {
     get(target, prop) {
       if (prop in target)
@@ -961,24 +963,24 @@ var isStore = (value) => isObjectOfType(value, TYPE_STORE);
 // src/signal.ts
 var isSignal = (value) => isState(value) || isComputed(value) || isStore(value);
 var isMutableSignal = (value) => isState(value) || isStore(value) || isList(value);
-var createSignal = (value) => {
+function createSignal(value) {
   if (isMemoCallback(value))
     return new Memo(value);
   if (isTaskCallback(value))
     return new Task(value);
-  if (Array.isArray(value))
+  if (isUniformArray(value))
     return createList(value);
   if (isRecord(value))
     return createStore(value);
   return new State(value);
-};
-var createMutableSignal = (value) => {
-  if (Array.isArray(value))
+}
+function createMutableSignal(value) {
+  if (isUniformArray(value))
     return createList(value);
   if (isRecord(value))
     return createStore(value);
   return new State(value);
-};
+}
 
 // src/errors.ts
 class CircularDependencyError extends Error {
@@ -1044,7 +1046,7 @@ var isEqual = (a, b, visited) => {
     return true;
   if (typeof a !== typeof b)
     return false;
-  if (typeof a !== "object" || a === null || b === null)
+  if (!isNonNullObject(a) || !isNonNullObject(b))
     return false;
   if (!visited)
     visited = new WeakSet;
@@ -1378,14 +1380,14 @@ export {
   TYPE_LIST,
   TYPE_COMPUTED2 as TYPE_COMPUTED,
   TYPE_COLLECTION,
-  Store,
   State,
   ReadonlySignalError,
   NullishSignalValueError,
   Memo,
-  List,
   InvalidSignalValueError,
   InvalidCallbackError,
   DuplicateKeyError,
-  CircularDependencyError
+  CircularDependencyError,
+  BaseStore,
+  BaseList
 };

@@ -9,8 +9,9 @@ import {
 import { createList, isList, type List } from './classes/list'
 import { isState, State } from './classes/state'
 import { createStore, isStore, type Store } from './classes/store'
+import type { UnknownRecord } from './diff'
 import type { Collection } from './signals/collection'
-import { isRecord } from './util'
+import { isRecord, isUniformArray } from './util'
 
 /* === Types === */
 
@@ -18,7 +19,11 @@ type Signal<T extends {}> = {
 	get(): T
 }
 
-type MutableSignal<T extends {}> = State<T> | Store<T> | List<T>
+type MutableSignal<T extends {}> = T extends readonly (infer U extends {})[]
+	? List<U>
+	: T extends Record<string, unknown>
+		? Store<T & Record<string, unknown & {}>>
+		: State<T>
 type ReadonlySignal<T extends {}> = Computed<T> | Collection<T>
 
 type UnknownSignalRecord = Record<string, Signal<unknown & {}>>
@@ -47,29 +52,42 @@ const isSignal = /*#__PURE__*/ <T extends {}>(
  * @param {unknown} value - Value to check
  * @returns {boolean} - True if value is a State, Store, or List, false otherwise
  */
-const isMutableSignal = /*#__PURE__*/ <T extends {}>(
+const isMutableSignal = /*#__PURE__*/ (
 	value: unknown,
-): value is MutableSignal<T> =>
+): value is MutableSignal<unknown & {}> =>
 	isState(value) || isStore(value) || isList(value)
 
 /**
- * Convert a value to a Signal if it's not already a Signal
+ * Convert a value to a Signal.
  *
  * @since 0.9.6
- * @param {T} value - value to convert
  */
-const createSignal = <T extends {}>(value: T) => {
+function createSignal<T extends {}>(value: readonly T[]): List<T>
+function createSignal<T extends {}>(value: T[]): List<T>
+function createSignal<T extends UnknownRecord>(value: T): Store<T>
+function createSignal<T extends {}>(value: () => T): Computed<T>
+function createSignal<T extends {}>(value: T): State<T>
+function createSignal(value: unknown): unknown {
 	if (isMemoCallback(value)) return new Memo(value)
 	if (isTaskCallback(value)) return new Task(value)
-	if (Array.isArray(value)) return createList(value)
-	if (isRecord(value)) return createStore(value)
-	return new State(value)
+	if (isUniformArray<unknown & {}>(value)) return createList(value)
+	if (isRecord(value)) return createStore(value as UnknownRecord)
+	return new State(value as unknown & {})
 }
 
-const createMutableSignal = <T extends {}>(value: T) => {
-	if (Array.isArray(value)) return createList(value)
-	if (isRecord(value)) return createStore(value)
-	return new State(value)
+/**
+ * Convert a value to a MutableSignal.
+ *
+ * @since 0.17.0
+ */
+function createMutableSignal<T extends {}>(value: readonly T[]): List<T>
+function createMutableSignal<T extends {}>(value: T[]): List<T>
+function createMutableSignal<T extends UnknownRecord>(value: T): Store<T>
+function createMutableSignal<T extends {}>(value: T): State<T>
+function createMutableSignal(value: unknown): unknown {
+	if (isUniformArray<unknown & {}>(value)) return createList(value)
+	if (isRecord(value)) return createStore(value as UnknownRecord)
+	return new State(value as unknown & {})
 }
 
 /* === Exports === */

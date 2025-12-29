@@ -18,14 +18,21 @@ export {
 } from './src/classes/computed'
 export {
 	type ArrayToRecord,
+	BaseList,
 	createList,
 	isList,
 	type KeyConfig,
-	List,
+	type List,
 	TYPE_LIST,
 } from './src/classes/list'
 export { createState, isState, State, TYPE_STATE } from './src/classes/state'
-export { createStore, isStore, Store, TYPE_STORE } from './src/classes/store'
+export {
+	BaseStore,
+	createStore,
+	isStore,
+	type Store,
+	TYPE_STORE,
+} from './src/classes/store'
 export {
 	type DiffResult,
 	diff,
