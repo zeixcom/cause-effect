@@ -1,34 +1,25 @@
-import { type DiffResult, diff, type UnknownRecord } from '../diff'
+import { diff, type UnknownRecord } from '../diff'
+import { DuplicateKeyError, validateSignalValue } from '../errors'
+import type { MutableSignal } from '../signal'
 import {
-	DuplicateKeyError,
-	guardMutableSignal,
-	validateSignalValue,
-} from '../errors'
-import { createMutableSignal } from '../signal'
-import {
-	batchSignalWrites,
 	type Cleanup,
-	createWatcher,
-	emitNotification,
 	type Listener,
 	type Listeners,
 	notifyWatchers,
 	subscribeActiveWatcher,
-	trackSignalReads,
 	type Watcher,
 } from '../system'
-import { isObjectOfType, isRecord, isSymbol, UNSET } from '../util'
+import { isFunction, isObjectOfType, isRecord, isSymbol, UNSET } from '../util'
+import { MutableComposite } from './composite'
 import type { List } from './list'
 import type { State } from './state'
 
 /* === Types === */
 
-type MutableSignal<T extends {}> = State<T> | BaseStore<T> | List<T>
-
 type Store<T extends UnknownRecord> = BaseStore<T> & {
 	[K in keyof T]: T[K] extends readonly (infer U extends {})[]
 		? List<U>
-		: T[K] extends Record<string, unknown & {}>
+		: T[K] extends UnknownRecord
 			? Store<T[K]>
 			: State<T[K] & {}>
 }
@@ -40,18 +31,8 @@ const TYPE_STORE = 'Store' as const
 /* === Store Implementation === */
 
 class BaseStore<T extends UnknownRecord> {
-	protected watchers = new Set<Watcher>()
-	protected listeners: Omit<Listeners, 'sort'> = {
-		add: new Set<Listener<'add'>>(),
-		change: new Set<Listener<'change'>>(),
-		remove: new Set<Listener<'remove'>>(),
-	}
-	protected signals = new Map<
-		string,
-		MutableSignal<T[Extract<keyof T, string>] & {}>
-	>()
-	protected ownWatchers = new Map<string, Watcher>()
-	protected batching = false
+	#composite: MutableComposite<T>
+	#watchers = new Set<Watcher>()
 
 	/**
 	 * Create a new store with the given initial value.
@@ -62,135 +43,24 @@ class BaseStore<T extends UnknownRecord> {
 	 */
 	constructor(initialValue: T) {
 		validateSignalValue('store', initialValue, isRecord)
-		this.reconcile({} as T, initialValue, true)
+
+		this.#composite = new MutableComposite(
+			initialValue,
+			<K extends keyof T & string>(
+				key: K,
+				value: unknown,
+			): value is T[K] & {} => {
+				validateSignalValue(`store for key "${key}"`, value)
+				return true
+			},
+		)
 	}
 
-	// Validate input
-	protected isValidValue<K extends keyof T & string>(
-		key: K,
-		value: unknown,
-	): value is NonNullable<T[K]> {
-		validateSignalValue(`store for key "${key}"`, value)
-		return true
-	}
-
-	protected addOwnWatcher<K extends keyof T & string>(
-		key: K,
-		signal: MutableSignal<T[K] & {}>,
-	) {
-		const watcher = createWatcher(() => {
-			trackSignalReads(watcher, () => {
-				signal.get() // Subscribe to the signal
-				if (!this.batching)
-					emitNotification(this.listeners.change, [key])
-			})
-		})
-		this.ownWatchers.set(key, watcher)
-		watcher()
-	}
-
-	// Add nested signal and effect
-	protected addProperty<K extends keyof T & string>(
-		key: K,
-		value: T[K],
-		single = false,
-	): boolean {
-		validateSignalValue(`store for key "${key}"`, value)
-
-		const signal = createMutableSignal(value as T[K] & {})
-
-		// Set internal states
-		// @ts-expect-error complex conditional type inference
-		this.signals.set(key, signal)
-		if (this.listeners.change.size) this.addOwnWatcher(key, signal)
-
-		if (single) {
-			notifyWatchers(this.watchers)
-			emitNotification(this.listeners.add, [key])
-		}
-		return true
-	}
-
-	// Remove nested signal and effect
-	protected removeProperty<K extends keyof T & string>(
-		key: K,
-		single = false,
-	) {
-		// Remove signal for key
-		const ok = this.signals.delete(key)
-		if (!ok) return
-
-		// Clean up internal states
-		const watcher = this.ownWatchers.get(key)
-		if (watcher) {
-			watcher.stop()
-			this.ownWatchers.delete(key)
-		}
-
-		if (single) {
-			notifyWatchers(this.watchers)
-			emitNotification(this.listeners.remove, [key])
-		}
-	}
-
-	// Commit batched changes and emit notifications
-	protected batchChanges(changes: DiffResult, initialRun?: boolean) {
-		// Additions
-		if (Object.keys(changes.add).length) {
-			for (const key in changes.add)
-				this.addProperty(
-					key,
-					changes.add[key] as T[Extract<keyof T, string>] & {},
-					false,
-				)
-
-			// Queue initial additions event to allow listeners to be added first
-			if (initialRun)
-				setTimeout(() => {
-					emitNotification(
-						this.listeners.add,
-						Object.keys(changes.add),
-					)
-				}, 0)
-			else emitNotification(this.listeners.add, Object.keys(changes.add))
-		}
-
-		// Changes
-		if (Object.keys(changes.change).length) {
-			this.batching = true
-			batchSignalWrites(() => {
-				for (const key in changes.change) {
-					const value = changes.change[key] as T[Extract<
-						keyof T,
-						string
-					>] & {}
-					if (!this.isValidValue(key, value)) continue
-
-					const signal = this.signals.get(key)
-					if (guardMutableSignal(`store key "${key}"`, value, signal))
-						signal.set(value)
-				}
-			})
-			this.batching = false
-			emitNotification(this.listeners.change, Object.keys(changes.change))
-		}
-
-		// Removals
-		if (Object.keys(changes.remove).length) {
-			for (const key in changes.remove) this.removeProperty(key)
-			emitNotification(this.listeners.remove, Object.keys(changes.remove))
-		}
-
-		return changes.changed
-	}
-
-	// Reconcile data and dispatch events
-	protected reconcile(
-		oldValue: T,
-		newValue: T,
-		initialRun?: boolean,
-	): boolean {
-		return this.batchChanges(diff(oldValue, newValue), initialRun)
+	get #value(): T {
+		const record = {} as UnknownRecord
+		for (const [key, signal] of this.#composite.entries())
+			record[key] = signal.get()
+		return record as T
 	}
 
 	// Public methods
@@ -203,31 +73,38 @@ class BaseStore<T extends UnknownRecord> {
 	}
 
 	*[Symbol.iterator](): IterableIterator<
-		[string, MutableSignal<T[Extract<keyof T, string>] & {}>]
+		[string, MutableSignal<T[keyof T] & {}>]
 	> {
-		for (const [key, signal] of this.signals) yield [key, signal]
+		for (const [key, signal] of this.#composite.entries())
+			yield [key, signal]
 	}
 
 	get(): T {
-		subscribeActiveWatcher(this.watchers)
-		const record = {} as Record<string, unknown>
-		for (const [key, signal] of this.signals) record[key] = signal.get()
-		return record as T
+		subscribeActiveWatcher(this.#watchers)
+		return this.#value
 	}
 
 	set(newValue: T): void {
-		if (this.reconcile(this.get(), newValue)) {
-			notifyWatchers(this.watchers)
-			if (UNSET === newValue) this.watchers.clear()
+		if (UNSET === newValue) {
+			this.#composite.clear()
+			notifyWatchers(this.#watchers)
+			this.#watchers.clear()
+			return
 		}
+
+		const oldValue = this.#value
+		const changed = this.#composite.change(diff(oldValue, newValue))
+		if (changed) notifyWatchers(this.#watchers)
 	}
 
 	keys(): IterableIterator<string> {
-		return this.signals.keys()
+		return this.#composite.keys()
 	}
 
-	byKey(key: string) {
-		return this.signals.get(key)
+	byKey<K extends keyof T & string>(
+		key: K,
+	): MutableSignal<T[K] & {}> | undefined {
+		return this.#composite.get(key)
 	}
 
 	update(fn: (oldValue: T) => T): void {
@@ -235,42 +112,24 @@ class BaseStore<T extends UnknownRecord> {
 	}
 
 	add<K extends keyof T & string>(key: K, value: T[K]): K {
-		if (this.signals.has(key))
+		if (this.#composite.has(key))
 			throw new DuplicateKeyError('store', key, value)
 
-		this.addProperty(key, value, true)
+		const ok = this.#composite.add(key, value)
+		if (ok) notifyWatchers(this.#watchers)
 		return key
 	}
 
 	remove(key: string): void {
-		if (this.signals.has(key)) this.removeProperty(key, true)
+		const ok = this.#composite.remove(key)
+		if (ok) notifyWatchers(this.#watchers)
 	}
 
 	on<K extends keyof Omit<Listeners, 'sort'>>(
 		type: K,
 		listener: Listener<K>,
 	): Cleanup {
-		this.listeners[type].add(listener)
-		if (type === 'change' && !this.ownWatchers.size) {
-			// Set up watchers for existing signals
-			this.batching = true
-			for (const [key, signal] of this.signals)
-				this.addOwnWatcher(key, signal as MutableSignal<T[string] & {}>)
-
-			// Start watchers after setup is complete
-			for (const watcher of this.ownWatchers.values()) watcher()
-			this.batching = false
-		}
-		return () => {
-			this.listeners[type].delete(listener)
-			if (type === 'change' && !this.listeners.change.size) {
-				if (this.ownWatchers.size) {
-					for (const watcher of this.ownWatchers.values())
-						watcher.stop()
-					this.ownWatchers.clear()
-				}
-			}
-		}
+		return this.#composite.on(type, listener)
 	}
 }
 
@@ -289,7 +148,10 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 	// Return proxy for property access
 	return new Proxy(instance, {
 		get(target, prop) {
-			if (prop in target) return Reflect.get(target, prop)
+			if (prop in target) {
+				const value = Reflect.get(target, prop)
+				return isFunction(value) ? value.bind(target) : value
+			}
 			if (!isSymbol(prop)) return target.byKey(prop)
 		},
 		has(target, prop) {
@@ -300,12 +162,9 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 			return Array.from(target.keys())
 		},
 		getOwnPropertyDescriptor(target, prop) {
-			if (isSymbol(prop)) return undefined
-
-			// Check if it's a property on the target first
-			if (prop in target) {
+			if (prop in target)
 				return Reflect.getOwnPropertyDescriptor(target, prop)
-			}
+			if (isSymbol(prop)) return undefined
 
 			const signal = target.byKey(String(prop))
 			return signal
@@ -333,12 +192,4 @@ const isStore = <T extends UnknownRecord>(
 
 /* === Exports === */
 
-export {
-	createStore,
-	isStore,
-	BaseStore,
-	TYPE_STORE,
-	createMutableSignal,
-	type MutableSignal,
-	type Store,
-}
+export { createStore, isStore, BaseStore, TYPE_STORE, type Store }

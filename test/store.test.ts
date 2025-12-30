@@ -1,13 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import {
-	createComputed,
 	createEffect,
 	createStore,
 	isStore,
 	Memo,
 	State,
 	UNSET,
-} from '..'
+} from '../index.ts'
 
 describe('store', () => {
 	describe('creation and basic operations', () => {
@@ -444,7 +443,7 @@ describe('store', () => {
 				firstName: 'John',
 				lastName: 'Doe',
 			})
-			const fullName = createComputed(
+			const fullName = new Memo(
 				() => `${user.firstName.get()} ${user.lastName.get()}`,
 			)
 
@@ -459,7 +458,7 @@ describe('store', () => {
 					theme: 'light',
 				},
 			})
-			const themeDisplay = createComputed(
+			const themeDisplay = new Memo(
 				() => `Theme: ${config.ui.theme.get()}`,
 			)
 
@@ -520,6 +519,7 @@ describe('store', () => {
 			const nameSignal = user.byKey('name')
 			const emailSignal = user.byKey('email')
 			const ageSignal = user.byKey('age')
+			// @ts-expect-error deliberate access for nonexistent key
 			const nonexistentSignal = user.byKey('nonexistent')
 
 			expect(nameSignal?.get()).toBe('Alice')
@@ -555,7 +555,7 @@ describe('store', () => {
 			})
 
 			const nameSignal = user.byKey('name')
-			const displayName = createComputed(() =>
+			const displayName = new Memo(() =>
 				nameSignal ? `Hello, ${nameSignal.get()}!` : 'Unknown',
 			)
 

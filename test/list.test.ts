@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test'
 import {
-	createComputed,
 	createEffect,
 	createList,
 	createStore,
@@ -9,7 +8,7 @@ import {
 	Memo,
 	State,
 	UNSET,
-} from '..'
+} from '../index.ts'
 
 describe('list', () => {
 	describe('creation and basic operations', () => {
@@ -144,6 +143,7 @@ describe('list', () => {
 			})
 			numbers.sort()
 			expect(sortNotification).toHaveLength(3)
+			expect(sortNotification).toEqual(['1', '2', '0'])
 		})
 
 		test('sort is reactive - watchers are notified', () => {
@@ -245,7 +245,7 @@ describe('list', () => {
 	describe('computed integration', () => {
 		test('works with computed signals', () => {
 			const numbers = createList([1, 2, 3])
-			const sum = createComputed(() =>
+			const sum = new Memo(() =>
 				numbers.get().reduce((acc, n) => acc + n, 0),
 			)
 
@@ -256,7 +256,7 @@ describe('list', () => {
 
 		test('computed handles additions and removals', () => {
 			const numbers = createList([1, 2, 3])
-			const sum = createComputed(() => {
+			const sum = new Memo(() => {
 				const array = numbers.get()
 				return array.reduce((total, n) => total + n, 0)
 			})
@@ -275,7 +275,7 @@ describe('list', () => {
 		test('computed sum using list iteration with length tracking', () => {
 			const numbers = createList([1, 2, 3])
 
-			const sum = createComputed(() => {
+			const sum = new Memo(() => {
 				// Access length to make it reactive
 				const _length = numbers.length
 				let total = 0
@@ -311,31 +311,40 @@ describe('list', () => {
 		test('emits add notifications', () => {
 			const numbers = createList([1, 2])
 			let arrayAddNotification: readonly string[] = []
+			let newArray: number[] = []
 			numbers.on('add', add => {
 				arrayAddNotification = add
+				newArray = numbers.get()
 			})
 			numbers.add(3)
 			expect(arrayAddNotification).toHaveLength(1)
+			expect(newArray).toEqual([1, 2, 3])
 		})
 
 		test('emits change notifications when properties are modified', () => {
 			const items = createList([{ value: 10 }])
 			let arrayChangeNotification: readonly string[] = []
+			let newArray: { value: number }[] = []
 			items.on('change', change => {
 				arrayChangeNotification = change
+				newArray = items.get()
 			})
 			items[0].value.set(20)
 			expect(arrayChangeNotification).toHaveLength(1)
+			expect(newArray).toEqual([{ value: 20 }])
 		})
 
 		test('emits remove notifications when items are removed', () => {
 			const items = createList([1, 2, 3])
 			let arrayRemoveNotification: readonly string[] = []
+			let newArray: number[] = []
 			items.on('remove', remove => {
 				arrayRemoveNotification = remove
+				newArray = items.get()
 			})
 			items.remove(1)
 			expect(arrayRemoveNotification).toHaveLength(1)
+			expect(newArray).toEqual([1, 3])
 		})
 	})
 

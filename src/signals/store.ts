@@ -202,8 +202,7 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 					if (!isValidValue(key, value)) continue
 
 					const signal = signals.get(key)
-					if (isMutableSignal<T[Extract<keyof T, string>]>(signal))
-						signal.set(value)
+					if (isMutableSignal(signal)) signal.set(value)
 					else throw new ReadonlySignalError(key, value)
 				}
 				emitNotification(listeners.change, Object.keys(changes.change))

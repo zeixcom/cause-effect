@@ -13,6 +13,5 @@ export { CircularDependencyError, DuplicateKeyError, InvalidCallbackError, Inval
 export { type MatchHandlers, match } from './src/match';
 export { type ResolveResult, resolve } from './src/resolve';
 export { createSignal, isMutableSignal, isSignal, type Signal, type SignalValues, type UnknownSignalRecord, } from './src/signal';
-export { type Collection, createCollection, isCollection, TYPE_COLLECTION, } from './src/signals/collection';
 export { batchSignalWrites, type Cleanup, createWatcher, emitNotification, flushPendingReactions, type Listener, type Listeners, type Notifications, notifyWatchers, subscribeActiveWatcher, trackSignalReads, type Watcher, } from './src/system';
 export { isAbortError, isAsyncFunction, isFunction, isNumber, isObjectOfType, isRecord, isRecordOrArray, isString, isSymbol, toError, UNSET, valueString, } from './src/util';

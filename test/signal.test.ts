@@ -2,16 +2,16 @@ import { describe, expect, test } from 'bun:test'
 import {
 	type Computed,
 	createSignal,
-	createState,
 	isComputed,
 	isList,
 	isState,
 	isStore,
 	type List,
 	type Signal,
-	type State,
+	State,
 	type Store,
-} from '..'
+	type UnknownRecord,
+} from '../index.ts'
 
 /* === Tests === */
 
@@ -131,7 +131,7 @@ describe('Signal compatibility', () => {
 		const recordSignal = createSignal({ a: 1, b: 2 })
 		const primitiveSignal = createSignal(42)
 		const functionSignal = createSignal(() => 'hello')
-		const stateSignal = createSignal(createState(true))
+		const stateSignal = createSignal(new State(true))
 
 		// All should have get() method
 		expect(typeof arraySignal.get).toBe('function')
@@ -203,9 +203,7 @@ describe('Type precision tests', () => {
 			expect(typedResult).toBeDefined()
 
 			// Simulate external library usage where P[K] represents element type
-			interface ExternalLibraryConstraint<
-				P extends Record<string, unknown & {}>,
-			> {
+			interface ExternalLibraryConstraint<P extends UnknownRecord> {
 				process<K extends keyof P>(signal: Signal<P[K] & {}>): void
 			}
 

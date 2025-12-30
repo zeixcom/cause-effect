@@ -10,7 +10,7 @@ import { createList, isList, type List } from './classes/list'
 import { isState, State } from './classes/state'
 import { createStore, isStore, type Store } from './classes/store'
 import type { UnknownRecord } from './diff'
-import type { Collection } from './signals/collection'
+// import type { Collection } from './signals/collection'
 import { isRecord, isUniformArray } from './util'
 
 /* === Types === */
@@ -21,10 +21,10 @@ type Signal<T extends {}> = {
 
 type MutableSignal<T extends {}> = T extends readonly (infer U extends {})[]
 	? List<U>
-	: T extends Record<string, unknown>
-		? Store<T & Record<string, unknown & {}>>
+	: T extends UnknownRecord
+		? Store<T>
 		: State<T>
-type ReadonlySignal<T extends {}> = Computed<T> | Collection<T>
+type ReadonlySignal<T extends {}> = Computed<T> // | Collection<T>
 
 type UnknownSignalRecord = Record<string, Signal<unknown & {}>>
 

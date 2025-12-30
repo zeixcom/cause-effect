@@ -43,9 +43,9 @@ declare const flushPendingReactions: () => void;
 /**
  * Batch multiple signal writes
  *
- * @param {() => void} setSignals - Function with multiple signal writes to be batched
+ * @param {() => void} callback - Function with multiple signal writes to be batched
  */
-declare const batchSignalWrites: (setSignals: () => void) => void;
+declare const batchSignalWrites: (callback: () => void) => void;
 /**
  * Run a function with signal reads in a tracking context (or temporarily untrack)
  *
@@ -59,7 +59,7 @@ declare const trackSignalReads: (watcher: Watcher | false, run: () => void) => v
  * Emit a notification to listeners
  *
  * @param {Set<Listener>} listeners - Listeners to be notified
- * @param {Notifications[keyof Notifications]} payload - Payload to be sent to listeners
+ * @param {Notifications[K]} payload - Payload to be sent to listeners
  */
 declare const emitNotification: <T extends keyof Notifications>(listeners: Set<Listener<T>>, payload: Notifications[T]) => void;
 export { type Cleanup, type Watcher, type Notifications, type Listener, type Listeners, createWatcher, subscribeActiveWatcher, notifyWatchers, flushPendingReactions, batchSignalWrites, trackSignalReads, emitNotification, };

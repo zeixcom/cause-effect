@@ -1,7 +1,6 @@
-import { type DiffResult, type UnknownArray, type UnknownRecord } from '../diff';
-import { type MutableSignal } from '../signal';
-import { type Collection, type CollectionCallback } from '../signals/collection';
-import { type Cleanup, type Listener, type Listeners, type Notifications, type Watcher } from '../system';
+import { type UnknownArray, type UnknownRecord } from '../diff';
+import type { MutableSignal } from '../signal';
+import { type Cleanup, type Listener, type Notifications } from '../system';
 import type { State } from './state';
 import type { Store } from './store';
 type ArrayToRecord<T extends UnknownArray> = {
@@ -13,23 +12,10 @@ type List<T extends {}> = BaseList<T> & {
 };
 declare const TYPE_LIST: "List";
 declare class BaseList<T extends {}> {
-    protected watchers: Set<Watcher>;
-    protected listeners: Listeners;
-    protected signals: Map<string, MutableSignal<T>>;
-    protected order: string[];
-    protected ownWatchers: Map<string, Watcher>;
-    protected batching: boolean;
+    #private;
     protected keyCounter: number;
     protected keyConfig?: KeyConfig<T>;
     constructor(initialValue: T[], keyConfig?: KeyConfig<T>);
-    protected generateKey(item: T): string;
-    protected arrayToRecord(array: T[]): ArrayToRecord<T[]>;
-    protected isValidValue(key: string, value: unknown): value is NonNullable<T>;
-    protected addOwnWatcher(key: string, signal: MutableSignal<T>): void;
-    protected addProperty(key: string, value: T, single?: boolean): boolean;
-    protected removeProperty(key: string, single?: boolean): void;
-    protected batchChanges(changes: DiffResult, initialRun?: boolean): boolean;
-    protected reconcile(oldValue: T[], newValue: T[], initialRun?: boolean): boolean;
     get [Symbol.toStringTag](): 'List';
     get [Symbol.isConcatSpreadable](): boolean;
     [Symbol.iterator](): IterableIterator<MutableSignal<T>>;
@@ -47,7 +33,6 @@ declare class BaseList<T extends {}> {
     sort(compareFn?: (a: T, b: T) => number): void;
     splice(start: number, deleteCount?: number, ...items: T[]): T[];
     on<K extends keyof Notifications>(type: K, listener: Listener<K>): Cleanup;
-    deriveCollection<U extends {}>(callback: CollectionCallback<U, T extends UnknownArray ? T : never>): Collection<U>;
 }
 /**
  * Create a new list with deeply nested reactive list items

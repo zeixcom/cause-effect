@@ -1,32 +1,19 @@
-import {
-	type DiffResult,
-	diff,
-	isEqual,
-	type UnknownArray,
-	type UnknownRecord,
-} from '../diff'
-import {
-	DuplicateKeyError,
-	guardMutableSignal,
-	validateSignalValue,
-} from '../errors'
-import { createMutableSignal, type MutableSignal } from '../signal'
-import {
+import { diff, isEqual, type UnknownArray, type UnknownRecord } from '../diff'
+import { DuplicateKeyError, validateSignalValue } from '../errors'
+import type { MutableSignal } from '../signal'
+/* import {
 	type Collection,
 	type CollectionCallback,
 	createCollection,
-} from '../signals/collection'
+} from '../signals/collection' */
 import {
-	batchSignalWrites,
 	type Cleanup,
-	createWatcher,
 	emitNotification,
 	type Listener,
 	type Listeners,
 	type Notifications,
 	notifyWatchers,
 	subscribeActiveWatcher,
-	trackSignalReads,
 	type Watcher,
 } from '../system'
 import {
@@ -37,6 +24,7 @@ import {
 	isSymbol,
 	UNSET,
 } from '../util'
+import { MutableComposite } from './composite'
 import type { State } from './state'
 import type { Store } from './store'
 
@@ -63,29 +51,31 @@ const TYPE_LIST = 'List' as const
 /* === Class === */
 
 class BaseList<T extends {}> {
-	protected watchers = new Set<Watcher>()
-	protected listeners: Listeners = {
-		add: new Set<Listener<'add'>>(),
-		change: new Set<Listener<'change'>>(),
-		remove: new Set<Listener<'remove'>>(),
+	#composite: MutableComposite<Record<string, T>>
+	#watchers = new Set<Watcher>()
+	#listeners: Pick<Listeners, 'sort'> = {
 		sort: new Set<Listener<'sort'>>(),
 	}
-	protected signals = new Map<string, MutableSignal<T>>()
-	protected order: string[] = []
-	protected ownWatchers = new Map<string, Watcher>()
-	protected batching = false
+	#order: string[] = []
 	protected keyCounter = 0
 	protected keyConfig?: KeyConfig<T>
 
 	constructor(initialValue: T[], keyConfig?: KeyConfig<T>) {
 		validateSignalValue('list', initialValue, Array.isArray)
 
+		this.#composite = new MutableComposite(
+			this.#toRecord(initialValue),
+			(key: string, value: unknown): value is T => {
+				validateSignalValue(`list for key "${key}"`, value)
+				return true
+			},
+		)
+
 		this.keyConfig = keyConfig
-		this.reconcile([] as T[], initialValue, true)
 	}
 
 	// Generate stable key for array items
-	protected generateKey(item: T): string {
+	#generateKey(item: T): string {
 		const id = this.keyCounter++
 		return isString(this.keyConfig)
 			? `${this.keyConfig}${id}`
@@ -95,140 +85,27 @@ class BaseList<T extends {}> {
 	}
 
 	// Convert array to record with stable keys
-	protected arrayToRecord(array: T[]): ArrayToRecord<T[]> {
+	#toRecord(array: T[]): ArrayToRecord<T[]> {
 		const record = {} as Record<string, T>
 
 		for (let i = 0; i < array.length; i++) {
 			const value = array[i]
 			if (value === undefined) continue // Skip sparse array positions
 
-			let key = this.order[i]
+			let key = this.#order[i]
 			if (!key) {
-				key = this.generateKey(value)
-				this.order[i] = key
+				key = this.#generateKey(value)
+				this.#order[i] = key
 			}
 			record[key] = value
 		}
 		return record
 	}
 
-	// Validate input
-	protected isValidValue(
-		key: string,
-		value: unknown,
-	): value is NonNullable<T> {
-		validateSignalValue(`list for key "${key}"`, value)
-		return true
-	}
-
-	// Add own watcher for nested signal
-	protected addOwnWatcher(key: string, signal: MutableSignal<T>) {
-		const watcher = createWatcher(() => {
-			trackSignalReads(watcher, () => {
-				signal.get() // Subscribe to the signal
-				if (!this.batching)
-					emitNotification(this.listeners.change, [key])
-			})
-		})
-		this.ownWatchers.set(key, watcher)
-		watcher()
-	}
-
-	// Add nested signal and own watcher
-	protected addProperty(key: string, value: T, single = false): boolean {
-		if (!this.isValidValue(key, value)) return false
-
-		const signal = createMutableSignal(value) as MutableSignal<T>
-
-		// Set internal states
-		this.signals.set(key, signal)
-		if (!this.order.includes(key)) this.order.push(key)
-		if (this.listeners.change.size) this.addOwnWatcher(key, signal)
-
-		if (single) {
-			notifyWatchers(this.watchers)
-			emitNotification(this.listeners.add, [key])
-		}
-		return true
-	}
-
-	// Remove nested signal and effect
-	protected removeProperty(key: string, single = false) {
-		// Remove signal for key
-		const ok = this.signals.delete(key)
-		if (!ok) return
-
-		// Clean up internal states
-		const index = this.order.indexOf(key)
-		if (index >= 0) this.order.splice(index, 1)
-		const watcher = this.ownWatchers.get(key)
-		if (watcher) {
-			watcher.stop()
-			this.ownWatchers.delete(key)
-		}
-
-		if (single) {
-			this.order = this.order.filter(() => true) // Compact array
-			notifyWatchers(this.watchers)
-			emitNotification(this.listeners.remove, [key])
-		}
-	}
-
-	// Commit batched changes and emit notifications
-	protected batchChanges(changes: DiffResult, initialRun?: boolean) {
-		// Additions
-		if (Object.keys(changes.add).length) {
-			for (const key in changes.add)
-				this.addProperty(key, changes.add[key] as T, false)
-
-			// Queue initial additions event to allow listeners to be added first
-			if (initialRun)
-				setTimeout(() => {
-					emitNotification(
-						this.listeners.add,
-						Object.keys(changes.add),
-					)
-				}, 0)
-			else emitNotification(this.listeners.add, Object.keys(changes.add))
-		}
-
-		// Changes
-		if (Object.keys(changes.change).length) {
-			this.batching = true
-			batchSignalWrites(() => {
-				for (const key in changes.change) {
-					const value = changes.change[key]
-					if (!this.isValidValue(key, value)) continue
-
-					const signal = this.signals.get(key)
-					if (guardMutableSignal(`list item "${key}"`, value, signal))
-						signal.set(value)
-				}
-			})
-			this.batching = false
-			emitNotification(this.listeners.change, Object.keys(changes.change))
-		}
-
-		// Removals
-		if (Object.keys(changes.remove).length) {
-			for (const key in changes.remove) this.removeProperty(key)
-			this.order = this.order.filter(() => true)
-			emitNotification(this.listeners.remove, Object.keys(changes.remove))
-		}
-
-		return changes.changed
-	}
-
-	// Reconcile data and dispatch events
-	protected reconcile(
-		oldValue: T[],
-		newValue: T[],
-		initialRun?: boolean,
-	): boolean {
-		return this.batchChanges(
-			diff(this.arrayToRecord(oldValue), this.arrayToRecord(newValue)),
-			initialRun,
-		)
+	get #value(): T[] {
+		return this.#order
+			.map(key => this.#composite.get(key)?.get())
+			.filter(v => v !== undefined) as T[]
 	}
 
 	// Public methods
@@ -241,28 +118,42 @@ class BaseList<T extends {}> {
 	}
 
 	*[Symbol.iterator](): IterableIterator<MutableSignal<T>> {
-		for (const key of this.order) {
-			const signal = this.signals.get(key)
+		for (const key of this.#order) {
+			const signal = this.#composite.get(key)
 			if (signal) yield signal as MutableSignal<T>
 		}
 	}
 
 	get length(): number {
-		subscribeActiveWatcher(this.watchers)
-		return this.signals.size
+		subscribeActiveWatcher(this.#watchers)
+		return this.#order.length
 	}
 
 	get(): T[] {
-		subscribeActiveWatcher(this.watchers)
-		return this.order
-			.map(key => this.signals.get(key)?.get())
-			.filter(v => v !== undefined) as T[]
+		subscribeActiveWatcher(this.#watchers)
+		return this.#value
 	}
 
 	set(newValue: T[]): void {
-		if (this.reconcile(this.get(), newValue)) {
-			notifyWatchers(this.watchers)
-			if (UNSET === newValue) this.watchers.clear()
+		if (UNSET === newValue) {
+			this.#composite.clear()
+			notifyWatchers(this.#watchers)
+			this.#watchers.clear()
+			return
+		}
+
+		const oldValue = this.#value
+		const changes = diff(this.#toRecord(oldValue), this.#toRecord(newValue))
+		const removedKeys = Object.keys(changes.remove)
+
+		const changed = this.#composite.change(changes)
+		if (changed) {
+			for (const key of removedKeys) {
+				const index = this.#order.indexOf(key)
+				if (index !== -1) this.#order.splice(index, 1)
+			}
+			this.#order = this.#order.filter(() => true)
+			notifyWatchers(this.#watchers)
 		}
 	}
 
@@ -271,41 +162,52 @@ class BaseList<T extends {}> {
 	}
 
 	at(index: number): MutableSignal<T> | undefined {
-		return this.signals.get(this.order[index])
+		return this.#composite.get(this.#order[index])
 	}
 
 	keys(): IterableIterator<string> {
-		return this.order.values()
+		return this.#order.values()
 	}
 
 	byKey(key: string): MutableSignal<T> | undefined {
-		return this.signals.get(key)
+		return this.#composite.get(key)
 	}
 
 	keyAt(index: number): string | undefined {
-		return this.order[index]
+		return this.#order[index]
 	}
 
 	indexOfKey(key: string): number {
-		return this.order.indexOf(key)
+		return this.#order.indexOf(key)
 	}
 
 	add(value: T): string {
-		const key = this.generateKey(value)
-		if (!this.signals.has(key)) {
-			this.addProperty(key, value, true)
-			return key
-		} else throw new DuplicateKeyError('store', key, value)
+		const key = this.#generateKey(value)
+		if (this.#composite.has(key))
+			throw new DuplicateKeyError('store', key, value)
+
+		if (!this.#order.includes(key)) this.#order.push(key)
+		const ok = this.#composite.add(key, value)
+		if (ok) notifyWatchers(this.#watchers)
+		return key
 	}
 
 	remove(keyOrIndex: string | number): void {
-		const key = isNumber(keyOrIndex) ? this.order[keyOrIndex] : keyOrIndex
-		if (key && this.signals.has(key)) this.removeProperty(key, true)
+		const key = isNumber(keyOrIndex) ? this.#order[keyOrIndex] : keyOrIndex
+		const ok = this.#composite.remove(key)
+		if (ok) {
+			const index = isNumber(keyOrIndex)
+				? keyOrIndex
+				: this.#order.indexOf(key)
+			if (index >= 0) this.#order.splice(index, 1)
+			this.#order = this.#order.filter(() => true)
+			notifyWatchers(this.#watchers)
+		}
 	}
 
 	sort(compareFn?: (a: T, b: T) => number): void {
-		const entries = this.order
-			.map(key => [key, this.signals.get(key)?.get()] as [string, T])
+		const entries = this.#order
+			.map(key => [key, this.#composite.get(key)?.get()] as [string, T])
 			.sort(
 				isFunction(compareFn)
 					? (a, b) => compareFn(a[1], b[1])
@@ -313,16 +215,15 @@ class BaseList<T extends {}> {
 			)
 		const newOrder = entries.map(([key]) => key)
 
-		if (!isEqual(this.order, newOrder)) {
-			this.order = newOrder
-			notifyWatchers(this.watchers)
-			emitNotification(this.listeners.sort, this.order)
+		if (!isEqual(this.#order, newOrder)) {
+			this.#order = newOrder
+			notifyWatchers(this.#watchers)
+			emitNotification(this.#listeners.sort, this.#order)
 		}
 	}
 
 	splice(start: number, deleteCount?: number, ...items: T[]): T[] {
-		// Normalize start and deleteCount
-		const length = this.signals.size
+		const length = this.#order.length
 		const actualStart =
 			start < 0 ? Math.max(0, length + start) : Math.min(start, length)
 		const actualDeleteCount = Math.max(
@@ -339,76 +240,66 @@ class BaseList<T extends {}> {
 		// Collect items to delete and their keys
 		for (let i = 0; i < actualDeleteCount; i++) {
 			const index = actualStart + i
-			const key = this.order[index]
+			const key = this.#order[index]
 			if (key) {
-				const signal = this.signals.get(key)
+				const signal = this.#composite.get(key)
 				if (signal) remove[key] = signal.get() as T
 			}
 		}
 
 		// Build new order: items before splice point
-		const newOrder = this.order.slice(0, actualStart)
+		const newOrder = this.#order.slice(0, actualStart)
 
 		// Add new items
 		for (const item of items) {
-			const key = this.generateKey(item)
+			const key = this.#generateKey(item)
 			newOrder.push(key)
 			add[key] = item as T
 		}
 
 		// Add items after splice point
-		newOrder.push(...this.order.slice(actualStart + actualDeleteCount))
-
-		// Update the order array
-		this.order = newOrder.filter(() => true) // Compact array
+		newOrder.push(...this.#order.slice(actualStart + actualDeleteCount))
 
 		const changed = !!(
 			Object.keys(add).length || Object.keys(remove).length
 		)
 
-		if (changed)
-			this.batchChanges({
+		if (changed) {
+			this.#composite.change({
 				add,
 				change: {} as Record<string, T>,
 				remove,
 				changed,
 			})
+			this.#order = newOrder.filter(() => true) // Update order array
+			notifyWatchers(this.#watchers)
+		}
 
-		notifyWatchers(this.watchers)
-
-		return Object.values(remove) as T[]
+		return Object.values(remove)
 	}
 
 	on<K extends keyof Notifications>(type: K, listener: Listener<K>): Cleanup {
-		this.listeners[type].add(listener)
-		if (type === 'change' && !this.ownWatchers.size) {
-			// Set up watchers for existing signals
-			this.batching = true
-			for (const [key, signal] of this.signals)
-				this.addOwnWatcher(key, signal)
+		if (type === 'sort') {
+			this.#listeners.sort.add(listener as Listener<'sort'>)
+			return () =>
+				this.#listeners.sort.delete(listener as Listener<'sort'>)
+		}
 
-			// Start watchers after setup is complete
-			for (const watcher of this.ownWatchers.values()) watcher()
-			this.batching = false
-		}
-		return () => {
-			this.listeners[type].delete(listener)
-			if (type === 'change' && !this.listeners.change.size) {
-				if (this.ownWatchers.size) {
-					for (const watcher of this.ownWatchers.values())
-						watcher.stop()
-					this.ownWatchers.clear()
-				}
-			}
-		}
+		// For other types, delegate to the composite
+		return this.#composite.on(
+			type,
+			listener as Listener<
+				keyof Pick<Notifications, 'add' | 'remove' | 'change'>
+			>,
+		)
 	}
 
-	deriveCollection<U extends {}>(
+	/* deriveCollection<U extends {}>(
 		callback: CollectionCallback<U, T extends UnknownArray ? T : never>,
 	): Collection<U> {
 		// @ts-expect-error proxy type issue
 		return createCollection(this, callback)
-	}
+	} */
 }
 
 /* === Functions === */
@@ -439,7 +330,10 @@ const createList = <T extends {}>(
 	// Return proxy for property access
 	return new Proxy(instance, {
 		get(target, prop) {
-			if (prop in target) return Reflect.get(target, prop)
+			if (prop in target) {
+				const value = Reflect.get(target, prop)
+				return isFunction(value) ? value.bind(target) : value
+			}
 			return !isSymbol(prop) ? getSignal(prop) : undefined
 		},
 		has(target, prop) {

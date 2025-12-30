@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'bun:test'
-import { createComputed, createState, resolve, UNSET } from '..'
+import { Memo, resolve, State, Task, UNSET } from '../index.ts'
 
 /* === Tests === */
 
 describe('Resolve Function', () => {
 	test('should return discriminated union for successful resolution', () => {
-		const a = createState(10)
-		const b = createState('hello')
+		const a = new State(10)
+		const b = new State('hello')
 
 		const result = resolve({ a, b })
 
@@ -20,8 +20,8 @@ describe('Resolve Function', () => {
 	})
 
 	test('should return discriminated union for pending signals', () => {
-		const a = createState(10)
-		const b = createState(UNSET)
+		const a = new State(10)
+		const b = new State(UNSET)
 
 		const result = resolve({ a, b })
 
@@ -32,8 +32,8 @@ describe('Resolve Function', () => {
 	})
 
 	test('should return discriminated union for error signals', () => {
-		const a = createState(10)
-		const b = createComputed(() => {
+		const a = new State(10)
+		const b = new Memo(() => {
 			throw new Error('Test error')
 		})
 
@@ -49,11 +49,11 @@ describe('Resolve Function', () => {
 	})
 
 	test('should handle mixed error and valid signals', () => {
-		const valid = createState('valid')
-		const error1 = createComputed(() => {
+		const valid = new State('valid')
+		const error1 = new Memo(() => {
 			throw new Error('Error 1')
 		})
-		const error2 = createComputed(() => {
+		const error2 = new Memo(() => {
 			throw new Error('Error 2')
 		})
 
@@ -69,8 +69,8 @@ describe('Resolve Function', () => {
 	})
 
 	test('should prioritize pending over errors', () => {
-		const pending = createState(UNSET)
-		const error = createComputed(() => {
+		const pending = new State(UNSET)
+		const error = new Memo(() => {
 			throw new Error('Test error')
 		})
 
@@ -91,8 +91,8 @@ describe('Resolve Function', () => {
 	})
 
 	test('should handle complex nested object signals', () => {
-		const user = createState({ name: 'Alice', age: 25 })
-		const settings = createState({ theme: 'dark', lang: 'en' })
+		const user = new State({ name: 'Alice', age: 25 })
+		const settings = new State({ theme: 'dark', lang: 'en' })
 
 		const result = resolve({ user, settings })
 
@@ -109,7 +109,7 @@ describe('Resolve Function', () => {
 		const wait = (ms: number) =>
 			new Promise(resolve => setTimeout(resolve, ms))
 
-		const asyncSignal = createComputed(async () => {
+		const asyncSignal = new Task(async () => {
 			await wait(10)
 			return 'async result'
 		})
@@ -124,16 +124,14 @@ describe('Resolve Function', () => {
 
 		result = resolve({ asyncSignal })
 		expect(result.ok).toBe(true)
-		if (result.ok) {
-			expect(result.values.asyncSignal).toBe('async result')
-		}
+		if (result.ok) expect(result.values.asyncSignal).toBe('async result')
 	})
 
 	test('should handle async computed signals that error', async () => {
 		const wait = (ms: number) =>
 			new Promise(resolve => setTimeout(resolve, ms))
 
-		const asyncError = createComputed(async () => {
+		const asyncError = new Task(async () => {
 			await wait(10)
 			throw new Error('Async error')
 		})

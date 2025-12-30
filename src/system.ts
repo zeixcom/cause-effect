@@ -29,7 +29,7 @@ type Listeners = {
 let activeWatcher: Watcher | undefined
 
 // Queue of pending watcher reactions for batched change notifications
-const pendingReactions = new Set<Watcher>()
+const pendingReactions = new Set<() => void>()
 let batchDepth = 0
 
 /* === Functions === */
@@ -64,9 +64,7 @@ const createWatcher = (react: () => void): Watcher => {
 const subscribeActiveWatcher = (watchers: Set<Watcher>) => {
 	if (activeWatcher && !watchers.has(activeWatcher)) {
 		const watcher = activeWatcher
-		watcher.onCleanup(() => {
-			watchers.delete(watcher)
-		})
+		watcher.onCleanup(() => watchers.delete(watcher))
 		watchers.add(watcher)
 	}
 }
@@ -97,12 +95,12 @@ const flushPendingReactions = () => {
 /**
  * Batch multiple signal writes
  *
- * @param {() => void} setSignals - Function with multiple signal writes to be batched
+ * @param {() => void} callback - Function with multiple signal writes to be batched
  */
-const batchSignalWrites = (setSignals: () => void) => {
+const batchSignalWrites = (callback: () => void) => {
 	batchDepth++
 	try {
-		setSignals()
+		callback()
 	} finally {
 		flushPendingReactions()
 		batchDepth--
@@ -131,13 +129,16 @@ const trackSignalReads = (watcher: Watcher | false, run: () => void): void => {
  * Emit a notification to listeners
  *
  * @param {Set<Listener>} listeners - Listeners to be notified
- * @param {Notifications[keyof Notifications]} payload - Payload to be sent to listeners
+ * @param {Notifications[K]} payload - Payload to be sent to listeners
  */
 const emitNotification = <T extends keyof Notifications>(
 	listeners: Set<Listener<T>>,
 	payload: Notifications[T],
 ) => {
-	for (const listener of listeners) listener(payload)
+	for (const listener of listeners) {
+		if (batchDepth) pendingReactions.add(() => listener(payload))
+		else listener(payload)
+	}
 }
 
 /* === Exports === */

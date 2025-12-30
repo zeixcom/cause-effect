@@ -3,12 +3,11 @@ import { type List } from './classes/list';
 import { State } from './classes/state';
 import { type Store } from './classes/store';
 import type { UnknownRecord } from './diff';
-import type { Collection } from './signals/collection';
 type Signal<T extends {}> = {
     get(): T;
 };
 type MutableSignal<T extends {}> = T extends readonly (infer U extends {})[] ? List<U> : T extends Record<string, unknown> ? Store<T & Record<string, unknown & {}>> : State<T>;
-type ReadonlySignal<T extends {}> = Computed<T> | Collection<T>;
+type ReadonlySignal<T extends {}> = Computed<T>;
 type UnknownSignalRecord = Record<string, Signal<unknown & {}>>;
 type SignalValues<S extends UnknownSignalRecord> = {
     [K in keyof S]: S[K] extends Signal<infer T> ? T : never;

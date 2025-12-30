@@ -1,60 +1,3 @@
-// src/util.ts
-var UNSET = Symbol();
-var isString = (value) => typeof value === "string";
-var isNumber = (value) => typeof value === "number";
-var isSymbol = (value) => typeof value === "symbol";
-var isFunction = (fn) => typeof fn === "function";
-var isAsyncFunction = (fn) => isFunction(fn) && fn.constructor.name === "AsyncFunction";
-var isSyncFunction = (fn) => isFunction(fn) && fn.constructor.name !== "AsyncFunction";
-var isNonNullObject = (value) => value != null && typeof value === "object";
-var isObjectOfType = (value, type) => Object.prototype.toString.call(value) === `[object ${type}]`;
-var isRecord = (value) => isObjectOfType(value, "Object");
-var isRecordOrArray = (value) => isRecord(value) || Array.isArray(value);
-var isUniformArray = (value, guard = (item) => item != null) => Array.isArray(value) && value.every(guard);
-var isAbortError = (error) => error instanceof DOMException && error.name === "AbortError";
-var toError = (reason) => reason instanceof Error ? reason : Error(String(reason));
-var valueString = (value) => isString(value) ? `"${value}"` : !!value && typeof value === "object" ? JSON.stringify(value) : String(value);
-
-// src/match.ts
-function match(result, handlers) {
-  try {
-    if (result.pending)
-      handlers.nil?.();
-    else if (result.errors)
-      handlers.err?.(result.errors);
-    else if (result.ok)
-      handlers.ok(result.values);
-  } catch (error) {
-    if (handlers.err && (!result.errors || !result.errors.includes(toError(error))))
-      handlers.err(result.errors ? [...result.errors, toError(error)] : [toError(error)]);
-    else
-      throw error;
-  }
-}
-
-// src/resolve.ts
-function resolve(signals) {
-  const errors = [];
-  let pending = false;
-  const values = {};
-  for (const [key, signal] of Object.entries(signals)) {
-    try {
-      const value = signal.get();
-      if (value === UNSET)
-        pending = true;
-      else
-        values[key] = value;
-    } catch (e) {
-      errors.push(toError(e));
-    }
-  }
-  if (pending)
-    return { ok: false, pending: true };
-  if (errors.length > 0)
-    return { ok: false, errors };
-  return { ok: true, values };
-}
-
 // src/system.ts
 var activeWatcher;
 var pendingReactions = new Set;
@@ -75,9 +18,7 @@ var createWatcher = (react) => {
 var subscribeActiveWatcher = (watchers) => {
   if (activeWatcher && !watchers.has(activeWatcher)) {
     const watcher = activeWatcher;
-    watcher.onCleanup(() => {
-      watchers.delete(watcher);
-    });
+    watcher.onCleanup(() => watchers.delete(watcher));
     watchers.add(watcher);
   }
 };
@@ -97,10 +38,10 @@ var flushPendingReactions = () => {
       watcher();
   }
 };
-var batchSignalWrites = (setSignals) => {
+var batchSignalWrites = (callback) => {
   batchDepth++;
   try {
-    setSignals();
+    callback();
   } finally {
     flushPendingReactions();
     batchDepth--;
@@ -116,447 +57,205 @@ var trackSignalReads = (watcher, run) => {
   }
 };
 var emitNotification = (listeners, payload) => {
-  for (const listener of listeners)
-    listener(payload);
+  for (const listener of listeners) {
+    if (batchDepth)
+      pendingReactions.add(() => listener(payload));
+    else
+      listener(payload);
+  }
 };
 
-// src/signals/computed.ts
-var TYPE_COMPUTED = "Computed";
-var createComputed = (callback, initialValue = UNSET) => {
-  if (!isComputedCallback(callback))
-    throw new InvalidCallbackError("computed", callback);
-  if (initialValue == null)
-    throw new NullishSignalValueError("computed");
-  const watchers = new Set;
-  let value = initialValue;
-  let error;
-  let controller;
-  let dirty = true;
-  let changed = false;
-  let computing = false;
-  const ok = (v) => {
-    if (!isEqual(v, value)) {
-      value = v;
-      changed = true;
-    }
-    error = undefined;
-    dirty = false;
-  };
-  const nil = () => {
-    changed = UNSET !== value;
-    value = UNSET;
-    error = undefined;
-  };
-  const err = (e) => {
-    const newError = toError(e);
-    changed = !error || newError.name !== error.name || newError.message !== error.message;
-    value = UNSET;
-    error = newError;
-  };
-  const settle = (fn) => (arg) => {
-    computing = false;
-    controller = undefined;
-    fn(arg);
-    if (changed)
-      notifyWatchers(watchers);
-  };
-  const watcher = createWatcher(() => {
-    dirty = true;
-    controller?.abort();
-    if (watchers.size)
-      notifyWatchers(watchers);
-    else
-      watcher.stop();
-  });
-  watcher.onCleanup(() => {
-    controller?.abort();
-  });
-  const compute = () => trackSignalReads(watcher, () => {
-    if (computing)
-      throw new CircularDependencyError("computed");
-    changed = false;
-    if (isAsyncFunction(callback)) {
-      if (controller)
-        return value;
-      controller = new AbortController;
-      controller.signal.addEventListener("abort", () => {
-        computing = false;
-        controller = undefined;
-        compute();
-      }, {
-        once: true
-      });
-    }
-    let result;
-    computing = true;
-    try {
-      result = controller ? callback(value, controller.signal) : callback(value);
-    } catch (e) {
-      if (isAbortError(e))
-        nil();
-      else
-        err(e);
-      computing = false;
-      return;
-    }
-    if (result instanceof Promise)
-      result.then(settle(ok), settle(err));
-    else if (result == null || UNSET === result)
-      nil();
-    else
-      ok(result);
-    computing = false;
-  });
-  const computed = {};
-  Object.defineProperties(computed, {
-    [Symbol.toStringTag]: {
-      value: TYPE_COMPUTED
-    },
-    get: {
-      value: () => {
-        subscribeActiveWatcher(watchers);
-        flushPendingReactions();
-        if (dirty)
-          compute();
-        if (error)
-          throw error;
-        return value;
-      }
-    }
-  });
-  return computed;
-};
-var isComputedCallback = (value) => isFunction(value) && value.length < 3;
+// src/util.ts
+var UNSET = Symbol();
+var isString = (value) => typeof value === "string";
+var isNumber = (value) => typeof value === "number";
+var isSymbol = (value) => typeof value === "symbol";
+var isFunction = (fn) => typeof fn === "function";
+var isAsyncFunction = (fn) => isFunction(fn) && fn.constructor.name === "AsyncFunction";
+var isSyncFunction = (fn) => isFunction(fn) && fn.constructor.name !== "AsyncFunction";
+var isNonNullObject = (value) => value != null && typeof value === "object";
+var isObjectOfType = (value, type) => Object.prototype.toString.call(value) === `[object ${type}]`;
+var isRecord = (value) => isObjectOfType(value, "Object");
+var isRecordOrArray = (value) => isRecord(value) || Array.isArray(value);
+var isUniformArray = (value, guard = (item) => item != null) => Array.isArray(value) && value.every(guard);
+var isAbortError = (error) => error instanceof DOMException && error.name === "AbortError";
+var toError = (reason) => reason instanceof Error ? reason : Error(String(reason));
+var valueString = (value) => isString(value) ? `"${value}"` : !!value && typeof value === "object" ? JSON.stringify(value) : String(value);
 
-// src/signals/collection.ts
-var TYPE_COLLECTION = "Collection";
-var createCollection = (origin, callback) => {
-  const watchers = new Set;
-  const listeners = {
+// src/classes/composite.ts
+class MutableComposite {
+  #validate;
+  #signals = new Map;
+  #watchers = new Map;
+  #listeners = {
     add: new Set,
     change: new Set,
-    remove: new Set,
-    sort: new Set
+    remove: new Set
   };
-  const signals = new Map;
-  const signalWatchers = new Map;
-  let order = [];
-  const addProperty = (key) => {
-    const computedCallback = isAsyncFunction(callback) ? async (_, abort) => {
-      const originSignal = origin.byKey(key);
-      if (!originSignal)
-        return UNSET;
-      let result = UNSET;
-      match(resolve({ originSignal }), {
-        ok: async ({ originSignal: originValue }) => {
-          result = await callback(originValue, abort);
-        },
-        err: (errors) => {
-          console.log(errors);
-        }
+  #batching = false;
+  constructor(values, validate) {
+    this.#validate = validate;
+    this.change({
+      add: values,
+      change: {},
+      remove: {},
+      changed: true
+    }, true);
+  }
+  #addWatcher(key) {
+    const watcher = createWatcher(() => {
+      trackSignalReads(watcher, () => {
+        this.#signals.get(key)?.get();
+        if (!this.#batching)
+          emitNotification(this.#listeners.change, [key]);
       });
-      return result;
-    } : () => {
-      const originSignal = origin.byKey(key);
-      if (!originSignal)
-        return UNSET;
-      let result = UNSET;
-      match(resolve({ originSignal }), {
-        ok: ({ originSignal: originValue }) => {
-          result = callback(originValue);
-        },
-        err: (errors) => {
-          console.log(errors);
-        }
-      });
-      return result;
-    };
-    const signal = createComputed(computedCallback);
-    signals.set(key, signal);
-    if (!order.includes(key))
-      order.push(key);
-    const watcher = createWatcher(() => trackSignalReads(watcher, () => {
-      signal.get();
-      emitNotification(listeners.change, [key]);
-    }));
+    });
+    this.#watchers.set(key, watcher);
     watcher();
-    signalWatchers.set(key, watcher);
-    return true;
-  };
-  const removeProperty = (key) => {
-    const ok = signals.delete(key);
-    if (!ok)
-      return;
-    const index = order.indexOf(key);
-    if (index >= 0)
-      order.splice(index, 1);
-    const watcher = signalWatchers.get(key);
+  }
+  #removeWatcher(key) {
+    const watcher = this.#watchers.get(key);
     if (watcher) {
       watcher.stop();
-      signalWatchers.delete(key);
+      this.#watchers.delete(key);
     }
-  };
-  for (let i = 0;i < origin.length; i++) {
-    const key = origin.keyAt(i);
-    if (!key)
-      continue;
-    addProperty(key);
   }
-  origin.on("add", (additions) => {
-    for (const key of additions) {
-      if (!signals.has(key))
-        addProperty(key);
+  keys() {
+    return this.#signals.keys();
+  }
+  values() {
+    return this.#signals.values();
+  }
+  entries() {
+    return this.#signals.entries();
+  }
+  has(key) {
+    return this.#signals.has(key);
+  }
+  get(key) {
+    return this.#signals.get(key);
+  }
+  add(key, value) {
+    if (!this.#validate(key, value))
+      return false;
+    const signal = createMutableSignal(value);
+    this.#signals.set(key, signal);
+    if (this.#listeners.change.size)
+      this.#addWatcher(key);
+    if (!this.#batching)
+      emitNotification(this.#listeners.add, [key]);
+    return true;
+  }
+  remove(key) {
+    const ok = this.#signals.delete(key);
+    if (!ok)
+      return false;
+    this.#removeWatcher(key);
+    if (!this.#batching)
+      emitNotification(this.#listeners.remove, [key]);
+    return true;
+  }
+  change(changes, initialRun) {
+    this.#batching = true;
+    if (Object.keys(changes.add).length) {
+      for (const key in changes.add)
+        this.add(key, changes.add[key]);
+      const notify = () => emitNotification(this.#listeners.add, Object.keys(changes.add));
+      if (initialRun)
+        setTimeout(notify, 0);
+      else
+        notify();
     }
-    notifyWatchers(watchers);
-    emitNotification(listeners.add, additions);
-  });
-  origin.on("remove", (removals) => {
-    for (const key of Object.keys(removals)) {
-      if (!signals.has(key))
-        continue;
-      removeProperty(key);
+    if (Object.keys(changes.change).length) {
+      batchSignalWrites(() => {
+        for (const key in changes.change) {
+          const value = changes.change[key];
+          if (!this.#validate(key, value))
+            continue;
+          const signal = this.#signals.get(key);
+          if (guardMutableSignal(`list item "${key}"`, value, signal))
+            signal.set(value);
+        }
+      });
+      emitNotification(this.#listeners.change, Object.keys(changes.change));
     }
-    order = order.filter(() => true);
-    notifyWatchers(watchers);
-    emitNotification(listeners.remove, removals);
-  });
-  origin.on("sort", (newOrder) => {
-    order = [...newOrder];
-    notifyWatchers(watchers);
-    emitNotification(listeners.sort, newOrder);
-  });
-  const getSignal = (prop) => {
-    let key = prop;
-    const index = Number(prop);
-    if (Number.isInteger(index) && index >= 0)
-      key = order[index] ?? prop;
-    return signals.get(key);
-  };
-  const current = () => order.map((key) => signals.get(key)?.get()).filter((v) => v !== UNSET);
-  const collection = {};
-  Object.defineProperties(collection, {
-    [Symbol.toStringTag]: {
-      value: TYPE_COLLECTION
-    },
-    [Symbol.isConcatSpreadable]: {
-      value: true
-    },
-    [Symbol.iterator]: {
-      value: function* () {
-        for (const key of order) {
-          const signal = signals.get(key);
-          if (signal)
-            yield signal;
+    if (Object.keys(changes.remove).length) {
+      for (const key in changes.remove)
+        this.remove(key);
+      emitNotification(this.#listeners.remove, Object.keys(changes.remove));
+    }
+    this.#batching = false;
+    return changes.changed;
+  }
+  clear() {
+    const keys = Array.from(this.#signals.keys());
+    this.#signals.clear();
+    this.#watchers.clear();
+    emitNotification(this.#listeners.remove, keys);
+    return true;
+  }
+  on(type, listener) {
+    this.#listeners[type].add(listener);
+    if (type === "change" && !this.#watchers.size) {
+      this.#batching = true;
+      for (const key of this.#signals.keys())
+        this.#addWatcher(key);
+      this.#batching = false;
+    }
+    return () => {
+      this.#listeners[type].delete(listener);
+      if (type === "change" && !this.#listeners.change.size) {
+        if (this.#watchers.size) {
+          for (const watcher of this.#watchers.values())
+            watcher.stop();
+          this.#watchers.clear();
         }
       }
-    },
-    byKey: {
-      value(key) {
-        return getSignal(key);
-      }
-    },
-    keyAt: {
-      value(index) {
-        return order[index];
-      }
-    },
-    indexOfKey: {
-      value(key) {
-        return order.indexOf(key);
-      }
-    },
-    get: {
-      value: () => {
-        subscribeActiveWatcher(watchers);
-        return current();
-      }
-    },
-    sort: {
-      value: (compareFn) => {
-        const entries = order.map((key, index) => {
-          const signal = signals.get(key);
-          return [
-            index,
-            key,
-            signal ? signal.get() : undefined
-          ];
-        }).sort(compareFn ? (a, b) => compareFn(a[2], b[2]) : (a, b) => String(a[2]).localeCompare(String(b[2])));
-        order = entries.map(([_, key]) => key);
-        notifyWatchers(watchers);
-        emitNotification(listeners.sort, order);
-      }
-    },
-    on: {
-      value: (type, listener) => {
-        listeners[type].add(listener);
-        return () => listeners[type].delete(listener);
-      }
-    },
-    length: {
-      get() {
-        subscribeActiveWatcher(watchers);
-        return signals.size;
-      }
-    }
-  });
-  return new Proxy(collection, {
-    get(target, prop) {
-      if (prop in target)
-        return Reflect.get(target, prop);
-      if (!isSymbol(prop))
-        return getSignal(prop);
-    },
-    has(target, prop) {
-      if (prop in target)
-        return true;
-      return signals.has(String(prop));
-    },
-    ownKeys(target) {
-      const staticKeys = Reflect.ownKeys(target);
-      return [...new Set([...order, ...staticKeys])];
-    },
-    getOwnPropertyDescriptor(target, prop) {
-      if (prop in target)
-        return Reflect.getOwnPropertyDescriptor(target, prop);
-      if (isSymbol(prop))
-        return;
-      const signal = getSignal(prop);
-      return signal ? {
-        enumerable: true,
-        configurable: true,
-        writable: true,
-        value: signal
-      } : undefined;
-    }
-  });
-};
-var isCollection = (value) => isObjectOfType(value, TYPE_COLLECTION);
+    };
+  }
+}
 
 // src/classes/list.ts
 var TYPE_LIST = "List";
 
 class BaseList {
-  watchers = new Set;
-  listeners = {
-    add: new Set,
-    change: new Set,
-    remove: new Set,
+  #composite;
+  #watchers = new Set;
+  #listeners = {
     sort: new Set
   };
-  signals = new Map;
-  order = [];
-  ownWatchers = new Map;
-  batching = false;
+  #order = [];
   keyCounter = 0;
   keyConfig;
   constructor(initialValue, keyConfig) {
     validateSignalValue("list", initialValue, Array.isArray);
+    this.#composite = new MutableComposite(this.#toRecord(initialValue), (key, value) => {
+      validateSignalValue(`list for key "${key}"`, value);
+      return true;
+    });
     this.keyConfig = keyConfig;
-    this.reconcile([], initialValue, true);
   }
-  generateKey(item) {
+  #generateKey(item) {
     const id = this.keyCounter++;
     return isString(this.keyConfig) ? `${this.keyConfig}${id}` : isFunction(this.keyConfig) ? this.keyConfig(item) : String(id);
   }
-  arrayToRecord(array) {
+  #toRecord(array) {
     const record = {};
     for (let i = 0;i < array.length; i++) {
       const value = array[i];
       if (value === undefined)
         continue;
-      let key = this.order[i];
+      let key = this.#order[i];
       if (!key) {
-        key = this.generateKey(value);
-        this.order[i] = key;
+        key = this.#generateKey(value);
+        this.#order[i] = key;
       }
       record[key] = value;
     }
     return record;
   }
-  isValidValue(key, value) {
-    validateSignalValue(`list for key "${key}"`, value);
-    return true;
-  }
-  addOwnWatcher(key, signal) {
-    const watcher = createWatcher(() => {
-      trackSignalReads(watcher, () => {
-        signal.get();
-        if (!this.batching)
-          emitNotification(this.listeners.change, [key]);
-      });
-    });
-    this.ownWatchers.set(key, watcher);
-    watcher();
-  }
-  addProperty(key, value, single = false) {
-    if (!this.isValidValue(key, value))
-      return false;
-    const signal = createMutableSignal(value);
-    this.signals.set(key, signal);
-    if (!this.order.includes(key))
-      this.order.push(key);
-    if (this.listeners.change.size)
-      this.addOwnWatcher(key, signal);
-    if (single) {
-      notifyWatchers(this.watchers);
-      emitNotification(this.listeners.add, [key]);
-    }
-    return true;
-  }
-  removeProperty(key, single = false) {
-    const ok = this.signals.delete(key);
-    if (!ok)
-      return;
-    const index = this.order.indexOf(key);
-    if (index >= 0)
-      this.order.splice(index, 1);
-    const watcher = this.ownWatchers.get(key);
-    if (watcher) {
-      watcher.stop();
-      this.ownWatchers.delete(key);
-    }
-    if (single) {
-      this.order = this.order.filter(() => true);
-      notifyWatchers(this.watchers);
-      emitNotification(this.listeners.remove, [key]);
-    }
-  }
-  batchChanges(changes, initialRun) {
-    if (Object.keys(changes.add).length) {
-      for (const key in changes.add)
-        this.addProperty(key, changes.add[key], false);
-      if (initialRun)
-        setTimeout(() => {
-          emitNotification(this.listeners.add, Object.keys(changes.add));
-        }, 0);
-      else
-        emitNotification(this.listeners.add, Object.keys(changes.add));
-    }
-    if (Object.keys(changes.change).length) {
-      this.batching = true;
-      batchSignalWrites(() => {
-        for (const key in changes.change) {
-          const value = changes.change[key];
-          if (!this.isValidValue(key, value))
-            continue;
-          const signal = this.signals.get(key);
-          if (guardMutableSignal(`list item "${key}"`, value, signal))
-            signal.set(value);
-        }
-      });
-      this.batching = false;
-      emitNotification(this.listeners.change, Object.keys(changes.change));
-    }
-    if (Object.keys(changes.remove).length) {
-      for (const key in changes.remove)
-        this.removeProperty(key);
-      this.order = this.order.filter(() => true);
-      emitNotification(this.listeners.remove, Object.keys(changes.remove));
-    }
-    return changes.changed;
-  }
-  reconcile(oldValue, newValue, initialRun) {
-    return this.batchChanges(diff(this.arrayToRecord(oldValue), this.arrayToRecord(newValue)), initialRun);
+  get #value() {
+    return this.#order.map((key) => this.#composite.get(key)?.get()).filter((v) => v !== undefined);
   }
   get [Symbol.toStringTag]() {
     return TYPE_LIST;
@@ -565,124 +264,131 @@ class BaseList {
     return true;
   }
   *[Symbol.iterator]() {
-    for (const key of this.order) {
-      const signal = this.signals.get(key);
+    for (const key of this.#order) {
+      const signal = this.#composite.get(key);
       if (signal)
         yield signal;
     }
   }
   get length() {
-    subscribeActiveWatcher(this.watchers);
-    return this.signals.size;
+    subscribeActiveWatcher(this.#watchers);
+    return this.#order.length;
   }
   get() {
-    subscribeActiveWatcher(this.watchers);
-    return this.order.map((key) => this.signals.get(key)?.get()).filter((v) => v !== undefined);
+    subscribeActiveWatcher(this.#watchers);
+    return this.#value;
   }
   set(newValue) {
-    if (this.reconcile(this.get(), newValue)) {
-      notifyWatchers(this.watchers);
-      if (UNSET === newValue)
-        this.watchers.clear();
+    if (UNSET === newValue) {
+      this.#composite.clear();
+      notifyWatchers(this.#watchers);
+      this.#watchers.clear();
+      return;
+    }
+    const oldValue = this.#value;
+    const changes = diff(this.#toRecord(oldValue), this.#toRecord(newValue));
+    const removedKeys = Object.keys(changes.remove);
+    const changed = this.#composite.change(changes);
+    if (changed) {
+      for (const key of removedKeys) {
+        const index = this.#order.indexOf(key);
+        if (index !== -1)
+          this.#order.splice(index, 1);
+      }
+      this.#order = this.#order.filter(() => true);
+      notifyWatchers(this.#watchers);
     }
   }
   update(fn) {
     this.set(fn(this.get()));
   }
   at(index) {
-    return this.signals.get(this.order[index]);
+    return this.#composite.get(this.#order[index]);
   }
   keys() {
-    return this.order.values();
+    return this.#order.values();
   }
   byKey(key) {
-    return this.signals.get(key);
+    return this.#composite.get(key);
   }
   keyAt(index) {
-    return this.order[index];
+    return this.#order[index];
   }
   indexOfKey(key) {
-    return this.order.indexOf(key);
+    return this.#order.indexOf(key);
   }
   add(value) {
-    const key = this.generateKey(value);
-    if (!this.signals.has(key)) {
-      this.addProperty(key, value, true);
-      return key;
-    } else
+    const key = this.#generateKey(value);
+    if (this.#composite.has(key))
       throw new DuplicateKeyError("store", key, value);
+    if (!this.#order.includes(key))
+      this.#order.push(key);
+    const ok = this.#composite.add(key, value);
+    if (ok)
+      notifyWatchers(this.#watchers);
+    return key;
   }
   remove(keyOrIndex) {
-    const key = isNumber(keyOrIndex) ? this.order[keyOrIndex] : keyOrIndex;
-    if (key && this.signals.has(key))
-      this.removeProperty(key, true);
+    const key = isNumber(keyOrIndex) ? this.#order[keyOrIndex] : keyOrIndex;
+    const ok = this.#composite.remove(key);
+    if (ok) {
+      const index = isNumber(keyOrIndex) ? keyOrIndex : this.#order.indexOf(key);
+      if (index >= 0)
+        this.#order.splice(index, 1);
+      this.#order = this.#order.filter(() => true);
+      notifyWatchers(this.#watchers);
+    }
   }
   sort(compareFn) {
-    const entries = this.order.map((key) => [key, this.signals.get(key)?.get()]).sort(isFunction(compareFn) ? (a, b) => compareFn(a[1], b[1]) : (a, b) => String(a[1]).localeCompare(String(b[1])));
+    const entries = this.#order.map((key) => [key, this.#composite.get(key)?.get()]).sort(isFunction(compareFn) ? (a, b) => compareFn(a[1], b[1]) : (a, b) => String(a[1]).localeCompare(String(b[1])));
     const newOrder = entries.map(([key]) => key);
-    if (!isEqual(this.order, newOrder)) {
-      this.order = newOrder;
-      notifyWatchers(this.watchers);
-      emitNotification(this.listeners.sort, this.order);
+    if (!isEqual(this.#order, newOrder)) {
+      this.#order = newOrder;
+      notifyWatchers(this.#watchers);
+      emitNotification(this.#listeners.sort, this.#order);
     }
   }
   splice(start, deleteCount, ...items) {
-    const length = this.signals.size;
+    const length = this.#order.length;
     const actualStart = start < 0 ? Math.max(0, length + start) : Math.min(start, length);
     const actualDeleteCount = Math.max(0, Math.min(deleteCount ?? Math.max(0, length - Math.max(0, actualStart)), length - actualStart));
     const add = {};
     const remove = {};
     for (let i = 0;i < actualDeleteCount; i++) {
       const index = actualStart + i;
-      const key = this.order[index];
+      const key = this.#order[index];
       if (key) {
-        const signal = this.signals.get(key);
+        const signal = this.#composite.get(key);
         if (signal)
           remove[key] = signal.get();
       }
     }
-    const newOrder = this.order.slice(0, actualStart);
+    const newOrder = this.#order.slice(0, actualStart);
     for (const item of items) {
-      const key = this.generateKey(item);
+      const key = this.#generateKey(item);
       newOrder.push(key);
       add[key] = item;
     }
-    newOrder.push(...this.order.slice(actualStart + actualDeleteCount));
-    this.order = newOrder.filter(() => true);
+    newOrder.push(...this.#order.slice(actualStart + actualDeleteCount));
     const changed = !!(Object.keys(add).length || Object.keys(remove).length);
-    if (changed)
-      this.batchChanges({
+    if (changed) {
+      this.#composite.change({
         add,
         change: {},
         remove,
         changed
       });
-    notifyWatchers(this.watchers);
+      this.#order = newOrder.filter(() => true);
+      notifyWatchers(this.#watchers);
+    }
     return Object.values(remove);
   }
   on(type, listener) {
-    this.listeners[type].add(listener);
-    if (type === "change" && !this.ownWatchers.size) {
-      this.batching = true;
-      for (const [key, signal] of this.signals)
-        this.addOwnWatcher(key, signal);
-      for (const watcher of this.ownWatchers.values())
-        watcher();
-      this.batching = false;
+    if (type === "sort") {
+      this.#listeners.sort.add(listener);
+      return () => this.#listeners.sort.delete(listener);
     }
-    return () => {
-      this.listeners[type].delete(listener);
-      if (type === "change" && !this.listeners.change.size) {
-        if (this.ownWatchers.size) {
-          for (const watcher of this.ownWatchers.values())
-            watcher.stop();
-          this.ownWatchers.clear();
-        }
-      }
-    };
-  }
-  deriveCollection(callback) {
-    return createCollection(this, callback);
+    return this.#composite.on(type, listener);
   }
 }
 var createList = (initialValue, keyConfig) => {
@@ -693,8 +399,10 @@ var createList = (initialValue, keyConfig) => {
   };
   return new Proxy(instance, {
     get(target, prop) {
-      if (prop in target)
-        return Reflect.get(target, prop);
+      if (prop in target) {
+        const value = Reflect.get(target, prop);
+        return isFunction(value) ? value.bind(target) : value;
+      }
       return !isSymbol(prop) ? getSignal(prop) : undefined;
     },
     has(target, prop) {
@@ -770,95 +478,20 @@ var isState = (value) => isObjectOfType(value, TYPE_STATE);
 var TYPE_STORE = "Store";
 
 class BaseStore {
-  watchers = new Set;
-  listeners = {
-    add: new Set,
-    change: new Set,
-    remove: new Set
-  };
-  signals = new Map;
-  ownWatchers = new Map;
-  batching = false;
+  #composite;
+  #watchers = new Set;
   constructor(initialValue) {
     validateSignalValue("store", initialValue, isRecord);
-    this.reconcile({}, initialValue, true);
-  }
-  isValidValue(key, value) {
-    validateSignalValue(`store for key "${key}"`, value);
-    return true;
-  }
-  addOwnWatcher(key, signal) {
-    const watcher = createWatcher(() => {
-      trackSignalReads(watcher, () => {
-        signal.get();
-        if (!this.batching)
-          emitNotification(this.listeners.change, [key]);
-      });
+    this.#composite = new MutableComposite(initialValue, (key, value) => {
+      validateSignalValue(`store for key "${key}"`, value);
+      return true;
     });
-    this.ownWatchers.set(key, watcher);
-    watcher();
   }
-  addProperty(key, value, single = false) {
-    validateSignalValue(`store for key "${key}"`, value);
-    const signal = createMutableSignal(value);
-    this.signals.set(key, signal);
-    if (this.listeners.change.size)
-      this.addOwnWatcher(key, signal);
-    if (single) {
-      notifyWatchers(this.watchers);
-      emitNotification(this.listeners.add, [key]);
-    }
-    return true;
-  }
-  removeProperty(key, single = false) {
-    const ok = this.signals.delete(key);
-    if (!ok)
-      return;
-    const watcher = this.ownWatchers.get(key);
-    if (watcher) {
-      watcher.stop();
-      this.ownWatchers.delete(key);
-    }
-    if (single) {
-      notifyWatchers(this.watchers);
-      emitNotification(this.listeners.remove, [key]);
-    }
-  }
-  batchChanges(changes, initialRun) {
-    if (Object.keys(changes.add).length) {
-      for (const key in changes.add)
-        this.addProperty(key, changes.add[key], false);
-      if (initialRun)
-        setTimeout(() => {
-          emitNotification(this.listeners.add, Object.keys(changes.add));
-        }, 0);
-      else
-        emitNotification(this.listeners.add, Object.keys(changes.add));
-    }
-    if (Object.keys(changes.change).length) {
-      this.batching = true;
-      batchSignalWrites(() => {
-        for (const key in changes.change) {
-          const value = changes.change[key];
-          if (!this.isValidValue(key, value))
-            continue;
-          const signal = this.signals.get(key);
-          if (guardMutableSignal(`store key "${key}"`, value, signal))
-            signal.set(value);
-        }
-      });
-      this.batching = false;
-      emitNotification(this.listeners.change, Object.keys(changes.change));
-    }
-    if (Object.keys(changes.remove).length) {
-      for (const key in changes.remove)
-        this.removeProperty(key);
-      emitNotification(this.listeners.remove, Object.keys(changes.remove));
-    }
-    return changes.changed;
-  }
-  reconcile(oldValue, newValue, initialRun) {
-    return this.batchChanges(diff(oldValue, newValue), initialRun);
+  get #value() {
+    const record = {};
+    for (const [key, signal] of this.#composite.entries())
+      record[key] = signal.get();
+    return record;
   }
   get [Symbol.toStringTag]() {
     return TYPE_STORE;
@@ -867,70 +500,59 @@ class BaseStore {
     return false;
   }
   *[Symbol.iterator]() {
-    for (const [key, signal] of this.signals)
+    for (const [key, signal] of this.#composite.entries())
       yield [key, signal];
   }
   get() {
-    subscribeActiveWatcher(this.watchers);
-    const record = {};
-    for (const [key, signal] of this.signals)
-      record[key] = signal.get();
-    return record;
+    subscribeActiveWatcher(this.#watchers);
+    return this.#value;
   }
   set(newValue) {
-    if (this.reconcile(this.get(), newValue)) {
-      notifyWatchers(this.watchers);
-      if (UNSET === newValue)
-        this.watchers.clear();
+    if (UNSET === newValue) {
+      this.#composite.clear();
+      notifyWatchers(this.#watchers);
+      this.#watchers.clear();
+      return;
     }
+    const oldValue = this.#value;
+    const changed = this.#composite.change(diff(oldValue, newValue));
+    if (changed)
+      notifyWatchers(this.#watchers);
   }
   keys() {
-    return this.signals.keys();
+    return this.#composite.keys();
   }
   byKey(key) {
-    return this.signals.get(key);
+    return this.#composite.get(key);
   }
   update(fn) {
     this.set(fn(this.get()));
   }
   add(key, value) {
-    if (this.signals.has(key))
+    if (this.#composite.has(key))
       throw new DuplicateKeyError("store", key, value);
-    this.addProperty(key, value, true);
+    const ok = this.#composite.add(key, value);
+    if (ok)
+      notifyWatchers(this.#watchers);
     return key;
   }
   remove(key) {
-    if (this.signals.has(key))
-      this.removeProperty(key, true);
+    const ok = this.#composite.remove(key);
+    if (ok)
+      notifyWatchers(this.#watchers);
   }
   on(type, listener) {
-    this.listeners[type].add(listener);
-    if (type === "change" && !this.ownWatchers.size) {
-      this.batching = true;
-      for (const [key, signal] of this.signals)
-        this.addOwnWatcher(key, signal);
-      for (const watcher of this.ownWatchers.values())
-        watcher();
-      this.batching = false;
-    }
-    return () => {
-      this.listeners[type].delete(listener);
-      if (type === "change" && !this.listeners.change.size) {
-        if (this.ownWatchers.size) {
-          for (const watcher of this.ownWatchers.values())
-            watcher.stop();
-          this.ownWatchers.clear();
-        }
-      }
-    };
+    return this.#composite.on(type, listener);
   }
 }
 var createStore = (initialValue) => {
   const instance = new BaseStore(initialValue);
   return new Proxy(instance, {
     get(target, prop) {
-      if (prop in target)
-        return Reflect.get(target, prop);
+      if (prop in target) {
+        const value = Reflect.get(target, prop);
+        return isFunction(value) ? value.bind(target) : value;
+      }
       if (!isSymbol(prop))
         return target.byKey(prop);
     },
@@ -943,11 +565,10 @@ var createStore = (initialValue) => {
       return Array.from(target.keys());
     },
     getOwnPropertyDescriptor(target, prop) {
+      if (prop in target)
+        return Reflect.getOwnPropertyDescriptor(target, prop);
       if (isSymbol(prop))
         return;
-      if (prop in target) {
-        return Reflect.getOwnPropertyDescriptor(target, prop);
-      }
       const signal = target.byKey(String(prop));
       return signal ? {
         enumerable: true,
@@ -1128,7 +749,7 @@ var diff = (oldObj, newObj) => {
 };
 
 // src/classes/computed.ts
-var TYPE_COMPUTED2 = "Computed";
+var TYPE_COMPUTED = "Computed";
 
 class Memo {
   #watchers = new Set;
@@ -1152,7 +773,7 @@ class Memo {
     });
   }
   get [Symbol.toStringTag]() {
-    return TYPE_COMPUTED2;
+    return TYPE_COMPUTED;
   }
   get() {
     subscribeActiveWatcher(this.#watchers);
@@ -1216,7 +837,7 @@ class Task {
     });
   }
   get [Symbol.toStringTag]() {
-    return TYPE_COMPUTED2;
+    return TYPE_COMPUTED;
   }
   get() {
     subscribeActiveWatcher(this.#watchers);
@@ -1288,8 +909,8 @@ class Task {
     return this.#value;
   }
 }
-var createComputed2 = (callback, initialValue = UNSET) => isAsyncFunction(callback) ? new Task(callback, initialValue) : new Memo(callback, initialValue);
-var isComputed = (value) => isObjectOfType(value, TYPE_COMPUTED2);
+var createComputed = (callback, initialValue = UNSET) => isAsyncFunction(callback) ? new Task(callback, initialValue) : new Memo(callback, initialValue);
+var isComputed = (value) => isObjectOfType(value, TYPE_COMPUTED);
 var isMemoCallback = (value) => isSyncFunction(value) && value.length < 2;
 var isTaskCallback = (value) => isAsyncFunction(value) && value.length < 3;
 // src/effect.ts
@@ -1334,6 +955,44 @@ var createEffect = (callback) => {
     watcher.stop();
   };
 };
+// src/match.ts
+function match(result, handlers) {
+  try {
+    if (result.pending)
+      handlers.nil?.();
+    else if (result.errors)
+      handlers.err?.(result.errors);
+    else if (result.ok)
+      handlers.ok(result.values);
+  } catch (error) {
+    if (handlers.err && (!result.errors || !result.errors.includes(toError(error))))
+      handlers.err(result.errors ? [...result.errors, toError(error)] : [toError(error)]);
+    else
+      throw error;
+  }
+}
+// src/resolve.ts
+function resolve(signals) {
+  const errors = [];
+  let pending = false;
+  const values = {};
+  for (const [key, signal] of Object.entries(signals)) {
+    try {
+      const value = signal.get();
+      if (value === UNSET)
+        pending = true;
+      else
+        values[key] = value;
+    } catch (e) {
+      errors.push(toError(e));
+    }
+  }
+  if (pending)
+    return { ok: false, pending: true };
+  if (errors.length > 0)
+    return { ok: false, errors };
+  return { ok: true, values };
+}
 export {
   valueString,
   trackSignalReads,
@@ -1358,7 +1017,6 @@ export {
   isFunction,
   isEqual,
   isComputed,
-  isCollection,
   isAsyncFunction,
   isAbortError,
   flushPendingReactions,
@@ -1370,16 +1028,14 @@ export {
   createSignal,
   createList,
   createEffect,
-  createComputed2 as createComputed,
-  createCollection,
+  createComputed,
   batchSignalWrites,
   UNSET,
   Task,
   TYPE_STORE,
   TYPE_STATE,
   TYPE_LIST,
-  TYPE_COMPUTED2 as TYPE_COMPUTED,
-  TYPE_COLLECTION,
+  TYPE_COMPUTED,
   State,
   ReadonlySignalError,
   NullishSignalValueError,

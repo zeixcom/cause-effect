@@ -63,12 +63,12 @@ export {
 	type SignalValues,
 	type UnknownSignalRecord,
 } from './src/signal'
-export {
+/* export {
 	type Collection,
 	createCollection,
 	isCollection,
 	TYPE_COLLECTION,
-} from './src/signals/collection'
+} from './src/signals/collection' */
 export {
 	batchSignalWrites,
 	type Cleanup,
