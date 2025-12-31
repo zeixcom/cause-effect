@@ -1,46 +1,38 @@
-import { BaseCollection } from './store'
 import { type Computed, createComputed } from '../signals/computed'
-import type { UnknownArray } from '../diff'
-// import type { List } from './list'
-import { match } from '../match'
-import { resolve } from '../resolve'
-import type { Signal } from '../signal'
 import {
 	type Cleanup,
 	createWatcher,
-	emit,
-	type Notifications,
-	notify,
-	observe,
+	emitNotification,
+	type Listener,
+	type Listeners,
+	notifyWatchers,
+	subscribeActiveWatcher,
+	trackSignalReads,
+	type Watcher,
 } from '../system'
-import { isAsyncFunction, isObjectOfType, isSymbol, UNSET } from '../util'
+import {
+	isAsyncFunction,
+	isFunction,
+	isObjectOfType,
+	isSymbol,
+	UNSET,
+} from '../util'
+import type { BaseList, List } from './list'
 
 /* === Types === */
 
-type CollectionKeySignal<T extends {}> = T extends UnknownArray
-	? Collection<T>
-	: Computed<T>
+type CollectionSource<T extends {}> =
+	| List<T>
+	| BaseList<T>
+	| Collection<T, unknown & {}>
+	| BaseCollection<T, unknown & {}>
 
-type CollectionCallback<T extends {} & { then?: undefined }, O extends {}> =
-	| ((originValue: O, abort: AbortSignal) => Promise<T>)
-	| ((originValue: O) => T)
+type CollectionCallback<T extends {} & { then?: undefined }, U extends {}> =
+	| ((sourceValue: U) => T)
+	| ((sourceValue: U, abort: AbortSignal) => Promise<T>)
 
-type Collection<T extends {}> = {
-	readonly [Symbol.toStringTag]: typeof TYPE_COLLECTION
-	readonly [Symbol.isConcatSpreadable]: boolean
-	[Symbol.iterator](): IterableIterator<CollectionKeySignal<T>>
-	readonly [n: number]: CollectionKeySignal<T>
-	readonly length: number
-
-	byKey(key: string): CollectionKeySignal<T> | undefined
-	get(): T[]
-	keyAt(index: number): string | undefined
-	indexOfKey(key: string): number
-	on<K extends keyof Notifications>(
-		type: K,
-		listener: (payload: Notifications[K]) => void,
-	): Cleanup
-	sort(compareFn?: (a: T, b: T) => number): void
+type Collection<T extends {}, U extends {}> = BaseCollection<T, U> & {
+	[n: number]: Computed<T>
 }
 
 /* === Constants === */
@@ -49,11 +41,115 @@ const TYPE_COLLECTION = 'Collection' as const
 
 /* === Collection Implementation === */
 
-class CollectionImpl<T extends {}> extends BaseCollection<Record<string, T>> {
-	#origin: any | any // List<any> | Collection<any>
-	#callback: CollectionCallback<T, any>
+class BaseCollection<T extends {}, U extends {}> {
+	#watchers = new Set<Watcher>()
+	#source: CollectionSource<U>
+	#callback: CollectionCallback<T, U>
+	#signals = new Map<string, Computed<T>>()
+	#ownWatchers = new Map<string, Watcher>()
+	#listeners: Listeners = {
+		add: new Set<Listener<'add'>>(),
+		change: new Set<Listener<'change'>>(),
+		remove: new Set<Listener<'remove'>>(),
+		sort: new Set<Listener<'sort'>>(),
+	}
+	#order: string[] = []
 
-	get [Symbol.toStringTag](): string {
+	constructor(
+		source: CollectionSource<U>,
+		callback: CollectionCallback<T, U>,
+	) {
+		this.#source = source
+		this.#callback = callback
+
+		for (let i = 0; i < this.#source.length; i++) {
+			const key = this.#source.keyAt(i)
+			if (!key) continue
+
+			this.#add(key)
+		}
+
+		this.#source.on('add', additions => {
+			for (const key of additions) {
+				if (!this.#signals.has(key)) this.#add(key)
+			}
+			notifyWatchers(this.#watchers)
+			emitNotification(this.#listeners.add, Object.keys(additions))
+		})
+
+		this.#source.on('remove', removals => {
+			for (const key of Object.keys(removals)) {
+				if (!this.#signals.has(key)) continue
+
+				this.#signals.delete(key)
+				const index = this.#order.indexOf(key)
+				if (index >= 0) this.#order.splice(index, 1)
+				this.#removeWatcher(key)
+			}
+			this.#order = this.#order.filter(() => true) // Compact array
+			notifyWatchers(this.#watchers)
+			emitNotification(this.#listeners.remove, Object.keys(removals))
+		})
+
+		this.#source.on('sort', newOrder => {
+			this.#order = [...newOrder]
+			notifyWatchers(this.#watchers)
+			emitNotification(this.#listeners.sort, newOrder)
+		})
+	}
+
+	get #value(): T[] {
+		return this.#order
+			.map(key => this.#signals.get(key)?.get())
+			.filter(v => v !== undefined) as T[]
+	}
+
+	#add(key: string): boolean {
+		const computedCallback = isAsyncFunction(this.#callback)
+			? async (_: T, abort: AbortSignal) => {
+					const sourceSignal = this.#source.byKey(key)
+					if (!sourceSignal) return UNSET
+
+					const sourceValue = sourceSignal.get() as U
+					return this.#callback(sourceValue, abort)
+				}
+			: () => {
+					const sourceSignal = this.#source.byKey(key)
+					if (!sourceSignal) return UNSET
+
+					const sourceValue = sourceSignal.get() as U
+					return (this.#callback as (sourceValue: U) => T)(
+						sourceValue,
+					)
+				}
+
+		const signal = createComputed(computedCallback)
+
+		this.#signals.set(key, signal)
+		if (!this.#order.includes(key)) this.#order.push(key)
+		if (this.#listeners.change.size) this.#addWatcher(key)
+		return true
+	}
+
+	#addWatcher(key: string): void {
+		const watcher = createWatcher(() => {
+			trackSignalReads(watcher, () => {
+				this.#signals.get(key)?.get() // Subscribe to the signal
+			})
+		})
+		this.#ownWatchers.set(key, watcher)
+		watcher()
+	}
+
+	#removeWatcher(key: string): void {
+		const watcher = this.#ownWatchers.get(key)
+		if (watcher) {
+			watcher.stop()
+			this.#ownWatchers.delete(key)
+		}
+	}
+
+	get [Symbol.toStringTag](): 'Collection' {
 		return TYPE_COLLECTION
 	}
 
@@ -61,212 +157,66 @@ class CollectionImpl<T extends {}> extends BaseCollection<Record<string, T>> {
 		return true
 	}
 
-	constructor(
-		origin: any | any, // List<any> | Collection<any>
-		callback: CollectionCallback<T, any>,
-	) {
-		super()
-		this.#origin = origin
-		this.#callback = callback
-
-		// Initialize properties from origin
-		this.#initializeFromOrigin()
-		this.#setupOriginListeners()
-	}
-
-	// Get current array
-	protected current(): Record<string, T> {
-		const record = {} as Record<string, T>
-		for (const key of this.order) {
-			const signal = this.signals.get(key)
-			if (signal) {
-				const value = signal.get()
-				if (value !== UNSET) record[key] = value
-			}
+	*[Symbol.iterator](): IterableIterator<Computed<T>> {
+		for (const key of this.#order) {
+			const signal = this.#signals.get(key)
+			if (signal) yield signal as Computed<T>
 		}
-		return record
 	}
 
-	// Get as array for external API
+	get length(): number {
+		subscribeActiveWatcher(this.#watchers)
+		return this.#order.length
+	}
+
 	get(): T[] {
-		this.subscribe(this.watchers)
-		return this.order
-			.map(key => this.signals.get(key)?.get())
-			.filter(v => v !== UNSET) as unknown as T[]
+		subscribeActiveWatcher(this.#watchers)
+		return this.#value
 	}
 
-	// Override createSignalForValue for computed signals
-	protected createSignalForValue(_value: any): Signal<T> {
-		// This won't be called directly since we create computed signals
-		throw new Error('Collection signals are created via computed callbacks')
+	at(index: number): Computed<T> | undefined {
+		return this.#signals.get(this.#order[index])
 	}
 
-	// Initialize properties from origin collection
-	#initializeFromOrigin() {
-		for (let i = 0; i < this.#origin.length; i++) {
-			const key = this.#origin.keyAt(i)
-			if (!key) continue
-			this.#addComputedProperty(key)
+	keys(): IterableIterator<string> {
+		return this.#order.values()
+	}
+
+	byKey(key: string): Computed<T> | undefined {
+		return this.#signals.get(key)
+	}
+
+	keyAt(index: number): string | undefined {
+		return this.#order[index]
+	}
+
+	indexOfKey(key: string): number {
+		return this.#order.indexOf(key)
+	}
+
+	on<K extends keyof Listeners>(type: K, listener: Listener<K>): Cleanup {
+		this.#listeners[type].add(listener)
+		if (type === 'change' && !this.#ownWatchers.size) {
+			for (const key of this.#signals.keys()) this.#addWatcher(key)
+		}
+
+		return () => {
+			this.#listeners[type].delete(listener)
+			if (type === 'change' && !this.#listeners.change.size) {
+				if (this.#ownWatchers.size) {
+					for (const watcher of this.#ownWatchers.values())
+						watcher.stop()
+					this.#ownWatchers.clear()
+				}
+			}
 		}
 	}
 
-	// Setup listeners for origin collection changes
-	#setupOriginListeners() {
-		this.#origin.on('add', additions => {
-			for (const key of additions) {
-				if (!this.signals.has(key)) this.#addComputedProperty(key)
-			}
-			notify(this.watchers)
-			emit(this.listeners.add, additions)
-		})
-
-		this.#origin.on('remove', removals => {
-			for (const key of Object.keys(removals)) {
-				if (!this.signals.has(key)) continue
-				this.removeProperty(key)
-			}
-			this.order = this.order.filter(() => true) // Compact array
-			notify(this.watchers)
-			emit(this.listeners.remove, removals)
-		})
-
-		this.#origin.on('sort', newOrder => {
-			this.order = [...newOrder]
-			notify(this.watchers)
-			emit(this.listeners.sort, newOrder)
-		})
-	}
-
-	// Add computed property for collection item
-	#addComputedProperty(key: string): boolean {
-		const computedCallback = isAsyncFunction(this.#callback)
-			? async (_: T, abort: AbortSignal) => {
-					const originSignal = this.#origin.byKey(key)
-					if (!originSignal) return UNSET
-
-					let result = UNSET
-					match(resolve({ originSignal }), {
-						ok: async ({ originSignal: originValue }) => {
-							result = await this.#callback(originValue, abort)
-						},
-						err: (errors: readonly Error[]) => {
-							console.log(errors)
-						},
-					})
-					return result
-				}
-			: () => {
-					const originSignal = this.#origin.byKey(key)
-					if (!originSignal) return UNSET
-
-					let result = UNSET
-					match(resolve({ originSignal }), {
-						ok: ({ originSignal: originValue }) => {
-							result = (
-								this.#callback as (originValue: any) => T
-							)(originValue)
-						},
-						err: (errors: readonly Error[]) => {
-							console.log(errors)
-						},
-					})
-					return result
-				}
-
-		const signal = createComputed(computedCallback)
-
-		// Set internal states
-		this.signals.set(key, signal as any)
-		if (!this.order.includes(key)) this.order.push(key)
-
-		const watcher = createWatcher(() =>
-			observe(() => {
-				signal.get() // Subscribe to the signal
-				emit(this.listeners.change, [key])
-			}, watcher),
-		)
-		watcher()
-		this.signalWatchers.set(key, watcher)
-		return true
-	}
-
-	// Override iterator to yield signals directly
-	*[Symbol.iterator](): IterableIterator<Signal<any>> {
-		for (const key of this.order) {
-			const signal = this.signals.get(key)
-			if (signal) yield signal
-		}
-	}
-
-	// Get signal by key or index
-	#getSignal(prop: string): Signal<T> | undefined {
-		let key = prop
-		const index = Number(prop)
-		if (Number.isInteger(index) && index >= 0)
-			key = this.order[index] ?? prop
-		return this.signals.get(key)
-	}
-
-	// Override byKey to use internal getSignal
-	byKey(key: string) {
-		return this.#getSignal(key)
-	}
-
-	// Override sort for array-specific logic
-	sort(compareFn?: (a: T, b: T) => number): void {
-		const entries = this.order
-			.map((key, index) => {
-				const signal = this.signals.get(key)
-				return [index, key, signal ? signal.get() : undefined] as [
-					number,
-					string,
-					T,
-				]
-			})
-			.sort(
-				compareFn
-					? (a, b) => compareFn(a[2], b[2])
-					: (a, b) => String(a[2]).localeCompare(String(b[2])),
-			)
-
-		// Set new order
-		this.order = entries.map(([_, key]) => key)
-
-		notify(this.watchers)
-		emit(this.listeners.sort, this.order)
-	}
-
-	// Override proxy creation for array-like access
-	protected createProxy(): Collection<T> {
-		return new Proxy(this, {
-			get(target, prop) {
-				if (prop in target) return Reflect.get(target, prop)
-				if (!isSymbol(prop)) return target.#getSignal(prop)
-			},
-			has(target, prop) {
-				if (prop in target) return true
-				return target.signals.has(String(prop))
-			},
-			ownKeys(target) {
-				const staticKeys = Reflect.ownKeys(target)
-				return [...new Set([...target.order, ...staticKeys])]
-			},
-			getOwnPropertyDescriptor(target, prop) {
-				if (prop in target)
-					return Reflect.getOwnPropertyDescriptor(target, prop)
-				if (isSymbol(prop)) return undefined
-
-				const signal = target.#getSignal(prop)
-				return signal
-					? {
-							enumerable: true,
-							configurable: true,
-							writable: true,
-							value: signal,
-						}
-					: undefined
-			},
-		}) as Collection<T>
+	deriveCollection<U extends {}>(
+		callback: CollectionCallback<U, T>,
+	): Collection<U, T> {
+		// @ts-expect-error transitive type inference not working
+		return createCollection(this, callback)
 	}
 }
 
@@ -279,25 +229,80 @@ class CollectionImpl<T extends {}> extends BaseCollection<Record<string, T>> {
  * They provide reactive, memoized, and lazily-evaluated array transformations
  * while maintaining the familiar array-like store interface.
  *
- * @since 0.16.2
- * @param {List<O> | Collection<O>} origin - Origin of collection to derive values from
- * @param {CollectionCallback<T, O>} callback - Callback function to transform array items
+ * @since 0.17.0
+ * @param {CollectionSource<U>} source - Source of collection to derive values from
+ * @param {CollectionCallback<T, U>} callback - Callback function to transform array items
  * @returns {Collection<T>} - New collection with reactive properties that preserves the original type T
  */
-const createCollection = <T extends {}, O extends {}>(
-	origin: any | any, // List<O> | Collection<O>
-	callback: CollectionCallback<T, O>,
-): Collection<T> => {
-	const instance = new CollectionImpl(origin, callback)
-	return instance.createProxy()
+const createCollection = <T extends {}, U extends {}>(
+	source: CollectionSource<U>,
+	callback: CollectionCallback<T, U>,
+): Collection<T, U> => {
+	const instance = new BaseCollection(source, callback)
+
+	const getSignal = (prop: string) => {
+		const index = Number(prop)
+		return Number.isInteger(index) && index >= 0
+			? instance.at(index)
+			: instance.byKey(prop)
+	}
+
+	return new Proxy(instance, {
+		get(target, prop) {
+			if (prop in target) {
+				const value = Reflect.get(target, prop)
+				return isFunction(value) ? value.bind(target) : value
+			}
+			if (!isSymbol(prop)) return target.byKey(prop)
+		},
+		has(target, prop) {
+			if (prop in target) return true
+			return !isSymbol(prop) ? getSignal(prop) !== undefined : false
+		},
+		ownKeys(target) {
+			return Object.getOwnPropertyNames(target.keys())
+		},
+		getOwnPropertyDescriptor(target, prop) {
+			if (isSymbol(prop)) return undefined
+
+			if (prop === 'length') {
+				return {
+					enumerable: false,
+					configurable: false,
+					writable: false,
+					value: target.length,
+				}
+			}
+
+			const index = Number(prop)
+			if (
+				Number.isInteger(index) &&
+				index >= 0 &&
+				index < target.length
+			) {
+				const signal = target.at(index)
+				return signal
+					? {
+							enumerable: true,
+							configurable: true,
+							writable: true,
+							value: signal,
+						}
+					: undefined
+			}
+
+			return undefined
+		},
+	}) as Collection<T, U>
 }
 
-const isCollection = /*#__PURE__*/ <T extends UnknownArray>(
+const isCollection = /*#__PURE__*/ <T extends {}, U extends {}>(
 	value: unknown,
-): value is Collection<T> => isObjectOfType(value, TYPE_COLLECTION)
+): value is Collection<T, U> => isObjectOfType(value, TYPE_COLLECTION)
 
 export {
 	type Collection,
+	type CollectionSource,
 	type CollectionCallback,
 	createCollection,
 	isCollection,

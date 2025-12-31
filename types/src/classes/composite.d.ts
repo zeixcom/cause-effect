@@ -16,4 +16,4 @@ declare class MutableComposite<T extends UnknownRecord> {
     clear(): boolean;
     on<K extends keyof CompositeListeners>(type: K, listener: Listener<K>): Cleanup;
 }
-export { MutableComposite };
+export { MutableComposite, type CompositeListeners };

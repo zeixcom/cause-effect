@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import {
+	createCollection,
 	createEffect,
 	createList,
 	createStore,
+	isCollection,
 	isList,
 	isStore,
 	Memo,
@@ -365,6 +367,368 @@ describe('list', () => {
 			expect(list[0].get()).toBe(42)
 			expect(list[1].get()).toBe('text')
 			expect(list[2].get()).toBe(true)
+		})
+	})
+
+	describe('deriveCollection() method', () => {
+		describe('synchronous transformations', () => {
+			test('transforms list values with sync callback', () => {
+				const numbers = createList([1, 2, 3])
+				const doubled = numbers.deriveCollection(
+					(value: number) => value * 2,
+				)
+
+				expect(isCollection(doubled)).toBe(true)
+				expect(doubled.length).toBe(3)
+				expect(doubled.get()).toEqual([2, 4, 6])
+			})
+
+			test('transforms object values with sync callback', () => {
+				const users = createList([
+					{ name: 'Alice', age: 25 },
+					{ name: 'Bob', age: 30 },
+				])
+				const userInfo = users.deriveCollection(user => ({
+					displayName: user.name.toUpperCase(),
+					isAdult: user.age >= 18,
+				}))
+
+				expect(userInfo.length).toBe(2)
+				expect(userInfo.get()).toEqual([
+					{ displayName: 'ALICE', isAdult: true },
+					{ displayName: 'BOB', isAdult: true },
+				])
+			})
+
+			test('transforms string values to different types', () => {
+				const words = createList(['hello', 'world', 'test'])
+				const wordLengths = words.deriveCollection((word: string) => ({
+					word,
+					length: word.length,
+				}))
+
+				expect(wordLengths.get()).toEqual([
+					{ word: 'hello', length: 5 },
+					{ word: 'world', length: 5 },
+					{ word: 'test', length: 4 },
+				])
+			})
+
+			test('collection reactivity with sync transformations', () => {
+				const numbers = createList([1, 2])
+				const doubled = numbers.deriveCollection(
+					(value: number) => value * 2,
+				)
+
+				let collectionValue: number[] = []
+				let effectRuns = 0
+				createEffect(() => {
+					collectionValue = doubled.get()
+					effectRuns++
+				})
+
+				expect(collectionValue).toEqual([2, 4])
+				expect(effectRuns).toBe(1)
+
+				// Add new item
+				numbers.add(3)
+				expect(collectionValue).toEqual([2, 4, 6])
+				expect(effectRuns).toBe(2)
+
+				// Modify existing item
+				numbers[0].set(5)
+				expect(collectionValue).toEqual([10, 4, 6])
+				expect(effectRuns).toBe(3)
+			})
+
+			test('collection responds to source removal', () => {
+				const numbers = createList([1, 2, 3])
+				const doubled = numbers.deriveCollection(
+					(value: number) => value * 2,
+				)
+
+				expect(doubled.get()).toEqual([2, 4, 6])
+
+				numbers.remove(1) // Remove middle item (2)
+				expect(doubled.get()).toEqual([2, 6])
+				expect(doubled.length).toBe(2)
+			})
+		})
+
+		describe('asynchronous transformations', () => {
+			test('transforms values with async callback', async () => {
+				const numbers = createList([1, 2, 3])
+				const asyncDoubled = numbers.deriveCollection(
+					async (value: number, abort: AbortSignal) => {
+						// Simulate async operation
+						await new Promise(resolve => setTimeout(resolve, 10))
+						if (abort.aborted) throw new Error('Aborted')
+						return value * 2
+					},
+				)
+
+				// Allow async operations to complete
+				await new Promise(resolve => setTimeout(resolve, 50))
+
+				expect(asyncDoubled.length).toBe(3)
+				expect(asyncDoubled.get()).toEqual([2, 4, 6])
+			})
+
+			test('async collection with object transformation', async () => {
+				const users = createList([
+					{ id: 1, name: 'Alice' },
+					{ id: 2, name: 'Bob' },
+				])
+
+				const enrichedUsers = users.deriveCollection(
+					async (user, abort: AbortSignal) => {
+						// Simulate API call
+						await new Promise(resolve => setTimeout(resolve, 10))
+						if (abort.aborted) throw new Error('Aborted')
+
+						return {
+							...user,
+							slug: user.name.toLowerCase(),
+							timestamp: Date.now(),
+						}
+					},
+				)
+
+				// Allow async operations to complete
+				await new Promise(resolve => setTimeout(resolve, 50))
+
+				const result = enrichedUsers.get()
+				expect(result).toHaveLength(2)
+				expect(result[0].slug).toBe('alice')
+				expect(result[1].slug).toBe('bob')
+				expect(typeof result[0].timestamp).toBe('number')
+			})
+
+			test('async collection reactivity', async () => {
+				const numbers = createList([1, 2])
+				const asyncDoubled = numbers.deriveCollection(
+					async (value: number, abort: AbortSignal) => {
+						await new Promise(resolve => setTimeout(resolve, 5))
+						if (abort.aborted) throw new Error('Aborted')
+						return value * 2
+					},
+				)
+
+				// Allow initial computation
+				await new Promise(resolve => setTimeout(resolve, 20))
+				expect(asyncDoubled.get()).toEqual([2, 4])
+
+				// Add new item
+				numbers.add(3)
+				await new Promise(resolve => setTimeout(resolve, 20))
+				expect(asyncDoubled.get()).toEqual([2, 4, 6])
+
+				// Modify existing item
+				numbers[0].set(5)
+				await new Promise(resolve => setTimeout(resolve, 20))
+				expect(asyncDoubled.get()).toEqual([10, 4, 6])
+			})
+
+			test('handles AbortSignal cancellation', async () => {
+				const numbers = createList([1])
+				let abortCount = 0
+
+				const slowCollection = numbers.deriveCollection(
+					async (value: number, abort: AbortSignal) => {
+						try {
+							await new Promise((resolve, reject) => {
+								const timeout = setTimeout(resolve, 100) // Long delay
+								abort.addEventListener('abort', () => {
+									clearTimeout(timeout)
+									abortCount++
+									reject(new Error('Aborted'))
+								})
+							})
+							return value * 2
+						} catch (error) {
+							if (abort.aborted) abortCount++
+							throw error
+						}
+					},
+				)
+
+				// Quickly change the value to trigger cancellation
+				numbers[0].set(2)
+				numbers[0].set(3)
+				numbers[0].set(4)
+
+				// Allow some time for operations
+				await new Promise(resolve => setTimeout(resolve, 150))
+
+				expect(abortCount).toBeGreaterThan(0)
+				expect(slowCollection.get()).toEqual([8]) // Only last value should complete
+			})
+		})
+
+		describe('derived collection chaining', () => {
+			test('chains multiple sync derivations', () => {
+				const numbers = createList([1, 2, 3])
+				const doubled = numbers.deriveCollection(
+					(value: number) => value * 2,
+				)
+				const quadrupled = doubled.deriveCollection(
+					(value: number) => value * 2,
+				)
+
+				expect(quadrupled.get()).toEqual([4, 8, 12])
+
+				numbers.add(4)
+				expect(quadrupled.get()).toEqual([4, 8, 12, 16])
+			})
+
+			test('chains sync and async derivations', async () => {
+				const numbers = createList([1, 2])
+				const doubled = numbers.deriveCollection(
+					(value: number) => value * 2,
+				)
+				const asyncSquared = doubled.deriveCollection(
+					async (value: number, abort: AbortSignal) => {
+						await new Promise(resolve => setTimeout(resolve, 10))
+						if (abort.aborted) throw new Error('Aborted')
+						return value * value
+					},
+				)
+
+				await new Promise(resolve => setTimeout(resolve, 50))
+				expect(asyncSquared.get()).toEqual([4, 16]) // (1*2)^2, (2*2)^2
+			})
+		})
+
+		describe('collection access methods', () => {
+			test('provides array-like access to computed signals', () => {
+				const numbers = createList([1, 2, 3])
+				const doubled = numbers.deriveCollection(
+					(value: number) => value * 2,
+				)
+
+				expect(doubled[0].get()).toBe(2)
+				expect(doubled[1].get()).toBe(4)
+				expect(doubled[2].get()).toBe(6)
+				expect(doubled[3]).toBeUndefined()
+			})
+
+			test('supports key-based access', () => {
+				const numbers = createList([10, 20])
+				const doubled = numbers.deriveCollection(
+					(value: number) => value * 2,
+				)
+
+				const key0 = numbers.keyAt(0)
+				const key1 = numbers.keyAt(1)
+
+				expect(key0).toBeDefined()
+				expect(key1).toBeDefined()
+
+				if (key0 && key1) {
+					expect(doubled.byKey(key0)?.get()).toBe(20)
+					expect(doubled.byKey(key1)?.get()).toBe(40)
+				}
+			})
+
+			test('supports iteration', () => {
+				const numbers = createList([1, 2, 3])
+				const doubled = numbers.deriveCollection(
+					(value: number) => value * 2,
+				)
+
+				const signals = [...doubled]
+				expect(signals).toHaveLength(3)
+				expect(signals[0].get()).toBe(2)
+				expect(signals[1].get()).toBe(4)
+				expect(signals[2].get()).toBe(6)
+			})
+		})
+
+		describe('collection event handling', () => {
+			test('emits add events when source adds items', () => {
+				const numbers = createList([1, 2])
+				const doubled = numbers.deriveCollection(
+					(value: number) => value * 2,
+				)
+
+				let addedKeys: readonly string[] = []
+				doubled.on('add', keys => {
+					addedKeys = keys
+				})
+
+				numbers.add(3)
+				expect(addedKeys).toHaveLength(1)
+			})
+
+			test('emits remove events when source removes items', () => {
+				const numbers = createList([1, 2, 3])
+				const doubled = numbers.deriveCollection(
+					(value: number) => value * 2,
+				)
+
+				let removedKeys: readonly string[] = []
+				doubled.on('remove', keys => {
+					removedKeys = keys
+				})
+
+				numbers.remove(1)
+				expect(removedKeys).toHaveLength(1)
+			})
+
+			test('emits sort events when source is sorted', () => {
+				const numbers = createList([3, 1, 2])
+				const doubled = numbers.deriveCollection(
+					(value: number) => value * 2,
+				)
+
+				let sortedKeys: readonly string[] = []
+				doubled.on('sort', keys => {
+					sortedKeys = keys
+				})
+
+				numbers.sort()
+				expect(sortedKeys).toHaveLength(3)
+				expect(doubled.get()).toEqual([2, 4, 6]) // Sorted and doubled
+			})
+		})
+
+		describe('edge cases', () => {
+			test('handles empty list derivation', () => {
+				const empty = createList<number>([])
+				const doubled = empty.deriveCollection(
+					(value: number) => value * 2,
+				)
+
+				expect(doubled.get()).toEqual([])
+				expect(doubled.length).toBe(0)
+			})
+
+			test('handles UNSET values in transformation', () => {
+				const list = createList([1, UNSET, 3])
+				const processed = list.deriveCollection(value => {
+					return value === UNSET ? 0 : (value as number) * 2
+				})
+
+				expect(processed.get()).toEqual([2, 0, 6])
+			})
+
+			test('handles complex object transformations', () => {
+				const items = createList([
+					{ id: 1, data: { value: 10, active: true } },
+					{ id: 2, data: { value: 20, active: false } },
+				])
+
+				const transformed = items.deriveCollection(item => ({
+					itemId: item.id,
+					processedValue: item.data.value * 2,
+					status: item.data.active ? 'enabled' : 'disabled',
+				}))
+
+				expect(transformed.get()).toEqual([
+					{ itemId: 1, processedValue: 20, status: 'enabled' },
+					{ itemId: 2, processedValue: 40, status: 'disabled' },
+				])
+			})
 		})
 	})
 })

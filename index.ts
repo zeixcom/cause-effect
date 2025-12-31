@@ -5,6 +5,13 @@
  */
 
 export {
+	type Collection,
+	type CollectionCallback,
+	createCollection,
+	isCollection,
+	TYPE_COLLECTION,
+} from './src/classes/collection'
+export {
 	type Computed,
 	createComputed,
 	isComputed,
@@ -63,12 +70,6 @@ export {
 	type SignalValues,
 	type UnknownSignalRecord,
 } from './src/signal'
-/* export {
-	type Collection,
-	createCollection,
-	isCollection,
-	TYPE_COLLECTION,
-} from './src/signals/collection' */
 export {
 	batchSignalWrites,
 	type Cleanup,

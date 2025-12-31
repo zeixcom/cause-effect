@@ -1,6 +1,6 @@
 # Cause & Effect
 
-Version 0.16.2
+Version 0.17.0
 
 **Cause & Effect** is a lightweight, reactive state management library for JavaScript applications. It uses fine-grained reactivity with signals to create predictable and efficient data flow in your app.
 
@@ -10,9 +10,11 @@ Version 0.16.2
 
 ### Core Concepts
 
-- **State signals**: Hold values that can be directly modified: `createState()`
+- **State signals**: Hold values that can be directly modified: `new State()`
+- **Memo signals**: Derive memoized values from other signals: `new Memo()`
+- **Task signals**: Execute asynchronous functions of other signals: `new Task()`
 - **Store signals**: Hold objects of nested reactive properties: `createStore()`
-- **Computed signals**: Derive memoized values from other signals: `createComputed()`
+- **List signals**: Create keyed lists with reactive items: `createList()`
 - **Effects**: Run side effects when signals change: `createEffect()`
 
 ## Key Features
@@ -28,13 +30,13 @@ Version 0.16.2
 ## Quick Start
 
 ```js
-import { createState, createComputed, createEffect } from '@zeix/cause-effect'
+import { createEffect, Memo, State } from '@zeix/cause-effect'
 
 // 1. Create state
-const user = createState({ name: 'Alice', age: 30 })
+const user = new State({ name: 'Alice', age: 30 })
 
 // 2. Create computed values
-const greeting = createComputed(() => `Hello ${user.get().name}!`)
+const greeting = Memo(() => `Hello ${user.get().name}!`)
 
 // 3. React to changes
 createEffect(() => {
@@ -59,12 +61,12 @@ bun add @zeix/cause-effect
 
 ### State Signals
 
-`createState()` creates a mutable signal. Every signal has a `.get()` method to access its current value. State signals also provide `.set()` to directly assign a new value and `.update()` to modify the value with a function.
+`new State()` creates a mutable signal. Every signal has a `.get()` method to access its current value. State signals also provide `.set()` to directly assign a new value and `.update()` to modify the value with a function.
 
 ```js
-import { createState, createEffect } from '@zeix/cause-effect'
+import { createEffect, State } from '@zeix/cause-effect'
 
-const count = createState(42)
+const count = new State(42)
 createEffect(() => {
   console.log(count.get()) // logs '42'
 })
@@ -116,7 +118,7 @@ createEffect(() => {
 **When to use stores vs states:**
 
 - **Use `createStore()`** for objects with properties that you want to access and modify individually.
-- **Use `createState()`** for primitive values (numbers, strings, booleans) or objects you access and replace entirely.
+- **Use `new State()`** for primitive values (numbers, strings, booleans) or objects you access and replace entirely.
 
 #### Dynamic Properties
 
@@ -267,13 +269,13 @@ offSort() // Stops listening to sort notifications
 
 ### Computed Signals
 
-`createComputed()` creates a memoized read-only signal that automatically tracks dependencies and updates only when those dependencies change.
+`new Memo()` creates a memoized read-only signal that automatically tracks dependencies and updates only when those dependencies change.
 
 ```js
-import { createState, createComputed, createEffect } from '@zeix/cause-effect'
+import { createEffect, Memo, State } from '@zeix/cause-effect'
 
-const count = createState(42)
-const isEven = createComputed(() => !(count.get() % 2))
+const count = new State(42)
+const isEven = new Memo(() => !(count.get() % 2))
 createEffect(() => console.log(isEven.get())) // logs 'true'
 count.set(24) // logs nothing because 24 is also an even number
 document.querySelector('button.increment').addEventListener('click', () => {
@@ -294,21 +296,21 @@ const isEven = () => !(count.get() % 2)
 **When to use which approach:**
 
 - **Use functions when**: The calculation is simple, inexpensive, or called infrequently.
-- **Use createComputed() when**:
+- **Use new Memo() when**:
   - The calculation is expensive
   - You need to share the result between multiple consumers
   - You're working with asynchronous operations
   - You need to track specific error states
   
-#### Reducer-like Capabilities
+#### Reducer Capabilities
 
-`createComputed()` supports reducer-like patterns by accepting an initial value and providing access to the previous value in the callback:
+`new Memo()` supports reducer patterns by accepting an initial value and providing access to the previous value in the callback:
 
 ```js
-import { createState, createComputed, createEffect } from '@zeix/cause-effect'
+import { createEffect, Memo, State } from '@zeix/cause-effect'
 
-const actions = createState('increment')
-const counter = createComputed((prev, abort) => {
+const actions = new State('increment')
+const counter = new Memo((prev) => {
   const action = actions.get()
   switch (action) {
     case 'increment':
@@ -339,7 +341,7 @@ This pattern is particularly useful for:
 
 #### Asynchronous Computations with Automatic Cancellation
 
-`createComputed()` seamlessly handles asynchronous operations with built-in cancellation support. When used with an async function, it:
+`new Task()` seamlessly handles asynchronous operations with built-in cancellation support. When used with an async function, it:
 
 1. Provides an `abort` signal parameter you can pass to fetch or other cancelable APIs
 2. Automatically cancels pending operations when dependencies change
@@ -347,10 +349,10 @@ This pattern is particularly useful for:
 4. Properly handles errors from failed requests
 
 ```js
-import { createState, createComputed, createEffect, resolve, match } from '@zeix/cause-effect'
+import { createEffect, match, resolve, State, Task } from '@zeix/cause-effect'
 
-const id = createState(42)
-const data = createComputed(async (_, abort) => {
+const id = new State(42)
+const data = new Task(async (_, abort) => {
   // The abort signal is automatically managed by the computed signal
   const response = await fetch(`/api/entries/${id.get()}`, { signal: abort })
   if (!response.ok) throw new Error(`Failed to fetch data: ${response.statusText}`)
@@ -372,7 +374,7 @@ document.querySelector('button.next').addEventListener('click', () => {
 })
 ```
 
-**Note**: Always use `createComputed()` (not plain functions) for async operations to benefit from automatic cancellation and memoization.
+**Note**: Always use `new Task()` (not plain functions) for async operations to benefit from automatic cancellation, memoization, and error handling.
 
 ## Effects and Error Handling
 
@@ -381,9 +383,9 @@ The `createEffect()` function supports both synchronous and asynchronous callbac
 ### Synchronous Effects
 
 ```js
-import { createState, createEffect } from '@zeix/cause-effect'
+import { createEffect, State } from '@zeix/cause-effect'
 
-const count = createState(42)
+const count = new State(42)
 createEffect(() => {
   console.log('Count changed:', count.get())
 })
@@ -394,9 +396,9 @@ createEffect(() => {
 Async effect callbacks receive an `AbortSignal` parameter that automatically cancels when the effect re-runs or is cleaned up:
 
 ```js
-import { createState, createEffect } from '@zeix/cause-effect'
+import { createEffect, State } from '@zeix/cause-effect'
 
-const userId = createState(1)
+const userId = new State(1)
 createEffect(async (abort) => {
   try {
     const response = await fetch(`/api/users/${userId.get()}`, { signal: abort })
@@ -415,9 +417,9 @@ createEffect(async (abort) => {
 For more sophisticated error handling, use the `resolve()` and `match()` helper functions:
 
 ```js
-import { createState, createEffect, resolve, match } from '@zeix/cause-effect'
+import { createEffect, resolve, match, State } from '@zeix/cause-effect'
 
-const userId = createState(1)
+const userId = new State(1)
 const userData = createEffect(async (abort) => {
   const response = await fetch(`/api/users/${userId.get()}`, { signal: abort })
   if (!response.ok) throw new Error(`HTTP ${response.status}`)
@@ -439,23 +441,23 @@ The `resolve()` function extracts values from signals and returns a discriminate
 
 ### Batching Updates
 
-Use `batch()` to group multiple signal updates, ensuring effects run only once after all changes are applied:
+Use `batchSignalWrites()` to group multiple signal updates, ensuring effects run only once after all changes are applied:
 
 ```js
 import {
-  createState,
-  createComputed,
   createEffect,
-  batch,
+  batchSignalWrites,
   resolve,
-  match
+  match,
+  Memo
+  State
 } from '@zeix/cause-effect'
 
 // State: define an Array<State<number>>
-const signals = [createState(2), createState(3), createState(5)]
+const signals = [new State(2), new State(3), new State(5)]
 
 // Compute the sum of all signals
-const sum = createComputed(() => {
+const sum = new Memo(() => {
   const v = signals.reduce((total, signal) => total + signal.get(), 0)
   // Validate the result
   if (!Number.isFinite(v)) throw new Error('Invalid value')
@@ -490,9 +492,9 @@ signals[0].set(NaN)
 Effects return a cleanup function. When executed, it will unsubscribe from signals and run cleanup functions returned by effect callbacks, for example to remove event listeners.
 
 ```js
-import { createState, createComputed, createEffect } from '@zeix/cause-effect'
+import { createEffect, State } from '@zeix/cause-effect'
 
-const user = createState({ name: 'Alice', age: 30 })
+const user = new State({ name: 'Alice', age: 30 })
 const greeting = () => `Hello ${user.get().name}!`
 const cleanup = createEffect(() => {
 	console.log(`${greeting()} You are ${user.get().age} years old`)
@@ -512,10 +514,10 @@ user.set({ name: 'Bob', age: 28 }) // Won't trigger the effect anymore
 The `resolve()` function extracts values from multiple signals and returns a discriminated union result:
 
 ```js
-import { createState, createComputed, resolve } from '@zeix/cause-effect'
+import { Memo, resolve, State } from '@zeix/cause-effect'
 
-const name = createState('Alice')
-const age = createComputed(() => 30)
+const name = new State('Alice')
+const age = new Memo(() => 30)
 const result = resolve({ name, age })
 
 if (result.ok) {

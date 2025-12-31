@@ -7,9 +7,10 @@ Cause & Effect is a reactive state management library for JavaScript/TypeScript 
 ## Core Architecture
 
 - **Signals**: Base reactive primitives with `.get()` method
-- **State**: Mutable signals for primitive values (`createState()`)
-- **Store**: Mutable signals for objects with reactive properties (`createStore()`), supports stable keys for array-like stores
-- **Computed**: Derived read-only signals with memoization, reducer-like capabilities and async support (`createComputed()`)
+- **State**: Mutable signals for primitive values (`new State()`)
+- **Computed**: Derived read-only signals with memoization, reducer capabilities and async support (`new Memo()`, `new Task()`)
+- **Store**: Mutable signals for objects with reactive properties (`createStore()`)
+- **List**: Mutable signals for arrays with stable keys and reactive entries (`new List()`)
 - **Effects**: Side effect handlers that react to signal changes (`createEffect()`)
 
 ## Key Files Structure
@@ -33,7 +34,7 @@ Cause & Effect is a reactive state management library for JavaScript/TypeScript 
 - JSDoc comments for all public APIs
 
 ### Naming Conventions
-- Factory functions: `create*` (e.g., `createState`, `createStore`)
+- Factory functions: `create*` (e.g., `createEffect`, `createStore`)
 - Type predicates: `is*` (e.g., `isSignal`, `isState`)
 - Constants: `TYPE_*` for type tags, `UPPER_CASE` for values
 - Private variables: use descriptive names, no underscore prefix
@@ -69,9 +70,9 @@ Cause & Effect is a reactive state management library for JavaScript/TypeScript 
 ### Creating Signals
 ```typescript
 // State for primitives
-const count = createState(42)
-const name = createState('Alice')
-const actions = createState<'increment' | 'decrement'>('increment')
+const count = new State(42)
+const name = new State('Alice')
+const actions = new State<'increment' | 'decrement'>('increment')
 
 // Store for objects
 const user = createStore({ name: 'Alice', age: 30 })
@@ -81,10 +82,10 @@ const items = createStore(['apple', 'banana', 'cherry'])
 const users = createStore([{ id: 'alice', name: 'Alice' }], user => user.id)
 
 // Computed for derived values
-const doubled = createComputed(() => count.get() * 2)
+const doubled = new Memo(() => count.get() * 2)
 
-// Computed with reducer-like capabilities
-const counter = createComputed((prev) => {
+// Computed with reducer capabilities
+const counter = new Memo(prev => {
   const action = actions.get()
   return action === 'increment' ? prev + 1 : prev - 1
 }, 0) // Initial value
@@ -104,7 +105,7 @@ createEffect(async (abort) => {
 })
 
 // Async computed with old value access
-const userData = createComputed(async (prev, abort) => {
+const userData = new Task(async (prev, abort) => {
   if (!userId.get()) return prev // Keep previous data if no user
   const response = await fetch(`/users/${userId.get()}`, { signal: abort })
   return response.json()

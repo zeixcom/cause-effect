@@ -6,7 +6,7 @@ import type { UnknownRecord } from './diff';
 type Signal<T extends {}> = {
     get(): T;
 };
-type MutableSignal<T extends {}> = T extends readonly (infer U extends {})[] ? List<U> : T extends Record<string, unknown> ? Store<T & Record<string, unknown & {}>> : State<T>;
+type MutableSignal<T extends {}> = T extends readonly (infer U extends {})[] ? List<U> : T extends UnknownRecord ? Store<T> : State<T>;
 type ReadonlySignal<T extends {}> = Computed<T>;
 type UnknownSignalRecord = Record<string, Signal<unknown & {}>>;
 type SignalValues<S extends UnknownSignalRecord> = {

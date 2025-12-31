@@ -24,6 +24,11 @@ import {
 	isSymbol,
 	UNSET,
 } from '../util'
+import {
+	type Collection,
+	type CollectionCallback,
+	createCollection,
+} from './collection'
 import { MutableComposite } from './composite'
 import type { State } from './state'
 import type { Store } from './store'
@@ -57,11 +62,17 @@ class BaseList<T extends {}> {
 		sort: new Set<Listener<'sort'>>(),
 	}
 	#order: string[] = []
-	protected keyCounter = 0
-	protected keyConfig?: KeyConfig<T>
+	#generateKey: (item: T) => string
 
 	constructor(initialValue: T[], keyConfig?: KeyConfig<T>) {
 		validateSignalValue('list', initialValue, Array.isArray)
+
+		let keyCounter = 0
+		this.#generateKey = isString(keyConfig)
+			? () => `${keyConfig}${keyCounter++}`
+			: isFunction<string>(keyConfig)
+				? (item: T) => keyConfig(item)
+				: () => String(keyCounter++)
 
 		this.#composite = new MutableComposite(
 			this.#toRecord(initialValue),
@@ -70,18 +81,6 @@ class BaseList<T extends {}> {
 				return true
 			},
 		)
-
-		this.keyConfig = keyConfig
-	}
-
-	// Generate stable key for array items
-	#generateKey(item: T): string {
-		const id = this.keyCounter++
-		return isString(this.keyConfig)
-			? `${this.keyConfig}${id}`
-			: isFunction<string>(this.keyConfig)
-				? this.keyConfig(item)
-				: String(id)
 	}
 
 	// Convert array to record with stable keys
@@ -294,12 +293,11 @@ class BaseList<T extends {}> {
 		)
 	}
 
-	/* deriveCollection<U extends {}>(
-		callback: CollectionCallback<U, T extends UnknownArray ? T : never>,
-	): Collection<U> {
-		// @ts-expect-error proxy type issue
+	deriveCollection<U extends {}>(
+		callback: CollectionCallback<U, T>,
+	): Collection<U, T> {
 		return createCollection(this, callback)
-	} */
+	}
 }
 
 /* === Functions === */

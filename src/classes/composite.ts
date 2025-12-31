@@ -199,4 +199,4 @@ class MutableComposite<T extends UnknownRecord> {
 	}
 }
 
-export { MutableComposite }
+export { MutableComposite, type CompositeListeners }

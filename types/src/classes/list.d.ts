@@ -1,6 +1,7 @@
 import { type UnknownArray, type UnknownRecord } from '../diff';
 import type { MutableSignal } from '../signal';
 import { type Cleanup, type Listener, type Notifications } from '../system';
+import { type Collection, type CollectionCallback } from './collection';
 import type { State } from './state';
 import type { Store } from './store';
 type ArrayToRecord<T extends UnknownArray> = {
@@ -13,8 +14,6 @@ type List<T extends {}> = BaseList<T> & {
 declare const TYPE_LIST: "List";
 declare class BaseList<T extends {}> {
     #private;
-    protected keyCounter: number;
-    protected keyConfig?: KeyConfig<T>;
     constructor(initialValue: T[], keyConfig?: KeyConfig<T>);
     get [Symbol.toStringTag](): 'List';
     get [Symbol.isConcatSpreadable](): boolean;
@@ -33,6 +32,7 @@ declare class BaseList<T extends {}> {
     sort(compareFn?: (a: T, b: T) => number): void;
     splice(start: number, deleteCount?: number, ...items: T[]): T[];
     on<K extends keyof Notifications>(type: K, listener: Listener<K>): Cleanup;
+    deriveCollection<U extends {}>(callback: CollectionCallback<U, T>): Collection<U, T>;
 }
 /**
  * Create a new list with deeply nested reactive list items

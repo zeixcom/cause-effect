@@ -72,22 +72,22 @@ Computed signals implement smart memoization:
 - **Stale Detection**: Only recalculates when dependencies actually change
 - **Async Support**: Handles Promise-based computations with automatic cancellation
 - **Error Handling**: Preserves error states and prevents cascade failures
-- **Reducer-like Capabilities**: Access to previous value enables state accumulation and transitions
+- **Reducer Capabilities**: Access to previous value enables state accumulation and transitions
 
 ## Advanced Patterns and Best Practices
 
 ### When to Use Each Signal Type
 
-**State Signals (`createState`)**:
+**State Signals (`State`)**:
 - Primitive values (numbers, strings, booleans)
 - Objects that you replace entirely rather than mutating properties
 - Simple toggles and flags
 - Values with straightforward update patterns
 
 ```typescript
-const count = createState(0)
-const theme = createState<'light' | 'dark'>('light')
-const user = createState<User>({ id: 1, name: 'John Doe', email: 'john@example.com' }) // Replace entire user object
+const count = new State(0)
+const theme = new State<'light' | 'dark'>('light')
+const user = new State<User>({ id: 1, name: 'John Doe', email: 'john@example.com' }) // Replace entire user object
 ```
 
 **Store Signals (`createStore`)**:
@@ -95,7 +95,6 @@ const user = createState<User>({ id: 1, name: 'John Doe', email: 'john@example.c
 - Nested data structures
 - Form state where fields update individually
 - Configuration objects with multiple settings
-- Arrays where item order may change but items need persistent identity
 
 ```typescript
 const form = createStore({
@@ -104,9 +103,13 @@ const form = createStore({
   errors: { email: null, password: null }
 })
 // form.email.set('user@example.com') // Only email subscribers react
+```
 
-// Array-like stores with stable keys
-const todoList = createStore([
+**List Signals (`createList`)**:
+
+```ts
+// Lists with stable keys
+const todoList = createList([
   { id: 'task1', text: 'Learn signals' },
   { id: 'task2', text: 'Build app' }
 ], todo => todo.id) // Use todo.id as stable key
@@ -119,28 +122,28 @@ firstTodo?.text.set('Learn signals deeply')
 todoList.sort((a, b) => a.text.localeCompare(b.text))
 ```
 
-**Computed Signals (`createComputed`)**:
+**Computed Signals (`Memo` and `Task`)**:
 - Expensive calculations that should be memoized
 - Derived data that depends on multiple signals
 - Async operations that need automatic cancellation
 - Cross-cutting concerns that multiple components need
 
 ```typescript
-const expensiveCalc = createComputed(() => {
+const expensiveCalc = new Memo(() => {
   return heavyComputation(data1.get(), data2.get()) // Memoized
 })
 
-const userData = createComputed(async (prev, abort) => {
+const userData = new Task(async (prev, abort) => {
   const id = userId.get()
   if (!id) return prev // Keep previous data if no ID
   const response = await fetch(`/users/${id}`, { signal: abort })
   return response.json()
 })
 
-// Reducer-like pattern for state machines
-const gameState = createComputed((currentState) => {
+// Reducer pattern for state machines
+const gameState = new Memo(prev => {
   const action = playerAction.get()
-  switch (currentState) {
+  switch (prev) {
     case 'menu':
       return action === 'start' ? 'playing' : 'menu'
     case 'playing':
@@ -155,7 +158,7 @@ const gameState = createComputed((currentState) => {
 }, 'menu') // Initial state
 
 // Accumulating values over time
-const runningTotal = createComputed((previous) => {
+const runningTotal = new Memo(prev => {
   const newValue = currentValue.get()
   return previous + newValue
 }, 0) // Start with 0
@@ -172,13 +175,13 @@ The library provides several layers of error handling:
 
 ```typescript
 // Robust async data fetching with error handling
-const apiData = createComputed(async (abort) => {
+const apiData = new Task(async (prev, abort) => {
   try {
     const response = await fetch('/api/data', { signal: abort })
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     return response.json()
   } catch (error) {
-    if (abort.aborted) return UNSET // Cancelled, not an error
+    if (abort.aborted) return prev // Cancelled, not an error
     throw error // Real error
   }
 })
@@ -195,7 +198,7 @@ createEffect(() => {
 
 ### Performance Optimization Techniques
 
-1. **Batching Updates**: Use `batch()` for multiple synchronous updates
+1. **Batching Updates**: Use `batchSignalWrites()` for multiple synchronous updates
 2. **Selective Dependencies**: Structure computed signals to minimize dependencies
 3. **Cleanup Management**: Properly dispose of effects to prevent memory leaks
 4. **Shallow vs Deep Equality**: Use appropriate comparison strategies
@@ -209,20 +212,20 @@ const user = createStore<{ id: number, name: string, email: string, age?: number
 })
 
 // Batch multiple updates to prevent intermediate states
-batch(() => {
+batchSignalWrites(() => {
   user.name.set('Alice Doe')
   user.age.set(30)
   user.email.set('alice@example.com')
 }) // Only triggers effects once at the end
 
 // Optimize computed dependencies
-const userDisplay = createComputed(() => {
-  const { name, email } = user.get() // Gets entire object
+const userDisplay = new Memo(() => {
+  const { name, email } = user.get() // Gets entire object, will rerun also if age changes
   return `${name} <${email}>`
 })
 
 // Better: more granular dependencies
-const userDisplay = createComputed(() => {
+const userDisplay = new Memo(() => {
   return `${user.name.get()} <${user.email.get()}>` // Only depends on name/email
 })
 ```
@@ -261,18 +264,18 @@ The library is framework-agnostic but integrates well with:
 ### Building Reactive Data Structures
 ```typescript
 // Reactive list with computed properties
-const todos = createStore<Todo[]>([])
-const completedCount = createComputed(() => 
+const todos = createList<Todo[]>([])
+const completedCount = new Memo(() => 
   todos.get().filter(todo => todo.completed).length
 )
-const remainingCount = createComputed(() => 
+const remainingCount = new Memo(() => 
   todos.get().length - completedCount.get()
 )
 ```
 
 ### Reactive State Machines
 ```typescript
-const state = createState<'idle' | 'loading' | 'success' | 'error'>('idle')
+const state = new State<'idle' | 'loading' | 'success' | 'error'>('idle')
 const canRetry = () => state.get() === 'error'
 const isLoading = () => state.get() === 'loading'
 ```
@@ -325,7 +328,7 @@ eventBus.userLogin.set({ userId: 123, timestamp: Date.now() })
 ### Stable Keys for Persistent Item Identity
 ```typescript
 // Managing a list of items where order matters but identity persists
-const playlist = createStore([
+const playlist = createList([
   { id: 'track1', title: 'Song A', duration: 180 },
   { id: 'track2', title: 'Song B', duration: 210 }
 ], track => track.id)

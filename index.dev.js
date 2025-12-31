@@ -82,6 +82,172 @@ var isAbortError = (error) => error instanceof DOMException && error.name === "A
 var toError = (reason) => reason instanceof Error ? reason : Error(String(reason));
 var valueString = (value) => isString(value) ? `"${value}"` : !!value && typeof value === "object" ? JSON.stringify(value) : String(value);
 
+// src/classes/computed.ts
+var TYPE_COMPUTED = "Computed";
+
+class Memo {
+  #watchers = new Set;
+  #callback;
+  #value;
+  #error;
+  #dirty = true;
+  #computing = false;
+  #watcher;
+  constructor(callback, initialValue = UNSET) {
+    validateCallback("memo", callback, isMemoCallback);
+    validateSignalValue("memo", initialValue);
+    this.#callback = callback;
+    this.#value = initialValue;
+    this.#watcher = createWatcher(() => {
+      this.#dirty = true;
+      if (this.#watchers.size)
+        notifyWatchers(this.#watchers);
+      else
+        this.#watcher.stop();
+    });
+  }
+  get [Symbol.toStringTag]() {
+    return TYPE_COMPUTED;
+  }
+  get() {
+    subscribeActiveWatcher(this.#watchers);
+    flushPendingReactions();
+    if (this.#dirty) {
+      trackSignalReads(this.#watcher, () => {
+        if (this.#computing)
+          throw new CircularDependencyError("memo");
+        let result;
+        this.#computing = true;
+        try {
+          result = this.#callback(this.#value);
+        } catch (e) {
+          this.#value = UNSET;
+          this.#error = toError(e);
+          this.#computing = false;
+          return;
+        }
+        if (result == null || UNSET === result) {
+          this.#value = UNSET;
+          this.#error = undefined;
+        } else {
+          this.#value = result;
+          this.#error = undefined;
+          this.#dirty = false;
+        }
+        this.#computing = false;
+      });
+    }
+    if (this.#error)
+      throw this.#error;
+    return this.#value;
+  }
+}
+
+class Task {
+  #watchers = new Set;
+  #callback;
+  #value;
+  #error;
+  #dirty = true;
+  #computing = false;
+  #changed = false;
+  #watcher;
+  #controller;
+  constructor(callback, initialValue = UNSET) {
+    validateCallback("task", callback, isTaskCallback);
+    validateSignalValue("task", initialValue);
+    this.#callback = callback;
+    this.#value = initialValue;
+    this.#watcher = createWatcher(() => {
+      this.#dirty = true;
+      this.#controller?.abort();
+      if (this.#watchers.size)
+        notifyWatchers(this.#watchers);
+      else
+        this.#watcher.stop();
+    });
+    this.#watcher.onCleanup(() => {
+      this.#controller?.abort();
+    });
+  }
+  get [Symbol.toStringTag]() {
+    return TYPE_COMPUTED;
+  }
+  get() {
+    subscribeActiveWatcher(this.#watchers);
+    flushPendingReactions();
+    const ok = (v) => {
+      if (!isEqual(v, this.#value)) {
+        this.#value = v;
+        this.#changed = true;
+      }
+      this.#error = undefined;
+      this.#dirty = false;
+    };
+    const nil = () => {
+      this.#changed = UNSET !== this.#value;
+      this.#value = UNSET;
+      this.#error = undefined;
+    };
+    const err = (e) => {
+      const newError = toError(e);
+      this.#changed = !this.#error || newError.name !== this.#error.name || newError.message !== this.#error.message;
+      this.#value = UNSET;
+      this.#error = newError;
+    };
+    const settle = (fn) => (arg) => {
+      this.#computing = false;
+      this.#controller = undefined;
+      fn(arg);
+      if (this.#changed)
+        notifyWatchers(this.#watchers);
+    };
+    const compute = () => trackSignalReads(this.#watcher, () => {
+      if (this.#computing)
+        throw new CircularDependencyError("task");
+      this.#changed = false;
+      if (this.#controller)
+        return this.#value;
+      this.#controller = new AbortController;
+      this.#controller.signal.addEventListener("abort", () => {
+        this.#computing = false;
+        this.#controller = undefined;
+        compute();
+      }, {
+        once: true
+      });
+      let result;
+      this.#computing = true;
+      try {
+        result = this.#callback(this.#value, this.#controller.signal);
+      } catch (e) {
+        if (isAbortError(e))
+          nil();
+        else
+          err(e);
+        this.#computing = false;
+        return;
+      }
+      if (result instanceof Promise)
+        result.then(settle(ok), settle(err));
+      else if (result == null || UNSET === result)
+        nil();
+      else
+        ok(result);
+      this.#computing = false;
+    });
+    if (this.#dirty)
+      compute();
+    if (this.#error)
+      throw this.#error;
+    return this.#value;
+  }
+}
+var createComputed = (callback, initialValue = UNSET) => isAsyncFunction(callback) ? new Task(callback, initialValue) : new Memo(callback, initialValue);
+var isComputed = (value) => isObjectOfType(value, TYPE_COMPUTED);
+var isMemoCallback = (value) => isSyncFunction(value) && value.length < 2;
+var isTaskCallback = (value) => isAsyncFunction(value) && value.length < 3;
+
 // src/classes/composite.ts
 class MutableComposite {
   #validate;
@@ -225,19 +391,15 @@ class BaseList {
     sort: new Set
   };
   #order = [];
-  keyCounter = 0;
-  keyConfig;
+  #generateKey;
   constructor(initialValue, keyConfig) {
     validateSignalValue("list", initialValue, Array.isArray);
+    let keyCounter = 0;
+    this.#generateKey = isString(keyConfig) ? () => `${keyConfig}${keyCounter++}` : isFunction(keyConfig) ? (item) => keyConfig(item) : () => String(keyCounter++);
     this.#composite = new MutableComposite(this.#toRecord(initialValue), (key, value) => {
       validateSignalValue(`list for key "${key}"`, value);
       return true;
     });
-    this.keyConfig = keyConfig;
-  }
-  #generateKey(item) {
-    const id = this.keyCounter++;
-    return isString(this.keyConfig) ? `${this.keyConfig}${id}` : isFunction(this.keyConfig) ? this.keyConfig(item) : String(id);
   }
   #toRecord(array) {
     const record = {};
@@ -389,6 +551,9 @@ class BaseList {
       return () => this.#listeners.sort.delete(listener);
     }
     return this.#composite.on(type, listener);
+  }
+  deriveCollection(callback) {
+    return createCollection(this, callback);
   }
 }
 var createList = (initialValue, keyConfig) => {
@@ -748,171 +913,312 @@ var diff = (oldObj, newObj) => {
   };
 };
 
-// src/classes/computed.ts
-var TYPE_COMPUTED = "Computed";
-
-class Memo {
-  #watchers = new Set;
-  #callback;
-  #value;
-  #error;
-  #dirty = true;
-  #computing = false;
-  #watcher;
-  constructor(callback, initialValue = UNSET) {
-    validateCallback("memo", callback, isMemoCallback);
-    validateSignalValue("memo", initialValue);
-    this.#callback = callback;
-    this.#value = initialValue;
-    this.#watcher = createWatcher(() => {
-      this.#dirty = true;
-      if (this.#watchers.size)
-        notifyWatchers(this.#watchers);
-      else
-        this.#watcher.stop();
-    });
-  }
-  get [Symbol.toStringTag]() {
-    return TYPE_COMPUTED;
-  }
-  get() {
-    subscribeActiveWatcher(this.#watchers);
-    flushPendingReactions();
-    if (this.#dirty) {
-      trackSignalReads(this.#watcher, () => {
-        if (this.#computing)
-          throw new CircularDependencyError("memo");
-        let result;
-        this.#computing = true;
-        try {
-          result = this.#callback(this.#value);
-        } catch (e) {
-          this.#value = UNSET;
-          this.#error = toError(e);
-          this.#computing = false;
-          return;
-        }
-        if (result == null || UNSET === result) {
-          this.#value = UNSET;
-          this.#error = undefined;
-        } else {
-          this.#value = result;
-          this.#error = undefined;
-          this.#dirty = false;
-        }
-        this.#computing = false;
-      });
+// src/signals/computed.ts
+var TYPE_COMPUTED2 = "Computed";
+var createComputed2 = (callback, initialValue = UNSET) => {
+  if (!isComputedCallback(callback))
+    throw new InvalidCallbackError("computed", callback);
+  if (initialValue == null)
+    throw new NullishSignalValueError("computed");
+  const watchers = new Set;
+  let value = initialValue;
+  let error;
+  let controller;
+  let dirty = true;
+  let changed = false;
+  let computing = false;
+  const ok = (v) => {
+    if (!isEqual(v, value)) {
+      value = v;
+      changed = true;
     }
-    if (this.#error)
-      throw this.#error;
-    return this.#value;
-  }
-}
-
-class Task {
-  #watchers = new Set;
-  #callback;
-  #value;
-  #error;
-  #dirty = true;
-  #computing = false;
-  #changed = false;
-  #watcher;
-  #controller;
-  constructor(callback, initialValue = UNSET) {
-    validateCallback("task", callback, isTaskCallback);
-    validateSignalValue("task", initialValue);
-    this.#callback = callback;
-    this.#value = initialValue;
-    this.#watcher = createWatcher(() => {
-      this.#dirty = true;
-      this.#controller?.abort();
-      if (this.#watchers.size)
-        notifyWatchers(this.#watchers);
-      else
-        this.#watcher.stop();
-    });
-    this.#watcher.onCleanup(() => {
-      this.#controller?.abort();
-    });
-  }
-  get [Symbol.toStringTag]() {
-    return TYPE_COMPUTED;
-  }
-  get() {
-    subscribeActiveWatcher(this.#watchers);
-    flushPendingReactions();
-    const ok = (v) => {
-      if (!isEqual(v, this.#value)) {
-        this.#value = v;
-        this.#changed = true;
-      }
-      this.#error = undefined;
-      this.#dirty = false;
-    };
-    const nil = () => {
-      this.#changed = UNSET !== this.#value;
-      this.#value = UNSET;
-      this.#error = undefined;
-    };
-    const err = (e) => {
-      const newError = toError(e);
-      this.#changed = !this.#error || newError.name !== this.#error.name || newError.message !== this.#error.message;
-      this.#value = UNSET;
-      this.#error = newError;
-    };
-    const settle = (fn) => (arg) => {
-      this.#computing = false;
-      this.#controller = undefined;
-      fn(arg);
-      if (this.#changed)
-        notifyWatchers(this.#watchers);
-    };
-    const compute = () => trackSignalReads(this.#watcher, () => {
-      if (this.#computing)
-        throw new CircularDependencyError("task");
-      this.#changed = false;
-      if (this.#controller)
-        return this.#value;
-      this.#controller = new AbortController;
-      this.#controller.signal.addEventListener("abort", () => {
-        this.#computing = false;
-        this.#controller = undefined;
+    error = undefined;
+    dirty = false;
+  };
+  const nil = () => {
+    changed = UNSET !== value;
+    value = UNSET;
+    error = undefined;
+  };
+  const err = (e) => {
+    const newError = toError(e);
+    changed = !error || newError.name !== error.name || newError.message !== error.message;
+    value = UNSET;
+    error = newError;
+  };
+  const settle = (fn) => (arg) => {
+    computing = false;
+    controller = undefined;
+    fn(arg);
+    if (changed)
+      notifyWatchers(watchers);
+  };
+  const watcher = createWatcher(() => {
+    dirty = true;
+    controller?.abort();
+    if (watchers.size)
+      notifyWatchers(watchers);
+    else
+      watcher.stop();
+  });
+  watcher.onCleanup(() => {
+    controller?.abort();
+  });
+  const compute = () => trackSignalReads(watcher, () => {
+    if (computing)
+      throw new CircularDependencyError("computed");
+    changed = false;
+    if (isAsyncFunction(callback)) {
+      if (controller)
+        return value;
+      controller = new AbortController;
+      controller.signal.addEventListener("abort", () => {
+        computing = false;
+        controller = undefined;
         compute();
       }, {
         once: true
       });
-      let result;
-      this.#computing = true;
-      try {
-        result = this.#callback(this.#value, this.#controller.signal);
-      } catch (e) {
-        if (isAbortError(e))
-          nil();
-        else
-          err(e);
-        this.#computing = false;
-        return;
-      }
-      if (result instanceof Promise)
-        result.then(settle(ok), settle(err));
-      else if (result == null || UNSET === result)
+    }
+    let result;
+    computing = true;
+    try {
+      result = controller ? callback(value, controller.signal) : callback(value);
+    } catch (e) {
+      if (isAbortError(e))
         nil();
       else
-        ok(result);
-      this.#computing = false;
+        err(e);
+      computing = false;
+      return;
+    }
+    if (result instanceof Promise)
+      result.then(settle(ok), settle(err));
+    else if (result == null || UNSET === result)
+      nil();
+    else
+      ok(result);
+    computing = false;
+  });
+  const computed = {};
+  Object.defineProperties(computed, {
+    [Symbol.toStringTag]: {
+      value: TYPE_COMPUTED2
+    },
+    get: {
+      value: () => {
+        subscribeActiveWatcher(watchers);
+        flushPendingReactions();
+        if (dirty)
+          compute();
+        if (error)
+          throw error;
+        return value;
+      }
+    }
+  });
+  return computed;
+};
+var isComputedCallback = (value) => isFunction(value) && value.length < 3;
+
+// src/classes/collection.ts
+var TYPE_COLLECTION = "Collection";
+
+class BaseCollection {
+  #watchers = new Set;
+  #source;
+  #callback;
+  #signals = new Map;
+  #ownWatchers = new Map;
+  #listeners = {
+    add: new Set,
+    change: new Set,
+    remove: new Set,
+    sort: new Set
+  };
+  #order = [];
+  constructor(source, callback) {
+    this.#source = source;
+    this.#callback = callback;
+    for (let i = 0;i < this.#source.length; i++) {
+      const key = this.#source.keyAt(i);
+      if (!key)
+        continue;
+      this.#add(key);
+    }
+    this.#source.on("add", (additions) => {
+      for (const key of additions) {
+        if (!this.#signals.has(key))
+          this.#add(key);
+      }
+      notifyWatchers(this.#watchers);
+      emitNotification(this.#listeners.add, Object.keys(additions));
     });
-    if (this.#dirty)
-      compute();
-    if (this.#error)
-      throw this.#error;
+    this.#source.on("remove", (removals) => {
+      for (const key of Object.keys(removals)) {
+        if (!this.#signals.has(key))
+          continue;
+        this.#signals.delete(key);
+        const index = this.#order.indexOf(key);
+        if (index >= 0)
+          this.#order.splice(index, 1);
+        this.#removeWatcher(key);
+      }
+      this.#order = this.#order.filter(() => true);
+      notifyWatchers(this.#watchers);
+      emitNotification(this.#listeners.remove, Object.keys(removals));
+    });
+    this.#source.on("sort", (newOrder) => {
+      this.#order = [...newOrder];
+      notifyWatchers(this.#watchers);
+      emitNotification(this.#listeners.sort, newOrder);
+    });
+  }
+  get #value() {
+    return this.#order.map((key) => this.#signals.get(key)?.get()).filter((v) => v !== undefined);
+  }
+  #add(key) {
+    const computedCallback = isAsyncFunction(this.#callback) ? async (_, abort) => {
+      const sourceSignal = this.#source.byKey(key);
+      if (!sourceSignal)
+        return UNSET;
+      const sourceValue = sourceSignal.get();
+      return this.#callback(sourceValue, abort);
+    } : () => {
+      const sourceSignal = this.#source.byKey(key);
+      if (!sourceSignal)
+        return UNSET;
+      const sourceValue = sourceSignal.get();
+      return this.#callback(sourceValue);
+    };
+    const signal = createComputed2(computedCallback);
+    this.#signals.set(key, signal);
+    if (!this.#order.includes(key))
+      this.#order.push(key);
+    if (this.#listeners.change.size)
+      this.#addWatcher(key);
+    return true;
+  }
+  #addWatcher(key) {
+    const watcher = createWatcher(() => {
+      trackSignalReads(watcher, () => {
+        this.#signals.get(key)?.get();
+      });
+    });
+    this.#ownWatchers.set(key, watcher);
+    watcher();
+  }
+  #removeWatcher(key) {
+    const watcher = this.#ownWatchers.get(key);
+    if (watcher) {
+      watcher.stop();
+      this.#ownWatchers.delete(key);
+    }
+  }
+  get [Symbol.toStringTag]() {
+    return TYPE_COLLECTION;
+  }
+  get [Symbol.isConcatSpreadable]() {
+    return true;
+  }
+  *[Symbol.iterator]() {
+    for (const key of this.#order) {
+      const signal = this.#signals.get(key);
+      if (signal)
+        yield signal;
+    }
+  }
+  get length() {
+    subscribeActiveWatcher(this.#watchers);
+    return this.#order.length;
+  }
+  get() {
+    subscribeActiveWatcher(this.#watchers);
     return this.#value;
   }
+  at(index) {
+    return this.#signals.get(this.#order[index]);
+  }
+  keys() {
+    return this.#order.values();
+  }
+  byKey(key) {
+    return this.#signals.get(key);
+  }
+  keyAt(index) {
+    return this.#order[index];
+  }
+  indexOfKey(key) {
+    return this.#order.indexOf(key);
+  }
+  on(type, listener) {
+    this.#listeners[type].add(listener);
+    if (type === "change" && !this.#ownWatchers.size) {
+      for (const key of this.#signals.keys())
+        this.#addWatcher(key);
+    }
+    return () => {
+      this.#listeners[type].delete(listener);
+      if (type === "change" && !this.#listeners.change.size) {
+        if (this.#ownWatchers.size) {
+          for (const watcher of this.#ownWatchers.values())
+            watcher.stop();
+          this.#ownWatchers.clear();
+        }
+      }
+    };
+  }
+  deriveCollection(callback) {
+    return createCollection(this, callback);
+  }
 }
-var createComputed = (callback, initialValue = UNSET) => isAsyncFunction(callback) ? new Task(callback, initialValue) : new Memo(callback, initialValue);
-var isComputed = (value) => isObjectOfType(value, TYPE_COMPUTED);
-var isMemoCallback = (value) => isSyncFunction(value) && value.length < 2;
-var isTaskCallback = (value) => isAsyncFunction(value) && value.length < 3;
+var createCollection = (source, callback) => {
+  const instance = new BaseCollection(source, callback);
+  const getSignal = (prop) => {
+    const index = Number(prop);
+    return Number.isInteger(index) && index >= 0 ? instance.at(index) : instance.byKey(prop);
+  };
+  return new Proxy(instance, {
+    get(target, prop) {
+      if (prop in target)
+        return Reflect.get(target, prop);
+      if (!isSymbol(prop))
+        return getSignal(prop);
+    },
+    has(target, prop) {
+      if (prop in target)
+        return true;
+      return !isSymbol(prop) ? getSignal(prop) !== undefined : false;
+    },
+    ownKeys(target) {
+      return Object.getOwnPropertyNames(target.keys());
+    },
+    getOwnPropertyDescriptor(target, prop) {
+      if (isSymbol(prop))
+        return;
+      if (prop === "length") {
+        return {
+          enumerable: false,
+          configurable: false,
+          writable: false,
+          value: target.length
+        };
+      }
+      const index = Number(prop);
+      if (Number.isInteger(index) && index >= 0 && index < target.length) {
+        const signal = target.at(index);
+        return signal ? {
+          enumerable: true,
+          configurable: true,
+          writable: true,
+          value: signal
+        } : undefined;
+      }
+      return;
+    }
+  });
+};
+var isCollection = (value) => isObjectOfType(value, TYPE_COLLECTION);
 // src/effect.ts
 var createEffect = (callback) => {
   if (!isFunction(callback) || callback.length > 1)
@@ -1017,6 +1323,7 @@ export {
   isFunction,
   isEqual,
   isComputed,
+  isCollection,
   isAsyncFunction,
   isAbortError,
   flushPendingReactions,
@@ -1029,6 +1336,7 @@ export {
   createList,
   createEffect,
   createComputed,
+  createCollection,
   batchSignalWrites,
   UNSET,
   Task,
@@ -1036,6 +1344,7 @@ export {
   TYPE_STATE,
   TYPE_LIST,
   TYPE_COMPUTED,
+  TYPE_COLLECTION,
   State,
   ReadonlySignalError,
   NullishSignalValueError,

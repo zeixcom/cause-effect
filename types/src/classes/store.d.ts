@@ -4,7 +4,7 @@ import { type Cleanup, type Listener, type Listeners } from '../system';
 import type { List } from './list';
 import type { State } from './state';
 type Store<T extends UnknownRecord> = BaseStore<T> & {
-    [K in keyof T]: T[K] extends readonly (infer U extends {})[] ? List<U> : T[K] extends Record<string, unknown & {}> ? Store<T[K]> : State<T[K] & {}>;
+    [K in keyof T]: T[K] extends readonly (infer U extends {})[] ? List<U> : T[K] extends UnknownRecord ? Store<T[K]> : State<T[K] & {}>;
 };
 declare const TYPE_STORE: "Store";
 declare class BaseStore<T extends UnknownRecord> {
