@@ -1,3 +1,107 @@
+// src/util.ts
+var UNSET = Symbol();
+var isString = (value) => typeof value === "string";
+var isNumber = (value) => typeof value === "number";
+var isSymbol = (value) => typeof value === "symbol";
+var isFunction = (fn) => typeof fn === "function";
+var isAsyncFunction = (fn) => isFunction(fn) && fn.constructor.name === "AsyncFunction";
+var isSyncFunction = (fn) => isFunction(fn) && fn.constructor.name !== "AsyncFunction";
+var isNonNullObject = (value) => value != null && typeof value === "object";
+var isObjectOfType = (value, type) => Object.prototype.toString.call(value) === `[object ${type}]`;
+var isRecord = (value) => isObjectOfType(value, "Object");
+var isRecordOrArray = (value) => isRecord(value) || Array.isArray(value);
+var isUniformArray = (value, guard = (item) => item != null) => Array.isArray(value) && value.every(guard);
+var isAbortError = (error) => error instanceof DOMException && error.name === "AbortError";
+var toError = (reason) => reason instanceof Error ? reason : Error(String(reason));
+var valueString = (value) => isString(value) ? `"${value}"` : !!value && typeof value === "object" ? JSON.stringify(value) : String(value);
+
+// src/diff.ts
+var isEqual = (a, b, visited) => {
+  if (Object.is(a, b))
+    return true;
+  if (typeof a !== typeof b)
+    return false;
+  if (!isNonNullObject(a) || !isNonNullObject(b))
+    return false;
+  if (!visited)
+    visited = new WeakSet;
+  if (visited.has(a) || visited.has(b))
+    throw new CircularDependencyError("isEqual");
+  visited.add(a);
+  visited.add(b);
+  try {
+    if (Array.isArray(a) && Array.isArray(b)) {
+      if (a.length !== b.length)
+        return false;
+      for (let i = 0;i < a.length; i++) {
+        if (!isEqual(a[i], b[i], visited))
+          return false;
+      }
+      return true;
+    }
+    if (Array.isArray(a) !== Array.isArray(b))
+      return false;
+    if (isRecord(a) && isRecord(b)) {
+      const aKeys = Object.keys(a);
+      const bKeys = Object.keys(b);
+      if (aKeys.length !== bKeys.length)
+        return false;
+      for (const key of aKeys) {
+        if (!(key in b))
+          return false;
+        if (!isEqual(a[key], b[key], visited))
+          return false;
+      }
+      return true;
+    }
+    return false;
+  } finally {
+    visited.delete(a);
+    visited.delete(b);
+  }
+};
+var diff = (oldObj, newObj) => {
+  const oldValid = isRecordOrArray(oldObj);
+  const newValid = isRecordOrArray(newObj);
+  if (!oldValid || !newValid) {
+    const changed = !Object.is(oldObj, newObj);
+    return {
+      changed,
+      add: changed && newValid ? newObj : {},
+      change: {},
+      remove: changed && oldValid ? oldObj : {}
+    };
+  }
+  const visited = new WeakSet;
+  const add = {};
+  const change = {};
+  const remove = {};
+  const oldKeys = Object.keys(oldObj);
+  const newKeys = Object.keys(newObj);
+  const allKeys = new Set([...oldKeys, ...newKeys]);
+  for (const key of allKeys) {
+    const oldHas = key in oldObj;
+    const newHas = key in newObj;
+    if (!oldHas && newHas) {
+      add[key] = newObj[key];
+      continue;
+    } else if (oldHas && !newHas) {
+      remove[key] = UNSET;
+      continue;
+    }
+    const oldValue = oldObj[key];
+    const newValue = newObj[key];
+    if (!isEqual(oldValue, newValue, visited))
+      change[key] = newValue;
+  }
+  return {
+    add,
+    change,
+    remove,
+    changed: !!(Object.keys(add).length || Object.keys(change).length || Object.keys(remove).length)
+  };
+};
+
 // src/system.ts
 var activeWatcher;
 var pendingReactions = new Set;
@@ -64,23 +168,6 @@ var emitNotification = (listeners, payload) => {
       listener(payload);
   }
 };
-
-// src/util.ts
-var UNSET = Symbol();
-var isString = (value) => typeof value === "string";
-var isNumber = (value) => typeof value === "number";
-var isSymbol = (value) => typeof value === "symbol";
-var isFunction = (fn) => typeof fn === "function";
-var isAsyncFunction = (fn) => isFunction(fn) && fn.constructor.name === "AsyncFunction";
-var isSyncFunction = (fn) => isFunction(fn) && fn.constructor.name !== "AsyncFunction";
-var isNonNullObject = (value) => value != null && typeof value === "object";
-var isObjectOfType = (value, type) => Object.prototype.toString.call(value) === `[object ${type}]`;
-var isRecord = (value) => isObjectOfType(value, "Object");
-var isRecordOrArray = (value) => isRecord(value) || Array.isArray(value);
-var isUniformArray = (value, guard = (item) => item != null) => Array.isArray(value) && value.every(guard);
-var isAbortError = (error) => error instanceof DOMException && error.name === "AbortError";
-var toError = (reason) => reason instanceof Error ? reason : Error(String(reason));
-var valueString = (value) => isString(value) ? `"${value}"` : !!value && typeof value === "object" ? JSON.stringify(value) : String(value);
 
 // src/classes/computed.ts
 var TYPE_COMPUTED = "Computed";
@@ -826,204 +913,8 @@ var guardMutableSignal = (what, value, signal) => {
   return true;
 };
 
-// src/diff.ts
-var isEqual = (a, b, visited) => {
-  if (Object.is(a, b))
-    return true;
-  if (typeof a !== typeof b)
-    return false;
-  if (!isNonNullObject(a) || !isNonNullObject(b))
-    return false;
-  if (!visited)
-    visited = new WeakSet;
-  if (visited.has(a) || visited.has(b))
-    throw new CircularDependencyError("isEqual");
-  visited.add(a);
-  visited.add(b);
-  try {
-    if (Array.isArray(a) && Array.isArray(b)) {
-      if (a.length !== b.length)
-        return false;
-      for (let i = 0;i < a.length; i++) {
-        if (!isEqual(a[i], b[i], visited))
-          return false;
-      }
-      return true;
-    }
-    if (Array.isArray(a) !== Array.isArray(b))
-      return false;
-    if (isRecord(a) && isRecord(b)) {
-      const aKeys = Object.keys(a);
-      const bKeys = Object.keys(b);
-      if (aKeys.length !== bKeys.length)
-        return false;
-      for (const key of aKeys) {
-        if (!(key in b))
-          return false;
-        if (!isEqual(a[key], b[key], visited))
-          return false;
-      }
-      return true;
-    }
-    return false;
-  } finally {
-    visited.delete(a);
-    visited.delete(b);
-  }
-};
-var diff = (oldObj, newObj) => {
-  const oldValid = isRecordOrArray(oldObj);
-  const newValid = isRecordOrArray(newObj);
-  if (!oldValid || !newValid) {
-    const changed = !Object.is(oldObj, newObj);
-    return {
-      changed,
-      add: changed && newValid ? newObj : {},
-      change: {},
-      remove: changed && oldValid ? oldObj : {}
-    };
-  }
-  const visited = new WeakSet;
-  const add = {};
-  const change = {};
-  const remove = {};
-  const oldKeys = Object.keys(oldObj);
-  const newKeys = Object.keys(newObj);
-  const allKeys = new Set([...oldKeys, ...newKeys]);
-  for (const key of allKeys) {
-    const oldHas = key in oldObj;
-    const newHas = key in newObj;
-    if (!oldHas && newHas) {
-      add[key] = newObj[key];
-      continue;
-    } else if (oldHas && !newHas) {
-      remove[key] = UNSET;
-      continue;
-    }
-    const oldValue = oldObj[key];
-    const newValue = newObj[key];
-    if (!isEqual(oldValue, newValue, visited))
-      change[key] = newValue;
-  }
-  return {
-    add,
-    change,
-    remove,
-    changed: !!(Object.keys(add).length || Object.keys(change).length || Object.keys(remove).length)
-  };
-};
-
-// src/signals/computed.ts
-var TYPE_COMPUTED2 = "Computed";
-var createComputed2 = (callback, initialValue = UNSET) => {
-  if (!isComputedCallback(callback))
-    throw new InvalidCallbackError("computed", callback);
-  if (initialValue == null)
-    throw new NullishSignalValueError("computed");
-  const watchers = new Set;
-  let value = initialValue;
-  let error;
-  let controller;
-  let dirty = true;
-  let changed = false;
-  let computing = false;
-  const ok = (v) => {
-    if (!isEqual(v, value)) {
-      value = v;
-      changed = true;
-    }
-    error = undefined;
-    dirty = false;
-  };
-  const nil = () => {
-    changed = UNSET !== value;
-    value = UNSET;
-    error = undefined;
-  };
-  const err = (e) => {
-    const newError = toError(e);
-    changed = !error || newError.name !== error.name || newError.message !== error.message;
-    value = UNSET;
-    error = newError;
-  };
-  const settle = (fn) => (arg) => {
-    computing = false;
-    controller = undefined;
-    fn(arg);
-    if (changed)
-      notifyWatchers(watchers);
-  };
-  const watcher = createWatcher(() => {
-    dirty = true;
-    controller?.abort();
-    if (watchers.size)
-      notifyWatchers(watchers);
-    else
-      watcher.stop();
-  });
-  watcher.onCleanup(() => {
-    controller?.abort();
-  });
-  const compute = () => trackSignalReads(watcher, () => {
-    if (computing)
-      throw new CircularDependencyError("computed");
-    changed = false;
-    if (isAsyncFunction(callback)) {
-      if (controller)
-        return value;
-      controller = new AbortController;
-      controller.signal.addEventListener("abort", () => {
-        computing = false;
-        controller = undefined;
-        compute();
-      }, {
-        once: true
-      });
-    }
-    let result;
-    computing = true;
-    try {
-      result = controller ? callback(value, controller.signal) : callback(value);
-    } catch (e) {
-      if (isAbortError(e))
-        nil();
-      else
-        err(e);
-      computing = false;
-      return;
-    }
-    if (result instanceof Promise)
-      result.then(settle(ok), settle(err));
-    else if (result == null || UNSET === result)
-      nil();
-    else
-      ok(result);
-    computing = false;
-  });
-  const computed = {};
-  Object.defineProperties(computed, {
-    [Symbol.toStringTag]: {
-      value: TYPE_COMPUTED2
-    },
-    get: {
-      value: () => {
-        subscribeActiveWatcher(watchers);
-        flushPendingReactions();
-        if (dirty)
-          compute();
-        if (error)
-          throw error;
-        return value;
-      }
-    }
-  });
-  return computed;
-};
-var isComputedCallback = (value) => isFunction(value) && value.length < 3;
-
 // src/classes/collection.ts
 var TYPE_COLLECTION = "Collection";
-var isAsyncCollectionCallback = (callback) => callback.length === 2;
 
 class BaseCollection {
   #watchers = new Set;
@@ -1088,15 +979,19 @@ class BaseCollection {
       if (!sourceSignal)
         return UNSET;
       const sourceValue = sourceSignal.get();
+      if (sourceValue === UNSET)
+        return UNSET;
       return this.#callback(sourceValue, abort);
     } : () => {
       const sourceSignal = this.#source.byKey(key);
       if (!sourceSignal)
         return UNSET;
       const sourceValue = sourceSignal.get();
+      if (sourceValue === UNSET)
+        return UNSET;
       return this.#callback(sourceValue);
     };
-    const signal = createComputed2(computedCallback);
+    const signal = createComputed(computedCallback);
     this.#signals.set(key, signal);
     if (!this.#order.includes(key))
       this.#order.push(key);
@@ -1178,6 +1073,9 @@ class BaseCollection {
   }
 }
 function createCollection(source, callback) {
+  validateCallback("collection", callback);
+  if (isFunction(source))
+    source = source();
   const instance = new BaseCollection(source, callback);
   const getSignal = (prop) => {
     const index = Number(prop);
@@ -1226,6 +1124,7 @@ function createCollection(source, callback) {
   });
 }
 var isCollection = (value) => isObjectOfType(value, TYPE_COLLECTION);
+var isAsyncCollectionCallback = (callback) => isAsyncFunction(callback);
 // src/effect.ts
 var createEffect = (callback) => {
   if (!isFunction(callback) || callback.length > 1)

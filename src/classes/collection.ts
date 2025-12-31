@@ -1,4 +1,4 @@
-import { type Computed, createComputed } from '../signals/computed'
+import { validateCallback } from '../errors'
 import {
 	type Cleanup,
 	createWatcher,
@@ -17,6 +17,7 @@ import {
 	isSymbol,
 	UNSET,
 } from '../util'
+import { type Computed, createComputed } from './computed'
 import type { BaseList, List } from './list'
 
 /* === Types === */
@@ -117,6 +118,7 @@ class BaseCollection<T extends {}, U extends {}> {
 					if (!sourceSignal) return UNSET
 
 					const sourceValue = sourceSignal.get() as U
+					if (sourceValue === UNSET) return UNSET
 					return this.#callback(sourceValue, abort)
 				}
 			: () => {
@@ -124,6 +126,7 @@ class BaseCollection<T extends {}, U extends {}> {
 					if (!sourceSignal) return UNSET
 
 					const sourceValue = sourceSignal.get() as U
+					if (sourceValue === UNSET) return UNSET
 					return (this.#callback as (sourceValue: U) => T)(
 						sourceValue,
 					)
@@ -247,17 +250,20 @@ class BaseCollection<T extends {}, U extends {}> {
  * @returns {Collection<T>} - New collection with reactive properties that preserves the original type T
  */
 function createCollection<T extends {}, U extends {}>(
-	source: CollectionSource<U>,
+	source: CollectionSource<U> | (() => CollectionSource<U>),
 	callback: (sourceValue: U) => T,
 ): Collection<T, U>
 function createCollection<T extends {}, U extends {}>(
-	source: CollectionSource<U>,
+	source: CollectionSource<U> | (() => CollectionSource<U>),
 	callback: (sourceValue: U, abort: AbortSignal) => Promise<T>,
 ): Collection<T, U>
 function createCollection<T extends {}, U extends {}>(
-	source: CollectionSource<U>,
+	source: CollectionSource<U> | (() => CollectionSource<U>),
 	callback: CollectionCallback<T, U>,
 ): Collection<T, U> {
+	validateCallback('collection', callback)
+
+	if (isFunction(source)) source = source()
 	const instance = new BaseCollection(source, callback)
 
 	const getSignal = (prop: string) => {
@@ -316,10 +322,24 @@ function createCollection<T extends {}, U extends {}>(
 	}) as Collection<T, U>
 }
 
+/**
+ * Check if a value is a collection signal
+ *
+ * @since 0.17.0
+ * @param {unknown} value - Value to check
+ * @returns {boolean} - True if value is a collection signal, false otherwise
+ */
 const isCollection = /*#__PURE__*/ <T extends {}, U extends {}>(
 	value: unknown,
 ): value is Collection<T, U> => isObjectOfType(value, TYPE_COLLECTION)
 
+/**
+ * Check if the provided callback is an async function
+ *
+ * @since 0.17.0
+ * @param {unknown} callback - Value to check
+ * @returns {boolean} - True if value is an async collection callback, false otherwise
+ */
 const isAsyncCollectionCallback = <T extends {}>(
 	callback: unknown,
 ): callback is (sourceValue: unknown, abort: AbortSignal) => Promise<T> =>

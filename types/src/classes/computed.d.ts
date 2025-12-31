@@ -25,7 +25,7 @@ declare class Memo<T extends {}> {
      * @throws {InvalidSignalValueError} If the initial value is not valid
      */
     constructor(callback: MemoCallback<T>, initialValue?: T);
-    get [Symbol.toStringTag](): string;
+    get [Symbol.toStringTag](): 'Computed';
     /**
      * Return the memoized value after computing it if necessary.
      *
@@ -51,7 +51,7 @@ declare class Task<T extends {}> {
      * @throws {InvalidSignalValueError} If the initial value is not valid
      */
     constructor(callback: TaskCallback<T>, initialValue?: T);
-    get [Symbol.toStringTag](): string;
+    get [Symbol.toStringTag](): 'Computed';
     /**
      * Return the memoized value after executing the async function if necessary.
      *
@@ -77,7 +77,7 @@ declare const createComputed: <T extends {}>(callback: TaskCallback<T> | MemoCal
  */
 declare const isComputed: <T extends {}>(value: unknown) => value is Memo<T>;
 /**
- * Check if the provided value is a callback that may be used as input for toSignal() to derive a computed state
+ * Check if the provided value is a callback that may be used as input for createSignal() to derive a computed state
  *
  * @since 0.12.0
  * @param {unknown} value - Value to check
@@ -87,7 +87,7 @@ declare const isMemoCallback: <T extends {} & {
     then?: undefined;
 }>(value: unknown) => value is MemoCallback<T>;
 /**
- * Check if the provided value is a callback that may be used as input for toSignal() to derive a computed state
+ * Check if the provided value is a callback that may be used as input for createSignal() to derive a computed state
  *
  * @since 0.17.0
  * @param {unknown} value - Value to check

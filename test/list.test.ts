@@ -731,10 +731,11 @@ describe('list', () => {
 			test('handles UNSET values in transformation', () => {
 				const list = createList([1, UNSET, 3])
 				const processed = list.deriveCollection(value => {
-					return value === UNSET ? 0 : (value as number) * 2
+					return value === UNSET ? 0 : value * 2
 				})
 
-				expect(processed.get()).toEqual([2, 0, 6])
+				// UNSET values are filtered out before transformation
+				expect(processed.get()).toEqual([2, 6])
 			})
 
 			test('handles complex object transformations', () => {

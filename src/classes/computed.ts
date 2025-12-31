@@ -78,7 +78,7 @@ class Memo<T extends {}> {
 		})
 	}
 
-	get [Symbol.toStringTag](): string {
+	get [Symbol.toStringTag](): 'Computed' {
 		return TYPE_COMPUTED
 	}
 
@@ -171,7 +171,7 @@ class Task<T extends {}> {
 		})
 	}
 
-	get [Symbol.toStringTag](): string {
+	get [Symbol.toStringTag](): 'Computed' {
 		return TYPE_COMPUTED
 	}
 
@@ -296,7 +296,7 @@ const isComputed = /*#__PURE__*/ <T extends {}>(
 ): value is Memo<T> => isObjectOfType(value, TYPE_COMPUTED)
 
 /**
- * Check if the provided value is a callback that may be used as input for toSignal() to derive a computed state
+ * Check if the provided value is a callback that may be used as input for createSignal() to derive a computed state
  *
  * @since 0.12.0
  * @param {unknown} value - Value to check
@@ -307,7 +307,7 @@ const isMemoCallback = /*#__PURE__*/ <T extends {} & { then?: undefined }>(
 ): value is MemoCallback<T> => isSyncFunction(value) && value.length < 2
 
 /**
- * Check if the provided value is a callback that may be used as input for toSignal() to derive a computed state
+ * Check if the provided value is a callback that may be used as input for createSignal() to derive a computed state
  *
  * @since 0.17.0
  * @param {unknown} value - Value to check
