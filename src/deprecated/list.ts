@@ -100,7 +100,7 @@ const createList = <T extends {}>(
 	const signals = new Map<string, MutableSignal<T>>()
 	const ownWatchers = new Map<string, Watcher>()
 
-	// Stable key support for array-like stores
+	// Stable key support for lists
 	let keyCounter = 0
 	let order: string[] = []
 

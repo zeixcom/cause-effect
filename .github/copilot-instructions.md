@@ -10,15 +10,18 @@ Cause & Effect is a reactive state management library for JavaScript/TypeScript 
 - **State**: Mutable signals for primitive values (`new State()`)
 - **Computed**: Derived read-only signals with memoization, reducer capabilities and async support (`new Memo()`, `new Task()`)
 - **Store**: Mutable signals for objects with reactive properties (`createStore()`)
-- **List**: Mutable signals for arrays with stable keys and reactive entries (`new List()`)
+- **List**: Mutable signals for arrays with stable keys and reactive entries (`createList()`)
+- **Collection**: Read-only derived arrays with item-level memoization and async support (`createCollection()`)
 - **Effects**: Side effect handlers that react to signal changes (`createEffect()`)
 
 ## Key Files Structure
 
+- `src/classes/state.ts` - Mutable state signals
+- `src/classes/store.ts` - Object stores with reactive properties
+- `src/classes/list.ts` - Array stores with stable keys and reactive items
+- `src/classes/collection.ts` - Read-only derived arrays with memoization
+- `src/classes/computed.ts` - Computed/derived signals
 - `src/signal.ts` - Base signal types and utilities
-- `src/state.ts` - Mutable state signals
-- `src/store.ts` - Object stores with reactive properties
-- `src/computed.ts` - Computed/derived signals
 - `src/effect.ts` - Effect system
 - `src/system.ts` - Core reactivity system (watchers, batching)
 - `src/util.ts` - Utility functions and constants
@@ -77,9 +80,9 @@ const actions = new State<'increment' | 'decrement'>('increment')
 // Store for objects
 const user = createStore({ name: 'Alice', age: 30 })
 
-// Array-like stores with stable keys
-const items = createStore(['apple', 'banana', 'cherry'])
-const users = createStore([{ id: 'alice', name: 'Alice' }], user => user.id)
+// List with stable keys
+const items = createList(['apple', 'banana', 'cherry'])
+const users = createList([{ id: 'alice', name: 'Alice' }], user => user.id)
 
 // Computed for derived values
 const doubled = new Memo(() => count.get() * 2)
@@ -129,7 +132,7 @@ function isSignal<T extends {}>(value: unknown): value is Signal<T>
 
 ## Store Methods and Stable Keys
 
-### Array-like Store Methods
+### List Methods
 - `byKey(key)` - Access signals by stable key instead of index
 - `keyAt(index)` - Get stable key at specific position
 - `indexOfKey(key)` - Get position of stable key in current order
@@ -139,17 +142,30 @@ function isSignal<T extends {}>(value: unknown): value is Signal<T>
 ### Stable Keys Usage
 ```typescript
 // Default auto-incrementing keys
-const items = createStore(['a', 'b', 'c'])
+const items = createList(['a', 'b', 'c'])
 
 // String prefix keys
-const fruits = createStore(['apple', 'banana'], 'fruit')
+// Lists with stable keys
+const items = createList(['apple', 'banana'], 'fruit')
 // Creates keys: 'fruit0', 'fruit1'
 
 // Function-based keys
-const users = createStore([
+const users = createList([
   { id: 'user1', name: 'Alice' },
   { id: 'user2', name: 'Bob' }
 ], user => user.id) // Uses user.id as stable key
+
+// Collections derived from lists
+const userProfiles = createCollection(users, user => ({
+  ...user,
+  displayName: `${user.name} (ID: ${user.id})`
+}))
+
+// Chained collections for data pipelines
+const activeUserSummaries = users
+  .deriveCollection(user => ({ ...user, active: user.lastLogin > Date.now() - 86400000 }))
+  .deriveCollection(user => user.active ? `Active: ${user.name}` : null)
+  .filter(Boolean)
 ```
 
 ## When suggesting code:

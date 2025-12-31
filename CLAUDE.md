@@ -17,7 +17,7 @@ Think of signals as **observable cells** in a spreadsheet:
 - **State signals** are like input cells where you can directly enter values
 - **Computed signals** are like formula cells that automatically recalculate when their dependencies change
 - **Store signals** are like structured data tables where individual columns (properties) are reactive
-- **Array-like stores** with stable keys are like tables with persistent row IDs that survive sorting and reordering
+- **List signals** with stable keys are like tables with persistent row IDs that survive sorting and reordering
 - **Effects** are like event handlers that trigger side effects when cells change
 
 The key insight is that the system tracks which cells (signals) are read during computation, creating an automatic dependency graph that ensures minimal and correct updates.
@@ -44,9 +44,41 @@ interface MutableSignal<T extends {}> extends Signal<T> {
   set(value: T): void
   update(fn: (current: T) => T): void
 }
+
+// Collection signals are read-only derived arrays
+interface Collection<T extends {}, U extends {}> extends Signal<T[]> {
+  at(index: number): Computed<T> | undefined
+  byKey(key: string): Computed<T> | undefined
+  deriveCollection<R extends {}>(callback: CollectionCallback<R, T>): Collection<R, T>
+}
 ```
 
 The generic constraint `T extends {}` is crucial - it excludes `null` and `undefined` at the type level, preventing common runtime errors and making the API more predictable.
+
+### Collection Signal Deep Dive
+
+Collection signals provide read-only derived array transformations with automatic memoization:
+
+1. **Source Dependency**: Collections derive from Lists or other Collections
+2. **Item-level Memoization**: Each item transformation is individually memoized
+3. **Async Support**: Supports Promise-based transformations with cancellation
+4. **Stable Keys**: Maintains the same stable key system as source Lists
+5. **Chainable**: Collections can derive from other Collections for data pipelines
+
+Key implementation details:
+- Uses the same Proxy pattern as Lists for array-like access
+- Individual items are Computed signals, not mutable signals
+- Automatically handles source List changes (add, remove, sort)
+- Supports both sync and async transformation callbacks
+- Lazy evaluation - transformations only run when accessed
+- Smart watcher management - only creates watchers when change listeners are active
+- Order preservation through internal `#order` array synchronized with source
+
+Collection Architecture:
+- **BaseCollection**: Core implementation with signal management and event handling
+- **Computed Creation**: Each source item gets its own computed signal with transformation callback
+- **Source Synchronization**: Listens to source events and maintains parallel structure
+- **Memory Efficiency**: Automatically cleans up computed signals when source items are removed
 
 ### Store Signal Deep Dive
 
@@ -62,8 +94,24 @@ Key implementation details:
 - Maintains internal signal instances for each property
 - Supports change notifications for fine-grained updates
 - Handles edge cases like symbol properties and prototype chain
-- For array-like stores: maintains stable keys that persist through sorting, splicing, and reordering
+- For lists: maintains stable keys that persist through sorting, splicing, and reordering
 - Provides specialized methods: `byKey()`, `keyAt()`, `indexOfKey()`, `splice()` for array manipulation
+
+### MutableComposite Architecture
+
+Both Store and List signals are built on top of `MutableComposite`, which provides the common reactive property management:
+
+1. **Signal Management**: Maintains a `Map<string, MutableSignal>` of property signals
+2. **Change Detection**: Uses `diff()` to detect actual changes before triggering updates
+3. **Event System**: Emits granular notifications for add/change/remove operations
+4. **Validation**: Enforces type constraints and prevents invalid mutations
+5. **Performance**: Only creates signals when properties are first accessed or added
+
+Key implementation details:
+- Lazy signal creation for better memory usage
+- Efficient batch updates through change detection
+- Support for both object and array data structures
+- Automatic cleanup when properties are removed
 
 ### Computed Signal Memoization Strategy
 
@@ -120,6 +168,30 @@ firstTodo?.text.set('Learn signals deeply')
 
 // Sort while maintaining stable references
 todoList.sort((a, b) => a.text.localeCompare(b.text))
+```
+
+**Collection Signals (`createCollection`)**:
+
+```ts
+// Read-only derived arrays with memoization
+const completedTodos = createCollection(todoList, todo => 
+  todo.completed ? { ...todo, status: 'done' } : null
+)
+
+// Async transformations with cancellation
+const todoDetails = createCollection(todoList, async (todo, abort) => {
+  const response = await fetch(`/todos/${todo.id}`, { signal: abort })
+  return { ...todo, details: await response.json() }
+})
+
+// Chain collections for data pipelines
+const urgentTodoSummaries = todoList
+  .deriveCollection(todo => ({ ...todo, urgent: todo.priority > 8 }))
+  .deriveCollection(todo => todo.urgent ? `URGENT: ${todo.text}` : todo.text)
+
+// Collections maintain stable references through List changes
+const firstTodoDetail = todoDetails.byKey('task1') // Computed signal
+todoList.sort() // Reorders list but collection signals remain stable
 ```
 
 **Computed Signals (`Memo` and `Task`)**:
@@ -323,6 +395,37 @@ on('userLogin', (data) => {
 
 // Component B emits user events
 eventBus.userLogin.set({ userId: 123, timestamp: Date.now() })
+```
+
+### Reactive Data Processing Pipelines
+
+```typescript
+// Build complex data processing with Collections
+const rawData = createList([
+  { id: 1, value: 10, category: 'A' },
+  { id: 2, value: 20, category: 'B' },
+  { id: 3, value: 15, category: 'A' }
+])
+
+// Multi-step transformation pipeline
+const processedData = rawData
+  .deriveCollection(item => ({ ...item, doubled: item.value * 2 }))
+  .deriveCollection(item => ({ ...item, category: item.category.toLowerCase() }))
+
+const categoryTotals = createCollection(processedData, async (item, abort) => {
+  // Simulate async processing
+  await new Promise(resolve => setTimeout(resolve, 100))
+  return { category: item.category, contribution: item.doubled }
+})
+
+// Aggregation can be done with computed signals
+const totals = new Memo(() => {
+  const items = categoryTotals.get()
+  return items.reduce((acc, item) => {
+    acc[item.category] = (acc[item.category] || 0) + item.contribution
+    return acc
+  }, {} as Record<string, number>)
+})
 ```
 
 ### Stable Keys for Persistent Item Identity

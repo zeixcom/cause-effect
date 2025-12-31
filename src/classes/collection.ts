@@ -238,11 +238,7 @@ class BaseCollection<T extends {}, U extends {}> {
 /* === Functions === */
 
 /**
- * Collections - Read-Only Derived Array-Like Stores
- *
- * Collections are the read-only, derived counterpart to array-like Stores.
- * They provide reactive, memoized, and lazily-evaluated array transformations
- * while maintaining the familiar array-like store interface.
+ * Collections - Read-Only derived lists
  *
  * @since 0.17.0
  * @param {CollectionSource<U>} source - Source of collection to derive values from
