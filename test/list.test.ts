@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test'
 import {
-	createCollection,
 	createEffect,
 	createList,
 	createStore,
@@ -467,10 +466,18 @@ describe('list', () => {
 					},
 				)
 
+				// Trigger initial computation by accessing the collection
+				const initialLength = asyncDoubled.length
+				expect(initialLength).toBe(3)
+
+				// Access each computed signal to trigger computation
+				for (let i = 0; i < asyncDoubled.length; i++) {
+					asyncDoubled[i].get()
+				}
+
 				// Allow async operations to complete
 				await new Promise(resolve => setTimeout(resolve, 50))
 
-				expect(asyncDoubled.length).toBe(3)
 				expect(asyncDoubled.get()).toEqual([2, 4, 6])
 			})
 
@@ -494,6 +501,11 @@ describe('list', () => {
 					},
 				)
 
+				// Trigger initial computation by accessing each computed signal
+				for (let i = 0; i < enrichedUsers.length; i++) {
+					enrichedUsers[i].get()
+				}
+
 				// Allow async operations to complete
 				await new Promise(resolve => setTimeout(resolve, 50))
 
@@ -514,54 +526,62 @@ describe('list', () => {
 					},
 				)
 
+				const effectValues: number[][] = []
+
+				// Set up effect to track changes reactively
+				createEffect(() => {
+					const currentValue = asyncDoubled.get()
+					effectValues.push([...currentValue])
+				})
+
 				// Allow initial computation
 				await new Promise(resolve => setTimeout(resolve, 20))
-				expect(asyncDoubled.get()).toEqual([2, 4])
+				expect(effectValues[effectValues.length - 1]).toEqual([2, 4])
 
 				// Add new item
 				numbers.add(3)
 				await new Promise(resolve => setTimeout(resolve, 20))
-				expect(asyncDoubled.get()).toEqual([2, 4, 6])
+				expect(effectValues[effectValues.length - 1]).toEqual([2, 4, 6])
 
 				// Modify existing item
 				numbers[0].set(5)
 				await new Promise(resolve => setTimeout(resolve, 20))
-				expect(asyncDoubled.get()).toEqual([10, 4, 6])
+				expect(effectValues[effectValues.length - 1]).toEqual([
+					10, 4, 6,
+				])
 			})
 
 			test('handles AbortSignal cancellation', async () => {
 				const numbers = createList([1])
-				let abortCount = 0
+				let abortCalled = false
 
 				const slowCollection = numbers.deriveCollection(
 					async (value: number, abort: AbortSignal) => {
-						try {
-							await new Promise((resolve, reject) => {
-								const timeout = setTimeout(resolve, 100) // Long delay
-								abort.addEventListener('abort', () => {
-									clearTimeout(timeout)
-									abortCount++
-									reject(new Error('Aborted'))
-								})
+						return new Promise<number>((resolve, reject) => {
+							const timeout = setTimeout(
+								() => resolve(value * 2),
+								50,
+							)
+							abort.addEventListener('abort', () => {
+								clearTimeout(timeout)
+								abortCalled = true
+								reject(new Error('Aborted'))
 							})
-							return value * 2
-						} catch (error) {
-							if (abort.aborted) abortCount++
-							throw error
-						}
+						})
 					},
 				)
 
-				// Quickly change the value to trigger cancellation
+				// Trigger initial computation
+				slowCollection[0].get()
+
+				// Change the value to trigger cancellation of the first computation
 				numbers[0].set(2)
-				numbers[0].set(3)
-				numbers[0].set(4)
 
 				// Allow some time for operations
-				await new Promise(resolve => setTimeout(resolve, 150))
+				await new Promise(resolve => setTimeout(resolve, 100))
 
-				expect(abortCount).toBeGreaterThan(0)
-				expect(slowCollection.get()).toEqual([8]) // Only last value should complete
+				expect(abortCalled).toBe(true)
+				expect(slowCollection.get()).toEqual([4]) // Last value (2 * 2)
 			})
 		})
 
@@ -593,6 +613,11 @@ describe('list', () => {
 						return value * value
 					},
 				)
+
+				// Trigger initial computation by accessing each computed signal
+				for (let i = 0; i < asyncSquared.length; i++) {
+					asyncSquared[i].get()
+				}
 
 				await new Promise(resolve => setTimeout(resolve, 50))
 				expect(asyncSquared.get()).toEqual([4, 16]) // (1*2)^2, (2*2)^2

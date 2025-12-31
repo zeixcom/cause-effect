@@ -27,7 +27,7 @@ type CollectionSource<T extends {}> =
 	| Collection<T, unknown & {}>
 	| BaseCollection<T, unknown & {}>
 
-type CollectionCallback<T extends {} & { then?: undefined }, U extends {}> =
+type CollectionCallback<T extends {}, U extends {}> =
 	| ((sourceValue: U) => T)
 	| ((sourceValue: U, abort: AbortSignal) => Promise<T>)
 
@@ -39,7 +39,7 @@ type Collection<T extends {}, U extends {}> = BaseCollection<T, U> & {
 
 const TYPE_COLLECTION = 'Collection' as const
 
-/* === Collection Implementation === */
+/* === Class === */
 
 class BaseCollection<T extends {}, U extends {}> {
 	#watchers = new Set<Watcher>()
@@ -71,14 +71,20 @@ class BaseCollection<T extends {}, U extends {}> {
 
 		this.#source.on('add', additions => {
 			for (const key of additions) {
-				if (!this.#signals.has(key)) this.#add(key)
+				if (!this.#signals.has(key)) {
+					this.#add(key)
+					// For async computations, trigger initial computation
+					const signal = this.#signals.get(key)
+					if (signal && isAsyncCollectionCallback(this.#callback))
+						signal.get()
+				}
 			}
 			notifyWatchers(this.#watchers)
-			emitNotification(this.#listeners.add, Object.keys(additions))
+			emitNotification(this.#listeners.add, additions)
 		})
 
 		this.#source.on('remove', removals => {
-			for (const key of Object.keys(removals)) {
+			for (const key of removals) {
 				if (!this.#signals.has(key)) continue
 
 				this.#signals.delete(key)
@@ -88,7 +94,7 @@ class BaseCollection<T extends {}, U extends {}> {
 			}
 			this.#order = this.#order.filter(() => true) // Compact array
 			notifyWatchers(this.#watchers)
-			emitNotification(this.#listeners.remove, Object.keys(removals))
+			emitNotification(this.#listeners.remove, removals)
 		})
 
 		this.#source.on('sort', newOrder => {
@@ -101,11 +107,11 @@ class BaseCollection<T extends {}, U extends {}> {
 	get #value(): T[] {
 		return this.#order
 			.map(key => this.#signals.get(key)?.get())
-			.filter(v => v !== undefined) as T[]
+			.filter(v => v != null && v !== UNSET) as T[]
 	}
 
 	#add(key: string): boolean {
-		const computedCallback = isAsyncFunction(this.#callback)
+		const computedCallback = isAsyncCollectionCallback<T>(this.#callback)
 			? async (_: T, abort: AbortSignal) => {
 					const sourceSignal = this.#source.byKey(key)
 					if (!sourceSignal) return UNSET
@@ -212,10 +218,16 @@ class BaseCollection<T extends {}, U extends {}> {
 		}
 	}
 
-	deriveCollection<U extends {}>(
-		callback: CollectionCallback<U, T>,
-	): Collection<U, T> {
-		// @ts-expect-error transitive type inference not working
+	deriveCollection<R extends {}>(
+		callback: (sourceValue: T) => R,
+	): Collection<R, T>
+	deriveCollection<R extends {}>(
+		callback: (sourceValue: T, abort: AbortSignal) => Promise<R>,
+	): Collection<R, T>
+	deriveCollection<R extends {}>(
+		callback: CollectionCallback<R, T>,
+	): Collection<R, T> {
+		// @ts-expect-error this type can't be properly inferred
 		return createCollection(this, callback)
 	}
 }
@@ -234,10 +246,18 @@ class BaseCollection<T extends {}, U extends {}> {
  * @param {CollectionCallback<T, U>} callback - Callback function to transform array items
  * @returns {Collection<T>} - New collection with reactive properties that preserves the original type T
  */
-const createCollection = <T extends {}, U extends {}>(
+function createCollection<T extends {}, U extends {}>(
+	source: CollectionSource<U>,
+	callback: (sourceValue: U) => T,
+): Collection<T, U>
+function createCollection<T extends {}, U extends {}>(
+	source: CollectionSource<U>,
+	callback: (sourceValue: U, abort: AbortSignal) => Promise<T>,
+): Collection<T, U>
+function createCollection<T extends {}, U extends {}>(
 	source: CollectionSource<U>,
 	callback: CollectionCallback<T, U>,
-): Collection<T, U> => {
+): Collection<T, U> {
 	const instance = new BaseCollection(source, callback)
 
 	const getSignal = (prop: string) => {
@@ -253,7 +273,7 @@ const createCollection = <T extends {}, U extends {}>(
 				const value = Reflect.get(target, prop)
 				return isFunction(value) ? value.bind(target) : value
 			}
-			if (!isSymbol(prop)) return target.byKey(prop)
+			if (!isSymbol(prop)) return getSignal(prop)
 		},
 		has(target, prop) {
 			if (prop in target) return true
@@ -299,6 +319,11 @@ const createCollection = <T extends {}, U extends {}>(
 const isCollection = /*#__PURE__*/ <T extends {}, U extends {}>(
 	value: unknown,
 ): value is Collection<T, U> => isObjectOfType(value, TYPE_COLLECTION)
+
+const isAsyncCollectionCallback = <T extends {}>(
+	callback: unknown,
+): callback is (sourceValue: unknown, abort: AbortSignal) => Promise<T> =>
+	isAsyncFunction(callback)
 
 export {
 	type Collection,

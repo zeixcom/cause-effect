@@ -293,9 +293,16 @@ class BaseList<T extends {}> {
 		)
 	}
 
-	deriveCollection<U extends {}>(
-		callback: CollectionCallback<U, T>,
-	): Collection<U, T> {
+	deriveCollection<R extends {}>(
+		callback: (sourceValue: T) => R,
+	): Collection<R, T>
+	deriveCollection<R extends {}>(
+		callback: (sourceValue: T, abort: AbortSignal) => Promise<R>,
+	): Collection<R, T>
+	deriveCollection<R extends {}>(
+		callback: CollectionCallback<R, T>,
+	): Collection<R, T> {
+		// @ts-expect-error callback type can't be properly inferred
 		return createCollection(this, callback)
 	}
 }

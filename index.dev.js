@@ -1023,6 +1023,7 @@ var isComputedCallback = (value) => isFunction(value) && value.length < 3;
 
 // src/classes/collection.ts
 var TYPE_COLLECTION = "Collection";
+var isAsyncCollectionCallback = (callback) => callback.length === 2;
 
 class BaseCollection {
   #watchers = new Set;
@@ -1048,14 +1049,18 @@ class BaseCollection {
     }
     this.#source.on("add", (additions) => {
       for (const key of additions) {
-        if (!this.#signals.has(key))
+        if (!this.#signals.has(key)) {
           this.#add(key);
+          const signal = this.#signals.get(key);
+          if (signal && isAsyncCollectionCallback(this.#callback))
+            signal.get();
+        }
       }
       notifyWatchers(this.#watchers);
-      emitNotification(this.#listeners.add, Object.keys(additions));
+      emitNotification(this.#listeners.add, additions);
     });
     this.#source.on("remove", (removals) => {
-      for (const key of Object.keys(removals)) {
+      for (const key of removals) {
         if (!this.#signals.has(key))
           continue;
         this.#signals.delete(key);
@@ -1066,7 +1071,7 @@ class BaseCollection {
       }
       this.#order = this.#order.filter(() => true);
       notifyWatchers(this.#watchers);
-      emitNotification(this.#listeners.remove, Object.keys(removals));
+      emitNotification(this.#listeners.remove, removals);
     });
     this.#source.on("sort", (newOrder) => {
       this.#order = [...newOrder];
@@ -1075,10 +1080,10 @@ class BaseCollection {
     });
   }
   get #value() {
-    return this.#order.map((key) => this.#signals.get(key)?.get()).filter((v) => v !== undefined);
+    return this.#order.map((key) => this.#signals.get(key)?.get()).filter((v) => v != null && v !== UNSET);
   }
   #add(key) {
-    const computedCallback = isAsyncFunction(this.#callback) ? async (_, abort) => {
+    const computedCallback = isAsyncCollectionCallback(this.#callback) ? async (_, abort) => {
       const sourceSignal = this.#source.byKey(key);
       if (!sourceSignal)
         return UNSET;
@@ -1172,7 +1177,7 @@ class BaseCollection {
     return createCollection(this, callback);
   }
 }
-var createCollection = (source, callback) => {
+function createCollection(source, callback) {
   const instance = new BaseCollection(source, callback);
   const getSignal = (prop) => {
     const index = Number(prop);
@@ -1180,8 +1185,10 @@ var createCollection = (source, callback) => {
   };
   return new Proxy(instance, {
     get(target, prop) {
-      if (prop in target)
-        return Reflect.get(target, prop);
+      if (prop in target) {
+        const value = Reflect.get(target, prop);
+        return isFunction(value) ? value.bind(target) : value;
+      }
       if (!isSymbol(prop))
         return getSignal(prop);
     },
@@ -1217,7 +1224,7 @@ var createCollection = (source, callback) => {
       return;
     }
   });
-};
+}
 var isCollection = (value) => isObjectOfType(value, TYPE_COLLECTION);
 // src/effect.ts
 var createEffect = (callback) => {

@@ -2,9 +2,7 @@ import { type Computed } from '../signals/computed';
 import { type Cleanup, type Listener, type Listeners } from '../system';
 import type { BaseList, List } from './list';
 type CollectionSource<T extends {}> = List<T> | BaseList<T> | Collection<T, unknown & {}> | BaseCollection<T, unknown & {}>;
-type CollectionCallback<T extends {} & {
-    then?: undefined;
-}, U extends {}> = ((sourceValue: U) => T) | ((sourceValue: U, abort: AbortSignal) => Promise<T>);
+type CollectionCallback<T extends {}, U extends {}> = ((sourceValue: U) => T) | ((sourceValue: U, abort: AbortSignal) => Promise<T>);
 type Collection<T extends {}, U extends {}> = BaseCollection<T, U> & {
     [n: number]: Computed<T>;
 };
@@ -23,7 +21,8 @@ declare class BaseCollection<T extends {}, U extends {}> {
     keyAt(index: number): string | undefined;
     indexOfKey(key: string): number;
     on<K extends keyof Listeners>(type: K, listener: Listener<K>): Cleanup;
-    deriveCollection<U extends {}>(callback: CollectionCallback<U, T>): Collection<U, T>;
+    deriveCollection<R extends {}>(callback: (sourceValue: T) => R): Collection<R, T>;
+    deriveCollection<R extends {}>(callback: (sourceValue: T, abort: AbortSignal) => Promise<R>): Collection<R, T>;
 }
 /**
  * Collections - Read-Only Derived Array-Like Stores
@@ -33,10 +32,8 @@ declare class BaseCollection<T extends {}, U extends {}> {
  * while maintaining the familiar array-like store interface.
  *
  * @since 0.17.0
- * @param {CollectionSource<U>} source - Source of collection to derive values from
- * @param {CollectionCallback<T, U>} callback - Callback function to transform array items
- * @returns {Collection<T>} - New collection with reactive properties that preserves the original type T
  */
-declare const createCollection: <T extends {}, U extends {}>(source: CollectionSource<U>, callback: CollectionCallback<T, U>) => Collection<T, U>;
+declare function createCollection<T extends {}, U extends {}>(source: CollectionSource<U>, callback: (sourceValue: U) => T): Collection<T, U>;
+declare function createCollection<T extends {}, U extends {}>(source: CollectionSource<U>, callback: (sourceValue: U, abort: AbortSignal) => Promise<T>): Collection<T, U>;
 declare const isCollection: <T extends {}, U extends {}>(value: unknown) => value is Collection<T, U>;
 export { type Collection, type CollectionSource, type CollectionCallback, createCollection, isCollection, TYPE_COLLECTION, };

@@ -1,7 +1,7 @@
 import { type UnknownArray, type UnknownRecord } from '../diff';
 import type { MutableSignal } from '../signal';
 import { type Cleanup, type Listener, type Notifications } from '../system';
-import { type Collection, type CollectionCallback } from './collection';
+import { type Collection } from './collection';
 import type { State } from './state';
 import type { Store } from './store';
 type ArrayToRecord<T extends UnknownArray> = {
@@ -32,7 +32,8 @@ declare class BaseList<T extends {}> {
     sort(compareFn?: (a: T, b: T) => number): void;
     splice(start: number, deleteCount?: number, ...items: T[]): T[];
     on<K extends keyof Notifications>(type: K, listener: Listener<K>): Cleanup;
-    deriveCollection<U extends {}>(callback: CollectionCallback<U, T>): Collection<U, T>;
+    deriveCollection<R extends {}>(callback: (sourceValue: T) => R): Collection<R, T>;
+    deriveCollection<R extends {}>(callback: (sourceValue: T, abort: AbortSignal) => Promise<R>): Collection<R, T>;
 }
 /**
  * Create a new list with deeply nested reactive list items
