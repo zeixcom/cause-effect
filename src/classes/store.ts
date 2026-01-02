@@ -1,6 +1,6 @@
 import { diff, type UnknownRecord } from '../diff'
 import { DuplicateKeyError, validateSignalValue } from '../errors'
-import type { MutableSignal } from '../signal'
+import { createMutableSignal, type MutableSignal, type Signal } from '../signal'
 import {
 	type Cleanup,
 	type Listener,
@@ -10,7 +10,7 @@ import {
 	type Watcher,
 } from '../system'
 import { isFunction, isObjectOfType, isRecord, isSymbol, UNSET } from '../util'
-import { MutableComposite } from './composite'
+import { Composite } from './composite'
 import type { List } from './list'
 import type { State } from './state'
 
@@ -31,7 +31,7 @@ const TYPE_STORE = 'Store' as const
 /* === Store Implementation === */
 
 class BaseStore<T extends UnknownRecord> {
-	#composite: MutableComposite<T>
+	#composite: Composite<T, Signal<T[keyof T] & {}>>
 	#watchers = new Set<Watcher>()
 
 	/**
@@ -44,7 +44,7 @@ class BaseStore<T extends UnknownRecord> {
 	constructor(initialValue: T) {
 		validateSignalValue('store', initialValue, isRecord)
 
-		this.#composite = new MutableComposite(
+		this.#composite = new Composite<T, Signal<T[keyof T] & {}>>(
 			initialValue,
 			<K extends keyof T & string>(
 				key: K,
@@ -53,12 +53,13 @@ class BaseStore<T extends UnknownRecord> {
 				validateSignalValue(`store for key "${key}"`, value)
 				return true
 			},
+			value => createMutableSignal(value),
 		)
 	}
 
 	get #value(): T {
 		const record = {} as UnknownRecord
-		for (const [key, signal] of this.#composite.entries())
+		for (const [key, signal] of this.#composite.signals.entries())
 			record[key] = signal.get()
 		return record as T
 	}
@@ -75,8 +76,8 @@ class BaseStore<T extends UnknownRecord> {
 	*[Symbol.iterator](): IterableIterator<
 		[string, MutableSignal<T[keyof T] & {}>]
 	> {
-		for (const [key, signal] of this.#composite.entries())
-			yield [key, signal]
+		for (const [key, signal] of this.#composite.signals.entries())
+			yield [key, signal as MutableSignal<T[keyof T] & {}>]
 	}
 
 	get(): T {
@@ -98,13 +99,27 @@ class BaseStore<T extends UnknownRecord> {
 	}
 
 	keys(): IterableIterator<string> {
-		return this.#composite.keys()
+		return this.#composite.signals.keys()
 	}
 
 	byKey<K extends keyof T & string>(
 		key: K,
-	): MutableSignal<T[K] & {}> | undefined {
-		return this.#composite.get(key)
+	): T[K] extends readonly (infer U extends {})[]
+		? List<U>
+		: T[K] extends UnknownRecord
+			? Store<T[K]>
+			: T[K] extends unknown & {}
+				? State<T[K] & {}>
+				: State<T[K] & {}> | undefined {
+		return this.#composite.signals.get(
+			key,
+		) as T[K] extends readonly (infer U extends {})[]
+			? List<U>
+			: T[K] extends UnknownRecord
+				? Store<T[K]>
+				: T[K] extends unknown & {}
+					? State<T[K] & {}>
+					: State<T[K] & {}> | undefined
 	}
 
 	update(fn: (oldValue: T) => T): void {
@@ -112,7 +127,7 @@ class BaseStore<T extends UnknownRecord> {
 	}
 
 	add<K extends keyof T & string>(key: K, value: T[K]): K {
-		if (this.#composite.has(key))
+		if (this.#composite.signals.has(key))
 			throw new DuplicateKeyError('store', key, value)
 
 		const ok = this.#composite.add(key, value)

@@ -17,7 +17,7 @@ import {
 
 describe('createSignal', () => {
 	describe('type inference and runtime behavior', () => {
-		test('converts array to Store<Record<string, T>>', () => {
+		test('converts array to List<T>', () => {
 			const result = createSignal([
 				{ id: 1, name: 'Alice' },
 				{ id: 2, name: 'Bob' },
@@ -25,10 +25,10 @@ describe('createSignal', () => {
 
 			// Runtime behavior
 			expect(isList(result)).toBe(true)
-			expect(result['0'].get()).toEqual({ id: 1, name: 'Alice' })
-			expect(result['1'].get()).toEqual({ id: 2, name: 'Bob' })
+			expect(result.at(0)?.get()).toEqual({ id: 1, name: 'Alice' })
+			expect(result.at(1)?.get()).toEqual({ id: 2, name: 'Bob' })
 
-			// Type inference test - now correctly returns Store<Record<number, {id: number, name: string}>>
+			// Type inference test - now correctly returns List<{ id: number; name: string }>
 			const typedResult: List<{ id: number; name: string }> = result
 			expect(typedResult).toBeDefined()
 		})
@@ -105,8 +105,8 @@ describe('createSignal', () => {
 
 			expect(isList(result)).toBe(true)
 			// With the fixed behavior, nested arrays should be recovered as arrays
-			const firstElement = result[0].get()
-			const secondElement = result[1].get()
+			const firstElement = result.at(0)?.get()
+			const secondElement = result.at(1)?.get()
 
 			// The expected behavior - nested arrays are recovered as arrays
 			expect(firstElement).toEqual([1, 2])
@@ -118,9 +118,9 @@ describe('createSignal', () => {
 			const result = createSignal(mixedArr)
 
 			expect(isList(result)).toBe(true)
-			expect(result['0'].get()).toBe(1)
-			expect(result['1'].get()).toBe('hello')
-			expect(result['2'].get()).toEqual({ key: 'value' })
+			expect(result.at(0)?.get()).toBe(1)
+			expect(result.at(1)?.get()).toBe('hello')
+			expect(result.at(2)?.get()).toEqual({ key: 'value' })
 		})
 	})
 })
@@ -158,14 +158,14 @@ describe('Type precision tests', () => {
 		const stringArray = ['a', 'b', 'c']
 		const stringArraySignal = createSignal(stringArray)
 
-		// Should be Store<Record<string, string>>
-		expect(stringArraySignal['0'].get()).toBe('a')
+		// Should be List<string>
+		expect(stringArraySignal.at(0)?.get()).toBe('a')
 
 		const numberArray = [1, 2, 3]
 		const numberArraySignal = createSignal(numberArray)
 
-		// Should be Store<Record<string, number>>
-		expect(typeof numberArraySignal['0'].get()).toBe('number')
+		// Should be List<number>
+		expect(typeof numberArraySignal.at(0)?.get()).toBe('number')
 	})
 
 	test('complex object arrays maintain precise typing', () => {
@@ -183,10 +183,10 @@ describe('Type precision tests', () => {
 		const usersSignal = createSignal(users)
 
 		// Should maintain User type for each element
-		const firstUser = usersSignal['0'].get()
-		expect(firstUser.id).toBe(1)
-		expect(firstUser.name).toBe('Alice')
-		expect(firstUser.email).toBe('alice@example.com')
+		const firstUser = usersSignal.at(0)?.get()
+		expect(firstUser?.id).toBe(1)
+		expect(firstUser?.name).toBe('Alice')
+		expect(firstUser?.email).toBe('alice@example.com')
 	})
 
 	describe('Type inference issues', () => {
@@ -195,8 +195,8 @@ describe('Type precision tests', () => {
 
 			// Let's verify the actual behavior
 			expect(isList(result)).toBe(true)
-			expect(result['0'].get()).toEqual({ id: 1 })
-			expect(result['1'].get()).toEqual({ id: 2 })
+			expect(result.at(0)?.get()).toEqual({ id: 1 })
+			expect(result.at(1)?.get()).toEqual({ id: 2 })
 
 			// Type assertion test - this should now work with correct typing
 			const typedResult: List<{ id: number }> = result
@@ -221,7 +221,8 @@ describe('Type precision tests', () => {
 			}
 
 			// This call should work without type errors
-			processor.process(result['0'])
+			const item = result.at(0)
+			if (item) processor.process(item)
 		})
 
 		test('verifies fixed type inference for external library compatibility', () => {
@@ -230,13 +231,13 @@ describe('Type precision tests', () => {
 				{ id: 2, name: 'Bob' },
 			]
 			const signal = createSignal(items)
-			const firstItemSignal = signal['0']
-			const secondItemSignal = signal['1']
+			const firstItemSignal = signal.at(0)
+			const secondItemSignal = signal.at(1)
 
 			// Runtime behavior works correctly
 			expect(isList(signal)).toBe(true)
-			expect(firstItemSignal.get()).toEqual({ id: 1, name: 'Alice' })
-			expect(secondItemSignal.get()).toEqual({ id: 2, name: 'Bob' })
+			expect(firstItemSignal?.get()).toEqual({ id: 1, name: 'Alice' })
+			expect(secondItemSignal?.get()).toEqual({ id: 2, name: 'Bob' })
 
 			// Type inference should now work correctly:
 			const properlyTyped: List<{ id: number; name: string }> = signal
@@ -258,15 +259,16 @@ describe('Type precision tests', () => {
 			}
 
 			// These calls should work with proper typing now
-			const result1 = api.process('0', firstItemSignal)
-			const result2 = api.process('1', secondItemSignal)
+			const result1 = firstItemSignal && api.process('0', firstItemSignal)
+			const result2 =
+				secondItemSignal && api.process('1', secondItemSignal)
 
 			expect(result1).toEqual({ id: 1, name: 'Alice' })
 			expect(result2).toEqual({ id: 2, name: 'Bob' })
 
 			// Verify the types are precise
-			expect(typeof result1.id).toBe('number')
-			expect(typeof result1.name).toBe('string')
+			expect(typeof result1?.id).toBe('number')
+			expect(typeof result1?.name).toBe('string')
 		})
 	})
 })

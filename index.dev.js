@@ -336,9 +336,10 @@ var isMemoCallback = (value) => isSyncFunction(value) && value.length < 2;
 var isTaskCallback = (value) => isAsyncFunction(value) && value.length < 3;
 
 // src/classes/composite.ts
-class MutableComposite {
+class Composite {
+  signals = new Map;
   #validate;
-  #signals = new Map;
+  #create;
   #watchers = new Map;
   #listeners = {
     add: new Set,
@@ -346,8 +347,9 @@ class MutableComposite {
     remove: new Set
   };
   #batching = false;
-  constructor(values, validate) {
+  constructor(values, validate, create) {
     this.#validate = validate;
+    this.#create = create;
     this.change({
       add: values,
       change: {},
@@ -358,7 +360,7 @@ class MutableComposite {
   #addWatcher(key) {
     const watcher = createWatcher(() => {
       trackSignalReads(watcher, () => {
-        this.#signals.get(key)?.get();
+        this.signals.get(key)?.get();
         if (!this.#batching)
           emitNotification(this.#listeners.change, [key]);
       });
@@ -366,33 +368,10 @@ class MutableComposite {
     this.#watchers.set(key, watcher);
     watcher();
   }
-  #removeWatcher(key) {
-    const watcher = this.#watchers.get(key);
-    if (watcher) {
-      watcher.stop();
-      this.#watchers.delete(key);
-    }
-  }
-  keys() {
-    return this.#signals.keys();
-  }
-  values() {
-    return this.#signals.values();
-  }
-  entries() {
-    return this.#signals.entries();
-  }
-  has(key) {
-    return this.#signals.has(key);
-  }
-  get(key) {
-    return this.#signals.get(key);
-  }
   add(key, value) {
     if (!this.#validate(key, value))
       return false;
-    const signal = createMutableSignal(value);
-    this.#signals.set(key, signal);
+    this.signals.set(key, this.#create(value));
     if (this.#listeners.change.size)
       this.#addWatcher(key);
     if (!this.#batching)
@@ -400,10 +379,14 @@ class MutableComposite {
     return true;
   }
   remove(key) {
-    const ok = this.#signals.delete(key);
+    const ok = this.signals.delete(key);
     if (!ok)
       return false;
-    this.#removeWatcher(key);
+    const watcher = this.#watchers.get(key);
+    if (watcher) {
+      watcher.stop();
+      this.#watchers.delete(key);
+    }
     if (!this.#batching)
       emitNotification(this.#listeners.remove, [key]);
     return true;
@@ -425,7 +408,7 @@ class MutableComposite {
           const value = changes.change[key];
           if (!this.#validate(key, value))
             continue;
-          const signal = this.#signals.get(key);
+          const signal = this.signals.get(key);
           if (guardMutableSignal(`list item "${key}"`, value, signal))
             signal.set(value);
         }
@@ -441,8 +424,8 @@ class MutableComposite {
     return changes.changed;
   }
   clear() {
-    const keys = Array.from(this.#signals.keys());
-    this.#signals.clear();
+    const keys = Array.from(this.signals.keys());
+    this.signals.clear();
     this.#watchers.clear();
     emitNotification(this.#listeners.remove, keys);
     return true;
@@ -451,7 +434,7 @@ class MutableComposite {
     this.#listeners[type].add(listener);
     if (type === "change" && !this.#watchers.size) {
       this.#batching = true;
-      for (const key of this.#signals.keys())
+      for (const key of this.signals.keys())
         this.#addWatcher(key);
       this.#batching = false;
     }
@@ -468,10 +451,43 @@ class MutableComposite {
   }
 }
 
+// src/classes/state.ts
+var TYPE_STATE = "State";
+
+class State {
+  #watchers = new Set;
+  #value;
+  constructor(initialValue) {
+    validateSignalValue("state", initialValue);
+    this.#value = initialValue;
+  }
+  get [Symbol.toStringTag]() {
+    return TYPE_STATE;
+  }
+  get() {
+    subscribeActiveWatcher(this.#watchers);
+    return this.#value;
+  }
+  set(newValue) {
+    validateSignalValue("state", newValue);
+    if (isEqual(this.#value, newValue))
+      return;
+    this.#value = newValue;
+    notifyWatchers(this.#watchers);
+    if (UNSET === this.#value)
+      this.#watchers.clear();
+  }
+  update(updater) {
+    validateCallback("state update", updater);
+    this.set(updater(this.#value));
+  }
+}
+var isState = (value) => isObjectOfType(value, TYPE_STATE);
+
 // src/classes/list.ts
 var TYPE_LIST = "List";
 
-class BaseList {
+class List {
   #composite;
   #watchers = new Set;
   #listeners = {
@@ -483,10 +499,10 @@ class BaseList {
     validateSignalValue("list", initialValue, Array.isArray);
     let keyCounter = 0;
     this.#generateKey = isString(keyConfig) ? () => `${keyConfig}${keyCounter++}` : isFunction(keyConfig) ? (item) => keyConfig(item) : () => String(keyCounter++);
-    this.#composite = new MutableComposite(this.#toRecord(initialValue), (key, value) => {
+    this.#composite = new Composite(this.#toRecord(initialValue), (key, value) => {
       validateSignalValue(`list for key "${key}"`, value);
       return true;
-    });
+    }, (value) => new State(value));
   }
   #toRecord(array) {
     const record = {};
@@ -504,7 +520,7 @@ class BaseList {
     return record;
   }
   get #value() {
-    return this.#order.map((key) => this.#composite.get(key)?.get()).filter((v) => v !== undefined);
+    return this.#order.map((key) => this.#composite.signals.get(key)?.get()).filter((v) => v !== undefined);
   }
   get [Symbol.toStringTag]() {
     return TYPE_LIST;
@@ -514,7 +530,7 @@ class BaseList {
   }
   *[Symbol.iterator]() {
     for (const key of this.#order) {
-      const signal = this.#composite.get(key);
+      const signal = this.#composite.signals.get(key);
       if (signal)
         yield signal;
     }
@@ -552,13 +568,13 @@ class BaseList {
     this.set(fn(this.get()));
   }
   at(index) {
-    return this.#composite.get(this.#order[index]);
+    return this.#composite.signals.get(this.#order[index]);
   }
   keys() {
     return this.#order.values();
   }
   byKey(key) {
-    return this.#composite.get(key);
+    return this.#composite.signals.get(key);
   }
   keyAt(index) {
     return this.#order[index];
@@ -568,7 +584,7 @@ class BaseList {
   }
   add(value) {
     const key = this.#generateKey(value);
-    if (this.#composite.has(key))
+    if (this.#composite.signals.has(key))
       throw new DuplicateKeyError("store", key, value);
     if (!this.#order.includes(key))
       this.#order.push(key);
@@ -589,7 +605,7 @@ class BaseList {
     }
   }
   sort(compareFn) {
-    const entries = this.#order.map((key) => [key, this.#composite.get(key)?.get()]).sort(isFunction(compareFn) ? (a, b) => compareFn(a[1], b[1]) : (a, b) => String(a[1]).localeCompare(String(b[1])));
+    const entries = this.#order.map((key) => [key, this.#composite.signals.get(key)?.get()]).sort(isFunction(compareFn) ? (a, b) => compareFn(a[1], b[1]) : (a, b) => String(a[1]).localeCompare(String(b[1])));
     const newOrder = entries.map(([key]) => key);
     if (!isEqual(this.#order, newOrder)) {
       this.#order = newOrder;
@@ -607,7 +623,7 @@ class BaseList {
       const index = actualStart + i;
       const key = this.#order[index];
       if (key) {
-        const signal = this.#composite.get(key);
+        const signal = this.#composite.signals.get(key);
         if (signal)
           remove[key] = signal.get();
       }
@@ -640,91 +656,10 @@ class BaseList {
     return this.#composite.on(type, listener);
   }
   deriveCollection(callback) {
-    return createCollection(this, callback);
+    return new Collection(this, callback);
   }
 }
-var createList = (initialValue, keyConfig) => {
-  const instance = new BaseList(initialValue, keyConfig);
-  const getSignal = (prop) => {
-    const index = Number(prop);
-    return Number.isInteger(index) && index >= 0 ? instance.at(index) : instance.byKey(prop);
-  };
-  return new Proxy(instance, {
-    get(target, prop) {
-      if (prop in target) {
-        const value = Reflect.get(target, prop);
-        return isFunction(value) ? value.bind(target) : value;
-      }
-      return !isSymbol(prop) ? getSignal(prop) : undefined;
-    },
-    has(target, prop) {
-      if (prop in target)
-        return true;
-      return !isSymbol(prop) ? getSignal(prop) !== undefined : false;
-    },
-    ownKeys(target) {
-      return Object.getOwnPropertyNames(target.keys());
-    },
-    getOwnPropertyDescriptor(target, prop) {
-      if (isSymbol(prop))
-        return;
-      if (prop === "length") {
-        return {
-          enumerable: false,
-          configurable: false,
-          writable: false,
-          value: target.length
-        };
-      }
-      const index = Number(prop);
-      if (Number.isInteger(index) && index >= 0 && index < target.length) {
-        const signal = target.at(index);
-        return signal ? {
-          enumerable: true,
-          configurable: true,
-          writable: true,
-          value: signal
-        } : undefined;
-      }
-      return;
-    }
-  });
-};
 var isList = (value) => isObjectOfType(value, TYPE_LIST);
-
-// src/classes/state.ts
-var TYPE_STATE = "State";
-
-class State {
-  #watchers = new Set;
-  #value;
-  constructor(initialValue) {
-    validateSignalValue("state", initialValue);
-    this.#value = initialValue;
-  }
-  get [Symbol.toStringTag]() {
-    return TYPE_STATE;
-  }
-  get() {
-    subscribeActiveWatcher(this.#watchers);
-    return this.#value;
-  }
-  set(newValue) {
-    validateSignalValue("state", newValue);
-    if (isEqual(this.#value, newValue))
-      return;
-    this.#value = newValue;
-    notifyWatchers(this.#watchers);
-    if (UNSET === this.#value)
-      this.#watchers.clear();
-  }
-  update(updater) {
-    validateCallback("state update", updater);
-    this.set(updater(this.#value));
-  }
-}
-var createState = (initialValue) => new State(initialValue);
-var isState = (value) => isObjectOfType(value, TYPE_STATE);
 
 // src/classes/store.ts
 var TYPE_STORE = "Store";
@@ -734,14 +669,14 @@ class BaseStore {
   #watchers = new Set;
   constructor(initialValue) {
     validateSignalValue("store", initialValue, isRecord);
-    this.#composite = new MutableComposite(initialValue, (key, value) => {
+    this.#composite = new Composite(initialValue, (key, value) => {
       validateSignalValue(`store for key "${key}"`, value);
       return true;
-    });
+    }, (value) => createMutableSignal(value));
   }
   get #value() {
     const record = {};
-    for (const [key, signal] of this.#composite.entries())
+    for (const [key, signal] of this.#composite.signals.entries())
       record[key] = signal.get();
     return record;
   }
@@ -752,7 +687,7 @@ class BaseStore {
     return false;
   }
   *[Symbol.iterator]() {
-    for (const [key, signal] of this.#composite.entries())
+    for (const [key, signal] of this.#composite.signals.entries())
       yield [key, signal];
   }
   get() {
@@ -772,16 +707,16 @@ class BaseStore {
       notifyWatchers(this.#watchers);
   }
   keys() {
-    return this.#composite.keys();
+    return this.#composite.signals.keys();
   }
   byKey(key) {
-    return this.#composite.get(key);
+    return this.#composite.signals.get(key);
   }
   update(fn) {
     this.set(fn(this.get()));
   }
   add(key, value) {
-    if (this.#composite.has(key))
+    if (this.#composite.signals.has(key))
       throw new DuplicateKeyError("store", key, value);
     const ok = this.#composite.add(key, value);
     if (ok)
@@ -842,14 +777,14 @@ function createSignal(value) {
   if (isTaskCallback(value))
     return new Task(value);
   if (isUniformArray(value))
-    return createList(value);
+    return new List(value);
   if (isRecord(value))
     return createStore(value);
   return new State(value);
 }
 function createMutableSignal(value) {
   if (isUniformArray(value))
-    return createList(value);
+    return new List(value);
   if (isRecord(value))
     return createStore(value);
   return new State(value);
@@ -916,7 +851,7 @@ var guardMutableSignal = (what, value, signal) => {
 // src/classes/collection.ts
 var TYPE_COLLECTION = "Collection";
 
-class BaseCollection {
+class Collection {
   #watchers = new Set;
   #source;
   #callback;
@@ -930,6 +865,11 @@ class BaseCollection {
   };
   #order = [];
   constructor(source, callback) {
+    validateCallback("collection", callback);
+    if (isFunction(source))
+      source = source();
+    if (!isCollectionSource(source))
+      throw new Error("Invalid collection source");
     this.#source = source;
     this.#callback = callback;
     for (let i = 0;i < this.#source.length; i++) {
@@ -1069,61 +1009,11 @@ class BaseCollection {
     };
   }
   deriveCollection(callback) {
-    return createCollection(this, callback);
+    return new Collection(this, callback);
   }
 }
-function createCollection(source, callback) {
-  validateCallback("collection", callback);
-  if (isFunction(source))
-    source = source();
-  const instance = new BaseCollection(source, callback);
-  const getSignal = (prop) => {
-    const index = Number(prop);
-    return Number.isInteger(index) && index >= 0 ? instance.at(index) : instance.byKey(prop);
-  };
-  return new Proxy(instance, {
-    get(target, prop) {
-      if (prop in target) {
-        const value = Reflect.get(target, prop);
-        return isFunction(value) ? value.bind(target) : value;
-      }
-      if (!isSymbol(prop))
-        return getSignal(prop);
-    },
-    has(target, prop) {
-      if (prop in target)
-        return true;
-      return !isSymbol(prop) ? getSignal(prop) !== undefined : false;
-    },
-    ownKeys(target) {
-      return Object.getOwnPropertyNames(target.keys());
-    },
-    getOwnPropertyDescriptor(target, prop) {
-      if (isSymbol(prop))
-        return;
-      if (prop === "length") {
-        return {
-          enumerable: false,
-          configurable: false,
-          writable: false,
-          value: target.length
-        };
-      }
-      const index = Number(prop);
-      if (Number.isInteger(index) && index >= 0 && index < target.length) {
-        const signal = target.at(index);
-        return signal ? {
-          enumerable: true,
-          configurable: true,
-          writable: true,
-          value: signal
-        } : undefined;
-      }
-      return;
-    }
-  });
-}
 var isCollection = (value) => isObjectOfType(value, TYPE_COLLECTION);
+var isCollectionSource = (value) => isList(value) || isCollection(value);
 var isAsyncCollectionCallback = (callback) => isAsyncFunction(callback);
 // src/effect.ts
 var createEffect = (callback) => {
@@ -1237,12 +1127,9 @@ export {
   diff,
   createWatcher,
   createStore,
-  createState,
   createSignal,
-  createList,
   createEffect,
   createComputed,
-  createCollection,
   batchSignalWrites,
   UNSET,
   Task,
@@ -1255,10 +1142,11 @@ export {
   ReadonlySignalError,
   NullishSignalValueError,
   Memo,
+  List,
   InvalidSignalValueError,
   InvalidCallbackError,
   DuplicateKeyError,
+  Collection,
   CircularDependencyError,
-  BaseStore,
-  BaseList
+  BaseStore
 };

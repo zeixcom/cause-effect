@@ -14,8 +14,8 @@ Version 0.17.0
 - **Memo signals**: Derive memoized values from other signals: `new Memo()`
 - **Task signals**: Execute asynchronous functions of other signals: `new Task()`
 - **Store signals**: Hold objects of nested reactive properties: `createStore()`
-- **List signals**: Create keyed lists with reactive items: `createList()`
-- **Collection signals**: Read-only derived array transformations: `createCollection()`
+- **List signals**: Create keyed lists with reactive items: `new List()`
+- **Collection signals**: Read-only derived array transformations: `new Collection()`
 - **Effects**: Run side effects when signals change: `createEffect()`
 
 ## Key Features
@@ -152,12 +152,12 @@ The `add()` and `remove()` methods are optimized for performance:
 
 ### List Signals
 
-`createList()` creates a mutable signal for arrays with individually reactive items and stable keys. Each item becomes its own signal while maintaining persistent identity through sorting and reordering:
+`new List()` creates a mutable signal for arrays with individually reactive items and stable keys. Each item becomes its own signal while maintaining persistent identity through sorting and reordering:
 
 ```js
-import { createList, createEffect } from '@zeix/cause-effect'
+import { List, createEffect } from '@zeix/cause-effect'
 
-const items = createList(['banana', 'apple', 'cherry'])
+const items = new List(['banana', 'apple', 'cherry'])
 
 // Duck-typing: behaves like an array
 console.log(items.length) // 3
@@ -185,10 +185,10 @@ items.sort((a, b) => b.localeCompare(a)) // Reverse alphabetical
 console.log(items.get()) // ['orange', 'date', 'cherry', 'banana', 'apple']
 ```
 
-List signals have stable unique keys for entries. This means that the keys for each item in the list will not change even if the items are reordered. Keys default to a string representation of an auto-incrementing number. You can customize keys by passing a prefix string or a function to derive the key from the entry value as the second argument to `createList()`:
+List signals have stable unique keys for entries. This means that the keys for each item in the list will not change even if the items are reordered. Keys default to a string representation of an auto-incrementing number. You can customize keys by passing a prefix string or a function to derive the key from the entry value as the second argument to `new List()`:
 
 ```js
-const items = createList(['banana', 'apple', 'cherry', 'date'], 'item-')
+const items = new List(['banana', 'apple', 'cherry', 'date'], 'item-')
 
 // Add returns the key of the added item
 const orangeKey = items.add('orange')
@@ -200,7 +200,10 @@ console.log(items.get()) // ['apple', 'banana', 'cherry', 'date', 'orange']
 // Access items by key
 console.log(items.byKey(orangeKey)) // 'orange'
 
-const users = createList([{ id: 'bob', name: 'Bob' }, { id: 'alice', name: 'Alice' }], user => user.id)
+const users = new List(
+  [{ id: 'bob', name: 'Bob' }, { id: 'alice', name: 'Alice' }],
+  user => user.id
+)
 
 // Sort preserves signal references
 users.sort((a, b) => a.name.localeCompare(b.name)) // Alphabetical by name
@@ -215,19 +218,19 @@ console.log(users.keyAt(1)) // 'bob'
 
 ### Collection Signals
 
-`createCollection()` creates read-only derived arrays that transform items from Lists with automatic memoization and async support. Collections maintain the same array-like interface but are entirely derived:
+`new Collection()` creates read-only derived arrays that transform items from Lists with automatic memoization and async support:
 
 ```js
-import { createList, createCollection, createEffect } from '@zeix/cause-effect'
+import { List, Collection, createEffect } from '@zeix/cause-effect'
 
 // Source list
-const users = createList([
+const users = new List([
   { id: 1, name: 'Alice', role: 'admin' },
   { id: 2, name: 'Bob', role: 'user' }
 ])
 
 // Derived collection - transforms each user
-const userProfiles = createCollection(users, user => ({
+const userProfiles = new Collection(users, user => ({
   ...user,
   displayName: `${user.name} (${user.role})`
 }))
@@ -239,25 +242,25 @@ createEffect(() => {
 })
 
 // Individual items are computed signals
-console.log(userProfiles[0].get().displayName) // 'Alice (admin)'
+console.log(userProfiles.at(0).get().displayName) // 'Alice (admin)'
 
 // Collections support async transformations
-const userDetails = createCollection(users, async (user, abort) => {
+const userDetails = new Collection(users, async (user, abort) => {
   const response = await fetch(`/users/${user.id}`, { signal: abort })
   return { ...user, details: await response.json() }
 })
 
 // Collections can be chained
-const adminProfiles = createCollection(userProfiles, profile => 
+const adminProfiles = new Collection(userProfiles, profile => 
   profile.role === 'admin' ? profile : null
 ).filter(Boolean) // Remove null values
 ```
 
-Collections support the same array-like interface as Lists but are read-only:
+Collections support access by index or key:
 
 ```js
 // Access by index or key (read-only)
-const firstProfile = userProfiles[0] // Returns computed signal
+const firstProfile = userProfiles.at(0) // Returns computed signal
 const profileByKey = userProfiles.byKey('user1') // Access by stable key
 
 // Array methods work
@@ -275,8 +278,8 @@ const userSummaries = users.deriveCollection(user => ({
 
 #### When to Use Collections vs Lists
 
-- **Use `createList()`** for mutable arrays where you add, remove, sort, or modify items
-- **Use `createCollection()`** for read-only transformations, filtering, or async processing of Lists
+- **Use `new List()`** for mutable arrays where you add, remove, sort, or modify items
+- **Use `new Collection()`** for read-only transformations, filtering, or async processing of Lists
 - **Chain Collections** to create multi-step data pipelines with automatic memoization
 
 #### Store Change Notifications
@@ -309,7 +312,7 @@ user.age.set(31)                       // Logs: "Changed properties: { age: 31 }
 user.remove('email')                   // Logs: "Removed properties: { email: UNSET }"
 
 // Listen for sort notifications (useful for UI animations)
-const items = createList(['banana', 'apple', 'cherry'])
+const items = new List(['banana', 'apple', 'cherry'])
 items.sort((a, b) => b.localeCompare(a)) // Reverse alphabetical
 const offSort = items.on('sort', (newOrder) => {
   console.log('Items reordered:', newOrder) // ['2', '1', '0']

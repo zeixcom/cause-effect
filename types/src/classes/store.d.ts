@@ -1,5 +1,5 @@
 import { type UnknownRecord } from '../diff';
-import type { MutableSignal } from '../signal';
+import { type MutableSignal } from '../signal';
 import { type Cleanup, type Listener, type Listeners } from '../system';
 import type { List } from './list';
 import type { State } from './state';
@@ -26,7 +26,7 @@ declare class BaseStore<T extends UnknownRecord> {
     get(): T;
     set(newValue: T): void;
     keys(): IterableIterator<string>;
-    byKey<K extends keyof T & string>(key: K): MutableSignal<T[K] & {}> | undefined;
+    byKey<K extends keyof T & string>(key: K): T[K] extends readonly (infer U extends {})[] ? List<U> : T[K] extends UnknownRecord ? Store<T[K]> : T[K] extends unknown & {} ? State<T[K] & {}> : State<T[K] & {}> | undefined;
     update(fn: (oldValue: T) => T): void;
     add<K extends keyof T & string>(key: K, value: T[K]): K;
     remove(key: string): void;

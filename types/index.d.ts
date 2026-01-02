@@ -3,10 +3,10 @@
  * @version 0.17.0
  * @author Esther Brunner
  */
-export { type Collection, type CollectionCallback, createCollection, isCollection, TYPE_COLLECTION, } from './src/classes/collection';
+export { Collection, type CollectionCallback, isCollection, TYPE_COLLECTION, } from './src/classes/collection';
 export { type Computed, createComputed, isComputed, isMemoCallback, isTaskCallback, Memo, type MemoCallback, Task, type TaskCallback, TYPE_COMPUTED, } from './src/classes/computed';
-export { type ArrayToRecord, BaseList, createList, isList, type KeyConfig, type List, TYPE_LIST, } from './src/classes/list';
-export { createState, isState, State, TYPE_STATE } from './src/classes/state';
+export { type ArrayToRecord, isList, type KeyConfig, List, TYPE_LIST, } from './src/classes/list';
+export { isState, State, TYPE_STATE } from './src/classes/state';
 export { BaseStore, createStore, isStore, type Store, TYPE_STORE, } from './src/classes/store';
 export { type DiffResult, diff, isEqual, type UnknownArray, type UnknownRecord, } from './src/diff';
 export { createEffect, type EffectCallback, type MaybeCleanup, } from './src/effect';

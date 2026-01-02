@@ -1,7 +1,7 @@
-import { createList as createFactoryList } from '../signals/list'
-import { createStore as createFactoryStore } from '../signals/store'
-import { createList as createClassList } from './list'
-import { createStore as createClassStore } from './store'
+import { createList as createFactoryList } from '../deprecated/list'
+import { createStore as createFactoryStore } from '../deprecated/store'
+import { List } from './list'
+import { BaseStore, createStore as createClassStore } from './store'
 
 /* === Benchmark Configuration === */
 
@@ -11,12 +11,27 @@ const METHOD_CALLS = 100
 /* === Test Data === */
 
 const testData = {
-	name: 'Test Store',
-	value: 42,
-	items: [1, 2, 3, 4, 5],
-	nested: {
-		deep: {
-			prop: 'nested value',
+	user: {
+		id: 42,
+		name: 'Alice Johnson',
+		email: 'alice@example.com',
+		preferences: {
+			theme: 'dark' as const,
+			language: 'en',
+			notifications: {
+				email: true,
+				push: false,
+				desktop: true,
+			},
+		},
+	},
+	app: {
+		version: '2.1.0',
+		config: {
+			api: {
+				baseUrl: 'https://api.example.com',
+				timeout: 5000,
+			},
 		},
 	},
 }
@@ -160,7 +175,10 @@ const benchmarkFactory = async () => {
 		for (let i = 0; i < METHOD_CALLS; i++) {
 			memoryStores.forEach(store => {
 				store.get()
-				store.byKey('name')
+				const _name = store.user.name
+				const _emailNotification =
+					store.user.preferences.notifications.email
+				store.set({ ...testData, updated: true })
 			})
 		}
 	})
@@ -229,8 +247,13 @@ const benchmarkFactoryList = async () => {
 		for (let i = 0; i < METHOD_CALLS; i++) {
 			memoryLists.forEach(list => {
 				list.get()
-				list.byKey('0')
-				list.length
+				const _0 = list[0]
+				const _length = list.length
+				list.set([
+					...testListData,
+					{ id: 999, name: 'New', value: 999 },
+				])
+				list.sort()
 			})
 		}
 	})
@@ -243,19 +266,19 @@ const benchmarkFactoryList = async () => {
 	return memoryLists
 }
 
-/* === Class List Approach Benchmark === */
+/* === Direct Class List Approach Benchmark (No Proxy) === */
 
-const benchmarkClassList = async () => {
-	console.log('\n=== Class-Based List Approach ===')
+const benchmarkDirectClassList = async () => {
+	console.log('\n=== Direct Class-Based List Approach (No Proxy) ===')
 
 	let lists: any[] = []
 
 	// Test instantiation performance
-	measureTime('Class List Instantiation', () => {
+	measureTime('Direct Class List Instantiation', () => {
 		lists = []
 		for (let i = 0; i < ITERATIONS; i++) {
 			lists.push(
-				createClassList([
+				new List([
 					...testListData.map(item => ({
 						...item,
 						id: item.id + i * 1000,
@@ -266,46 +289,57 @@ const benchmarkClassList = async () => {
 	})
 
 	// Test memory usage
-	const memoryLists = await measureMemory('Class List Memory Usage', () => {
-		const tempLists = []
-		for (let i = 0; i < ITERATIONS; i++) {
-			tempLists.push(
-				createClassList([
-					...testListData.map(item => ({
-						...item,
-						id: item.id + i * 1000,
-					})),
-				]),
-			)
-		}
-		return tempLists
-	})
+	const memoryLists = await measureMemory(
+		'Direct Class List Memory Usage',
+		() => {
+			const tempLists = []
+			for (let i = 0; i < ITERATIONS; i++) {
+				tempLists.push(
+					new List([
+						...testListData.map(item => ({
+							...item,
+							id: item.id + i * 1000,
+						})),
+					]),
+				)
+			}
+			return tempLists
+		},
+	)
 
 	// Analyze object structure
-	const sampleClassList = createClassList(testListData)
-	const classAnalysis = analyzeObjectStructure(sampleClassList, 'Class List')
-	console.log(
-		`Class List Estimated Size: ${(classAnalysis.estimatedSize / 1024).toFixed(2)}KB per list`,
+	const sampleDirectClassList = new List(testListData)
+	const classAnalysis = analyzeObjectStructure(
+		sampleDirectClassList,
+		'Direct Class List',
 	)
 	console.log(
-		`Class List Method Overhead: ${classAnalysis.prototypeMethods} shared methods × ${ITERATIONS} lists = ${classAnalysis.prototypeMethods} method instances (shared)`,
+		`Direct Class List Estimated Size: ${(classAnalysis.estimatedSize / 1024).toFixed(2)}KB per list`,
+	)
+	console.log(
+		`Direct Class List Method Overhead: ${classAnalysis.prototypeMethods} shared methods × ${ITERATIONS} lists = ${classAnalysis.prototypeMethods} method instances (shared)`,
 	)
 
 	// Test method call performance
-	measureTime('Class List Method Calls', () => {
+	measureTime('Direct Class List Method Calls', () => {
 		for (let i = 0; i < METHOD_CALLS; i++) {
 			memoryLists.forEach(list => {
 				list.get()
-				list.byKey('0')
-				list.length
+				const _0 = list.at(0)
+				const _length = list.length
+				list.set([
+					...testListData,
+					{ id: 999, name: 'New', value: 999 },
+				])
+				list.sort()
 			})
 		}
 	})
 
 	// Test method identity (should be same instances - shared prototype)
-	const list1 = createClassList(testListData)
-	const list2 = createClassList(testListData)
-	console.log('Class List Methods Shared:', list1.get === list2.get) // Should be true
+	const list1 = new List(testListData)
+	const list2 = new List(testListData)
+	console.log('Direct Class List Methods Shared:', list1.get === list2.get) // Should be true
 
 	return memoryLists
 }
@@ -352,7 +386,10 @@ const benchmarkClass = async () => {
 		for (let i = 0; i < METHOD_CALLS; i++) {
 			memoryStores.forEach(store => {
 				store.get()
-				store.byKey('name')
+				const _name = store.user.name
+				const _emailNotification =
+					store.user.preferences.notifications.email
+				store.set({ ...testData, updated: true })
 			})
 		}
 	})
@@ -361,6 +398,70 @@ const benchmarkClass = async () => {
 	const store1 = createClassStore(testData)
 	const store2 = createClassStore(testData)
 	console.log('Class Methods Shared:', store1.get === store2.get) // Should be true
+
+	return memoryStores
+}
+
+/* === Direct Class Approach Benchmark (No Proxy) === */
+
+const benchmarkDirectClass = async () => {
+	console.log('\n=== Direct Class-Based Approach (No Proxy) ===')
+
+	let stores: any[] = []
+
+	// Test instantiation performance
+	measureTime('Direct Class Instantiation', () => {
+		stores = []
+		for (let i = 0; i < ITERATIONS; i++) {
+			stores.push(new BaseStore({ ...testData, id: i }))
+		}
+	})
+
+	// Test memory usage
+	const memoryStores = await measureMemory(
+		'Direct Class Memory Usage',
+		() => {
+			const tempStores = []
+			for (let i = 0; i < ITERATIONS; i++) {
+				tempStores.push(new BaseStore({ ...testData, id: i }))
+			}
+			return tempStores
+		},
+	)
+
+	// Analyze object structure
+	const sampleDirectClassStore = new BaseStore(testData)
+	const classAnalysis = analyzeObjectStructure(
+		sampleDirectClassStore,
+		'Direct Class Store',
+	)
+	console.log(
+		`Direct Class Estimated Size: ${(classAnalysis.estimatedSize / 1024).toFixed(2)}KB per store`,
+	)
+	console.log(
+		`Direct Class Method Overhead: ${classAnalysis.prototypeMethods} shared methods × ${ITERATIONS} stores = ${classAnalysis.prototypeMethods} method instances (shared)`,
+	)
+
+	// Test method call performance
+	measureTime('Direct Class Method Calls', () => {
+		for (let i = 0; i < METHOD_CALLS; i++) {
+			memoryStores.forEach(store => {
+				store.get()
+				const _name = store.byKey('user').byKey('name')
+				const _emailNotification = store
+					.byKey('user')
+					.byKey('preferences')
+					.byKey('notifications')
+					.byKey('email')
+				store.set({ ...testData, updated: true })
+			})
+		}
+	})
+
+	// Test method identity (should be same instances - shared prototype)
+	const store1 = new BaseStore(testData)
+	const store2 = new BaseStore(testData)
+	console.log('Direct Class Methods Shared:', store1.get === store2.get) // Should be true
 
 	return memoryStores
 }
@@ -384,7 +485,7 @@ const testListFunctionality = () => {
 	console.log('After splice:', factoryList.get())
 
 	console.log('\n--- Class List ---')
-	const classList = createClassList([
+	const classList = new List([
 		{ id: 1, name: 'A' },
 		{ id: 2, name: 'B' },
 	])
@@ -398,7 +499,7 @@ const testListFunctionality = () => {
 
 	// Test that both approaches produce equivalent results (after same operations)
 	const factoryList2 = createFactoryList([{ id: 1, name: 'Test' }])
-	const classList2 = createClassList([{ id: 1, name: 'Test' }])
+	const classList2 = new List([{ id: 1, name: 'Test' }])
 	factoryList2.add({ id: 2, name: 'Test2' })
 	classList2.add({ id: 2, name: 'Test2' })
 
@@ -462,19 +563,20 @@ const runComparison = async () => {
 	console.log(`${'='.repeat(40)}`)
 	const factoryStores = await benchmarkFactory()
 	const classStores = await benchmarkClass()
+	const directClassStores = await benchmarkDirectClass()
 
 	// Run List benchmarks
 	console.log(`\n${'='.repeat(40)}`)
 	console.log('LIST BENCHMARKS')
 	console.log(`${'='.repeat(40)}`)
 	const factoryLists = await benchmarkFactoryList()
-	const classLists = await benchmarkClassList()
+	const directClassLists = await benchmarkDirectClassList()
 
 	// Detailed memory analysis for both Store and List
 	const sampleFactory = createFactoryStore(testData)
 	const sampleClass = createClassStore(testData)
 	const sampleFactoryList = createFactoryList(testListData)
-	const sampleClassList = createClassList(testListData)
+	const sampleClassList = new List(testListData)
 
 	const factoryStoreAnalysis = analyzeObjectStructure(
 		sampleFactory,
@@ -539,34 +641,20 @@ const runComparison = async () => {
 		`Total Estimated Method Memory Savings: ${totalMethodMemorySaving.toFixed(2)}MB`,
 	)
 
-	console.log('\n=== Why Classes Use Less Heap Memory ===')
-	console.log(
-		'1. Factory functions create new method instances for each store/list',
-	)
-	console.log('2. Classes share methods on prototype across all instances')
-	console.log('3. V8 optimizes prototype method access and sharing')
-	console.log('4. Less GC pressure from duplicate function objects')
-	console.log(
-		'5. List objects have more methods than Store, amplifying the difference',
-	)
-
-	// Summary
-	console.log('\n=== Summary ===')
-	console.log('✅ Both Store and List approaches are functionally equivalent')
-	console.log('📊 Class approach shows:')
-	console.log('   - Faster instantiation for both Store and List')
-	console.log('   - Faster method calls for both Store and List')
-	console.log('   - Shared method identity (prototype inheritance)')
-	console.log('   - Lower memory usage per instance')
-	console.log('   - Greater benefits for List due to more methods')
-	console.log('\n📊 Factory approach shows:')
-	console.log('   - True privacy (closure variables)')
-	console.log('   - Independent method instances')
-	console.log('   - Higher memory overhead for method duplication')
-	console.log('   - Memory overhead scales with method count')
+	console.log('\n=== Performance Comparison Summary ===')
+	console.log('Direct Class (No Proxy) vs Proxy Class vs Factory approaches:')
+	console.log('- Direct Class should have fastest method calls')
+	console.log('- Proxy Class has convenience but method call overhead')
+	console.log('- Factory has per-instance method overhead')
 
 	// Keep references to prevent GC during measurement
-	return { factoryStores, classStores, factoryLists, classLists }
+	return {
+		factoryStores,
+		classStores,
+		directClassStores,
+		factoryLists,
+		directClassLists,
+	}
 }
 
 /* === Export === */

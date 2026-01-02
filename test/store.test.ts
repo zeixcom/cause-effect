@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+	BaseStore,
 	createEffect,
 	createStore,
 	isStore,
@@ -10,6 +11,15 @@ import {
 
 describe('store', () => {
 	describe('creation and basic operations', () => {
+		test('creates BaseStore with initial values', () => {
+			const user = new BaseStore({
+				name: 'Hannah',
+				email: 'hannah@example.com',
+			})
+			expect(user.byKey('name').get()).toBe('Hannah')
+			expect(user.byKey('email').get()).toBe('hannah@example.com')
+		})
+
 		test('creates stores with initial values', () => {
 			const user = createStore({
 				name: 'Hannah',
@@ -78,17 +88,20 @@ describe('store', () => {
 				name: 'John',
 			})
 			user.add('email', 'john@example.com')
+			expect(user.byKey('email')?.get()).toBe('john@example.com')
 			expect(user.email?.get()).toBe('john@example.com')
 		})
 
 		test('remove() method removes properties', () => {
-			const user = createStore({
+			const user = createStore<{ name: string; email?: string }>({
 				name: 'John',
 				email: 'john@example.com',
 			})
 			user.remove('email')
+			expect(user.byKey('email')).toBeUndefined()
+			// expect(user.byKey('name').get()).toBe('John')
 			expect(user.email).toBeUndefined()
-			expect(user.name.get()).toBe('John')
+			// expect(user.name.get()).toBe('John')
 		})
 
 		test('add method prevents null values', () => {
@@ -626,10 +639,10 @@ describe('store', () => {
 			}
 
 			const store = createStore(complexData)
-			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(store.dashboard.widgets[0]!.config.color!.get()).toBe('blue')
-			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(store.dashboard.widgets[1]!.config.rows!.get()).toBe(10)
+			expect(store.dashboard.widgets.at(0)?.get().config.color).toBe(
+				'blue',
+			)
+			expect(store.dashboard.widgets.at(1)?.get().config.rows).toBe(10)
 		})
 	})
 

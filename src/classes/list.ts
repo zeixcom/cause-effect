@@ -1,11 +1,5 @@
-import { diff, isEqual, type UnknownArray, type UnknownRecord } from '../diff'
+import { diff, isEqual, type UnknownArray } from '../diff'
 import { DuplicateKeyError, validateSignalValue } from '../errors'
-import type { MutableSignal } from '../signal'
-/* import {
-	type Collection,
-	type CollectionCallback,
-	createCollection,
-} from '../signals/collection' */
 import {
 	type Cleanup,
 	emitNotification,
@@ -16,22 +10,10 @@ import {
 	subscribeActiveWatcher,
 	type Watcher,
 } from '../system'
-import {
-	isFunction,
-	isNumber,
-	isObjectOfType,
-	isString,
-	isSymbol,
-	UNSET,
-} from '../util'
-import {
-	type Collection,
-	type CollectionCallback,
-	createCollection,
-} from './collection'
-import { MutableComposite } from './composite'
-import type { State } from './state'
-import type { Store } from './store'
+import { isFunction, isNumber, isObjectOfType, isString, UNSET } from '../util'
+import { Collection, type CollectionCallback } from './collection'
+import { Composite } from './composite'
+import { State } from './state'
 
 /* === Types === */
 
@@ -41,22 +23,14 @@ type ArrayToRecord<T extends UnknownArray> = {
 
 type KeyConfig<T> = string | ((item: T) => string)
 
-type List<T extends {}> = BaseList<T> & {
-	[n: number]: T extends readonly (infer U extends {})[]
-		? List<U>
-		: T extends UnknownRecord
-			? Store<T>
-			: State<T>
-}
-
 /* === Constants === */
 
 const TYPE_LIST = 'List' as const
 
 /* === Class === */
 
-class BaseList<T extends {}> {
-	#composite: MutableComposite<Record<string, T>>
+class List<T extends {}> {
+	#composite: Composite<Record<string, T>, State<T>>
 	#watchers = new Set<Watcher>()
 	#listeners: Pick<Listeners, 'sort'> = {
 		sort: new Set<Listener<'sort'>>(),
@@ -74,12 +48,13 @@ class BaseList<T extends {}> {
 				? (item: T) => keyConfig(item)
 				: () => String(keyCounter++)
 
-		this.#composite = new MutableComposite(
+		this.#composite = new Composite<ArrayToRecord<T[]>, State<T>>(
 			this.#toRecord(initialValue),
 			(key: string, value: unknown): value is T => {
 				validateSignalValue(`list for key "${key}"`, value)
 				return true
 			},
+			value => new State(value),
 		)
 	}
 
@@ -103,7 +78,7 @@ class BaseList<T extends {}> {
 
 	get #value(): T[] {
 		return this.#order
-			.map(key => this.#composite.get(key)?.get())
+			.map(key => this.#composite.signals.get(key)?.get())
 			.filter(v => v !== undefined) as T[]
 	}
 
@@ -116,10 +91,10 @@ class BaseList<T extends {}> {
 		return true
 	}
 
-	*[Symbol.iterator](): IterableIterator<MutableSignal<T>> {
+	*[Symbol.iterator](): IterableIterator<State<T>> {
 		for (const key of this.#order) {
-			const signal = this.#composite.get(key)
-			if (signal) yield signal as MutableSignal<T>
+			const signal = this.#composite.signals.get(key)
+			if (signal) yield signal as State<T>
 		}
 	}
 
@@ -160,16 +135,16 @@ class BaseList<T extends {}> {
 		this.set(fn(this.get()))
 	}
 
-	at(index: number): MutableSignal<T> | undefined {
-		return this.#composite.get(this.#order[index])
+	at(index: number): State<T> | undefined {
+		return this.#composite.signals.get(this.#order[index])
 	}
 
 	keys(): IterableIterator<string> {
 		return this.#order.values()
 	}
 
-	byKey(key: string): MutableSignal<T> | undefined {
-		return this.#composite.get(key)
+	byKey(key: string): State<T> | undefined {
+		return this.#composite.signals.get(key)
 	}
 
 	keyAt(index: number): string | undefined {
@@ -182,7 +157,7 @@ class BaseList<T extends {}> {
 
 	add(value: T): string {
 		const key = this.#generateKey(value)
-		if (this.#composite.has(key))
+		if (this.#composite.signals.has(key))
 			throw new DuplicateKeyError('store', key, value)
 
 		if (!this.#order.includes(key)) this.#order.push(key)
@@ -206,7 +181,13 @@ class BaseList<T extends {}> {
 
 	sort(compareFn?: (a: T, b: T) => number): void {
 		const entries = this.#order
-			.map(key => [key, this.#composite.get(key)?.get()] as [string, T])
+			.map(
+				key =>
+					[key, this.#composite.signals.get(key)?.get()] as [
+						string,
+						T,
+					],
+			)
 			.sort(
 				isFunction(compareFn)
 					? (a, b) => compareFn(a[1], b[1])
@@ -241,7 +222,7 @@ class BaseList<T extends {}> {
 			const index = actualStart + i
 			const key = this.#order[index]
 			if (key) {
-				const signal = this.#composite.get(key)
+				const signal = this.#composite.signals.get(key)
 				if (signal) remove[key] = signal.get() as T
 			}
 		}
@@ -302,85 +283,11 @@ class BaseList<T extends {}> {
 	deriveCollection<R extends {}>(
 		callback: CollectionCallback<R, T>,
 	): Collection<R, T> {
-		// @ts-expect-error callback type can't be properly inferred
-		return createCollection(this, callback)
+		return new Collection(this, callback)
 	}
 }
 
 /* === Functions === */
-
-/**
- * Create a new list with deeply nested reactive list items
- *
- * @since 0.16.2
- * @param {T[]} initialValue - Initial array of the list
- * @param {KeyConfig<T>} keyConfig - Optional key configuration:
- *   - string: used as prefix for auto-incrementing IDs (e.g., "item" → "item0", "item1")
- *   - function: computes key from array item at creation time
- * @returns {List<T>} - New list with reactive items of type T
- */
-const createList = <T extends {}>(
-	initialValue: T[],
-	keyConfig?: KeyConfig<T>,
-): List<T> => {
-	const instance = new BaseList(initialValue, keyConfig)
-
-	const getSignal = (prop: string) => {
-		const index = Number(prop)
-		return Number.isInteger(index) && index >= 0
-			? instance.at(index)
-			: instance.byKey(prop)
-	}
-
-	// Return proxy for property access
-	return new Proxy(instance, {
-		get(target, prop) {
-			if (prop in target) {
-				const value = Reflect.get(target, prop)
-				return isFunction(value) ? value.bind(target) : value
-			}
-			return !isSymbol(prop) ? getSignal(prop) : undefined
-		},
-		has(target, prop) {
-			if (prop in target) return true
-			return !isSymbol(prop) ? getSignal(prop) !== undefined : false
-		},
-		ownKeys(target) {
-			return Object.getOwnPropertyNames(target.keys())
-		},
-		getOwnPropertyDescriptor(target, prop) {
-			if (isSymbol(prop)) return undefined
-
-			if (prop === 'length') {
-				return {
-					enumerable: false,
-					configurable: false,
-					writable: false,
-					value: target.length,
-				}
-			}
-
-			const index = Number(prop)
-			if (
-				Number.isInteger(index) &&
-				index >= 0 &&
-				index < target.length
-			) {
-				const signal = target.at(index)
-				return signal
-					? {
-							enumerable: true,
-							configurable: true,
-							writable: true,
-							value: signal,
-						}
-					: undefined
-			}
-
-			return undefined
-		},
-	}) as List<T>
-}
 
 /**
  * Check if the provided value is a List instance
@@ -394,12 +301,4 @@ const isList = <T extends {}>(value: unknown): value is List<T> =>
 
 /* === Exports === */
 
-export {
-	createList,
-	isList,
-	BaseList,
-	TYPE_LIST,
-	type ArrayToRecord,
-	type KeyConfig,
-	type List,
-}
+export { isList, List, TYPE_LIST, type ArrayToRecord, type KeyConfig }

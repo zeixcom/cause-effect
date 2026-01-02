@@ -5,11 +5,7 @@ import {
 	NullishSignalValueError,
 	ReadonlySignalError,
 } from '../errors'
-import {
-	createMutableSignal,
-	isMutableSignal,
-	type MutableSignal,
-} from '../signal'
+import { isMutableSignal, type MutableSignal } from '../signal'
 import {
 	batchSignalWrites,
 	type Cleanup,
@@ -27,6 +23,7 @@ import {
 	isFunction,
 	isNumber,
 	isObjectOfType,
+	isRecord,
 	isString,
 	isSymbol,
 	UNSET,
@@ -37,6 +34,8 @@ import {
 	createCollection,
 } from './collection'
 import { isComputed } from './computed'
+import { createState, isState } from './state'
+import { createStore, isStore } from './store'
 
 /* === Types === */
 
@@ -175,7 +174,12 @@ const createList = <T extends {}>(
 		if (!isValidValue(key, value)) return false
 
 		// Create signal for key
-		const signal = createMutableSignal<T>(value) as MutableSignal<T>
+		const signal: MutableSignal<T[K] & {}> =
+			isState(value) || isStore(value)
+				? (value as unknown as MutableSignal<T[K] & {}>)
+				: isRecord(value) || Array.isArray(value)
+					? createStore(value)
+					: createState(value)
 
 		// Set internal states
 		signals.set(key, signal)

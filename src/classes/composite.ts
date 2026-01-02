@@ -1,6 +1,6 @@
 import type { DiffResult, UnknownRecord } from '../diff'
 import { guardMutableSignal } from '../errors'
-import { createMutableSignal, type MutableSignal } from '../signal'
+import type { Signal } from '../signal'
 import {
 	batchSignalWrites,
 	type Cleanup,
@@ -18,12 +18,13 @@ type CompositeListeners = Pick<Listeners, 'add' | 'change' | 'remove'>
 
 /* === Class Definitions === */
 
-class MutableComposite<T extends UnknownRecord> {
+class Composite<T extends UnknownRecord, S extends Signal<T[keyof T] & {}>> {
+	signals = new Map<string, S>()
 	#validate: <K extends keyof T & string>(
 		key: K,
 		value: unknown,
 	) => value is T[K] & {}
-	#signals = new Map<string, MutableSignal<T[keyof T] & {}>>()
+	#create: <V extends T[keyof T] & {}>(value: V) => S
 	#watchers = new Map<string, Watcher>()
 	#listeners: CompositeListeners = {
 		add: new Set<Listener<'add'>>(),
@@ -38,8 +39,10 @@ class MutableComposite<T extends UnknownRecord> {
 			key: K,
 			value: unknown,
 		) => value is T[K] & {},
+		create: <V extends T[keyof T] & {}>(value: V) => S,
 	) {
 		this.#validate = validate
+		this.#create = create
 		this.change(
 			{
 				add: values,
@@ -54,7 +57,7 @@ class MutableComposite<T extends UnknownRecord> {
 	#addWatcher(key: string): void {
 		const watcher = createWatcher(() => {
 			trackSignalReads(watcher, () => {
-				this.#signals.get(key)?.get() // Subscribe to the signal
+				this.signals.get(key)?.get() // Subscribe to the signal
 				if (!this.#batching)
 					emitNotification(this.#listeners.change, [key])
 			})
@@ -63,43 +66,10 @@ class MutableComposite<T extends UnknownRecord> {
 		watcher()
 	}
 
-	#removeWatcher(key: string): void {
-		const watcher = this.#watchers.get(key)
-		if (watcher) {
-			watcher.stop()
-			this.#watchers.delete(key)
-		}
-	}
-
-	keys(): IterableIterator<string> {
-		return this.#signals.keys()
-	}
-
-	values(): IterableIterator<MutableSignal<T[keyof T] & {}>> {
-		return this.#signals.values()
-	}
-
-	entries(): IterableIterator<[string, MutableSignal<T[keyof T] & {}>]> {
-		return this.#signals.entries()
-	}
-
-	has(key: string): boolean {
-		return this.#signals.has(key)
-	}
-
-	get<K extends keyof T & string>(
-		key: K,
-	): MutableSignal<T[K] & {}> | undefined {
-		return this.#signals.get(key) as MutableSignal<T[K] & {}> | undefined
-	}
-
 	add<K extends keyof T & string>(key: K, value: T[K]): boolean {
 		if (!this.#validate(key, value)) return false
 
-		const signal = createMutableSignal(value)
-
-		// @ts-expect-error complex conditional type inference
-		this.#signals.set(key, signal)
+		this.signals.set(key, this.#create(value))
 		if (this.#listeners.change.size) this.#addWatcher(key)
 
 		if (!this.#batching) emitNotification(this.#listeners.add, [key])
@@ -107,10 +77,14 @@ class MutableComposite<T extends UnknownRecord> {
 	}
 
 	remove<K extends keyof T & string>(key: K): boolean {
-		const ok = this.#signals.delete(key)
+		const ok = this.signals.delete(key)
 		if (!ok) return false
 
-		this.#removeWatcher(key)
+		const watcher = this.#watchers.get(key)
+		if (watcher) {
+			watcher.stop()
+			this.#watchers.delete(key)
+		}
 
 		if (!this.#batching) emitNotification(this.#listeners.remove, [key])
 		return true
@@ -142,7 +116,7 @@ class MutableComposite<T extends UnknownRecord> {
 					if (!this.#validate(key as keyof T & string, value))
 						continue
 
-					const signal = this.#signals.get(key)
+					const signal = this.signals.get(key)
 					if (guardMutableSignal(`list item "${key}"`, value, signal))
 						signal.set(value)
 				}
@@ -168,8 +142,8 @@ class MutableComposite<T extends UnknownRecord> {
 	}
 
 	clear(): boolean {
-		const keys = Array.from(this.#signals.keys())
-		this.#signals.clear()
+		const keys = Array.from(this.signals.keys())
+		this.signals.clear()
 		this.#watchers.clear()
 		emitNotification(this.#listeners.remove, keys)
 		return true
@@ -182,7 +156,7 @@ class MutableComposite<T extends UnknownRecord> {
 		this.#listeners[type].add(listener)
 		if (type === 'change' && !this.#watchers.size) {
 			this.#batching = true
-			for (const key of this.#signals.keys()) this.#addWatcher(key)
+			for (const key of this.signals.keys()) this.#addWatcher(key)
 			this.#batching = false
 		}
 
@@ -199,4 +173,4 @@ class MutableComposite<T extends UnknownRecord> {
 	}
 }
 
-export { MutableComposite, type CompositeListeners }
+export { Composite, type CompositeListeners }

@@ -83,16 +83,6 @@ class State<T extends {}> {
 /* === Functions === */
 
 /**
- * Factory function to create a new state signal
- *
- * @since 0.9.0
- * @param {T} initialValue - Initial value of the state
- * @returns {State<T>} - New state signal
- */
-const createState = <T extends {}>(initialValue: T): State<T> =>
-	new State(initialValue)
-
-/**
  * Check if the provided value is a State instance
  *
  * @since 0.9.0
@@ -105,4 +95,4 @@ const isState = /*#__PURE__*/ <T extends {}>(
 
 /* === Exports === */
 
-export { TYPE_STATE, createState, isState, State }
+export { TYPE_STATE, isState, State }

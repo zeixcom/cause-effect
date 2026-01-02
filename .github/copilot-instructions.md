@@ -10,8 +10,8 @@ Cause & Effect is a reactive state management library for JavaScript/TypeScript 
 - **State**: Mutable signals for primitive values (`new State()`)
 - **Computed**: Derived read-only signals with memoization, reducer capabilities and async support (`new Memo()`, `new Task()`)
 - **Store**: Mutable signals for objects with reactive properties (`createStore()`)
-- **List**: Mutable signals for arrays with stable keys and reactive entries (`createList()`)
-- **Collection**: Read-only derived arrays with item-level memoization and async support (`createCollection()`)
+- **List**: Mutable signals for arrays with stable keys and reactive entries (`new List()`)
+- **Collection**: Read-only derived arrays with item-level memoization and async support (`new Collection()`)
 - **Effects**: Side effect handlers that react to signal changes (`createEffect()`)
 
 ## Key Files Structure
@@ -80,9 +80,9 @@ const actions = new State<'increment' | 'decrement'>('increment')
 // Store for objects
 const user = createStore({ name: 'Alice', age: 30 })
 
-// List with stable keys
-const items = createList(['apple', 'banana', 'cherry'])
-const users = createList([{ id: 'alice', name: 'Alice' }], user => user.id)
+// List with stable keys for arrays
+const items = new List(['apple', 'banana', 'cherry'])
+const users = new List([{ id: 'alice', name: 'Alice' }], user => user.id)
 
 // Computed for derived values
 const doubled = new Memo(() => count.get() * 2)
@@ -142,21 +142,21 @@ function isSignal<T extends {}>(value: unknown): value is Signal<T>
 ### Stable Keys Usage
 ```typescript
 // Default auto-incrementing keys
-const items = createList(['a', 'b', 'c'])
+const items = new List(['a', 'b', 'c'])
 
 // String prefix keys
 // Lists with stable keys
-const items = createList(['apple', 'banana'], 'fruit')
+const items = new List(['apple', 'banana'], 'fruit')
 // Creates keys: 'fruit0', 'fruit1'
 
 // Function-based keys
-const users = createList([
+const users = new List([
   { id: 'user1', name: 'Alice' },
   { id: 'user2', name: 'Bob' }
 ], user => user.id) // Uses user.id as stable key
 
 // Collections derived from lists
-const userProfiles = createCollection(users, user => ({
+const userProfiles = new Collection(users, user => ({
   ...user,
   displayName: `${user.name} (ID: ${user.id})`
 }))

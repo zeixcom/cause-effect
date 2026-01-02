@@ -6,7 +6,7 @@ import {
 	Memo,
 	Task,
 } from './classes/computed'
-import { createList, isList, type List } from './classes/list'
+import { isList, List } from './classes/list'
 import { isState, State } from './classes/state'
 import { createStore, isStore, type Store } from './classes/store'
 import type { UnknownRecord } from './diff'
@@ -70,7 +70,7 @@ function createSignal<T extends {}>(value: T): State<T>
 function createSignal(value: unknown): unknown {
 	if (isMemoCallback(value)) return new Memo(value)
 	if (isTaskCallback(value)) return new Task(value)
-	if (isUniformArray<unknown & {}>(value)) return createList(value)
+	if (isUniformArray<unknown & {}>(value)) return new List(value)
 	if (isRecord(value)) return createStore(value as UnknownRecord)
 	return new State(value as unknown & {})
 }
@@ -85,7 +85,7 @@ function createMutableSignal<T extends {}>(value: T[]): List<T>
 function createMutableSignal<T extends UnknownRecord>(value: T): Store<T>
 function createMutableSignal<T extends {}>(value: T): State<T>
 function createMutableSignal(value: unknown): unknown {
-	if (isUniformArray<unknown & {}>(value)) return createList(value)
+	if (isUniformArray<unknown & {}>(value)) return new List(value)
 	if (isRecord(value)) return createStore(value as UnknownRecord)
 	return new State(value as unknown & {})
 }

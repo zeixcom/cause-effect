@@ -42,14 +42,6 @@ declare class State<T extends {}> {
     update(updater: (oldValue: T) => T): void;
 }
 /**
- * Factory function to create a new state signal
- *
- * @since 0.9.0
- * @param {T} initialValue - Initial value of the state
- * @returns {State<T>} - New state signal
- */
-declare const createState: <T extends {}>(initialValue: T) => State<T>;
-/**
  * Check if the provided value is a State instance
  *
  * @since 0.9.0
@@ -57,4 +49,4 @@ declare const createState: <T extends {}>(initialValue: T) => State<T>;
  * @returns {boolean} - True if the value is a State instance, false otherwise
  */
 declare const isState: <T extends {}>(value: unknown) => value is State<T>;
-export { TYPE_STATE, createState, isState, State };
+export { TYPE_STATE, isState, State };

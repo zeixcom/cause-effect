@@ -5,7 +5,7 @@ import {
 	NullishSignalValueError,
 	ReadonlySignalError,
 } from '../errors'
-import { isMutableSignal, type Signal } from '../signal'
+import { isMutableSignal, type MutableSignal } from '../signal'
 import {
 	batchSignalWrites,
 	type Cleanup,
@@ -21,7 +21,7 @@ import {
 } from '../system'
 import { isFunction, isObjectOfType, isRecord, isSymbol, UNSET } from '../util'
 import { isComputed } from './computed'
-import type { List } from './list'
+import { createList, isList, type List } from './list'
 import { createState, isState, type State } from './state'
 
 /* === Types === */
@@ -36,15 +36,18 @@ type Store<T extends UnknownRecord> = {
 	[K in keyof T]: T[K] extends readonly (infer U extends {})[]
 		? List<U>
 		: T extends Record<string, unknown>
-			? Store<T[K]>
-			: State<T[K]>
+			? Store<T[K] & {}>
+			: State<T[K] & {}>
 } & {
 	readonly [Symbol.toStringTag]: 'Store'
 	[Symbol.iterator](): IterableIterator<
-		[Extract<keyof T, string>, StoreKeySignal<T[Extract<keyof T, string>]>]
+		[
+			Extract<keyof T, string>,
+			StoreKeySignal<T[Extract<keyof T, string>] & {}>,
+		]
 	>
 	add<K extends Extract<keyof T, string>>(key: K, value: T[K]): K
-	byKey<K extends Extract<keyof T, string>>(key: K): StoreKeySignal<T[K]>
+	byKey<K extends Extract<keyof T, string>>(key: K): StoreKeySignal<T[K] & {}>
 	get(): T
 	keyAt(index: number): string | undefined
 	indexOfKey(key: string): number
@@ -88,7 +91,10 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 		change: new Set<Listener<'change'>>(),
 		remove: new Set<Listener<'remove'>>(),
 	}
-	const signals = new Map<string, Signal<T[Extract<keyof T, string>] & {}>>()
+	const signals = new Map<
+		string,
+		MutableSignal<T[Extract<keyof T, string>] & {}>
+	>()
 	const ownWatchers = new Map<string, Watcher>()
 
 	// Get current record
@@ -114,7 +120,7 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 	// Add own watcher for nested signal
 	const addOwnWatcher = <K extends keyof T & string>(
 		key: K,
-		signal: Signal<T[K] & {}>,
+		signal: MutableSignal<T[K] & {}>,
 	) => {
 		const watcher = createWatcher(() => {
 			trackSignalReads(watcher, () => {
@@ -128,18 +134,21 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 	// Add nested signal and effect
 	const addProperty = <K extends keyof T & string>(
 		key: K,
-		value: T[K] & {},
+		value: T[K],
 		single = false,
 	): boolean => {
 		if (!isValidValue(key, value)) return false
 
 		// Create signal for key
-		const signal: Signal<T[K] & {}> =
-			isState(value) || isStore(value)
-				? (value as unknown as Signal<T[K] & {}>)
-				: isRecord(value) || Array.isArray(value)
+		// @ts-expect-error non-matching signal types
+		const signal: MutableSignal<T[K] & {}> =
+			isState(value) || isStore(value) || isList(value)
+				? (value as unknown as MutableSignal<T[K] & {}>)
+				: isRecord(value)
 					? createStore(value)
-					: createState(value)
+					: Array.isArray(value)
+						? createList(value)
+						: createState(value)
 
 		// Set internal states
 		// @ts-expect-error non-matching signal types
@@ -179,7 +188,7 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 			for (const key in changes.add)
 				addProperty(
 					key,
-					changes.add[key] as T[Extract<keyof T, string>],
+					changes.add[key] as T[Extract<keyof T, string>] & {},
 					false,
 				)
 

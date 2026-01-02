@@ -5,9 +5,8 @@
  */
 
 export {
-	type Collection,
+	Collection,
 	type CollectionCallback,
-	createCollection,
 	isCollection,
 	TYPE_COLLECTION,
 } from './src/classes/collection'
@@ -25,14 +24,12 @@ export {
 } from './src/classes/computed'
 export {
 	type ArrayToRecord,
-	BaseList,
-	createList,
 	isList,
 	type KeyConfig,
-	type List,
+	List,
 	TYPE_LIST,
 } from './src/classes/list'
-export { createState, isState, State, TYPE_STATE } from './src/classes/state'
+export { isState, State, TYPE_STATE } from './src/classes/state'
 export {
 	BaseStore,
 	createStore,

@@ -66,7 +66,6 @@ Collection signals provide read-only derived array transformations with automati
 5. **Chainable**: Collections can derive from other Collections for data pipelines
 
 Key implementation details:
-- Uses the same Proxy pattern as Lists for array-like access
 - Individual items are Computed signals, not mutable signals
 - Automatically handles source List changes (add, remove, sort)
 - Supports both sync and async transformation callbacks
@@ -153,11 +152,11 @@ const form = createStore({
 // form.email.set('user@example.com') // Only email subscribers react
 ```
 
-**List Signals (`createList`)**:
+**List Signals (`new List`)**:
 
 ```ts
 // Lists with stable keys
-const todoList = createList([
+const todoList = new List([
   { id: 'task1', text: 'Learn signals' },
   { id: 'task2', text: 'Build app' }
 ], todo => todo.id) // Use todo.id as stable key
@@ -170,16 +169,16 @@ firstTodo?.text.set('Learn signals deeply')
 todoList.sort((a, b) => a.text.localeCompare(b.text))
 ```
 
-**Collection Signals (`createCollection`)**:
+**Collection Signals (`new Collection`)**:
 
 ```ts
 // Read-only derived arrays with memoization
-const completedTodos = createCollection(todoList, todo => 
+const completedTodos = new Collection(todoList, todo => 
   todo.completed ? { ...todo, status: 'done' } : null
 )
 
 // Async transformations with cancellation
-const todoDetails = createCollection(todoList, async (todo, abort) => {
+const todoDetails = new Collection(todoList, async (todo, abort) => {
   const response = await fetch(`/todos/${todo.id}`, { signal: abort })
   return { ...todo, details: await response.json() }
 })
@@ -336,7 +335,7 @@ The library is framework-agnostic but integrates well with:
 ### Building Reactive Data Structures
 ```typescript
 // Reactive list with computed properties
-const todos = createList<Todo[]>([])
+const todos = new List<Todo[]>([])
 const completedCount = new Memo(() => 
   todos.get().filter(todo => todo.completed).length
 )
@@ -401,7 +400,7 @@ eventBus.userLogin.set({ userId: 123, timestamp: Date.now() })
 
 ```typescript
 // Build complex data processing with Collections
-const rawData = createList([
+const rawData = new List([
   { id: 1, value: 10, category: 'A' },
   { id: 2, value: 20, category: 'B' },
   { id: 3, value: 15, category: 'A' }
@@ -412,7 +411,7 @@ const processedData = rawData
   .deriveCollection(item => ({ ...item, doubled: item.value * 2 }))
   .deriveCollection(item => ({ ...item, category: item.category.toLowerCase() }))
 
-const categoryTotals = createCollection(processedData, async (item, abort) => {
+const categoryTotals = new Collection(processedData, async (item, abort) => {
   // Simulate async processing
   await new Promise(resolve => setTimeout(resolve, 100))
   return { category: item.category, contribution: item.doubled }
@@ -431,7 +430,7 @@ const totals = new Memo(() => {
 ### Stable Keys for Persistent Item Identity
 ```typescript
 // Managing a list of items where order matters but identity persists
-const playlist = createList([
+const playlist = new List([
   { id: 'track1', title: 'Song A', duration: 180 },
   { id: 'track2', title: 'Song B', duration: 210 }
 ], track => track.id)

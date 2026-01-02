@@ -10,31 +10,18 @@ import {
 	trackSignalReads,
 	type Watcher,
 } from '../system'
-import {
-	isAsyncFunction,
-	isFunction,
-	isObjectOfType,
-	isSymbol,
-	UNSET,
-} from '../util'
+import { isAsyncFunction, isFunction, isObjectOfType, UNSET } from '../util'
 import { type Computed, createComputed } from './computed'
-import type { BaseList, List } from './list'
+import { isList, type List } from './list'
 
 /* === Types === */
 
-type CollectionSource<T extends {}> =
-	| List<T>
-	| BaseList<T>
-	| Collection<T, unknown & {}>
-	| BaseCollection<T, unknown & {}>
+// biome-ignore lint/suspicious/noExplicitAny: source type of current collection doesn't matter
+type CollectionSource<T extends {}> = List<T> | Collection<T, any>
 
 type CollectionCallback<T extends {}, U extends {}> =
 	| ((sourceValue: U) => T)
 	| ((sourceValue: U, abort: AbortSignal) => Promise<T>)
-
-type Collection<T extends {}, U extends {}> = BaseCollection<T, U> & {
-	[n: number]: Computed<T>
-}
 
 /* === Constants === */
 
@@ -42,7 +29,7 @@ const TYPE_COLLECTION = 'Collection' as const
 
 /* === Class === */
 
-class BaseCollection<T extends {}, U extends {}> {
+class Collection<T extends {}, U extends {}> {
 	#watchers = new Set<Watcher>()
 	#source: CollectionSource<U>
 	#callback: CollectionCallback<T, U>
@@ -57,10 +44,16 @@ class BaseCollection<T extends {}, U extends {}> {
 	#order: string[] = []
 
 	constructor(
-		source: CollectionSource<U>,
+		source: CollectionSource<U> | (() => CollectionSource<U>),
 		callback: CollectionCallback<T, U>,
 	) {
+		validateCallback('collection', callback)
+
+		if (isFunction(source)) source = source()
+		if (!isCollectionSource(source))
+			throw new Error('Invalid collection source')
 		this.#source = source
+
 		this.#callback = callback
 
 		for (let i = 0; i < this.#source.length; i++) {
@@ -230,93 +223,11 @@ class BaseCollection<T extends {}, U extends {}> {
 	deriveCollection<R extends {}>(
 		callback: CollectionCallback<R, T>,
 	): Collection<R, T> {
-		// @ts-expect-error this type can't be properly inferred
-		return createCollection(this, callback)
+		return new Collection(this, callback)
 	}
 }
 
 /* === Functions === */
-
-/**
- * Collections - Read-Only derived lists
- *
- * @since 0.17.0
- * @param {CollectionSource<U>} source - Source of collection to derive values from
- * @param {CollectionCallback<T, U>} callback - Callback function to transform array items
- * @returns {Collection<T>} - New collection with reactive properties that preserves the original type T
- */
-function createCollection<T extends {}, U extends {}>(
-	source: CollectionSource<U> | (() => CollectionSource<U>),
-	callback: (sourceValue: U) => T,
-): Collection<T, U>
-function createCollection<T extends {}, U extends {}>(
-	source: CollectionSource<U> | (() => CollectionSource<U>),
-	callback: (sourceValue: U, abort: AbortSignal) => Promise<T>,
-): Collection<T, U>
-function createCollection<T extends {}, U extends {}>(
-	source: CollectionSource<U> | (() => CollectionSource<U>),
-	callback: CollectionCallback<T, U>,
-): Collection<T, U> {
-	validateCallback('collection', callback)
-
-	if (isFunction(source)) source = source()
-	const instance = new BaseCollection(source, callback)
-
-	const getSignal = (prop: string) => {
-		const index = Number(prop)
-		return Number.isInteger(index) && index >= 0
-			? instance.at(index)
-			: instance.byKey(prop)
-	}
-
-	return new Proxy(instance, {
-		get(target, prop) {
-			if (prop in target) {
-				const value = Reflect.get(target, prop)
-				return isFunction(value) ? value.bind(target) : value
-			}
-			if (!isSymbol(prop)) return getSignal(prop)
-		},
-		has(target, prop) {
-			if (prop in target) return true
-			return !isSymbol(prop) ? getSignal(prop) !== undefined : false
-		},
-		ownKeys(target) {
-			return Object.getOwnPropertyNames(target.keys())
-		},
-		getOwnPropertyDescriptor(target, prop) {
-			if (isSymbol(prop)) return undefined
-
-			if (prop === 'length') {
-				return {
-					enumerable: false,
-					configurable: false,
-					writable: false,
-					value: target.length,
-				}
-			}
-
-			const index = Number(prop)
-			if (
-				Number.isInteger(index) &&
-				index >= 0 &&
-				index < target.length
-			) {
-				const signal = target.at(index)
-				return signal
-					? {
-							enumerable: true,
-							configurable: true,
-							writable: true,
-							value: signal,
-						}
-					: undefined
-			}
-
-			return undefined
-		},
-	}) as Collection<T, U>
-}
 
 /**
  * Check if a value is a collection signal
@@ -328,6 +239,17 @@ function createCollection<T extends {}, U extends {}>(
 const isCollection = /*#__PURE__*/ <T extends {}, U extends {}>(
 	value: unknown,
 ): value is Collection<T, U> => isObjectOfType(value, TYPE_COLLECTION)
+
+/**
+ * Check if a value is a collection source
+ *
+ * @since 0.17.0
+ * @param {unknown} value - Value to check
+ * @returns {boolean} - True if value is a collection source, false otherwise
+ */
+const isCollectionSource = /*#__PURE__*/ <T extends {}>(
+	value: unknown,
+): value is CollectionSource<T> => isList(value) || isCollection(value)
 
 /**
  * Check if the provided callback is an async function
@@ -342,10 +264,9 @@ const isAsyncCollectionCallback = <T extends {}>(
 	isAsyncFunction(callback)
 
 export {
-	type Collection,
+	Collection,
 	type CollectionSource,
 	type CollectionCallback,
-	createCollection,
 	isCollection,
 	TYPE_COLLECTION,
 }

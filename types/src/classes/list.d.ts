@@ -1,30 +1,25 @@
-import { type UnknownArray, type UnknownRecord } from '../diff';
-import type { MutableSignal } from '../signal';
+import { type UnknownArray } from '../diff';
 import { type Cleanup, type Listener, type Notifications } from '../system';
-import { type Collection } from './collection';
-import type { State } from './state';
-import type { Store } from './store';
+import { Collection } from './collection';
+import { State } from './state';
 type ArrayToRecord<T extends UnknownArray> = {
     [key: string]: T extends Array<infer U extends {}> ? U : never;
 };
 type KeyConfig<T> = string | ((item: T) => string);
-type List<T extends {}> = BaseList<T> & {
-    [n: number]: T extends readonly (infer U extends {})[] ? List<U> : T extends UnknownRecord ? Store<T> : State<T>;
-};
 declare const TYPE_LIST: "List";
-declare class BaseList<T extends {}> {
+declare class List<T extends {}> {
     #private;
     constructor(initialValue: T[], keyConfig?: KeyConfig<T>);
     get [Symbol.toStringTag](): 'List';
     get [Symbol.isConcatSpreadable](): boolean;
-    [Symbol.iterator](): IterableIterator<MutableSignal<T>>;
+    [Symbol.iterator](): IterableIterator<State<T>>;
     get length(): number;
     get(): T[];
     set(newValue: T[]): void;
     update(fn: (oldValue: T[]) => T[]): void;
-    at(index: number): MutableSignal<T> | undefined;
+    at(index: number): State<T> | undefined;
     keys(): IterableIterator<string>;
-    byKey(key: string): MutableSignal<T> | undefined;
+    byKey(key: string): State<T> | undefined;
     keyAt(index: number): string | undefined;
     indexOfKey(key: string): number;
     add(value: T): string;
@@ -36,17 +31,6 @@ declare class BaseList<T extends {}> {
     deriveCollection<R extends {}>(callback: (sourceValue: T, abort: AbortSignal) => Promise<R>): Collection<R, T>;
 }
 /**
- * Create a new list with deeply nested reactive list items
- *
- * @since 0.16.2
- * @param {T[]} initialValue - Initial array of the list
- * @param {KeyConfig<T>} keyConfig - Optional key configuration:
- *   - string: used as prefix for auto-incrementing IDs (e.g., "item" → "item0", "item1")
- *   - function: computes key from array item at creation time
- * @returns {List<T>} - New list with reactive items of type T
- */
-declare const createList: <T extends {}>(initialValue: T[], keyConfig?: KeyConfig<T>) => List<T>;
-/**
  * Check if the provided value is a List instance
  *
  * @since 0.15.0
@@ -54,4 +38,4 @@ declare const createList: <T extends {}>(initialValue: T[], keyConfig?: KeyConfi
  * @returns {boolean} - True if the value is a List instance, false otherwise
  */
 declare const isList: <T extends {}>(value: unknown) => value is List<T>;
-export { createList, isList, BaseList, TYPE_LIST, type ArrayToRecord, type KeyConfig, type List, };
+export { isList, List, TYPE_LIST, type ArrayToRecord, type KeyConfig };

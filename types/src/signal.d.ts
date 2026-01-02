@@ -1,5 +1,5 @@
 import { type Computed } from './classes/computed';
-import { type List } from './classes/list';
+import { List } from './classes/list';
 import { State } from './classes/state';
 import { type Store } from './classes/store';
 import type { UnknownRecord } from './diff';
