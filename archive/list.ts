@@ -1,11 +1,11 @@
-import { type DiffResult, diff, isEqual, type UnknownArray } from '../diff'
+import { type DiffResult, diff, isEqual, type UnknownArray } from '../src/diff'
 import {
 	DuplicateKeyError,
 	InvalidSignalValueError,
 	NullishSignalValueError,
 	ReadonlySignalError,
-} from '../errors'
-import { isMutableSignal, type MutableSignal } from '../signal'
+} from '../src/errors'
+import { isMutableSignal, type MutableSignal } from '../src/signal'
 import {
 	batchSignalWrites,
 	type Cleanup,
@@ -18,7 +18,7 @@ import {
 	subscribeActiveWatcher,
 	trackSignalReads,
 	type Watcher,
-} from '../system'
+} from '../src/system'
 import {
 	isFunction,
 	isNumber,
@@ -27,7 +27,7 @@ import {
 	isString,
 	isSymbol,
 	UNSET,
-} from '../util'
+} from '../src/util'
 import {
 	type Collection,
 	type CollectionCallback,
@@ -170,10 +170,15 @@ const createList = <T extends {}>(
 	}
 
 	// Add nested signal and own watcher
-	const addProperty = (key: string, value: T, single = false): boolean => {
+	const addProperty = <K extends keyof T & string>(
+		key: K,
+		value: T[K],
+		single = false,
+	): boolean => {
 		if (!isValidValue(key, value)) return false
 
 		// Create signal for key
+		// @ts-expect-error ignore
 		const signal: MutableSignal<T[K] & {}> =
 			isState(value) || isStore(value)
 				? (value as unknown as MutableSignal<T[K] & {}>)
@@ -182,8 +187,10 @@ const createList = <T extends {}>(
 					: createState(value)
 
 		// Set internal states
+		// @ts-expect-error ignore
 		signals.set(key, signal)
 		if (!order.includes(key)) order.push(key)
+		// @ts-expect-error ignore
 		if (listeners.change.size) addOwnWatcher(key, signal)
 
 		if (single) {
@@ -220,6 +227,7 @@ const createList = <T extends {}>(
 		// Additions
 		if (Object.keys(changes.add).length) {
 			for (const key in changes.add)
+				// @ts-expect-error ignore
 				addProperty(key, changes.add[key] as T, false)
 
 			// Queue initial additions event to allow listeners to be added first
@@ -354,6 +362,7 @@ const createList = <T extends {}>(
 			value: (value: T): string => {
 				const key = generateKey(value)
 				if (!signals.has(key)) {
+					// @ts-expect-error ignore
 					addProperty(key, value, true)
 					return key
 				} else throw new DuplicateKeyError('store', key, value)

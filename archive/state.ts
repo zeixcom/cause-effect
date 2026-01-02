@@ -1,7 +1,11 @@
-import { isEqual } from '../diff'
-import { InvalidCallbackError, NullishSignalValueError } from '../errors'
-import { notifyWatchers, subscribeActiveWatcher, type Watcher } from '../system'
-import { isFunction, isObjectOfType, UNSET } from '../util'
+import { isEqual } from '../src/diff'
+import { InvalidCallbackError, NullishSignalValueError } from '../src/errors'
+import {
+	notifyWatchers,
+	subscribeActiveWatcher,
+	type Watcher,
+} from '../src/system'
+import { isFunction, isObjectOfType, UNSET } from '../src/util'
 
 /* === Types === */
 

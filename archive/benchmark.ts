@@ -1,7 +1,10 @@
-import { createList as createFactoryList } from '../deprecated/list'
-import { createStore as createFactoryStore } from '../deprecated/store'
-import { List } from './list'
-import { BaseStore, createStore as createClassStore } from './store'
+import { List } from '../src/classes/list'
+import {
+	BaseStore,
+	createStore as createClassStore,
+} from '../src/classes/store'
+import { createList as createFactoryList } from './list'
+import { createStore as createFactoryStore } from './store'
 
 /* === Benchmark Configuration === */
 
@@ -55,6 +58,7 @@ const measureTime = (label: string, fn: () => void): number => {
 	return duration
 }
 
+// biome-ignore lint/suspicious/noExplicitAny: test
 const analyzeObjectStructure = (obj: any, label: string) => {
 	const ownProps = Object.getOwnPropertyNames(obj)
 	const ownMethods = ownProps.filter(prop => {
@@ -106,7 +110,9 @@ const analyzeObjectStructure = (obj: any, label: string) => {
 
 const measureMemory = async (
 	label: string,
+	// biome-ignore lint/suspicious/noExplicitAny: test
 	fn: () => any[],
+	// biome-ignore lint/suspicious/noExplicitAny: test
 ): Promise<any[]> => {
 	// Force garbage collection multiple times to ensure clean baseline
 	if ('gc' in globalThis && typeof globalThis.gc === 'function') {
@@ -138,6 +144,7 @@ const measureMemory = async (
 const benchmarkFactory = async () => {
 	console.log('\n=== Factory Function Approach ===')
 
+	// biome-ignore lint/suspicious/noExplicitAny: test
 	let stores: any[] = []
 
 	// Test instantiation performance
@@ -151,9 +158,9 @@ const benchmarkFactory = async () => {
 	// Test memory usage
 	const memoryStores = await measureMemory('Factory Memory Usage', () => {
 		const tempStores = []
-		for (let i = 0; i < ITERATIONS; i++) {
+		for (let i = 0; i < ITERATIONS; i++)
+			// @ts-expect-error ignore
 			tempStores.push(createFactoryStore({ ...testData, id: i }))
-		}
 		return tempStores
 	})
 
@@ -196,6 +203,7 @@ const benchmarkFactory = async () => {
 const benchmarkFactoryList = async () => {
 	console.log('\n=== Factory List Function Approach ===')
 
+	// biome-ignore lint/suspicious/noExplicitAny: test
 	let lists: any[] = []
 
 	// Test instantiation performance
@@ -218,6 +226,7 @@ const benchmarkFactoryList = async () => {
 		const tempLists = []
 		for (let i = 0; i < ITERATIONS; i++) {
 			tempLists.push(
+				// @ts-expect-error ignore
 				createFactoryList([
 					...testListData.map(item => ({
 						...item,
@@ -271,6 +280,7 @@ const benchmarkFactoryList = async () => {
 const benchmarkDirectClassList = async () => {
 	console.log('\n=== Direct Class-Based List Approach (No Proxy) ===')
 
+	// biome-ignore lint/suspicious/noExplicitAny: test
 	let lists: any[] = []
 
 	// Test instantiation performance
@@ -295,6 +305,7 @@ const benchmarkDirectClassList = async () => {
 			const tempLists = []
 			for (let i = 0; i < ITERATIONS; i++) {
 				tempLists.push(
+					// @ts-expect-error ignore
 					new List([
 						...testListData.map(item => ({
 							...item,
@@ -349,6 +360,7 @@ const benchmarkDirectClassList = async () => {
 const benchmarkClass = async () => {
 	console.log('\n=== Class-Based Approach ===')
 
+	// biome-ignore lint/suspicious/noExplicitAny: test
 	let stores: any[] = []
 
 	// Test instantiation performance
@@ -362,9 +374,9 @@ const benchmarkClass = async () => {
 	// Test memory usage
 	const memoryStores = await measureMemory('Class Memory Usage', () => {
 		const tempStores = []
-		for (let i = 0; i < ITERATIONS; i++) {
+		for (let i = 0; i < ITERATIONS; i++)
+			// @ts-expect-error ignore
 			tempStores.push(createClassStore({ ...testData, id: i }))
-		}
 		return tempStores
 	})
 
@@ -407,6 +419,7 @@ const benchmarkClass = async () => {
 const benchmarkDirectClass = async () => {
 	console.log('\n=== Direct Class-Based Approach (No Proxy) ===')
 
+	// biome-ignore lint/suspicious/noExplicitAny: test
 	let stores: any[] = []
 
 	// Test instantiation performance
@@ -422,9 +435,9 @@ const benchmarkDirectClass = async () => {
 		'Direct Class Memory Usage',
 		() => {
 			const tempStores = []
-			for (let i = 0; i < ITERATIONS; i++) {
+			for (let i = 0; i < ITERATIONS; i++)
+				// @ts-expect-error ignore
 				tempStores.push(new BaseStore({ ...testData, id: i }))
-			}
 			return tempStores
 		},
 	)
@@ -517,7 +530,11 @@ const testStoreFunctionality = () => {
 	console.log('\n=== Functionality Comparison ===')
 
 	console.log('\n--- Factory Store ---')
-	const factoryStore = createFactoryStore({ a: 1, b: 2 })
+	const factoryStore = createFactoryStore<{
+		a: number
+		b: number
+		c?: number
+	}>({ a: 1, b: 2 })
 	console.log('Initial:', factoryStore.get())
 	factoryStore.set({ a: 10, b: 20, c: 30 })
 	console.log('After set:', factoryStore.get())
@@ -527,7 +544,11 @@ const testStoreFunctionality = () => {
 	)
 
 	console.log('\n--- Class Store ---')
-	const classStore = createClassStore({ a: 1, b: 2 })
+	const classStore = createClassStore<{
+		a: number
+		b: number
+		c?: number
+	}>({ a: 1, b: 2 })
 	console.log('Initial:', classStore.get())
 	classStore.set({ a: 10, b: 20, c: 30 })
 	console.log('After set:', classStore.get())

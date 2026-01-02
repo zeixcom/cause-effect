@@ -1,17 +1,17 @@
-import { isEqual } from '../diff'
+import { isEqual } from '../src/diff'
 import {
 	CircularDependencyError,
 	InvalidCallbackError,
 	NullishSignalValueError,
-} from '../errors'
+} from '../src/errors'
 import {
 	createWatcher,
 	flushPendingReactions,
 	notifyWatchers,
+	subscribeActiveWatcher,
 	trackSignalReads,
 	type Watcher,
-	subscribeActiveWatcher,
-} from '../system'
+} from '../src/system'
 import {
 	isAbortError,
 	isAsyncFunction,
@@ -19,7 +19,7 @@ import {
 	isObjectOfType,
 	toError,
 	UNSET,
-} from '../util'
+} from '../src/util'
 
 /* === Types === */
 

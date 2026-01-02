@@ -1,7 +1,7 @@
-import type { UnknownArray } from '../diff'
-import { match } from '../match'
-import { resolve } from '../resolve'
-import type { Signal } from '../signal'
+import type { UnknownArray } from '../src/diff'
+import { match } from '../src/match'
+import { resolve } from '../src/resolve'
+import type { Signal } from '../src/signal'
 import {
 	type Cleanup,
 	createWatcher,
@@ -13,8 +13,8 @@ import {
 	subscribeActiveWatcher,
 	trackSignalReads,
 	type Watcher,
-} from '../system'
-import { isAsyncFunction, isObjectOfType, isSymbol, UNSET } from '../util'
+} from '../src/system'
+import { isAsyncFunction, isObjectOfType, isSymbol, UNSET } from '../src/util'
 import { type Computed, createComputed } from './computed'
 import type { List } from './list'
 

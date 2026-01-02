@@ -1,11 +1,11 @@
-import { type DiffResult, diff, type UnknownRecord } from '../diff'
+import { type DiffResult, diff, type UnknownRecord } from '../src/diff'
 import {
 	DuplicateKeyError,
 	InvalidSignalValueError,
 	NullishSignalValueError,
 	ReadonlySignalError,
-} from '../errors'
-import { isMutableSignal, type MutableSignal } from '../signal'
+} from '../src/errors'
+import { isMutableSignal, type MutableSignal } from '../src/signal'
 import {
 	batchSignalWrites,
 	type Cleanup,
@@ -18,8 +18,14 @@ import {
 	subscribeActiveWatcher,
 	trackSignalReads,
 	type Watcher,
-} from '../system'
-import { isFunction, isObjectOfType, isRecord, isSymbol, UNSET } from '../util'
+} from '../src/system'
+import {
+	isFunction,
+	isObjectOfType,
+	isRecord,
+	isSymbol,
+	UNSET,
+} from '../src/util'
 import { isComputed } from './computed'
 import { createList, isList, type List } from './list'
 import { createState, isState, type State } from './state'
@@ -297,6 +303,7 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 				listeners[type].add(listener)
 				if (type === 'change' && !ownWatchers.size) {
 					for (const [key, signal] of signals)
+						// @ts-expect-error ignore
 						addOwnWatcher(key, signal)
 				}
 				return () => {

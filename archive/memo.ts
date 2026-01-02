@@ -2,7 +2,7 @@ import {
 	CircularDependencyError,
 	InvalidCallbackError,
 	NullishSignalValueError,
-} from '../errors'
+} from '../src/errors'
 import {
 	createWatcher,
 	flushPendingReactions,
@@ -10,8 +10,8 @@ import {
 	subscribeActiveWatcher,
 	trackSignalReads,
 	type Watcher,
-} from '../system'
-import { isObjectOfType, isSyncFunction, toError, UNSET } from '../util'
+} from '../src/system'
+import { isObjectOfType, isSyncFunction, toError, UNSET } from '../src/util'
 
 /* === Types === */
 
