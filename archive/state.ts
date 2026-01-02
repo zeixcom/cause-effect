@@ -1,7 +1,11 @@
-import { isEqual } from './diff'
-import { InvalidCallbackError, NullishSignalValueError } from './errors'
-import { notify, subscribe, type Watcher } from './system'
-import { isFunction, isObjectOfType, UNSET, valueString } from './util'
+import { isEqual } from '../src/diff'
+import { InvalidCallbackError, NullishSignalValueError } from '../src/errors'
+import {
+	notifyWatchers,
+	subscribeActiveWatcher,
+	type Watcher,
+} from '../src/system'
+import { isFunction, isObjectOfType, UNSET } from '../src/util'
 
 /* === Types === */
 
@@ -14,7 +18,7 @@ type State<T extends {}> = {
 
 /* === Constants === */
 
-const TYPE_STATE = 'State'
+const TYPE_STATE = 'State' as const
 
 /* === Functions === */
 
@@ -35,7 +39,7 @@ const createState = /*#__PURE__*/ <T extends {}>(initialValue: T): State<T> => {
 		if (newValue == null) throw new NullishSignalValueError('state')
 		if (isEqual(value, newValue)) return
 		value = newValue
-		notify(watchers)
+		notifyWatchers(watchers)
 
 		// Setting to UNSET clears the watchers so the signal can be garbage collected
 		if (UNSET === value) watchers.clear()
@@ -48,7 +52,7 @@ const createState = /*#__PURE__*/ <T extends {}>(initialValue: T): State<T> => {
 		},
 		get: {
 			value: () => {
-				subscribe(watchers)
+				subscribeActiveWatcher(watchers)
 				return value
 			},
 		},
@@ -60,10 +64,8 @@ const createState = /*#__PURE__*/ <T extends {}>(initialValue: T): State<T> => {
 		update: {
 			value: (updater: (oldValue: T) => T) => {
 				if (!isFunction(updater))
-					throw new InvalidCallbackError(
-						'state update',
-						valueString(updater),
-					)
+					throw new InvalidCallbackError('state update', updater)
+
 				setValue(updater(value))
 			},
 		},

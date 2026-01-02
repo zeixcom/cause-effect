@@ -7,17 +7,21 @@ Cause & Effect is a reactive state management library for JavaScript/TypeScript 
 ## Core Architecture
 
 - **Signals**: Base reactive primitives with `.get()` method
-- **State**: Mutable signals for primitive values (`createState()`)
+- **State**: Mutable signals for primitive values (`new State()`)
+- **Computed**: Derived read-only signals with memoization, reducer capabilities and async support (`new Memo()`, `new Task()`)
 - **Store**: Mutable signals for objects with reactive properties (`createStore()`)
-- **Computed**: Derived read-only signals with memoization, reducer-like capabilities and async support (`createComputed()`)
+- **List**: Mutable signals for arrays with stable keys and reactive entries (`new List()`)
+- **Collection**: Read-only derived arrays with item-level memoization and async support (`new Collection()`)
 - **Effects**: Side effect handlers that react to signal changes (`createEffect()`)
 
 ## Key Files Structure
 
+- `src/classes/state.ts` - Mutable state signals
+- `src/classes/store.ts` - Object stores with reactive properties
+- `src/classes/list.ts` - Array stores with stable keys and reactive items
+- `src/classes/collection.ts` - Read-only derived arrays with memoization
+- `src/classes/computed.ts` - Computed/derived signals
 - `src/signal.ts` - Base signal types and utilities
-- `src/state.ts` - Mutable state signals
-- `src/store.ts` - Object stores with reactive properties
-- `src/computed.ts` - Computed/derived signals
 - `src/effect.ts` - Effect system
 - `src/system.ts` - Core reactivity system (watchers, batching)
 - `src/util.ts` - Utility functions and constants
@@ -33,7 +37,7 @@ Cause & Effect is a reactive state management library for JavaScript/TypeScript 
 - JSDoc comments for all public APIs
 
 ### Naming Conventions
-- Factory functions: `create*` (e.g., `createState`, `createStore`)
+- Factory functions: `create*` (e.g., `createEffect`, `createStore`)
 - Type predicates: `is*` (e.g., `isSignal`, `isState`)
 - Constants: `TYPE_*` for type tags, `UPPER_CASE` for values
 - Private variables: use descriptive names, no underscore prefix
@@ -69,18 +73,22 @@ Cause & Effect is a reactive state management library for JavaScript/TypeScript 
 ### Creating Signals
 ```typescript
 // State for primitives
-const count = createState(42)
-const name = createState('Alice')
-const actions = createState<'increment' | 'decrement'>('increment')
+const count = new State(42)
+const name = new State('Alice')
+const actions = new State<'increment' | 'decrement'>('increment')
 
 // Store for objects
 const user = createStore({ name: 'Alice', age: 30 })
 
-// Computed for derived values
-const doubled = createComputed(() => count.get() * 2)
+// List with stable keys for arrays
+const items = new List(['apple', 'banana', 'cherry'])
+const users = new List([{ id: 'alice', name: 'Alice' }], user => user.id)
 
-// Computed with reducer-like capabilities
-const counter = createComputed((prev) => {
+// Computed for derived values
+const doubled = new Memo(() => count.get() * 2)
+
+// Computed with reducer capabilities
+const counter = new Memo(prev => {
   const action = actions.get()
   return action === 'increment' ? prev + 1 : prev - 1
 }, 0) // Initial value
@@ -100,7 +108,7 @@ createEffect(async (abort) => {
 })
 
 // Async computed with old value access
-const userData = createComputed(async (prev, abort) => {
+const userData = new Task(async (prev, abort) => {
   if (!userId.get()) return prev // Keep previous data if no user
   const response = await fetch(`/users/${userId.get()}`, { signal: abort })
   return response.json()
@@ -121,6 +129,44 @@ function isSignal<T extends {}>(value: unknown): value is Signal<T>
 - TypeScript compilation with declaration files
 - Minified production build
 - ES modules only (`"type": "module"`)
+
+## Store Methods and Stable Keys
+
+### List Methods
+- `byKey(key)` - Access signals by stable key instead of index
+- `keyAt(index)` - Get stable key at specific position
+- `indexOfKey(key)` - Get position of stable key in current order
+- `splice(start, deleteCount, ...items)` - Array-like splicing with stable key preservation
+- `sort(compareFn)` - Sort items while maintaining stable key associations
+
+### Stable Keys Usage
+```typescript
+// Default auto-incrementing keys
+const items = new List(['a', 'b', 'c'])
+
+// String prefix keys
+// Lists with stable keys
+const items = new List(['apple', 'banana'], 'fruit')
+// Creates keys: 'fruit0', 'fruit1'
+
+// Function-based keys
+const users = new List([
+  { id: 'user1', name: 'Alice' },
+  { id: 'user2', name: 'Bob' }
+], user => user.id) // Uses user.id as stable key
+
+// Collections derived from lists
+const userProfiles = new Collection(users, user => ({
+  ...user,
+  displayName: `${user.name} (ID: ${user.id})`
+}))
+
+// Chained collections for data pipelines
+const activeUserSummaries = users
+  .deriveCollection(user => ({ ...user, active: user.lastLogin > Date.now() - 86400000 }))
+  .deriveCollection(user => user.active ? `Active: ${user.name}` : null)
+  .filter(Boolean)
+```
 
 ## When suggesting code:
 1. Follow the established patterns for signal creation and usage

@@ -1,22 +1,46 @@
 /**
  * @name Cause & Effect
- * @version 0.16.1
+ * @version 0.17.0
  * @author Esther Brunner
  */
 
 export {
+	Collection,
+	type CollectionCallback,
+	isCollection,
+	TYPE_COLLECTION,
+} from './src/classes/collection'
+export {
 	type Computed,
-	type ComputedCallback,
 	createComputed,
 	isComputed,
-	isComputedCallback,
+	isMemoCallback,
+	isTaskCallback,
+	Memo,
+	type MemoCallback,
+	Task,
+	type TaskCallback,
 	TYPE_COMPUTED,
-} from './src/computed'
+} from './src/classes/computed'
+export {
+	type ArrayToRecord,
+	isList,
+	type KeyConfig,
+	List,
+	TYPE_LIST,
+} from './src/classes/list'
+export { isState, State, TYPE_STATE } from './src/classes/state'
+export {
+	BaseStore,
+	createStore,
+	isStore,
+	type Store,
+	TYPE_STORE,
+} from './src/classes/store'
 export {
 	type DiffResult,
 	diff,
 	isEqual,
-	type PartialRecord,
 	type UnknownArray,
 	type UnknownRecord,
 } from './src/diff'
@@ -27,39 +51,34 @@ export {
 } from './src/effect'
 export {
 	CircularDependencyError,
+	DuplicateKeyError,
 	InvalidCallbackError,
 	InvalidSignalValueError,
 	NullishSignalValueError,
-	StoreKeyExistsError,
-	StoreKeyRangeError,
-	StoreKeyReadonlyError,
+	ReadonlySignalError,
 } from './src/errors'
 export { type MatchHandlers, match } from './src/match'
 export { type ResolveResult, resolve } from './src/resolve'
 export {
+	createSignal,
 	isMutableSignal,
 	isSignal,
 	type Signal,
 	type SignalValues,
-	toSignal,
 	type UnknownSignalRecord,
 } from './src/signal'
-export { createState, isState, type State, TYPE_STATE } from './src/state'
 export {
-	createStore,
-	isStore,
-	type Store,
-	type StoreChanges,
-	TYPE_STORE,
-} from './src/store'
-export {
-	batch,
+	batchSignalWrites,
 	type Cleanup,
 	createWatcher,
-	flush,
-	notify,
-	observe,
-	subscribe,
+	emitNotification,
+	flushPendingReactions,
+	type Listener,
+	type Listeners,
+	type Notifications,
+	notifyWatchers,
+	subscribeActiveWatcher,
+	trackSignalReads,
 	type Watcher,
 } from './src/system'
 export {

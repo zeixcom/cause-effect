@@ -1,19 +1,30 @@
 import {
 	type Computed,
-	type ComputedCallback,
-	createComputed,
 	isComputed,
-	isComputedCallback,
-} from './computed'
-import { createState, isState, type State } from './state'
-import { createStore, isStore, type Store } from './store'
-import { isRecord } from './util'
+	isMemoCallback,
+	isTaskCallback,
+	Memo,
+	Task,
+} from './classes/computed'
+import { isList, List } from './classes/list'
+import { isState, State } from './classes/state'
+import { createStore, isStore, type Store } from './classes/store'
+import type { UnknownRecord } from './diff'
+// import type { Collection } from './signals/collection'
+import { isRecord, isUniformArray } from './util'
 
 /* === Types === */
 
 type Signal<T extends {}> = {
 	get(): T
 }
+
+type MutableSignal<T extends {}> = T extends readonly (infer U extends {})[]
+	? List<U>
+	: T extends UnknownRecord
+		? Store<T>
+		: State<T>
+type ReadonlySignal<T extends {}> = Computed<T> // | Collection<T>
 
 type UnknownSignalRecord = Record<string, Signal<unknown & {}>>
 
@@ -35,54 +46,60 @@ const isSignal = /*#__PURE__*/ <T extends {}>(
 ): value is Signal<T> => isState(value) || isComputed(value) || isStore(value)
 
 /**
- * Check whether a value is a State or Store
+ * Check whether a value is a State, Store, or List
  *
  * @since 0.15.2
- * @param {unknown} value - value to check
- * @returns {boolean} - true if value is a State or Store, false otherwise
+ * @param {unknown} value - Value to check
+ * @returns {boolean} - True if value is a State, Store, or List, false otherwise
  */
-const isMutableSignal = /*#__PURE__*/ <T extends {}>(
+const isMutableSignal = /*#__PURE__*/ (
 	value: unknown,
-): value is State<T> | Store<T> => isState(value) || isStore(value)
+): value is MutableSignal<unknown & {}> =>
+	isState(value) || isStore(value) || isList(value)
 
 /**
- * Convert a value to a Signal if it's not already a Signal
+ * Convert a value to a Signal.
  *
  * @since 0.9.6
- * @param {T} value - value to convert
- * @returns {Signal<T>} - Signal instance
  */
-function toSignal<T extends {}>(
-	value: T,
-): T extends Store<infer U>
-	? Store<U>
-	: T extends State<infer U>
-		? State<U>
-		: T extends Computed<infer U>
-			? Computed<U>
-			: T extends Signal<infer U>
-				? Signal<U>
-				: T extends ReadonlyArray<infer U extends {}>
-					? Store<U[]>
-					: T extends Record<string, unknown & {}>
-						? Store<{ [K in keyof T]: T[K] }>
-						: T extends ComputedCallback<infer U extends {}>
-							? Computed<U>
-							: State<T>
-function toSignal<T extends {}>(value: T) {
-	if (isSignal<T>(value)) return value
-	if (isComputedCallback(value)) return createComputed(value)
-	if (Array.isArray(value) || isRecord(value)) return createStore(value)
-	return createState(value)
+function createSignal<T extends {}>(value: readonly T[]): List<T>
+function createSignal<T extends {}>(value: T[]): List<T>
+function createSignal<T extends UnknownRecord>(value: T): Store<T>
+function createSignal<T extends {}>(value: () => T): Computed<T>
+function createSignal<T extends {}>(value: T): State<T>
+function createSignal(value: unknown): unknown {
+	if (isMemoCallback(value)) return new Memo(value)
+	if (isTaskCallback(value)) return new Task(value)
+	if (isUniformArray<unknown & {}>(value)) return new List(value)
+	if (isRecord(value)) return createStore(value as UnknownRecord)
+	return new State(value as unknown & {})
+}
+
+/**
+ * Convert a value to a MutableSignal.
+ *
+ * @since 0.17.0
+ */
+function createMutableSignal<T extends {}>(value: readonly T[]): List<T>
+function createMutableSignal<T extends {}>(value: T[]): List<T>
+function createMutableSignal<T extends UnknownRecord>(value: T): Store<T>
+function createMutableSignal<T extends {}>(value: T): State<T>
+function createMutableSignal(value: unknown): unknown {
+	if (isUniformArray<unknown & {}>(value)) return new List(value)
+	if (isRecord(value)) return createStore(value as UnknownRecord)
+	return new State(value as unknown & {})
 }
 
 /* === Exports === */
 
 export {
-	type Signal,
-	type UnknownSignalRecord,
-	type SignalValues,
-	isSignal,
+	createMutableSignal,
+	createSignal,
 	isMutableSignal,
-	toSignal,
+	isSignal,
+	type MutableSignal,
+	type ReadonlySignal,
+	type Signal,
+	type SignalValues,
+	type UnknownSignalRecord,
 }

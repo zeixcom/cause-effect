@@ -1,14 +1,15 @@
 import { describe, expect, test } from 'bun:test'
 import {
-	createComputed,
 	createEffect,
-	createState,
 	isComputed,
 	isState,
+	Memo,
 	match,
 	resolve,
+	State,
+	Task,
 	UNSET,
-} from '..'
+} from '../index.ts'
 
 /* === Utility Functions === */
 
@@ -19,38 +20,38 @@ const increment = (n: number) => (Number.isFinite(n) ? n + 1 : UNSET)
 
 describe('Computed', () => {
 	test('should identify computed signals with isComputed()', () => {
-		const count = createState(42)
-		const doubled = createComputed(() => count.get() * 2)
+		const count = new State(42)
+		const doubled = new Memo(() => count.get() * 2)
 		expect(isComputed(doubled)).toBe(true)
 		expect(isState(doubled)).toBe(false)
 	})
 
 	test('should compute a function', () => {
-		const derived = createComputed(() => 1 + 2)
+		const derived = new Memo(() => 1 + 2)
 		expect(derived.get()).toBe(3)
 	})
 
 	test('should compute function dependent on a signal', () => {
-		const cause = createState(42)
-		const derived = createComputed(() => cause.get() + 1)
+		const cause = new State(42)
+		const derived = new Memo(() => cause.get() + 1)
 		expect(derived.get()).toBe(43)
 	})
 
 	test('should compute function dependent on an updated signal', () => {
-		const cause = createState(42)
-		const derived = createComputed(() => cause.get() + 1)
+		const cause = new State(42)
+		const derived = new Memo(() => cause.get() + 1)
 		cause.set(24)
 		expect(derived.get()).toBe(25)
 	})
 
 	test('should compute function dependent on an async signal', async () => {
-		const status = createState('pending')
-		const promised = createComputed(async () => {
+		const status = new State('pending')
+		const promised = new Task(async () => {
 			await wait(100)
 			status.set('success')
 			return 42
 		})
-		const derived = createComputed(() => increment(promised.get()))
+		const derived = new Memo(() => increment(promised.get()))
 		expect(derived.get()).toBe(UNSET)
 		expect(status.get()).toBe('pending')
 		await wait(110)
@@ -59,15 +60,15 @@ describe('Computed', () => {
 	})
 
 	test('should handle errors from an async signal gracefully', async () => {
-		const status = createState('pending')
-		const error = createState('')
-		const promised = createComputed(async () => {
+		const status = new State('pending')
+		const error = new State('')
+		const promised = new Task(async () => {
 			await wait(100)
 			status.set('error')
 			error.set('error occurred')
 			return 0
 		})
-		const derived = createComputed(() => increment(promised.get()))
+		const derived = new Memo(() => increment(promised.get()))
 		expect(derived.get()).toBe(UNSET)
 		expect(status.get()).toBe('pending')
 		await wait(110)
@@ -76,15 +77,15 @@ describe('Computed', () => {
 	})
 
 	test('should compute task signals in parallel without waterfalls', async () => {
-		const a = createComputed(async () => {
+		const a = new Task(async () => {
 			await wait(100)
 			return 10
 		})
-		const b = createComputed(async () => {
+		const b = new Task(async () => {
 			await wait(100)
 			return 20
 		})
-		const c = createComputed(() => {
+		const c = new Memo(() => {
 			const aValue = a.get()
 			const bValue = b.get()
 			return aValue === UNSET || bValue === UNSET
@@ -97,28 +98,28 @@ describe('Computed', () => {
 	})
 
 	test('should compute function dependent on a chain of computed states dependent on a signal', () => {
-		const x = createState(42)
-		const a = createComputed(() => x.get() + 1)
-		const b = createComputed(() => a.get() * 2)
-		const c = createComputed(() => b.get() + 1)
+		const x = new State(42)
+		const a = new Memo(() => x.get() + 1)
+		const b = new Memo(() => a.get() * 2)
+		const c = new Memo(() => b.get() + 1)
 		expect(c.get()).toBe(87)
 	})
 
 	test('should compute function dependent on a chain of computed states dependent on an updated signal', () => {
-		const x = createState(42)
-		const a = createComputed(() => x.get() + 1)
-		const b = createComputed(() => a.get() * 2)
-		const c = createComputed(() => b.get() + 1)
+		const x = new State(42)
+		const a = new Memo(() => x.get() + 1)
+		const b = new Memo(() => a.get() * 2)
+		const c = new Memo(() => b.get() + 1)
 		x.set(24)
 		expect(c.get()).toBe(51)
 	})
 
 	test('should drop X->B->X updates', () => {
 		let count = 0
-		const x = createState(2)
-		const a = createComputed(() => x.get() - 1)
-		const b = createComputed(() => x.get() + a.get())
-		const c = createComputed(() => {
+		const x = new State(2)
+		const a = new Memo(() => x.get() - 1)
+		const b = new Memo(() => x.get() + a.get())
+		const c = new Memo(() => {
 			count++
 			return `c: ${b.get()}`
 		})
@@ -131,10 +132,10 @@ describe('Computed', () => {
 
 	test('should only update every signal once (diamond graph)', () => {
 		let count = 0
-		const x = createState('a')
-		const a = createComputed(() => x.get())
-		const b = createComputed(() => x.get())
-		const c = createComputed(() => {
+		const x = new State('a')
+		const a = new Memo(() => x.get())
+		const b = new Memo(() => x.get())
+		const c = new Memo(() => {
 			count++
 			return `${a.get()} ${b.get()}`
 		})
@@ -148,11 +149,11 @@ describe('Computed', () => {
 
 	test('should only update every signal once (diamond graph + tail)', () => {
 		let count = 0
-		const x = createState('a')
-		const a = createComputed(() => x.get())
-		const b = createComputed(() => x.get())
-		const c = createComputed(() => `${a.get()} ${b.get()}`)
-		const d = createComputed(() => {
+		const x = new State('a')
+		const a = new Memo(() => x.get())
+		const b = new Memo(() => x.get())
+		const c = new Memo(() => `${a.get()} ${b.get()}`)
+		const d = new Memo(() => {
 			count++
 			return c.get()
 		})
@@ -164,10 +165,10 @@ describe('Computed', () => {
 	})
 
 	test('should update multiple times after multiple state changes', () => {
-		const a = createState(3)
-		const b = createState(4)
+		const a = new State(3)
+		const b = new State(4)
 		let count = 0
-		const sum = createComputed(() => {
+		const sum = new Memo(() => {
 			count++
 			return a.get() + b.get()
 		})
@@ -189,12 +190,12 @@ describe('Computed', () => {
 	 */
 	test('should bail out if result is the same', () => {
 		let count = 0
-		const x = createState('a')
-		const a = createComputed(() => {
+		const x = new State('a')
+		const a = new Memo(() => {
 			x.get()
 			return 'foo'
 		})
-		const b = createComputed(() => {
+		const b = new Memo(() => {
 			count++
 			return a.get()
 		})
@@ -209,10 +210,10 @@ describe('Computed', () => {
 
 	test('should block if result remains unchanged', () => {
 		let count = 0
-		const x = createState(42)
-		const a = createComputed(() => x.get() % 2)
-		const b = createComputed(() => (a.get() ? 'odd' : 'even'))
-		const c = createComputed(() => {
+		const x = new State(42)
+		const a = new Memo(() => x.get() % 2)
+		const b = new Memo(() => (a.get() ? 'odd' : 'even'))
+		const c = new Memo(() => {
 			count++
 			return `c: ${b.get()}`
 		})
@@ -226,26 +227,26 @@ describe('Computed', () => {
 	})
 
 	test('should detect and throw error for circular dependencies', () => {
-		const a = createState(1)
-		const b = createComputed(() => c.get() + 1)
-		const c = createComputed(() => b.get() + a.get())
+		const a = new State(1)
+		const b = new Memo(() => c.get() + 1)
+		const c = new Memo(() => b.get() + a.get())
 		expect(() => {
 			b.get() // This should trigger the circular dependency
-		}).toThrow('Circular dependency detected in computed')
+		}).toThrow('Circular dependency detected in memo')
 		expect(a.get()).toBe(1)
 	})
 
 	test('should propagate error if an error occurred', () => {
 		let okCount = 0
 		let errCount = 0
-		const x = createState(0)
-		const a = createComputed(() => {
+		const x = new State(0)
+		const a = new Memo(() => {
 			if (x.get() === 1) throw new Error('Calculation error')
 			return 1
 		})
 
 		// Replace matcher with try/catch in a computed
-		const b = createComputed(() => {
+		const b = new Memo(() => {
 			try {
 				a.get() // just check if it works
 				return `c: success`
@@ -254,7 +255,7 @@ describe('Computed', () => {
 				return `c: recovered`
 			}
 		})
-		const c = createComputed(() => {
+		const c = new Memo(() => {
 			okCount++
 			return b.get()
 		})
@@ -276,8 +277,8 @@ describe('Computed', () => {
 	})
 
 	test('should create an effect that reacts on async computed changes', async () => {
-		const cause = createState(42)
-		const derived = createComputed(async () => {
+		const cause = new State(42)
+		const derived = new Task(async () => {
 			await wait(100)
 			return cause.get() + 1
 		})
@@ -308,12 +309,12 @@ describe('Computed', () => {
 	})
 
 	test('should handle complex computed signal with error and async dependencies', async () => {
-		const toggleState = createState(true)
-		const errorProne = createComputed(() => {
+		const toggleState = new State(true)
+		const errorProne = new Memo(() => {
 			if (toggleState.get()) throw new Error('Intentional error')
 			return 42
 		})
-		const asyncValue = createComputed(async () => {
+		const asyncValue = new Task(async () => {
 			await wait(50)
 			return 10
 		})
@@ -322,7 +323,7 @@ describe('Computed', () => {
 		let errCount = 0
 		// let _result: number = 0
 
-		const complexComputed = createComputed(() => {
+		const complexComputed = new Memo(() => {
 			try {
 				const x = errorProne.get()
 				const y = asyncValue.get()
@@ -355,9 +356,9 @@ describe('Computed', () => {
 	})
 
 	test('should handle signal changes during async computation', async () => {
-		const source = createState(1)
+		const source = new State(1)
 		let computationCount = 0
-		const derived = createComputed(async (_, abort) => {
+		const derived = new Task(async (_, abort) => {
 			computationCount++
 			expect(abort?.aborted).toBe(false)
 			await wait(100)
@@ -376,9 +377,9 @@ describe('Computed', () => {
 	})
 
 	test('should handle multiple rapid changes during async computation', async () => {
-		const source = createState(1)
+		const source = new State(1)
 		let computationCount = 0
-		const derived = createComputed(async (_, abort) => {
+		const derived = new Task(async (_, abort) => {
 			computationCount++
 			expect(abort?.aborted).toBe(false)
 			await wait(100)
@@ -401,8 +402,8 @@ describe('Computed', () => {
 	})
 
 	test('should handle errors in aborted computations', async () => {
-		const source = createState(1)
-		const derived = createComputed(async () => {
+		const source = new State(1)
+		const derived = new Task(async () => {
 			await wait(100)
 			const value = source.get()
 			if (value === 2) throw new Error('Intentional error')
@@ -427,62 +428,72 @@ describe('Computed', () => {
 		test('should throw InvalidCallbackError when callback is not a function', () => {
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
-				createComputed(null)
-			}).toThrow('Invalid computed callback null')
+				new Memo(null)
+			}).toThrow('Invalid memo callback null')
 
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
-				createComputed(undefined)
-			}).toThrow('Invalid computed callback undefined')
+				new Memo(undefined)
+			}).toThrow('Invalid memo callback undefined')
 
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
-				createComputed(42)
-			}).toThrow('Invalid computed callback 42')
+				new Memo(42)
+			}).toThrow('Invalid memo callback 42')
 
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
-				createComputed('not a function')
-			}).toThrow('Invalid computed callback "not a function"')
+				new Memo('not a function')
+			}).toThrow('Invalid memo callback "not a function"')
 
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
-				createComputed({ not: 'a function' })
-			}).toThrow('Invalid computed callback {"not":"a function"}')
+				new Memo({ not: 'a function' })
+			}).toThrow('Invalid memo callback {"not":"a function"}')
 
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
-				createComputed((_a: unknown, _b: unknown, _c: unknown) => 42)
-			}).toThrow('Invalid computed callback (_a, _b, _c) => 42')
+				new Memo((_a: unknown, _b: unknown, _c: unknown) => 42)
+			}).toThrow('Invalid memo callback (_a, _b, _c) => 42')
+
+			expect(() => {
+				// @ts-expect-error - Testing invalid input
+				new Memo(async (_a: unknown, _b: unknown) => 42)
+			}).toThrow('Invalid memo callback async (_a, _b) => 42')
+
+			expect(() => {
+				// @ts-expect-error - Testing invalid input
+				new Task((_a: unknown) => 42)
+			}).toThrow('Invalid task callback (_a) => 42')
 		})
 
 		test('should throw NullishSignalValueError when initialValue is null', () => {
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
-				createComputed(() => 42, null)
-			}).toThrow('Nullish signal values are not allowed in computed')
+				new Memo(() => 42, null)
+			}).toThrow('Nullish signal values are not allowed in memo')
 		})
 
 		test('should throw specific error types for invalid inputs', () => {
 			try {
 				// @ts-expect-error - Testing invalid input
-				createComputed(null)
+				new Memo(null)
 				expect(true).toBe(false) // Should not reach here
 			} catch (error) {
 				expect(error).toBeInstanceOf(TypeError)
 				expect(error.name).toBe('InvalidCallbackError')
-				expect(error.message).toBe('Invalid computed callback null')
+				expect(error.message).toBe('Invalid memo callback null')
 			}
 
 			try {
 				// @ts-expect-error - Testing invalid input
-				createComputed(() => 42, null)
+				new Memo(() => 42, null)
 				expect(true).toBe(false) // Should not reach here
 			} catch (error) {
 				expect(error).toBeInstanceOf(TypeError)
 				expect(error.name).toBe('NullishSignalValueError')
 				expect(error.message).toBe(
-					'Nullish signal values are not allowed in computed',
+					'Nullish signal values are not allowed in memo',
 				)
 			}
 		})
@@ -490,40 +501,37 @@ describe('Computed', () => {
 		test('should allow valid callbacks and non-nullish initialValues', () => {
 			// These should not throw
 			expect(() => {
-				createComputed(() => 42)
+				new Memo(() => 42)
 			}).not.toThrow()
 
 			expect(() => {
-				createComputed(() => 42, 0)
+				new Memo(() => 42, 0)
 			}).not.toThrow()
 
 			expect(() => {
-				createComputed(() => 'foo', '')
+				new Memo(() => 'foo', '')
 			}).not.toThrow()
 
 			expect(() => {
-				createComputed(() => true, false)
+				new Memo(() => true, false)
 			}).not.toThrow()
 
 			expect(() => {
-				createComputed(async () => ({ id: 42, name: 'John' }), UNSET)
+				new Task(async () => ({ id: 42, name: 'John' }), UNSET)
 			}).not.toThrow()
 		})
 	})
 
 	describe('Initial Value and Old Value', () => {
 		test('should use initialValue when provided', () => {
-			const computed = createComputed(
-				(oldValue: number) => oldValue + 1,
-				10,
-			)
+			const computed = new Memo((oldValue: number) => oldValue + 1, 10)
 			expect(computed.get()).toBe(11)
 		})
 
 		test('should pass current value as oldValue to callback', () => {
-			const state = createState(5)
+			const state = new State(5)
 			let receivedOldValue: number | undefined
-			const computed = createComputed((oldValue: number) => {
+			const computed = new Memo((oldValue: number) => {
 				receivedOldValue = oldValue
 				return state.get() * 2
 			}, 0)
@@ -537,8 +545,8 @@ describe('Computed', () => {
 		})
 
 		test('should work as reducer function with oldValue', () => {
-			const increment = createState(0)
-			const sum = createComputed((oldValue: number) => {
+			const increment = new State(0)
+			const sum = new Memo((oldValue: number) => {
 				const inc = increment.get()
 				return inc === 0 ? oldValue : oldValue + inc
 			}, 0)
@@ -556,8 +564,8 @@ describe('Computed', () => {
 		})
 
 		test('should handle array accumulation with oldValue', () => {
-			const item = createState('')
-			const items = createComputed((oldValue: string[]) => {
+			const item = new State('')
+			const items = new Memo((oldValue: string[]) => {
 				const newItem = item.get()
 				return newItem === '' ? oldValue : [...oldValue, newItem]
 			}, [] as string[])
@@ -575,9 +583,9 @@ describe('Computed', () => {
 		})
 
 		test('should handle counter with oldValue and multiple dependencies', () => {
-			const reset = createState(false)
-			const add = createState(0)
-			const counter = createComputed((oldValue: number) => {
+			const reset = new State(false)
+			const add = new State(0)
+			const counter = new Memo((oldValue: number) => {
 				if (reset.get()) return 0
 				const increment = add.get()
 				return increment === 0 ? oldValue : oldValue + increment
@@ -601,8 +609,8 @@ describe('Computed', () => {
 
 		test('should pass UNSET as oldValue when no initialValue provided', () => {
 			let receivedOldValue: number | undefined
-			const state = createState(42)
-			const computed = createComputed((oldValue: number) => {
+			const state = new State(42)
+			const computed = new Memo((oldValue: number) => {
 				receivedOldValue = oldValue
 				return state.get()
 			})
@@ -614,7 +622,7 @@ describe('Computed', () => {
 		test('should work with async computation and oldValue', async () => {
 			let receivedOldValue: number | undefined
 
-			const asyncComputed = createComputed(async (oldValue: number) => {
+			const asyncComputed = new Task(async (oldValue: number) => {
 				receivedOldValue = oldValue
 				await wait(50)
 				return oldValue + 5
@@ -630,9 +638,9 @@ describe('Computed', () => {
 		})
 
 		test('should handle object updates with oldValue', () => {
-			const key = createState('')
-			const value = createState('')
-			const obj = createComputed(
+			const key = new State('')
+			const value = new State('')
+			const obj = new Memo(
 				(oldValue: Record<string, string>) => {
 					const k = key.get()
 					const v = value.get()
@@ -654,11 +662,11 @@ describe('Computed', () => {
 		})
 
 		test('should handle async computation with AbortSignal and oldValue', async () => {
-			const source = createState(1)
+			const source = new State(1)
 			let computationCount = 0
 			const receivedOldValues: number[] = []
 
-			const asyncComputed = createComputed(
+			const asyncComputed = new Task(
 				async (oldValue: number, abort: AbortSignal) => {
 					computationCount++
 					receivedOldValues.push(oldValue)
@@ -692,10 +700,10 @@ describe('Computed', () => {
 		})
 
 		test('should work with error handling and oldValue', () => {
-			const shouldError = createState(false)
-			const counter = createState(1)
+			const shouldError = new State(false)
+			const counter = new State(1)
 
-			const computed = createComputed((oldValue: number) => {
+			const computed = new Memo((oldValue: number) => {
 				if (shouldError.get()) {
 					throw new Error('Computation failed')
 				}
@@ -722,12 +730,12 @@ describe('Computed', () => {
 		})
 
 		test('should work with complex state transitions using oldValue', () => {
-			const action = createState<
+			const action = new State<
 				'increment' | 'decrement' | 'reset' | 'multiply'
 			>('increment')
-			const amount = createState(1)
+			const amount = new State(1)
 
-			const calculator = createComputed((oldValue: number) => {
+			const calculator = new Memo((oldValue: number) => {
 				const act = action.get()
 				const amt = amount.get()
 
@@ -764,7 +772,7 @@ describe('Computed', () => {
 
 		test('should handle edge cases with initialValue and oldValue', () => {
 			// Test with null/undefined-like values
-			const nullishComputed = createComputed((oldValue: string) => {
+			const nullishComputed = new Memo((oldValue: string) => {
 				return `${oldValue} updated`
 			}, '')
 
@@ -778,7 +786,7 @@ describe('Computed', () => {
 			}
 
 			const now = new Date()
-			const objectComputed = createComputed(
+			const objectComputed = new Memo(
 				(oldValue: StateObject) => ({
 					...oldValue,
 					count: oldValue.count + 1,
@@ -799,14 +807,14 @@ describe('Computed', () => {
 
 		test('should preserve initialValue type consistency', () => {
 			// Test that oldValue type is consistent with initialValue
-			const stringComputed = createComputed((oldValue: string) => {
+			const stringComputed = new Memo((oldValue: string) => {
 				expect(typeof oldValue).toBe('string')
 				return oldValue.toUpperCase()
 			}, 'hello')
 
 			expect(stringComputed.get()).toBe('HELLO')
 
-			const numberComputed = createComputed((oldValue: number) => {
+			const numberComputed = new Memo((oldValue: number) => {
 				expect(typeof oldValue).toBe('number')
 				expect(Number.isFinite(oldValue)).toBe(true)
 				return oldValue * 2
@@ -816,14 +824,14 @@ describe('Computed', () => {
 		})
 
 		test('should work with chained computed using oldValue', () => {
-			const source = createState(1)
+			const source = new State(1)
 
-			const first = createComputed(
+			const first = new Memo(
 				(oldValue: number) => oldValue + source.get(),
 				10,
 			)
 
-			const second = createComputed(
+			const second = new Memo(
 				(oldValue: number) => oldValue + first.get(),
 				20,
 			)
@@ -837,10 +845,10 @@ describe('Computed', () => {
 		})
 
 		test('should handle frequent updates with oldValue correctly', () => {
-			const trigger = createState(0)
+			const trigger = new State(0)
 			let computationCount = 0
 
-			const accumulator = createComputed((oldValue: number) => {
+			const accumulator = new Memo((oldValue: number) => {
 				computationCount++
 				return oldValue + trigger.get()
 			}, 100)

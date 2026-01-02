@@ -5,9 +5,10 @@ TypeScript/JavaScript reactive state management library using signals pattern
 
 ## Core Concepts
 - Signals: Base reactive primitives with .get() method
-- State: createState() for primitives/simple values  
+- State: new State() for primitives/simple values  
+- Computed: new Memo() for derived/memoized values and new Task() for asynchronous computations
 - Store: createStore() for objects with reactive properties
-- Computed: createComputed() for derived/memoized values
+- List: new List() for arrays with stable keys and reactive items
 - Effects: createEffect() for side effects
 
 ## Code Style

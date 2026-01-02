@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test'
-import { batch, createComputed, createEffect, createState } from '..'
+import { batchSignalWrites, createEffect, Memo, State } from '../index.ts'
 import { Counter, makeGraph, runGraph } from './util/dependency-graph'
 import type { Computed, ReactiveFramework } from './util/reactive-framework'
 
@@ -15,20 +15,20 @@ const busy = () => {
 const framework = {
 	name: 'Cause & Effect',
 	signal: <T extends {}>(initialValue: T) => {
-		const s = createState<T>(initialValue)
+		const s = new State<T>(initialValue)
 		return {
 			write: (v: T) => s.set(v),
 			read: () => s.get(),
 		}
 	},
 	computed: <T extends {}>(fn: () => T) => {
-		const c = createComputed(fn)
+		const c = new Memo(fn)
 		return {
 			read: () => c.get(),
 		}
 	},
 	effect: (fn: () => undefined) => createEffect(fn),
-	withBatch: (fn: () => undefined) => batch(fn),
+	withBatch: (fn: () => undefined) => batchSignalWrites(fn),
 	withBuild: <T>(fn: () => T) => fn(),
 }
 const testPullCounts = true

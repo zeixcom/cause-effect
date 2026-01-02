@@ -1,38 +1,36 @@
 import { describe, expect, test } from 'bun:test'
 import {
-	batch,
-	createComputed,
+	batchSignalWrites,
 	createEffect,
-	createState,
+	Memo,
 	match,
 	resolve,
-} from '..'
+	State,
+} from '../index.ts'
 
 /* === Tests === */
 
 describe('Batch', () => {
 	test('should be triggered only once after repeated state change', () => {
-		const cause = createState(0)
+		const cause = new State(0)
 		let result = 0
 		let count = 0
 		createEffect((): undefined => {
 			result = cause.get()
 			count++
 		})
-		batch(() => {
-			for (let i = 1; i <= 10; i++) {
-				cause.set(i)
-			}
+		batchSignalWrites(() => {
+			for (let i = 1; i <= 10; i++) cause.set(i)
 		})
 		expect(result).toBe(10)
 		expect(count).toBe(2) // + 1 for effect initialization
 	})
 
 	test('should be triggered only once when multiple signals are set', () => {
-		const a = createState(3)
-		const b = createState(4)
-		const c = createState(5)
-		const sum = createComputed(() => a.get() + b.get() + c.get())
+		const a = new State(3)
+		const b = new State(4)
+		const c = new State(5)
+		const sum = new Memo(() => a.get() + b.get() + c.get())
 		let result = 0
 		let count = 0
 		createEffect(() => {
@@ -45,7 +43,7 @@ describe('Batch', () => {
 				err: () => {},
 			})
 		})
-		batch(() => {
+		batchSignalWrites(() => {
 			a.set(6)
 			b.set(8)
 			c.set(10)
@@ -56,10 +54,10 @@ describe('Batch', () => {
 
 	test('should prove example from README works', () => {
 		// State: define an array of Signal<number>
-		const signals = [createState(2), createState(3), createState(5)]
+		const signals = [new State(2), new State(3), new State(5)]
 
 		// Computed: derive a calculation ...
-		const sum = createComputed(() => {
+		const sum = new Memo(() => {
 			const v = signals.reduce((total, v) => total + v.get(), 0)
 			if (!Number.isFinite(v)) throw new Error('Invalid value')
 			return v
@@ -89,7 +87,7 @@ describe('Batch', () => {
 		expect(result).toBe(10)
 
 		// Batch: apply changes to all signals in a single transaction
-		batch(() => {
+		batchSignalWrites(() => {
 			signals.forEach(signal => signal.update(v => v * 2))
 		})
 

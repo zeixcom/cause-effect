@@ -1,40 +1,40 @@
-import { isEqual } from './diff'
+import { isEqual } from '../src/diff'
 import {
 	CircularDependencyError,
 	InvalidCallbackError,
 	NullishSignalValueError,
-} from './errors'
+} from '../src/errors'
 import {
 	createWatcher,
-	flush,
-	notify,
-	observe,
-	subscribe,
+	flushPendingReactions,
+	notifyWatchers,
+	subscribeActiveWatcher,
+	trackSignalReads,
 	type Watcher,
-} from './system'
+} from '../src/system'
 import {
 	isAbortError,
 	isAsyncFunction,
-	isFunction,
 	isObjectOfType,
 	toError,
 	UNSET,
-	valueString,
-} from './util'
+} from '../src/util'
 
 /* === Types === */
 
-type Computed<T extends {}> = {
-	readonly [Symbol.toStringTag]: 'Computed'
+type Task<T extends {}> = {
+	readonly [Symbol.toStringTag]: 'Task'
 	get(): T
 }
-type ComputedCallback<T extends {} & { then?: undefined }> =
-	| ((oldValue: T, abort: AbortSignal) => Promise<T>)
-	| ((oldValue: T) => T)
+
+type TaskCallback<T extends {} & { then?: undefined }> = (
+	oldValue: T,
+	abort: AbortSignal,
+) => Promise<T>
 
 /* === Constants === */
 
-const TYPE_COMPUTED = 'Computed'
+const TYPE_TASK = 'Task' as const
 
 /* === Functions === */
 
@@ -42,16 +42,16 @@ const TYPE_COMPUTED = 'Computed'
  * Create a derived signal from existing signals
  *
  * @since 0.9.0
- * @param {ComputedCallback<T>} callback - Computation callback function
- * @returns {Computed<T>} - Computed signal
+ * @param {TaskCallback<T>} callback - Computation callback function
+ * @returns {Task<T>} - Computed signal
  */
-const createComputed = <T extends {}>(
-	callback: ComputedCallback<T>,
+const createTask = <T extends {}>(
+	callback: TaskCallback<T>,
 	initialValue: T = UNSET,
-): Computed<T> => {
-	if (!isComputedCallback(callback))
-		throw new InvalidCallbackError('computed', valueString(callback))
-	if (initialValue == null) throw new NullishSignalValueError('computed')
+): Task<T> => {
+	if (!isTaskCallback(callback))
+		throw new InvalidCallbackError('task', callback)
+	if (initialValue == null) throw new NullishSignalValueError('task')
 
 	const watchers: Set<Watcher> = new Set()
 
@@ -92,106 +92,103 @@ const createComputed = <T extends {}>(
 			computing = false
 			controller = undefined
 			fn(arg)
-			if (changed) notify(watchers)
+			if (changed) notifyWatchers(watchers)
 		}
 
 	// Own watcher: called when notified from sources (push)
 	const watcher = createWatcher(() => {
 		dirty = true
 		controller?.abort()
-		if (watchers.size) notify(watchers)
-		else watcher.cleanup()
+		if (watchers.size) notifyWatchers(watchers)
+		else watcher.stop()
 	})
-	watcher.unwatch(() => {
+	watcher.onCleanup(() => {
 		controller?.abort()
 	})
 
 	// Called when requested by dependencies (pull)
 	const compute = () =>
-		observe(() => {
+		trackSignalReads(watcher, () => {
 			if (computing) throw new CircularDependencyError('computed')
 			changed = false
-			if (isAsyncFunction(callback)) {
-				// Return current value until promise resolves
-				if (controller) return value
-				controller = new AbortController()
-				controller.signal.addEventListener(
-					'abort',
-					() => {
-						computing = false
-						controller = undefined
-						compute() // Retry computation with updated state
-					},
-					{
-						once: true,
-					},
-				)
-			}
+			// Return current value until promise resolves
+			if (controller) return value
+
+			controller = new AbortController()
+			controller.signal.addEventListener(
+				'abort',
+				() => {
+					computing = false
+					controller = undefined
+					compute() // Retry computation with updated state
+				},
+				{
+					once: true,
+				},
+			)
 			let result: T | Promise<T>
 			computing = true
 			try {
-				result = controller
-					? callback(value, controller.signal)
-					: (callback as (oldValue: T) => T)(value)
+				result = callback(value, controller.signal)
 			} catch (e) {
 				if (isAbortError(e)) nil()
 				else err(e)
 				computing = false
 				return
 			}
+
 			if (result instanceof Promise) result.then(settle(ok), settle(err))
 			else if (null == result || UNSET === result) nil()
 			else ok(result)
 			computing = false
-		}, watcher)
+		})
 
-	const computed: Record<PropertyKey, unknown> = {}
-	Object.defineProperties(computed, {
+	const task: Record<PropertyKey, unknown> = {}
+	Object.defineProperties(task, {
 		[Symbol.toStringTag]: {
-			value: TYPE_COMPUTED,
+			value: TYPE_TASK,
 		},
 		get: {
 			value: (): T => {
-				subscribe(watchers)
-				flush()
+				subscribeActiveWatcher(watchers)
+				flushPendingReactions()
 				if (dirty) compute()
 				if (error) throw error
 				return value
 			},
 		},
 	})
-	return computed as Computed<T>
+	return task as Task<T>
 }
 
 /**
- * Check if a value is a computed signal
+ * Check if a value is a task signal
  *
  * @since 0.9.0
  * @param {unknown} value - Value to check
- * @returns {boolean} - true if value is a computed signal, false otherwise
+ * @returns {boolean} - True if value is a task signal, false otherwise
  */
-const isComputed = /*#__PURE__*/ <T extends {}>(
-	value: unknown,
-): value is Computed<T> => isObjectOfType(value, TYPE_COMPUTED)
+const isTask = /*#__PURE__*/ <T extends {}>(value: unknown): value is Task<T> =>
+	isObjectOfType(value, TYPE_TASK)
 
 /**
  * Check if the provided value is a callback that may be used as input for toSignal() to derive a computed state
  *
  * @since 0.12.0
  * @param {unknown} value - Value to check
- * @returns {boolean} - true if value is a callback or callbacks object, false otherwise
+ * @returns {boolean} - True if value is an async callback, false otherwise
  */
-const isComputedCallback = /*#__PURE__*/ <T extends {}>(
+const isTaskCallback = /*#__PURE__*/ <T extends {}>(
 	value: unknown,
-): value is ComputedCallback<T> => isFunction(value) && value.length < 3
+): value is TaskCallback<T> => isAsyncFunction(value) && value.length < 3
 
 /* === Exports === */
 
 export {
-	TYPE_COMPUTED,
-	createComputed,
-	isComputed,
-	isComputedCallback,
-	type Computed,
-	type ComputedCallback,
+	TYPE_TASK,
+	createTask,
+	isTask,
+	isTaskCallback,
+	type Task,
+	type TaskCallback,
 }

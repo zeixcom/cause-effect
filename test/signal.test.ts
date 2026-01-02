@@ -1,51 +1,50 @@
 import { describe, expect, test } from 'bun:test'
 import {
 	type Computed,
-	createComputed,
-	createState,
-	createStore,
+	createSignal,
 	isComputed,
+	isList,
 	isState,
 	isStore,
+	type List,
 	type Signal,
-	type State,
+	State,
 	type Store,
-	toSignal,
 	type UnknownRecord,
-} from '..'
+} from '../index.ts'
 
 /* === Tests === */
 
-describe('toSignal', () => {
+describe('createSignal', () => {
 	describe('type inference and runtime behavior', () => {
-		test('converts array to Store<Record<string, T>>', () => {
-			const result = toSignal([
+		test('converts array to List<T>', () => {
+			const result = createSignal([
 				{ id: 1, name: 'Alice' },
 				{ id: 2, name: 'Bob' },
 			])
 
 			// Runtime behavior
-			expect(isStore(result)).toBe(true)
-			expect(result['0'].get()).toEqual({ id: 1, name: 'Alice' })
-			expect(result['1'].get()).toEqual({ id: 2, name: 'Bob' })
+			expect(isList(result)).toBe(true)
+			expect(result.at(0)?.get()).toEqual({ id: 1, name: 'Alice' })
+			expect(result.at(1)?.get()).toEqual({ id: 2, name: 'Bob' })
 
-			// Type inference test - now correctly returns Store<Record<number, {id: number, name: string}>>
-			const typedResult: Store<{ id: number; name: string }[]> = result
+			// Type inference test - now correctly returns List<{ id: number; name: string }>
+			const typedResult: List<{ id: number; name: string }> = result
 			expect(typedResult).toBeDefined()
 		})
 
 		test('converts empty array to ArrayStore<never[]>', () => {
-			const result = toSignal([])
+			const result = createSignal([])
 
 			// Runtime behavior
-			expect(isStore(result)).toBe(true)
+			expect(isList(result)).toBe(true)
 			expect(result.length).toBe(0)
 			expect(Object.keys(result).length).toBe(0)
 		})
 
 		test('converts record to Store<T>', () => {
 			const record = { name: 'Alice', age: 30 }
-			const result = toSignal(record)
+			const result = createSignal(record)
 
 			// Runtime behavior
 			expect(isStore(result)).toBe(true)
@@ -57,51 +56,9 @@ describe('toSignal', () => {
 			expect(typedResult).toBeDefined()
 		})
 
-		test('passes through existing Store unchanged', () => {
-			const originalStore = createStore({ count: 5 })
-			const result = toSignal(originalStore)
-
-			// Runtime behavior
-			expect(result).toBe(originalStore) // Should be the same instance
-			expect(isStore(result)).toBe(true)
-			expect(result.count.get()).toBe(5)
-
-			// Type inference test - should remain Store<{count: number}>
-			const typedResult: Store<{ count: number }> = result
-			expect(typedResult).toBeDefined()
-		})
-
-		test('passes through existing State unchanged', () => {
-			const originalState = createState(42)
-			const result = toSignal(originalState)
-
-			// Runtime behavior
-			expect(result).toBe(originalState) // Should be the same instance
-			expect(isState(result)).toBe(true)
-			expect(result.get()).toBe(42)
-
-			// Type inference test - should remain State<number>
-			const typedResult: State<number> = result
-			expect(typedResult).toBeDefined()
-		})
-
-		test('passes through existing Computed unchanged', () => {
-			const originalComputed = createComputed(() => 'hello world')
-			const result = toSignal(originalComputed)
-
-			// Runtime behavior
-			expect(result).toBe(originalComputed) // Should be the same instance
-			expect(isComputed(result)).toBe(true)
-			expect(result.get()).toBe('hello world')
-
-			// Type inference test - should remain Computed<string>
-			const typedResult: Computed<string> = result
-			expect(typedResult).toBeDefined()
-		})
-
 		test('converts function to Computed<T>', () => {
 			const fn = () => Math.random()
-			const result = toSignal(fn)
+			const result = createSignal(fn)
 
 			// Runtime behavior - functions are correctly converted to Computed
 			expect(isComputed(result)).toBe(true)
@@ -114,7 +71,7 @@ describe('toSignal', () => {
 
 		test('converts primitive to State<T>', () => {
 			const num = 42
-			const result = toSignal(num)
+			const result = createSignal(num)
 
 			// Runtime behavior - primitives are correctly converted to State
 			expect(isState(result)).toBe(true)
@@ -127,7 +84,7 @@ describe('toSignal', () => {
 
 		test('converts object to State<T>', () => {
 			const obj = new Date('2024-01-01')
-			const result = toSignal(obj)
+			const result = createSignal(obj)
 
 			// Runtime behavior - objects are correctly converted to State
 			expect(isState(result)).toBe(true)
@@ -141,15 +98,15 @@ describe('toSignal', () => {
 
 	describe('edge cases', () => {
 		test('handles nested arrays', () => {
-			const result = toSignal([
+			const result = createSignal([
 				[1, 2],
 				[3, 4],
 			])
 
-			expect(isStore(result)).toBe(true)
+			expect(isList(result)).toBe(true)
 			// With the fixed behavior, nested arrays should be recovered as arrays
-			const firstElement = result[0].get()
-			const secondElement = result[1].get()
+			const firstElement = result.at(0)?.get()
+			const secondElement = result.at(1)?.get()
 
 			// The expected behavior - nested arrays are recovered as arrays
 			expect(firstElement).toEqual([1, 2])
@@ -158,34 +115,23 @@ describe('toSignal', () => {
 
 		test('handles arrays with mixed types', () => {
 			const mixedArr = [1, 'hello', { key: 'value' }]
-			const result = toSignal(mixedArr)
+			const result = createSignal(mixedArr)
 
-			expect(isStore(result)).toBe(true)
-			expect(result['0'].get()).toBe(1)
-			expect(result['1'].get()).toBe('hello')
-			expect(result['2'].get()).toEqual({ key: 'value' })
-		})
-
-		test('handles sparse arrays', () => {
-			const sparseArr = new Array(3)
-			sparseArr[1] = 'middle'
-			const result = toSignal(sparseArr)
-
-			expect(isStore(result)).toBe(true)
-			expect('0' in result).toBe(false)
-			expect(result['1'].get()).toBe('middle')
-			expect('2' in result).toBe(false)
+			expect(isList(result)).toBe(true)
+			expect(result.at(0)?.get()).toBe(1)
+			expect(result.at(1)?.get()).toBe('hello')
+			expect(result.at(2)?.get()).toEqual({ key: 'value' })
 		})
 	})
 })
 
 describe('Signal compatibility', () => {
 	test('all results implement Signal<T> interface', () => {
-		const arraySignal = toSignal([1, 2, 3])
-		const recordSignal = toSignal({ a: 1, b: 2 })
-		const primitiveSignal = toSignal(42)
-		const functionSignal = toSignal(() => 'hello')
-		const stateSignal = toSignal(createState(true))
+		const arraySignal = createSignal([1, 2, 3])
+		const recordSignal = createSignal({ a: 1, b: 2 })
+		const primitiveSignal = createSignal(42)
+		const functionSignal = createSignal(() => 'hello')
+		const stateSignal = createSignal(new State(true))
 
 		// All should have get() method
 		expect(typeof arraySignal.get).toBe('function')
@@ -210,16 +156,16 @@ describe('Type precision tests', () => {
 	test('array type should infer element type correctly', () => {
 		// Test that arrays infer the correct element type
 		const stringArray = ['a', 'b', 'c']
-		const stringArraySignal = toSignal(stringArray)
+		const stringArraySignal = createSignal(stringArray)
 
-		// Should be Store<Record<string, string>>
-		expect(stringArraySignal['0'].get()).toBe('a')
+		// Should be List<string>
+		expect(stringArraySignal.at(0)?.get()).toBe('a')
 
 		const numberArray = [1, 2, 3]
-		const numberArraySignal = toSignal(numberArray)
+		const numberArraySignal = createSignal(numberArray)
 
-		// Should be Store<Record<string, number>>
-		expect(typeof numberArraySignal['0'].get()).toBe('number')
+		// Should be List<number>
+		expect(typeof numberArraySignal.at(0)?.get()).toBe('number')
 	})
 
 	test('complex object arrays maintain precise typing', () => {
@@ -234,31 +180,31 @@ describe('Type precision tests', () => {
 			{ id: 2, name: 'Bob', email: 'bob@example.com' },
 		]
 
-		const usersSignal = toSignal(users)
+		const usersSignal = createSignal(users)
 
 		// Should maintain User type for each element
-		const firstUser = usersSignal['0'].get()
-		expect(firstUser.id).toBe(1)
-		expect(firstUser.name).toBe('Alice')
-		expect(firstUser.email).toBe('alice@example.com')
+		const firstUser = usersSignal.at(0)?.get()
+		expect(firstUser?.id).toBe(1)
+		expect(firstUser?.name).toBe('Alice')
+		expect(firstUser?.email).toBe('alice@example.com')
 	})
 
 	describe('Type inference issues', () => {
 		test('demonstrates current type inference problem', () => {
-			const result = toSignal([{ id: 1 }, { id: 2 }])
+			const result = createSignal([{ id: 1 }, { id: 2 }])
 
 			// Let's verify the actual behavior
-			expect(isStore(result)).toBe(true)
-			expect(result['0'].get()).toEqual({ id: 1 })
-			expect(result['1'].get()).toEqual({ id: 2 })
+			expect(isList(result)).toBe(true)
+			expect(result.at(0)?.get()).toEqual({ id: 1 })
+			expect(result.at(1)?.get()).toEqual({ id: 2 })
 
 			// Type assertion test - this should now work with correct typing
-			const typedResult: Store<{ id: number }[]> = result
+			const typedResult: List<{ id: number }> = result
 			expect(typedResult).toBeDefined()
 
 			// Simulate external library usage where P[K] represents element type
 			interface ExternalLibraryConstraint<P extends UnknownRecord> {
-				process<K extends keyof P>(signal: Signal<P[K]>): void
+				process<K extends keyof P>(signal: Signal<P[K] & {}>): void
 			}
 
 			// This should work if types are correct
@@ -266,7 +212,7 @@ describe('Type precision tests', () => {
 				Record<string, { id: number }>
 			> = {
 				process: <K extends keyof Record<string, { id: number }>>(
-					signal: Signal<Record<string, { id: number }>[K]>,
+					signal: Signal<Record<string, { id: number }>[K] & {}>,
 				) => {
 					// Process the signal
 					const value = signal.get()
@@ -275,7 +221,8 @@ describe('Type precision tests', () => {
 			}
 
 			// This call should work without type errors
-			processor.process(result['0'])
+			const item = result.at(0)
+			if (item) processor.process(item)
 		})
 
 		test('verifies fixed type inference for external library compatibility', () => {
@@ -283,23 +230,26 @@ describe('Type precision tests', () => {
 				{ id: 1, name: 'Alice' },
 				{ id: 2, name: 'Bob' },
 			]
-			const signal = toSignal(items)
-			const firstItemSignal = signal['0']
-			const secondItemSignal = signal['1']
+			const signal = createSignal(items)
+			const firstItemSignal = signal.at(0)
+			const secondItemSignal = signal.at(1)
 
 			// Runtime behavior works correctly
-			expect(isStore(signal)).toBe(true)
-			expect(firstItemSignal.get()).toEqual({ id: 1, name: 'Alice' })
-			expect(secondItemSignal.get()).toEqual({ id: 2, name: 'Bob' })
+			expect(isList(signal)).toBe(true)
+			expect(firstItemSignal?.get()).toEqual({ id: 1, name: 'Alice' })
+			expect(secondItemSignal?.get()).toEqual({ id: 2, name: 'Bob' })
 
 			// Type inference should now work correctly:
-			const properlyTyped: Store<{ id: number; name: string }[]> = signal
+			const properlyTyped: List<{ id: number; name: string }> = signal
 			expect(properlyTyped).toBeDefined()
 
 			// These should work without type errors in external libraries
 			// that expect Signal<P[K]> where P[K] is the individual element type
-			interface ExternalAPI<P extends UnknownRecord> {
-				process<K extends keyof P>(key: K, signal: Signal<P[K]>): P[K]
+			interface ExternalAPI<P extends Record<string, object>> {
+				process<K extends keyof P>(
+					key: K,
+					signal: Signal<P[K] & object>,
+				): P[K]
 			}
 
 			const api: ExternalAPI<
@@ -309,15 +259,16 @@ describe('Type precision tests', () => {
 			}
 
 			// These calls should work with proper typing now
-			const result1 = api.process('0', firstItemSignal)
-			const result2 = api.process('1', secondItemSignal)
+			const result1 = firstItemSignal && api.process('0', firstItemSignal)
+			const result2 =
+				secondItemSignal && api.process('1', secondItemSignal)
 
 			expect(result1).toEqual({ id: 1, name: 'Alice' })
 			expect(result2).toEqual({ id: 2, name: 'Bob' })
 
 			// Verify the types are precise
-			expect(typeof result1.id).toBe('number')
-			expect(typeof result1.name).toBe('string')
+			expect(typeof result1?.id).toBe('number')
+			expect(typeof result1?.name).toBe('string')
 		})
 	})
 })
