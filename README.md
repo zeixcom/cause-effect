@@ -325,7 +325,7 @@ Is the value managed *inside* the reactive system?
 │
 └─ Yes? What kind of data is it?
     │
-    ├─ **Primitive** (number/string/boolean)
+    ├─ *Primitive* (number/string/boolean)
     │   │
     │   ├─ Do you want to mutate it directly?
     │   │     └─ Yes → `State`
@@ -338,8 +338,8 @@ Is the value managed *inside* the reactive system?
     │         │     
     │         └─ Async derived → `Task`
     │            (cancellation + memoization + pending/error state)
-    |
-    └─ **Plain Object**
+    │
+    ├─ *Plain Object*
     │   │
     │   ├─ Do you want to mutate individual properties?
     │   │     ├─ Yes → `Store`
@@ -349,11 +349,11 @@ Is the value managed *inside* the reactive system?
     │         ├─ Sync derived → plain function or `Memo`
     │         └─ Async derived → `Task`
     │
-    └─ **Array**
+    └─ *Array*
         │
         ├─ Do you need to mutate it (add/remove/sort) with stable item identity?
         │     ├─ Yes → `List`
-        |     └─ No, whole array mutations only → `State`
+        │     └─ No, whole array mutations only → `State`
         │
         └─ Is it derived / read-only transformation of a `List` or `Collection`?
               └─ Yes → `Collection`
