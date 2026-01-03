@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import {
-	Collection,
 	createEffect,
 	createStore,
+	DerivedCollection,
 	isCollection,
 	List,
 	UNSET,
@@ -12,7 +12,7 @@ describe('collection', () => {
 	describe('creation and basic operations', () => {
 		test('creates collection with initial values from list', () => {
 			const numbers = new List([1, 2, 3])
-			const doubled = new Collection(
+			const doubled = new DerivedCollection(
 				numbers,
 				(value: number) => value * 2,
 			)
@@ -24,7 +24,7 @@ describe('collection', () => {
 		})
 
 		test('creates collection from function source', () => {
-			const doubled = new Collection(
+			const doubled = new DerivedCollection(
 				() => new List([10, 20, 30]),
 				(value: number) => value * 2,
 			)
@@ -37,7 +37,7 @@ describe('collection', () => {
 
 		test('has Symbol.toStringTag of Collection', () => {
 			const list = new List([1, 2, 3])
-			const collection = new Collection(list, (x: number) => x)
+			const collection = new DerivedCollection(list, (x: number) => x)
 			expect(Object.prototype.toString.call(collection)).toBe(
 				'[object Collection]',
 			)
@@ -46,7 +46,7 @@ describe('collection', () => {
 		test('isCollection identifies collection instances correctly', () => {
 			const store = createStore({ a: 1 })
 			const list = new List([1, 2, 3])
-			const collection = new Collection(list, (x: number) => x)
+			const collection = new DerivedCollection(list, (x: number) => x)
 
 			expect(isCollection(collection)).toBe(true)
 			expect(isCollection(list)).toBe(false)
@@ -57,7 +57,7 @@ describe('collection', () => {
 
 		test('get() returns the complete collection value', () => {
 			const numbers = new List([1, 2, 3])
-			const doubled = new Collection(
+			const doubled = new DerivedCollection(
 				numbers,
 				(value: number) => value * 2,
 			)
@@ -71,13 +71,19 @@ describe('collection', () => {
 	describe('length property and sizing', () => {
 		test('length property works for collections', () => {
 			const numbers = new List([1, 2, 3, 4, 5])
-			const collection = new Collection(numbers, (x: number) => x * 2)
+			const collection = new DerivedCollection(
+				numbers,
+				(x: number) => x * 2,
+			)
 			expect(collection.length).toBe(5)
 		})
 
 		test('length is reactive and updates with changes', () => {
 			const items = new List([1, 2])
-			const collection = new Collection(items, (x: number) => x * 2)
+			const collection = new DerivedCollection(
+				items,
+				(x: number) => x * 2,
+			)
 
 			expect(collection.length).toBe(2)
 			items.add(3)
@@ -88,7 +94,7 @@ describe('collection', () => {
 	describe('index-based access', () => {
 		test('properties can be accessed via computed signals', () => {
 			const items = new List([10, 20, 30])
-			const doubled = new Collection(items, (x: number) => x * 2)
+			const doubled = new DerivedCollection(items, (x: number) => x * 2)
 
 			expect(doubled.at(0)?.get()).toBe(20)
 			expect(doubled.at(1)?.get()).toBe(40)
@@ -97,13 +103,16 @@ describe('collection', () => {
 
 		test('returns undefined for non-existent properties', () => {
 			const items = new List([1, 2])
-			const collection = new Collection(items, (x: number) => x)
+			const collection = new DerivedCollection(items, (x: number) => x)
 			expect(collection[5]).toBeUndefined()
 		})
 
 		test('supports numeric key access', () => {
 			const numbers = new List([1, 2, 3])
-			const collection = new Collection(numbers, (x: number) => x * 2)
+			const collection = new DerivedCollection(
+				numbers,
+				(x: number) => x * 2,
+			)
 			expect(collection.at(1)?.get()).toBe(4)
 		})
 	})
@@ -111,7 +120,7 @@ describe('collection', () => {
 	describe('key-based access methods', () => {
 		test('byKey() returns computed signal for existing keys', () => {
 			const numbers = new List([1, 2, 3])
-			const doubled = new Collection(numbers, (x: number) => x * 2)
+			const doubled = new DerivedCollection(numbers, (x: number) => x * 2)
 
 			const key0 = numbers.keyAt(0)
 			const key1 = numbers.keyAt(1)
@@ -130,7 +139,7 @@ describe('collection', () => {
 
 		test('keyAt() and indexOfKey() work correctly', () => {
 			const numbers = new List([5, 10, 15])
-			const doubled = new Collection(numbers, (x: number) => x * 2)
+			const doubled = new DerivedCollection(numbers, (x: number) => x * 2)
 
 			const key0 = doubled.keyAt(0)
 			const key1 = doubled.keyAt(1)
@@ -147,7 +156,7 @@ describe('collection', () => {
 	describe('reactivity', () => {
 		test('collection-level get() is reactive', () => {
 			const numbers = new List([1, 2, 3])
-			const doubled = new Collection(numbers, (x: number) => x * 2)
+			const doubled = new DerivedCollection(numbers, (x: number) => x * 2)
 
 			let lastArray: number[] = []
 			createEffect(() => {
@@ -161,7 +170,7 @@ describe('collection', () => {
 
 		test('individual signal reactivity works', () => {
 			const items = new List([{ count: 1 }, { count: 2 }])
-			const doubled = new Collection(
+			const doubled = new DerivedCollection(
 				items,
 				(item: { count: number }) => ({ count: item.count * 2 }),
 			)
@@ -184,7 +193,7 @@ describe('collection', () => {
 
 		test('updates are reactive', () => {
 			const numbers = new List([1, 2, 3])
-			const doubled = new Collection(numbers, (x: number) => x * 2)
+			const doubled = new DerivedCollection(numbers, (x: number) => x * 2)
 
 			let lastArray: number[] = []
 			let arrayEffectRuns = 0
@@ -205,7 +214,7 @@ describe('collection', () => {
 	describe('iteration and spreading', () => {
 		test('supports for...of iteration', () => {
 			const numbers = new List([1, 2, 3])
-			const doubled = new Collection(numbers, (x: number) => x * 2)
+			const doubled = new DerivedCollection(numbers, (x: number) => x * 2)
 			const signals = [...doubled]
 
 			expect(signals).toHaveLength(3)
@@ -216,7 +225,7 @@ describe('collection', () => {
 
 		test('Symbol.isConcatSpreadable is true', () => {
 			const numbers = new List([1, 2, 3])
-			const collection = new Collection(numbers, (x: number) => x)
+			const collection = new DerivedCollection(numbers, (x: number) => x)
 			expect(collection[Symbol.isConcatSpreadable]).toBe(true)
 		})
 	})
@@ -224,7 +233,7 @@ describe('collection', () => {
 	describe('change notifications', () => {
 		test('emits add notifications', () => {
 			const numbers = new List([1, 2])
-			const doubled = new Collection(numbers, (x: number) => x * 2)
+			const doubled = new DerivedCollection(numbers, (x: number) => x * 2)
 
 			let arrayAddNotification: readonly string[] = []
 			doubled.on('add', keys => {
@@ -239,7 +248,7 @@ describe('collection', () => {
 
 		test('emits remove notifications when items are removed', () => {
 			const items = new List([1, 2, 3])
-			const doubled = new Collection(items, (x: number) => x * 2)
+			const doubled = new DerivedCollection(items, (x: number) => x * 2)
 
 			let arrayRemoveNotification: readonly string[] = []
 			doubled.on('remove', keys => {
@@ -252,7 +261,7 @@ describe('collection', () => {
 
 		test('emits sort notifications when source is sorted', () => {
 			const numbers = new List([3, 1, 2])
-			const doubled = new Collection(numbers, (x: number) => x * 2)
+			const doubled = new DerivedCollection(numbers, (x: number) => x * 2)
 
 			let sortNotification: readonly string[] = []
 			doubled.on('sort', newOrder => {
@@ -268,14 +277,17 @@ describe('collection', () => {
 	describe('edge cases', () => {
 		test('handles empty collections correctly', () => {
 			const empty = new List<number>([])
-			const collection = new Collection(empty, (x: number) => x * 2)
+			const collection = new DerivedCollection(
+				empty,
+				(x: number) => x * 2,
+			)
 			expect(collection.length).toBe(0)
 			expect(collection.get()).toEqual([])
 		})
 
 		test('handles UNSET values', () => {
 			const list = new List([1, 2, 3])
-			const processed = new Collection(list, (x: number) =>
+			const processed = new DerivedCollection(list, (x: number) =>
 				x > 2 ? x : UNSET,
 			)
 
@@ -285,7 +297,7 @@ describe('collection', () => {
 
 		test('handles primitive values', () => {
 			const list = new List(['hello', 'world'])
-			const lengths = new Collection(list, (str: string) => ({
+			const lengths = new DerivedCollection(list, (str: string) => ({
 				length: str.length,
 			}))
 
@@ -298,7 +310,10 @@ describe('collection', () => {
 		describe('synchronous transformations', () => {
 			test('transforms collection values with sync callback', () => {
 				const numbers = new List([1, 2, 3])
-				const doubled = new Collection(numbers, (x: number) => x * 2)
+				const doubled = new DerivedCollection(
+					numbers,
+					(x: number) => x * 2,
+				)
 				const quadrupled = doubled.deriveCollection(
 					(x: number) => x * 2,
 				)
@@ -314,7 +329,7 @@ describe('collection', () => {
 					{ name: 'Alice', age: 25 },
 					{ name: 'Bob', age: 30 },
 				])
-				const basicInfo = new Collection(
+				const basicInfo = new DerivedCollection(
 					users,
 					(user: { name: string; age: number }) => ({
 						displayName: user.name.toUpperCase(),
@@ -342,10 +357,13 @@ describe('collection', () => {
 
 			test('transforms string values to different types', () => {
 				const words = new List(['hello', 'world', 'test'])
-				const wordInfo = new Collection(words, (word: string) => ({
-					word,
-					length: word.length,
-				}))
+				const wordInfo = new DerivedCollection(
+					words,
+					(word: string) => ({
+						word,
+						length: word.length,
+					}),
+				)
 				const analysis = wordInfo.deriveCollection(
 					(info: { word: string; length: number }) => ({
 						...info,
@@ -366,7 +384,10 @@ describe('collection', () => {
 
 			test('derived collection reactivity with sync transformations', () => {
 				const numbers = new List([1, 2, 3])
-				const doubled = new Collection(numbers, (x: number) => x * 2)
+				const doubled = new DerivedCollection(
+					numbers,
+					(x: number) => x * 2,
+				)
 				const quadrupled = doubled.deriveCollection(
 					(x: number) => x * 2,
 				)
@@ -392,7 +413,10 @@ describe('collection', () => {
 
 			test('derived collection responds to source removal', () => {
 				const numbers = new List([1, 2, 3, 4])
-				const doubled = new Collection(numbers, (x: number) => x * 2)
+				const doubled = new DerivedCollection(
+					numbers,
+					(x: number) => x * 2,
+				)
 				const quadrupled = doubled.deriveCollection(
 					(x: number) => x * 2,
 				)
@@ -407,7 +431,10 @@ describe('collection', () => {
 		describe('asynchronous transformations', () => {
 			test('transforms values with async callback', async () => {
 				const numbers = new List([1, 2, 3])
-				const doubled = new Collection(numbers, (x: number) => x * 2)
+				const doubled = new DerivedCollection(
+					numbers,
+					(x: number) => x * 2,
+				)
 
 				const asyncQuadrupled = doubled.deriveCollection(
 					async (x: number, abort: AbortSignal) => {
@@ -448,7 +475,7 @@ describe('collection', () => {
 					{ id: 1, name: 'Alice' },
 					{ id: 2, name: 'Bob' },
 				])
-				const basicInfo = new Collection(
+				const basicInfo = new DerivedCollection(
 					users,
 					(user: { id: number; name: string }) => ({
 						userId: user.id,
@@ -507,7 +534,10 @@ describe('collection', () => {
 
 			test('async derived collection reactivity', async () => {
 				const numbers = new List([1, 2, 3])
-				const doubled = new Collection(numbers, (x: number) => x * 2)
+				const doubled = new DerivedCollection(
+					numbers,
+					(x: number) => x * 2,
+				)
 				const asyncQuadrupled = doubled.deriveCollection(
 					async (x: number, abort: AbortSignal) => {
 						await new Promise(resolve => setTimeout(resolve, 10))
@@ -544,7 +574,10 @@ describe('collection', () => {
 
 			test('handles AbortSignal cancellation', async () => {
 				const numbers = new List([1, 2, 3])
-				const doubled = new Collection(numbers, (x: number) => x * 2)
+				const doubled = new DerivedCollection(
+					numbers,
+					(x: number) => x * 2,
+				)
 				let abortCalled = false
 
 				const slowCollection = doubled.deriveCollection(
@@ -580,7 +613,10 @@ describe('collection', () => {
 		describe('derived collection chaining', () => {
 			test('chains multiple sync derivations', () => {
 				const numbers = new List([1, 2, 3])
-				const doubled = new Collection(numbers, (x: number) => x * 2)
+				const doubled = new DerivedCollection(
+					numbers,
+					(x: number) => x * 2,
+				)
 				const quadrupled = doubled.deriveCollection(
 					(x: number) => x * 2,
 				)
@@ -595,7 +631,10 @@ describe('collection', () => {
 
 			test('chains sync and async derivations', async () => {
 				const numbers = new List([1, 2, 3])
-				const doubled = new Collection(numbers, (x: number) => x * 2)
+				const doubled = new DerivedCollection(
+					numbers,
+					(x: number) => x * 2,
+				)
 				const quadrupled = doubled.deriveCollection(
 					(x: number) => x * 2,
 				)
@@ -625,7 +664,10 @@ describe('collection', () => {
 		describe('derived collection access methods', () => {
 			test('provides index-based access to computed signals', () => {
 				const numbers = new List([1, 2, 3])
-				const doubled = new Collection(numbers, (x: number) => x * 2)
+				const doubled = new DerivedCollection(
+					numbers,
+					(x: number) => x * 2,
+				)
 				const quadrupled = doubled.deriveCollection(
 					(x: number) => x * 2,
 				)
@@ -638,7 +680,10 @@ describe('collection', () => {
 
 			test('supports key-based access', () => {
 				const numbers = new List([1, 2, 3])
-				const doubled = new Collection(numbers, (x: number) => x * 2)
+				const doubled = new DerivedCollection(
+					numbers,
+					(x: number) => x * 2,
+				)
 				const quadrupled = doubled.deriveCollection(
 					(x: number) => x * 2,
 				)
@@ -660,7 +705,10 @@ describe('collection', () => {
 
 			test('supports iteration', () => {
 				const numbers = new List([1, 2, 3])
-				const doubled = new Collection(numbers, (x: number) => x * 2)
+				const doubled = new DerivedCollection(
+					numbers,
+					(x: number) => x * 2,
+				)
 				const quadrupled = doubled.deriveCollection(
 					(x: number) => x * 2,
 				)
@@ -676,7 +724,10 @@ describe('collection', () => {
 		describe('derived collection event handling', () => {
 			test('emits add events when source adds items', () => {
 				const numbers = new List([1, 2])
-				const doubled = new Collection(numbers, (x: number) => x * 2)
+				const doubled = new DerivedCollection(
+					numbers,
+					(x: number) => x * 2,
+				)
 				const quadrupled = doubled.deriveCollection(
 					(x: number) => x * 2,
 				)
@@ -694,7 +745,10 @@ describe('collection', () => {
 
 			test('emits remove events when source removes items', () => {
 				const numbers = new List([1, 2, 3])
-				const doubled = new Collection(numbers, (x: number) => x * 2)
+				const doubled = new DerivedCollection(
+					numbers,
+					(x: number) => x * 2,
+				)
 				const quadrupled = doubled.deriveCollection(
 					(x: number) => x * 2,
 				)
@@ -710,7 +764,10 @@ describe('collection', () => {
 
 			test('emits sort events when source is sorted', () => {
 				const numbers = new List([3, 1, 2])
-				const doubled = new Collection(numbers, (x: number) => x * 2)
+				const doubled = new DerivedCollection(
+					numbers,
+					(x: number) => x * 2,
+				)
 				const quadrupled = doubled.deriveCollection(
 					(x: number) => x * 2,
 				)
@@ -729,7 +786,7 @@ describe('collection', () => {
 		describe('edge cases', () => {
 			test('handles empty collection derivation', () => {
 				const empty = new List<number>([])
-				const emptyCollection = new Collection(
+				const emptyCollection = new DerivedCollection(
 					empty,
 					(x: number) => x * 2,
 				)
@@ -743,7 +800,7 @@ describe('collection', () => {
 
 			test('handles UNSET values in transformation', () => {
 				const list = new List([1, 2, 3])
-				const filtered = new Collection(list, (x: number) =>
+				const filtered = new DerivedCollection(list, (x: number) =>
 					x > 1 ? { value: x } : UNSET,
 				)
 				const doubled = filtered.deriveCollection(
@@ -759,7 +816,7 @@ describe('collection', () => {
 					{ id: 2, data: { value: 20, active: false } },
 				])
 
-				const processed = new Collection(
+				const processed = new DerivedCollection(
 					items,
 					(item: {
 						id: number

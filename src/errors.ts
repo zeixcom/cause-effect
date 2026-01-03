@@ -1,6 +1,12 @@
 import { isMutableSignal, type MutableSignal } from './signal'
 import { isFunction, isSymbol, UNSET, valueString } from './util'
 
+/* === Types === */
+
+type Guard<T> = (value: unknown) => value is T
+
+/* === Classes === */
+
 class CircularDependencyError extends Error {
 	constructor(where: string) {
 		super(`Circular dependency detected in ${where}`)
@@ -26,6 +32,13 @@ class InvalidCallbackError extends TypeError {
 	}
 }
 
+class InvalidCollectionSourceError extends TypeError {
+	constructor(where: string, value: unknown) {
+		super(`Invalid ${where} source ${valueString(value)}`)
+		this.name = 'InvalidCollectionSourceError'
+	}
+}
+
 class InvalidSignalValueError extends TypeError {
 	constructor(where: string, value: unknown) {
 		super(`Invalid signal value ${valueString(value)} in ${where}`)
@@ -48,6 +61,11 @@ class ReadonlySignalError extends Error {
 		this.name = 'ReadonlySignalError'
 	}
 }
+
+/* === Functions === */
+
+const createError = /*#__PURE__*/ (reason: unknown): Error =>
+	reason instanceof Error ? reason : Error(String(reason))
 
 const validateCallback = (
 	where: string,
@@ -77,12 +95,15 @@ const guardMutableSignal = <T extends {}>(
 }
 
 export {
+	type Guard,
 	CircularDependencyError,
 	DuplicateKeyError,
 	InvalidCallbackError,
+	InvalidCollectionSourceError,
 	InvalidSignalValueError,
 	NullishSignalValueError,
 	ReadonlySignalError,
+	createError,
 	validateCallback,
 	validateSignalValue,
 	guardMutableSignal,

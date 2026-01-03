@@ -6,9 +6,11 @@ TypeScript/JavaScript reactive state management library using signals pattern
 ## Core Concepts
 - Signals: Base reactive primitives with .get() method
 - State: new State() for primitives/simple values  
+- Ref: new Ref() for external objects (DOM, Map, Set) requiring manual .notify()
 - Computed: new Memo() for derived/memoized values and new Task() for asynchronous computations
 - Store: createStore() for objects with reactive properties
 - List: new List() for arrays with stable keys and reactive items
+- Collection: Interface for reactive collections (DerivedCollection, ElementCollection)
 - Effects: createEffect() for side effects
 
 ## Code Style
@@ -31,9 +33,12 @@ TypeScript/JavaScript reactive state management library using signals pattern
 
 ## File Structure
 - src/signal.ts - Base signal types
-- src/state.ts - Mutable state signals  
-- src/store.ts - Object stores
-- src/computed.ts - Computed signals
+- src/classes/state.ts - Mutable state signals
+- src/classes/ref.ts - Signal wrappers for external objects
+- src/classes/store.ts - Object stores
+- src/classes/list.ts - Array stores with stable keys
+- src/classes/collection.ts - Collection interface and DerivedCollection
+- src/classes/computed.ts - Computed signals
 - src/effect.ts - Effect system
 - src/system.ts - Core reactivity (watchers, batching)
 - index.ts - Main exports

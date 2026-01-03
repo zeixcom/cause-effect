@@ -1,4 +1,5 @@
-import { validateCallback } from '../errors'
+import { InvalidCollectionSourceError, validateCallback } from '../errors'
+import type { Signal } from '../signal'
 import {
 	type Cleanup,
 	createWatcher,
@@ -16,12 +17,27 @@ import { isList, type List } from './list'
 
 /* === Types === */
 
-// biome-ignore lint/suspicious/noExplicitAny: source type of current collection doesn't matter
-type CollectionSource<T extends {}> = List<T> | Collection<T, any>
+type CollectionSource<T extends {}> = List<T> | Collection<T>
 
 type CollectionCallback<T extends {}, U extends {}> =
 	| ((sourceValue: U) => T)
 	| ((sourceValue: U, abort: AbortSignal) => Promise<T>)
+
+type Collection<T extends {}> = {
+	readonly [Symbol.toStringTag]: 'Collection'
+	readonly [Symbol.isConcatSpreadable]: true
+	[Symbol.iterator](): IterableIterator<Signal<T>>
+	get: () => T[]
+	at: (index: number) => Signal<T> | undefined
+	byKey: (key: string) => Signal<T> | undefined
+	keyAt: (index: number) => string | undefined
+	indexOfKey: (key: string) => number | undefined
+	on: <K extends keyof Listeners>(type: K, listener: Listener<K>) => Cleanup
+	deriveCollection: <R extends {}>(
+		callback: CollectionCallback<R, T>,
+	) => DerivedCollection<R, T>
+	readonly length: number
+}
 
 /* === Constants === */
 
@@ -29,7 +45,7 @@ const TYPE_COLLECTION = 'Collection' as const
 
 /* === Class === */
 
-class Collection<T extends {}, U extends {}> {
+class DerivedCollection<T extends {}, U extends {}> implements Collection<T> {
 	#watchers = new Set<Watcher>()
 	#source: CollectionSource<U>
 	#callback: CollectionCallback<T, U>
@@ -51,7 +67,7 @@ class Collection<T extends {}, U extends {}> {
 
 		if (isFunction(source)) source = source()
 		if (!isCollectionSource(source))
-			throw new Error('Invalid collection source')
+			throw new InvalidCollectionSourceError('derived collection', source)
 		this.#source = source
 
 		this.#callback = callback
@@ -84,7 +100,12 @@ class Collection<T extends {}, U extends {}> {
 				this.#signals.delete(key)
 				const index = this.#order.indexOf(key)
 				if (index >= 0) this.#order.splice(index, 1)
-				this.#removeWatcher(key)
+
+				const watcher = this.#ownWatchers.get(key)
+				if (watcher) {
+					watcher.stop()
+					this.#ownWatchers.delete(key)
+				}
 			}
 			this.#order = this.#order.filter(() => true) // Compact array
 			notifyWatchers(this.#watchers)
@@ -96,12 +117,6 @@ class Collection<T extends {}, U extends {}> {
 			notifyWatchers(this.#watchers)
 			emitNotification(this.#listeners.sort, newOrder)
 		})
-	}
-
-	get #value(): T[] {
-		return this.#order
-			.map(key => this.#signals.get(key)?.get())
-			.filter(v => v != null && v !== UNSET) as T[]
 	}
 
 	#add(key: string): boolean {
@@ -143,19 +158,11 @@ class Collection<T extends {}, U extends {}> {
 		watcher()
 	}
 
-	#removeWatcher(key: string): void {
-		const watcher = this.#ownWatchers.get(key)
-		if (watcher) {
-			watcher.stop()
-			this.#ownWatchers.delete(key)
-		}
-	}
-
 	get [Symbol.toStringTag](): 'Collection' {
 		return TYPE_COLLECTION
 	}
 
-	get [Symbol.isConcatSpreadable](): boolean {
+	get [Symbol.isConcatSpreadable](): true {
 		return true
 	}
 
@@ -173,7 +180,9 @@ class Collection<T extends {}, U extends {}> {
 
 	get(): T[] {
 		subscribeActiveWatcher(this.#watchers)
-		return this.#value
+		return this.#order
+			.map(key => this.#signals.get(key)?.get())
+			.filter(v => v != null && v !== UNSET) as T[]
 	}
 
 	at(index: number): Computed<T> | undefined {
@@ -216,14 +225,14 @@ class Collection<T extends {}, U extends {}> {
 
 	deriveCollection<R extends {}>(
 		callback: (sourceValue: T) => R,
-	): Collection<R, T>
+	): DerivedCollection<R, T>
 	deriveCollection<R extends {}>(
 		callback: (sourceValue: T, abort: AbortSignal) => Promise<R>,
-	): Collection<R, T>
+	): DerivedCollection<R, T>
 	deriveCollection<R extends {}>(
 		callback: CollectionCallback<R, T>,
-	): Collection<R, T> {
-		return new Collection(this, callback)
+	): DerivedCollection<R, T> {
+		return new DerivedCollection(this, callback)
 	}
 }
 
@@ -238,7 +247,7 @@ class Collection<T extends {}, U extends {}> {
  */
 const isCollection = /*#__PURE__*/ <T extends {}, U extends {}>(
 	value: unknown,
-): value is Collection<T, U> => isObjectOfType(value, TYPE_COLLECTION)
+): value is DerivedCollection<T, U> => isObjectOfType(value, TYPE_COLLECTION)
 
 /**
  * Check if a value is a collection source
@@ -264,9 +273,10 @@ const isAsyncCollectionCallback = <T extends {}>(
 	isAsyncFunction(callback)
 
 export {
-	Collection,
+	type Collection,
 	type CollectionSource,
 	type CollectionCallback,
+	DerivedCollection,
 	isCollection,
 	TYPE_COLLECTION,
 }

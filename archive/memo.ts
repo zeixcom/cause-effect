@@ -1,5 +1,6 @@
 import {
 	CircularDependencyError,
+	createError,
 	InvalidCallbackError,
 	NullishSignalValueError,
 } from '../src/errors'
@@ -11,7 +12,7 @@ import {
 	trackSignalReads,
 	type Watcher,
 } from '../src/system'
-import { isObjectOfType, isSyncFunction, toError, UNSET } from '../src/util'
+import { isObjectOfType, isSyncFunction, UNSET } from '../src/util'
 
 /* === Types === */
 
@@ -69,7 +70,7 @@ const createMemo = <T extends {}>(
 			} catch (e) {
 				// Err track
 				value = UNSET
-				error = toError(e)
+				error = createError(e)
 				computing = false
 				return
 			}

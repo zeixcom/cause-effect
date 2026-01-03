@@ -1,6 +1,6 @@
 import { type UnknownArray } from '../diff';
 import { type Cleanup, type Listener, type Notifications } from '../system';
-import { Collection } from './collection';
+import { DerivedCollection } from './collection';
 import { State } from './state';
 type ArrayToRecord<T extends UnknownArray> = {
     [key: string]: T extends Array<infer U extends {}> ? U : never;
@@ -11,7 +11,7 @@ declare class List<T extends {}> {
     #private;
     constructor(initialValue: T[], keyConfig?: KeyConfig<T>);
     get [Symbol.toStringTag](): 'List';
-    get [Symbol.isConcatSpreadable](): boolean;
+    get [Symbol.isConcatSpreadable](): true;
     [Symbol.iterator](): IterableIterator<State<T>>;
     get length(): number;
     get(): T[];
@@ -27,8 +27,8 @@ declare class List<T extends {}> {
     sort(compareFn?: (a: T, b: T) => number): void;
     splice(start: number, deleteCount?: number, ...items: T[]): T[];
     on<K extends keyof Notifications>(type: K, listener: Listener<K>): Cleanup;
-    deriveCollection<R extends {}>(callback: (sourceValue: T) => R): Collection<R, T>;
-    deriveCollection<R extends {}>(callback: (sourceValue: T, abort: AbortSignal) => Promise<R>): Collection<R, T>;
+    deriveCollection<R extends {}>(callback: (sourceValue: T) => R): DerivedCollection<R, T>;
+    deriveCollection<R extends {}>(callback: (sourceValue: T, abort: AbortSignal) => Promise<R>): DerivedCollection<R, T>;
 }
 /**
  * Check if the provided value is a List instance

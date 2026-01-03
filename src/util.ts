@@ -63,9 +63,6 @@ const hasMethod = /*#__PURE__*/ <
 const isAbortError = /*#__PURE__*/ (error: unknown): boolean =>
 	error instanceof DOMException && error.name === 'AbortError'
 
-const toError = /*#__PURE__*/ (reason: unknown): Error =>
-	reason instanceof Error ? reason : Error(String(reason))
-
 const valueString = /*#__PURE__*/ (value: unknown): string =>
 	isString(value)
 		? `"${value}"`
@@ -90,6 +87,5 @@ export {
 	isUniformArray,
 	hasMethod,
 	isAbortError,
-	toError,
 	valueString,
 }

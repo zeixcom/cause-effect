@@ -1,6 +1,7 @@
 import type { UnknownRecord } from './diff'
+import { createError } from './errors'
 import type { SignalValues, UnknownSignalRecord } from './signal'
-import { toError, UNSET } from './util'
+import { UNSET } from './util'
 
 /* === Types === */
 
@@ -33,7 +34,7 @@ function resolve<S extends UnknownSignalRecord>(signals: S): ResolveResult<S> {
 			if (value === UNSET) pending = true
 			else values[key] = value
 		} catch (e) {
-			errors.push(toError(e))
+			errors.push(createError(e))
 		}
 	}
 

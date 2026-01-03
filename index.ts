@@ -1,12 +1,14 @@
 /**
  * @name Cause & Effect
- * @version 0.17.0
+ * @version 0.17.1
  * @author Esther Brunner
  */
 
 export {
-	Collection,
+	type Collection,
 	type CollectionCallback,
+	type CollectionSource,
+	DerivedCollection,
 	isCollection,
 	TYPE_COLLECTION,
 } from './src/classes/collection'
@@ -29,6 +31,7 @@ export {
 	List,
 	TYPE_LIST,
 } from './src/classes/list'
+export { isRef, Ref, TYPE_REF } from './src/classes/ref'
 export { isState, State, TYPE_STATE } from './src/classes/state'
 export {
 	BaseStore,
@@ -51,11 +54,17 @@ export {
 } from './src/effect'
 export {
 	CircularDependencyError,
+	createError,
 	DuplicateKeyError,
+	type Guard,
+	guardMutableSignal,
 	InvalidCallbackError,
+	InvalidCollectionSourceError,
 	InvalidSignalValueError,
 	NullishSignalValueError,
 	ReadonlySignalError,
+	validateCallback,
+	validateSignalValue,
 } from './src/errors'
 export { type MatchHandlers, match } from './src/match'
 export { type ResolveResult, resolve } from './src/resolve'
@@ -91,7 +100,6 @@ export {
 	isRecordOrArray,
 	isString,
 	isSymbol,
-	toError,
 	UNSET,
 	valueString,
 } from './src/util'

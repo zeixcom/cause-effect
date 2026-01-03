@@ -1,6 +1,7 @@
 import { isEqual } from '../src/diff'
 import {
 	CircularDependencyError,
+	createError,
 	InvalidCallbackError,
 	NullishSignalValueError,
 } from '../src/errors'
@@ -17,7 +18,6 @@ import {
 	isAsyncFunction,
 	isFunction,
 	isObjectOfType,
-	toError,
 	UNSET,
 } from '../src/util'
 
@@ -78,7 +78,7 @@ const createComputed = <T extends {}>(
 		error = undefined
 	}
 	const err = (e: unknown): undefined => {
-		const newError = toError(e)
+		const newError = createError(e)
 		changed =
 			!error ||
 			newError.name !== error.name ||

@@ -11,7 +11,7 @@ import {
 	type Watcher,
 } from '../system'
 import { isFunction, isNumber, isObjectOfType, isString, UNSET } from '../util'
-import { Collection, type CollectionCallback } from './collection'
+import { type CollectionCallback, DerivedCollection } from './collection'
 import { Composite } from './composite'
 import { State } from './state'
 
@@ -87,7 +87,7 @@ class List<T extends {}> {
 		return TYPE_LIST
 	}
 
-	get [Symbol.isConcatSpreadable](): boolean {
+	get [Symbol.isConcatSpreadable](): true {
 		return true
 	}
 
@@ -261,8 +261,9 @@ class List<T extends {}> {
 	on<K extends keyof Notifications>(type: K, listener: Listener<K>): Cleanup {
 		if (type === 'sort') {
 			this.#listeners.sort.add(listener as Listener<'sort'>)
-			return () =>
+			return () => {
 				this.#listeners.sort.delete(listener as Listener<'sort'>)
+			}
 		}
 
 		// For other types, delegate to the composite
@@ -276,14 +277,14 @@ class List<T extends {}> {
 
 	deriveCollection<R extends {}>(
 		callback: (sourceValue: T) => R,
-	): Collection<R, T>
+	): DerivedCollection<R, T>
 	deriveCollection<R extends {}>(
 		callback: (sourceValue: T, abort: AbortSignal) => Promise<R>,
-	): Collection<R, T>
+	): DerivedCollection<R, T>
 	deriveCollection<R extends {}>(
 		callback: CollectionCallback<R, T>,
-	): Collection<R, T> {
-		return new Collection(this, callback)
+	): DerivedCollection<R, T> {
+		return new DerivedCollection(this, callback)
 	}
 }
 

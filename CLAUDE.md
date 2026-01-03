@@ -6,21 +6,20 @@ Cause & Effect is a reactive state management library that implements the signal
 
 ### Core Philosophy
 - **Granular Reactivity**: Changes propagate only to dependent computations, minimizing unnecessary work
-- **Explicit Dependencies**: No hidden subscriptions or magic - dependencies are tracked through `.get()` calls
-- **Functional Design**: Immutable by default, with pure functions and predictable state updates
-- **Type Safety First**: Comprehensive TypeScript support with strict generic constraints
+- **Explicit Dependencies**: Dependencies are tracked through `.get()` calls, no hidden subscriptions
+- **Type Safety First**: Comprehensive TypeScript support with strict generic constraints (`T extends {}`)
 - **Performance Conscious**: Minimal overhead through efficient dependency tracking and batching
 
 ## Mental Model for Understanding the System
 
 Think of signals as **observable cells** in a spreadsheet:
-- **State signals** are like input cells where you can directly enter values
-- **Computed signals** are like formula cells that automatically recalculate when their dependencies change
-- **Store signals** are like structured data tables where individual columns (properties) are reactive
-- **List signals** with stable keys are like tables with persistent row IDs that survive sorting and reordering
-- **Effects** are like event handlers that trigger side effects when cells change
-
-The key insight is that the system tracks which cells (signals) are read during computation, creating an automatic dependency graph that ensures minimal and correct updates.
+- **State signals** are input cells for primitive values and objects
+- **Ref signals** are cells that reference external objects (DOM, Map, Set) requiring manual notification
+- **Computed signals** are formula cells that automatically recalculate when dependencies change
+- **Store signals** are structured tables where individual columns (properties) are reactive
+- **List signals** are tables with stable row IDs that survive sorting and reordering
+- **Collection signals** are read-only derived tables with item-level memoization
+- **Effects** are event handlers that trigger side effects when cells change
 
 ## Architectural Deep Dive
 
@@ -45,72 +44,52 @@ interface MutableSignal<T extends {}> extends Signal<T> {
   update(fn: (current: T) => T): void
 }
 
-// Collection signals are read-only derived arrays
-interface Collection<T extends {}, U extends {}> extends Signal<T[]> {
-  at(index: number): Computed<T> | undefined
-  byKey(key: string): Computed<T> | undefined
-  deriveCollection<R extends {}>(callback: CollectionCallback<R, T>): Collection<R, T>
+// Collection interface - implemented by various collection types
+interface Collection<T extends {}> {
+  get(): T[]
+  at(index: number): Signal<T> | undefined
+  byKey(key: string): Signal<T> | undefined
+  deriveCollection<R extends {}>(callback: CollectionCallback<R, T>): Collection<R>
 }
 ```
 
 The generic constraint `T extends {}` is crucial - it excludes `null` and `undefined` at the type level, preventing common runtime errors and making the API more predictable.
 
-### Collection Signal Deep Dive
+### Collection Architecture
 
-Collection signals provide read-only derived array transformations with automatic memoization:
+Collections are an interface implemented by different reactive array types:
 
-1. **Source Dependency**: Collections derive from Lists or other Collections
-2. **Item-level Memoization**: Each item transformation is individually memoized
-3. **Async Support**: Supports Promise-based transformations with cancellation
-4. **Stable Keys**: Maintains the same stable key system as source Lists
-5. **Chainable**: Collections can derive from other Collections for data pipelines
+**DerivedCollection**: Read-only transformations of Lists or other Collections
+- Item-level memoization with Computed signals
+- Async support with automatic cancellation
+- Chainable for data pipelines
 
-Key implementation details:
-- Individual items are Computed signals, not mutable signals
-- Automatically handles source List changes (add, remove, sort)
-- Supports both sync and async transformation callbacks
-- Lazy evaluation - transformations only run when accessed
-- Smart watcher management - only creates watchers when change listeners are active
-- Order preservation through internal `#order` array synchronized with source
+**ElementCollection**: DOM element collections with MutationObserver
+- Uses Ref signals for elements that change externally
+- Watches attributes and childList mutations
+- Stable keys for persistent element identity
 
-Collection Architecture:
-- **BaseCollection**: Core implementation with signal management and event handling
-- **Computed Creation**: Each source item gets its own computed signal with transformation callback
-- **Source Synchronization**: Listens to source events and maintains parallel structure
-- **Memory Efficiency**: Automatically cleans up computed signals when source items are removed
+Key patterns:
+- Collections return arrays of values via `.get()`
+- Individual items accessed as signals via `.at()` and `.byKey()`
+- All collections support `.deriveCollection()` for chaining
 
-### Store Signal Deep Dive
+### Store and List Architecture
 
-Store signals are the most complex part of the system. They transform plain objects or arrays into reactive data structures:
+**Store signals** (`createStore`): Transform objects into reactive data structures
+- Each property becomes its own signal via Proxy
+- Built on `Composite` class for signal management
+- Dynamic property addition/removal with proper reactivity
 
-1. **Property Proxification**: Each property becomes its own signal
-2. **Nested Reactivity**: Objects within objects recursively become stores
-3. **Array Support**: Arrays get special treatment with length tracking and efficient sorting
-4. **Dynamic Properties**: Runtime addition/removal of properties with proper reactivity
+**List signals** (`new List`): Arrays with stable keys and reactive items
+- Maintains stable keys that survive sorting and reordering
+- Built on `Composite` class for consistent signal management
+- Provides `byKey()`, `keyAt()`, `indexOfKey()` for key-based access
 
-Key implementation details:
-- Uses Proxy to intercept property access
-- Maintains internal signal instances for each property
-- Supports change notifications for fine-grained updates
-- Handles edge cases like symbol properties and prototype chain
-- For lists: maintains stable keys that persist through sorting, splicing, and reordering
-- Provides specialized methods: `byKey()`, `keyAt()`, `indexOfKey()`, `splice()` for array manipulation
-
-### MutableComposite Architecture
-
-Both Store and List signals are built on top of `MutableComposite`, which provides the common reactive property management:
-
-1. **Signal Management**: Maintains a `Map<string, MutableSignal>` of property signals
-2. **Change Detection**: Uses `diff()` to detect actual changes before triggering updates
-3. **Event System**: Emits granular notifications for add/change/remove operations
-4. **Validation**: Enforces type constraints and prevents invalid mutations
-5. **Performance**: Only creates signals when properties are first accessed or added
-
-Key implementation details:
-- Lazy signal creation for better memory usage
-- Efficient batch updates through change detection
-- Support for both object and array data structures
-- Automatic cleanup when properties are removed
+**Composite Architecture**: Shared foundation for Store and List
+- `Map<string, Signal>` for property/item signals
+- Event system for granular add/change/remove notifications
+- Lazy signal creation and automatic cleanup
 
 ### Computed Signal Memoization Strategy
 
@@ -134,51 +113,41 @@ Computed signals implement smart memoization:
 ```typescript
 const count = new State(0)
 const theme = new State<'light' | 'dark'>('light')
-const user = new State<User>({ id: 1, name: 'John Doe', email: 'john@example.com' }) // Replace entire user object
+```
+
+**Ref Signals (`new Ref`)**:
+- External objects that change outside the reactive system
+- DOM elements, Map, Set, Date objects, third-party APIs
+- Requires manual `.notify()` when external object changes
+
+```typescript
+const elementRef = new Ref(document.getElementById('status'))
+const cacheRef = new Ref(new Map())
+// When external change occurs: cacheRef.notify()
 ```
 
 **Store Signals (`createStore`)**:
 - Objects where individual properties change independently
-- Nested data structures
-- Form state where fields update individually
-- Configuration objects with multiple settings
 
 ```typescript
-const form = createStore({
-  email: '',
-  password: '',
-  errors: { email: null, password: null }
-})
-// form.email.set('user@example.com') // Only email subscribers react
+const user = createStore({ name: 'Alice', email: 'alice@example.com' })
+user.name.set('Bob') // Only name subscribers react
 ```
 
 **List Signals (`new List`)**:
-
-```ts
-// Lists with stable keys
+```typescript
 const todoList = new List([
-  { id: 'task1', text: 'Learn signals' },
-  { id: 'task2', text: 'Build app' }
-], todo => todo.id) // Use todo.id as stable key
-
-// Access by stable key instead of index
-const firstTodo = todoList.byKey('task1')
-firstTodo?.text.set('Learn signals deeply')
-
-// Sort while maintaining stable references
-todoList.sort((a, b) => a.text.localeCompare(b.text))
+  { id: 'task1', text: 'Learn signals' }
+], todo => todo.id)
+const firstTodo = todoList.byKey('task1') // Access by stable key
 ```
 
-**Collection Signals (`new Collection`)**:
-
-```ts
-// Read-only derived arrays with memoization
-const completedTodos = new Collection(todoList, todo => 
+**Collection Signals (`new DerivedCollection`)**:
+```typescript
+const completedTodos = new DerivedCollection(todoList, todo => 
   todo.completed ? { ...todo, status: 'done' } : null
 )
-
-// Async transformations with cancellation
-const todoDetails = new Collection(todoList, async (todo, abort) => {
+const todoDetails = new DerivedCollection(todoList, async (todo, abort) => {
   const response = await fetch(`/todos/${todo.id}`, { signal: abort })
   return { ...todo, details: await response.json() }
 })
@@ -245,19 +214,13 @@ The library provides several layers of error handling:
 4. **Helper Functions**: `resolve()` and `match()` for ergonomic error handling
 
 ```typescript
-// Robust async data fetching with error handling
+// Error handling with resolve() and match()
 const apiData = new Task(async (prev, abort) => {
-  try {
-    const response = await fetch('/api/data', { signal: abort })
-    if (!response.ok) throw new Error(`HTTP ${response.status}`)
-    return response.json()
-  } catch (error) {
-    if (abort.aborted) return prev // Cancelled, not an error
-    throw error // Real error
-  }
+  const response = await fetch('/api/data', { signal: abort })
+  if (!response.ok) throw new Error(`HTTP ${response.status}`)
+  return response.json()
 })
 
-// Pattern matching for comprehensive state handling
 createEffect(() => {
   match(resolve({ apiData }), {
     ok: ({ apiData }) => updateUI(apiData),
@@ -267,199 +230,70 @@ createEffect(() => {
 })
 ```
 
-### Performance Optimization Techniques
+### Performance Optimization
 
-1. **Batching Updates**: Use `batchSignalWrites()` for multiple synchronous updates
-2. **Selective Dependencies**: Structure computed signals to minimize dependencies
-3. **Cleanup Management**: Properly dispose of effects to prevent memory leaks
-4. **Shallow vs Deep Equality**: Use appropriate comparison strategies
-
+**Batching**: Use `batchSignalWrites()` for multiple updates
 ```typescript
-// Create a user store
-const user = createStore<{ id: number, name: string, email: string, age?: number }>({
-	id: 1,
-	name: 'John Doe',
-	email: 'john@example.com'
-})
-
-// Batch multiple updates to prevent intermediate states
 batchSignalWrites(() => {
-  user.name.set('Alice Doe')
-  user.age.set(30)
+  user.name.set('Alice')
   user.email.set('alice@example.com')
-}) // Only triggers effects once at the end
-
-// Optimize computed dependencies
-const userDisplay = new Memo(() => {
-  const { name, email } = user.get() // Gets entire object, will rerun also if age changes
-  return `${name} <${email}>`
-})
-
-// Better: more granular dependencies
-const userDisplay = new Memo(() => {
-  return `${user.name.get()} <${user.email.get()}>` // Only depends on name/email
-})
+}) // Single effect trigger
 ```
 
-## Integration Patterns
+**Granular Dependencies**: Structure computed signals to minimize dependencies
+```typescript
+// Bad: depends on entire user object
+const display = new Memo(() => user.get().name + user.get().email)
+// Good: only depends on specific properties  
+const display = new Memo(() => user.name.get() + user.email.get())
+```
 
-### Framework Integration
-The library is framework-agnostic but integrates well with:
-- **React**: Use effects to trigger re-renders
-- **Vue**: Integrate with Vue's reactivity system
-- **Svelte**: Use effects to update Svelte stores
-- **Vanilla JS**: Direct DOM manipulation in effects
-
-### Testing Strategies
-- **Unit Testing**: Test signal logic in isolation
-- **Integration Testing**: Test effect chains and async operations
-- **Mock Testing**: Mock external dependencies in computed signals
-- **Property Testing**: Use random inputs to verify invariants
-
-### Debugging Techniques
-- Use `resolve()` to inspect multiple signal states at once
-- Add logging effects for debugging reactivity chains
-- Use AbortSignal inspection for async operation debugging
-- Leverage TypeScript for compile-time dependency analysis
-
-## Common Pitfalls and How to Avoid Them
+## Common Pitfalls
 
 1. **Infinite Loops**: Don't update signals within their own computed callbacks
-2. **Stale Closures**: Be careful with captured values in async operations
-3. **Memory Leaks**: Always clean up effects when components unmount
-4. **Over-reactivity**: Structure data to minimize unnecessary updates
-5. **Async Race Conditions**: Trust the automatic cancellation, don't fight it
+2. **Memory Leaks**: Clean up effects when components unmount  
+3. **Over-reactivity**: Structure data to minimize unnecessary updates
+4. **Async Race Conditions**: Trust automatic cancellation with AbortSignal
 
-## Advanced Use Cases
+## Advanced Patterns
 
-### Building Reactive Data Structures
+### Event Bus with Type Safety
 ```typescript
-// Reactive list with computed properties
-const todos = new List<Todo[]>([])
-const completedCount = new Memo(() => 
-  todos.get().filter(todo => todo.completed).length
-)
-const remainingCount = new Memo(() => 
-  todos.get().length - completedCount.get()
-)
-```
-
-### Reactive State Machines
-```typescript
-const state = new State<'idle' | 'loading' | 'success' | 'error'>('idle')
-const canRetry = () => state.get() === 'error'
-const isLoading = () => state.get() === 'loading'
-```
-
-### Cross-Component Communication
-```typescript
-// Component ownership pattern: The component that emits events owns the store
-// Component B (the emitter) declares the shape of events it will emit upfront
-type EventBusSchema = {
+type Events = {
   userLogin: { userId: number; timestamp: number }
   userLogout: { userId: number }
-  userUpdate: { userId: number; profile: { name: string } }
 }
 
-// Initialize the event bus with proper typing
-const eventBus = createStore<EventBusSchema>({
+const eventBus = createStore<Events>({
   userLogin: UNSET,
-  userLogout: UNSET,
-  userUpdate: UNSET,
+  userLogout: UNSET
 })
 
-// Type-safe emit function
-const emit = <K extends keyof EventBusSchema>(
-  event: K,
-  data: EventBusSchema[K],
-) => {
+const emit = <K extends keyof Events>(event: K, data: Events[K]) => {
   eventBus[event].set(data)
 }
 
-// Type-safe on function with proper callback typing
-const on = <K extends keyof EventBusSchema>(
-  event: K,
-  callback: (data: EventBusSchema[K]) => void,
-) =>
+const on = <K extends keyof Events>(event: K, callback: (data: Events[K]) => void) =>
   createEffect(() => {
     const data = eventBus[event].get()
     if (data !== UNSET) callback(data)
   })
-
-// Usage example:
-// Component A listens for user events
-on('userLogin', (data) => {
-  console.log('User logged in:', data) // data is properly typed
-})
-
-// Component B emits user events
-eventBus.userLogin.set({ userId: 123, timestamp: Date.now() })
 ```
 
-### Reactive Data Processing Pipelines
-
+### Data Processing Pipelines
 ```typescript
-// Build complex data processing with Collections
-const rawData = new List([
-  { id: 1, value: 10, category: 'A' },
-  { id: 2, value: 20, category: 'B' },
-  { id: 3, value: 15, category: 'A' }
-])
-
-// Multi-step transformation pipeline
-const processedData = rawData
+const rawData = new List([{ id: 1, value: 10 }])
+const processed = rawData
   .deriveCollection(item => ({ ...item, doubled: item.value * 2 }))
-  .deriveCollection(item => ({ ...item, category: item.category.toLowerCase() }))
-
-const categoryTotals = new Collection(processedData, async (item, abort) => {
-  // Simulate async processing
-  await new Promise(resolve => setTimeout(resolve, 100))
-  return { category: item.category, contribution: item.doubled }
-})
-
-// Aggregation can be done with computed signals
-const totals = new Memo(() => {
-  const items = categoryTotals.get()
-  return items.reduce((acc, item) => {
-    acc[item.category] = (acc[item.category] || 0) + item.contribution
-    return acc
-  }, {} as Record<string, number>)
-})
+  .deriveCollection(item => ({ ...item, formatted: `$${item.doubled}` }))
 ```
 
-### Stable Keys for Persistent Item Identity
+### Stable List Keys
 ```typescript
-// Managing a list of items where order matters but identity persists
 const playlist = new List([
-  { id: 'track1', title: 'Song A', duration: 180 },
-  { id: 'track2', title: 'Song B', duration: 210 }
+  { id: 'track1', title: 'Song A' }
 ], track => track.id)
 
-// Get persistent reference to a specific track
-const firstTrackSignal = playlist.byKey('track1')
-const firstTrack = firstTrackSignal?.get()
-
-// Reorder playlist while maintaining references
+const firstTrack = playlist.byKey('track1') // Persists through sorting
 playlist.sort((a, b) => a.title.localeCompare(b.title))
-// firstTrackSignal still points to the same track!
-
-// Insert new track at specific position
-playlist.splice(1, 0, { id: 'track3', title: 'Song C', duration: 195 })
-
-// Find current position of a track by its stable key
-const track1Position = playlist.indexOfKey('track1')
-const keyAtPosition2 = playlist.keyAt(2)
 ```
-
-**Component ownership principle**: The component that emits events should own and initialize the event store. This creates clear boundaries and prevents coupling issues.
-
-**Why this pattern?**: By having the owning component (Component B) initialize all known events with `UNSET`, we get:
-1. **Fine-grained reactivity**: Each `on()` call establishes a direct dependency on the specific event signal
-2. **Full type safety**: Event names and data shapes are constrained at compile time
-3. **Simple logic**: No conditional updates, no store-wide watching in `on()`
-4. **Clear ownership**: Component B declares its event contract upfront with a schema
-5. **Better performance**: Only the specific event listeners trigger, not all listeners
-6. **Explicit dependencies**: Effects track exactly which events they care about
-7. **IntelliSense support**: IDEs can provide autocomplete for event names and data structures
-
-This context should help you understand not just what the code does, but why it's structured this way and how to use it effectively in real-world applications.

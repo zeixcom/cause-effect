@@ -1,6 +1,7 @@
 import { isEqual } from '../diff'
 import {
 	CircularDependencyError,
+	createError,
 	validateCallback,
 	validateSignalValue,
 } from '../errors'
@@ -17,7 +18,6 @@ import {
 	isAsyncFunction,
 	isObjectOfType,
 	isSyncFunction,
-	toError,
 	UNSET,
 } from '../util'
 
@@ -104,7 +104,7 @@ class Memo<T extends {}> {
 				} catch (e) {
 					// Err track
 					this.#value = UNSET
-					this.#error = toError(e)
+					this.#error = createError(e)
 					this.#computing = false
 					return
 				}
@@ -201,7 +201,7 @@ class Task<T extends {}> {
 			this.#error = undefined
 		}
 		const err = (e: unknown): undefined => {
-			const newError = toError(e)
+			const newError = createError(e)
 			this.#changed =
 				!this.#error ||
 				newError.name !== this.#error.name ||

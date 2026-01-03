@@ -12,7 +12,6 @@ var isRecord = (value) => isObjectOfType(value, "Object");
 var isRecordOrArray = (value) => isRecord(value) || Array.isArray(value);
 var isUniformArray = (value, guard = (item) => item != null) => Array.isArray(value) && value.every(guard);
 var isAbortError = (error) => error instanceof DOMException && error.name === "AbortError";
-var toError = (reason) => reason instanceof Error ? reason : Error(String(reason));
 var valueString = (value) => isString(value) ? `"${value}"` : !!value && typeof value === "object" ? JSON.stringify(value) : String(value);
 
 // src/diff.ts
@@ -209,7 +208,7 @@ class Memo {
           result = this.#callback(this.#value);
         } catch (e) {
           this.#value = UNSET;
-          this.#error = toError(e);
+          this.#error = createError(e);
           this.#computing = false;
           return;
         }
@@ -277,7 +276,7 @@ class Task {
       this.#error = undefined;
     };
     const err = (e) => {
-      const newError = toError(e);
+      const newError = createError(e);
       this.#changed = !this.#error || newError.name !== this.#error.name || newError.message !== this.#error.message;
       this.#value = UNSET;
       this.#error = newError;
@@ -651,12 +650,14 @@ class List {
   on(type, listener) {
     if (type === "sort") {
       this.#listeners.sort.add(listener);
-      return () => this.#listeners.sort.delete(listener);
+      return () => {
+        this.#listeners.sort.delete(listener);
+      };
     }
     return this.#composite.on(type, listener);
   }
   deriveCollection(callback) {
-    return new Collection(this, callback);
+    return new DerivedCollection(this, callback);
   }
 }
 var isList = (value) => isObjectOfType(value, TYPE_LIST);
@@ -812,6 +813,13 @@ class InvalidCallbackError extends TypeError {
   }
 }
 
+class InvalidCollectionSourceError extends TypeError {
+  constructor(where, value) {
+    super(`Invalid ${where} source ${valueString(value)}`);
+    this.name = "InvalidCollectionSourceError";
+  }
+}
+
 class InvalidSignalValueError extends TypeError {
   constructor(where, value) {
     super(`Invalid signal value ${valueString(value)} in ${where}`);
@@ -832,6 +840,7 @@ class ReadonlySignalError extends Error {
     this.name = "ReadonlySignalError";
   }
 }
+var createError = (reason) => reason instanceof Error ? reason : Error(String(reason));
 var validateCallback = (where, value, guard = isFunction) => {
   if (!guard(value))
     throw new InvalidCallbackError(where, value);
@@ -851,7 +860,7 @@ var guardMutableSignal = (what, value, signal) => {
 // src/classes/collection.ts
 var TYPE_COLLECTION = "Collection";
 
-class Collection {
+class DerivedCollection {
   #watchers = new Set;
   #source;
   #callback;
@@ -869,7 +878,7 @@ class Collection {
     if (isFunction(source))
       source = source();
     if (!isCollectionSource(source))
-      throw new Error("Invalid collection source");
+      throw new InvalidCollectionSourceError("derived collection", source);
     this.#source = source;
     this.#callback = callback;
     for (let i = 0;i < this.#source.length; i++) {
@@ -898,7 +907,11 @@ class Collection {
         const index = this.#order.indexOf(key);
         if (index >= 0)
           this.#order.splice(index, 1);
-        this.#removeWatcher(key);
+        const watcher = this.#ownWatchers.get(key);
+        if (watcher) {
+          watcher.stop();
+          this.#ownWatchers.delete(key);
+        }
       }
       this.#order = this.#order.filter(() => true);
       notifyWatchers(this.#watchers);
@@ -909,9 +922,6 @@ class Collection {
       notifyWatchers(this.#watchers);
       emitNotification(this.#listeners.sort, newOrder);
     });
-  }
-  get #value() {
-    return this.#order.map((key) => this.#signals.get(key)?.get()).filter((v) => v != null && v !== UNSET);
   }
   #add(key) {
     const computedCallback = isAsyncCollectionCallback(this.#callback) ? async (_, abort) => {
@@ -948,13 +958,6 @@ class Collection {
     this.#ownWatchers.set(key, watcher);
     watcher();
   }
-  #removeWatcher(key) {
-    const watcher = this.#ownWatchers.get(key);
-    if (watcher) {
-      watcher.stop();
-      this.#ownWatchers.delete(key);
-    }
-  }
   get [Symbol.toStringTag]() {
     return TYPE_COLLECTION;
   }
@@ -974,7 +977,7 @@ class Collection {
   }
   get() {
     subscribeActiveWatcher(this.#watchers);
-    return this.#value;
+    return this.#order.map((key) => this.#signals.get(key)?.get()).filter((v) => v != null && v !== UNSET);
   }
   at(index) {
     return this.#signals.get(this.#order[index]);
@@ -1009,12 +1012,34 @@ class Collection {
     };
   }
   deriveCollection(callback) {
-    return new Collection(this, callback);
+    return new DerivedCollection(this, callback);
   }
 }
 var isCollection = (value) => isObjectOfType(value, TYPE_COLLECTION);
 var isCollectionSource = (value) => isList(value) || isCollection(value);
 var isAsyncCollectionCallback = (callback) => isAsyncFunction(callback);
+// src/classes/ref.ts
+var TYPE_REF = "Ref";
+
+class Ref {
+  #watchers = new Set;
+  #value;
+  constructor(value, guard) {
+    validateSignalValue("ref", value, guard);
+    this.#value = value;
+  }
+  get [Symbol.toStringTag]() {
+    return TYPE_REF;
+  }
+  get() {
+    subscribeActiveWatcher(this.#watchers);
+    return this.#value;
+  }
+  notify() {
+    notifyWatchers(this.#watchers);
+  }
+}
+var isRef = (value) => isObjectOfType(value, TYPE_REF);
 // src/effect.ts
 var createEffect = (callback) => {
   if (!isFunction(callback) || callback.length > 1)
@@ -1066,9 +1091,10 @@ function match(result, handlers) {
       handlers.err?.(result.errors);
     else if (result.ok)
       handlers.ok(result.values);
-  } catch (error) {
-    if (handlers.err && (!result.errors || !result.errors.includes(toError(error))))
-      handlers.err(result.errors ? [...result.errors, toError(error)] : [toError(error)]);
+  } catch (e) {
+    const error = createError(e);
+    if (handlers.err && (!result.errors || !result.errors.includes(error)))
+      handlers.err(result.errors ? [...result.errors, error] : [error]);
     else
       throw error;
   }
@@ -1086,7 +1112,7 @@ function resolve(signals) {
       else
         values[key] = value;
     } catch (e) {
-      errors.push(toError(e));
+      errors.push(createError(e));
     }
   }
   if (pending)
@@ -1097,8 +1123,9 @@ function resolve(signals) {
 }
 export {
   valueString,
+  validateSignalValue,
+  validateCallback,
   trackSignalReads,
-  toError,
   subscribeActiveWatcher,
   resolve,
   notifyWatchers,
@@ -1109,6 +1136,7 @@ export {
   isStore,
   isState,
   isSignal,
+  isRef,
   isRecordOrArray,
   isRecord,
   isObjectOfType,
@@ -1122,12 +1150,14 @@ export {
   isCollection,
   isAsyncFunction,
   isAbortError,
+  guardMutableSignal,
   flushPendingReactions,
   emitNotification,
   diff,
   createWatcher,
   createStore,
   createSignal,
+  createError,
   createEffect,
   createComputed,
   batchSignalWrites,
@@ -1135,18 +1165,21 @@ export {
   Task,
   TYPE_STORE,
   TYPE_STATE,
+  TYPE_REF,
   TYPE_LIST,
   TYPE_COMPUTED,
   TYPE_COLLECTION,
   State,
+  Ref,
   ReadonlySignalError,
   NullishSignalValueError,
   Memo,
   List,
   InvalidSignalValueError,
+  InvalidCollectionSourceError,
   InvalidCallbackError,
   DuplicateKeyError,
-  Collection,
+  DerivedCollection,
   CircularDependencyError,
   BaseStore
 };

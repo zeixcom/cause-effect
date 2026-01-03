@@ -8,18 +8,20 @@ Cause & Effect is a reactive state management library for JavaScript/TypeScript 
 
 - **Signals**: Base reactive primitives with `.get()` method
 - **State**: Mutable signals for primitive values (`new State()`)
+- **Ref**: Signal wrappers for external objects that change outside reactive system (`new Ref()`)
 - **Computed**: Derived read-only signals with memoization, reducer capabilities and async support (`new Memo()`, `new Task()`)
 - **Store**: Mutable signals for objects with reactive properties (`createStore()`)
 - **List**: Mutable signals for arrays with stable keys and reactive entries (`new List()`)
-- **Collection**: Read-only derived arrays with item-level memoization and async support (`new Collection()`)
+- **Collection**: Interface for reactive collections (implemented by `DerivedCollection`)
 - **Effects**: Side effect handlers that react to signal changes (`createEffect()`)
 
 ## Key Files Structure
 
 - `src/classes/state.ts` - Mutable state signals
+- `src/classes/ref.ts` - Signal wrappers for external objects (DOM, Map, Set, etc.)
 - `src/classes/store.ts` - Object stores with reactive properties
 - `src/classes/list.ts` - Array stores with stable keys and reactive items
-- `src/classes/collection.ts` - Read-only derived arrays with memoization
+- `src/classes/collection.ts` - Collection interface and DerivedCollection implementation
 - `src/classes/computed.ts` - Computed/derived signals
 - `src/signal.ts` - Base signal types and utilities
 - `src/effect.ts` - Effect system
@@ -76,6 +78,10 @@ Cause & Effect is a reactive state management library for JavaScript/TypeScript 
 const count = new State(42)
 const name = new State('Alice')
 const actions = new State<'increment' | 'decrement'>('increment')
+
+// Ref for external objects
+const elementRef = new Ref(document.getElementById('status'))
+const cacheRef = new Ref(new Map())
 
 // Store for objects
 const user = createStore({ name: 'Alice', age: 30 })
@@ -145,7 +151,6 @@ function isSignal<T extends {}>(value: unknown): value is Signal<T>
 const items = new List(['a', 'b', 'c'])
 
 // String prefix keys
-// Lists with stable keys
 const items = new List(['apple', 'banana'], 'fruit')
 // Creates keys: 'fruit0', 'fruit1'
 
@@ -156,7 +161,7 @@ const users = new List([
 ], user => user.id) // Uses user.id as stable key
 
 // Collections derived from lists
-const userProfiles = new Collection(users, user => ({
+const userProfiles = new DerivedCollection(users, user => ({
   ...user,
   displayName: `${user.name} (ID: ${user.id})`
 }))
