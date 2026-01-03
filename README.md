@@ -168,14 +168,7 @@ settings.add('timeout', 5000)
 settings.remove('timeout')
 ```
 
-The `add()` and `remove()` methods are optimized for performance:
-- They bypass the full reconciliation process used by `set()` and `update()`
-- They're perfect for frequent single-property additions/removals
-- They trigger the same events and reactivity as other store operations
-
-Change Notifications:
-
-Stores emit notifications (sort of light-weight events) when properties are added, changed, or removed. You can listen to these notications using the `.on()` method:
+Change Notifications using the `.on()` method:
 
 ```js
 const user = createStore({ name: 'Alice', age: 30 })
@@ -223,6 +216,8 @@ items.sort()
 console.log(items.byKey(key))     // 'orange'
 console.log(items.indexOfKey(key)) // current index
 ```
+
+Lists have `.add()`, `.remove()` and `.on()` methods like stores. In addition, they have `.sort()` and `.splice()` methods. But unlike stores, deeply nested properties in items are not converted to individual signals.
 
 ### Collection
 
@@ -319,8 +314,9 @@ createEffect(() => {
 })
 ```
 
-## Signakl Type Decision Tree
+## Signal Type Decision Tree
 
+```
 Is the value managed *inside* the reactive system?
 │
 ├─ No → Use `Ref`
@@ -362,6 +358,7 @@ Is the value managed *inside* the reactive system?
         └─ Is it derived / read-only transformation of a `List` or `Collection`?
               └─ Yes → `Collection`
                  (memoized + supports async mapping + chaining)
+```
 
 ## Advanced Usage
 
