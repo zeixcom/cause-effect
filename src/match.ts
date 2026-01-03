@@ -1,6 +1,6 @@
+import { createError } from './errors'
 import type { ResolveResult } from './resolve'
 import type { SignalValues, UnknownSignalRecord } from './signal'
-import { toError } from './util'
 
 /* === Types === */
 
@@ -32,17 +32,10 @@ function match<S extends UnknownSignalRecord>(
 		if (result.pending) handlers.nil?.()
 		else if (result.errors) handlers.err?.(result.errors)
 		else if (result.ok) handlers.ok(result.values)
-	} catch (error) {
-		// If handler throws, try error handler, otherwise rethrow
-		if (
-			handlers.err &&
-			(!result.errors || !result.errors.includes(toError(error)))
-		)
-			handlers.err(
-				result.errors
-					? [...result.errors, toError(error)]
-					: [toError(error)],
-			)
+	} catch (e) {
+		const error = createError(e)
+		if (handlers.err && (!result.errors || !result.errors.includes(error)))
+			handlers.err(result.errors ? [...result.errors, error] : [error])
 		else throw error
 	}
 }

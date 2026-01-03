@@ -1,6 +1,10 @@
 # Cause & Effect
 
+<<<<<<< Updated upstream
 Version 0.15.2
+=======
+Version 0.17.1
+>>>>>>> Stashed changes
 
 **Cause & Effect** is a lightweight, reactive state management library for JavaScript applications. It uses fine-grained reactivity with signals to create predictable and efficient data flow in your app.
 
@@ -12,7 +16,12 @@ Version 0.15.2
 
 - **State signals**: Hold values that can be directly modified: `createState()`
 - **Store signals**: Hold objects of nested reactive properties: `createStore()`
+<<<<<<< Updated upstream
 - **Computed signals**: Derive memoized values from other signals: `createComputed()`
+=======
+- **List signals**: Create keyed lists with reactive items: `new List()`
+- **Collection signals**: Read-only derived array transformations: `new DerivedCollection()`
+>>>>>>> Stashed changes
 - **Effects**: Run side effects when signals change: `createEffect()`
 
 ## Key Features
@@ -171,6 +180,106 @@ items.sort((a, b) => b.localeCompare(a)) // Reverse alphabetical
 console.log(items.get()) // ['date', 'cherry', 'banana', 'apple']
 ```
 
+<<<<<<< Updated upstream
+=======
+List signals have stable unique keys for entries. This means that the keys for each item in the list will not change even if the items are reordered. Keys default to a string representation of an auto-incrementing number. You can customize keys by passing a prefix string or a function to derive the key from the entry value as the second argument to `new List()`:
+
+```js
+const items = new List(['banana', 'apple', 'cherry', 'date'], 'item-')
+
+// Add returns the key of the added item
+const orangeKey = items.add('orange')
+
+// Sort preserves signal references
+items.sort()
+console.log(items.get()) // ['apple', 'banana', 'cherry', 'date', 'orange']
+
+// Access items by key
+console.log(items.byKey(orangeKey)) // 'orange'
+
+const users = new List(
+  [{ id: 'bob', name: 'Bob' }, { id: 'alice', name: 'Alice' }],
+  user => user.id
+)
+
+// Sort preserves signal references
+users.sort((a, b) => a.name.localeCompare(b.name)) // Alphabetical by name
+console.log(users.get()) // [{ id: 'alice', name: 'Alice' }, { id: 'bob', name: 'Bob' }]
+
+// Get current positional index for an item
+console.log(users.indexOfKey('alice')) // 0
+
+// Get key at index
+console.log(users.keyAt(1)) // 'bob'
+```
+
+### Collection Signals
+
+`new DerivedCollection()` creates read-only derived arrays that transform items from Lists with automatic memoization and async support:
+
+```js
+import { List, DerivedCollection, createEffect } from '@zeix/cause-effect'
+
+// Source list
+const users = new List([
+  { id: 1, name: 'Alice', role: 'admin' },
+  { id: 2, name: 'Bob', role: 'user' }
+])
+
+// Derived collection - transforms each user
+const userProfiles = new DerivedCollection(users, user => ({
+  ...user,
+  displayName: `${user.name} (${user.role})`
+}))
+
+// Collections are reactive and memoized
+createEffect(() => {
+  console.log('Profiles:', userProfiles.get())
+  // [{ id: 1, name: 'Alice', role: 'admin', displayName: 'Alice (admin)' }, ...]
+})
+
+// Individual items are computed signals
+console.log(userProfiles.at(0).get().displayName) // 'Alice (admin)'
+
+// Collections support async transformations
+const userDetails = new DerivedCollection(users, async (user, abort) => {
+  const response = await fetch(`/users/${user.id}`, { signal: abort })
+  return { ...user, details: await response.json() }
+})
+
+// Collections can be chained
+const adminProfiles = new DerivedCollection(userProfiles, profile => 
+  profile.role === 'admin' ? profile : null
+).filter(Boolean) // Remove null values
+```
+
+Collections support access by index or key:
+
+```js
+// Access by index or key (read-only)
+const firstProfile = userProfiles.at(0) // Returns computed signal
+const profileByKey = userProfiles.byKey('user1') // Access by stable key
+
+// Array methods work
+console.log(userProfiles.length) // Reactive length
+for (const profile of userProfiles) {
+  console.log(profile.get()) // Each item is a computed signal
+}
+
+// Lists can derive collections directly
+const userSummaries = users.deriveCollection(user => ({
+  id: user.id,
+  summary: `${user.name} is a ${user.role}`
+}))
+```
+
+#### When to Use Collections vs Lists
+
+- **Use `new List()`** for mutable arrays where you add, remove, sort, or modify items
+- **Use `new DerivedCollection()`** for read-only transformations, filtering, or async processing of Lists
+- **Chain collections** to create multi-step data pipelines with automatic memoization
+
+>>>>>>> Stashed changes
 #### Store Change Notifications
 
 Stores emit notifications (sort of light-weight events) when properties are added, changed, or removed. You can listen to these notications using the `.on()` method:
@@ -226,9 +335,63 @@ offRemove() // Stops listening to remove notifications
 offSort() // Stops listening to sort notifications
 ```
 
+<<<<<<< Updated upstream
 **When to use stores vs states:**
 - **Use `createStore()`** for objects with reactive properties that you want to access individually
 - **Use `createState()`** for primitive values or objects you replace entirely
+=======
+### Ref Signals
+
+`new Ref()` creates a signal that holds a reference to an external object that can change outside the reactive system. Unlike other signals that automatically detect changes, `Ref` signals require manual notification via `.notify()` when the referenced object changes.
+
+**Important**: Don't use `Ref` for objects you can manage with other signals:
+- **Primitives & arrays** → Use `new State()` (automatically detects changes via `isEqual()`)
+- **Plain objects** → Use `createStore()` (granular reactivity per property)
+- **Arrays with keys** → Use `new List()` (structured array operations)
+
+```js
+import { createEffect, Ref } from '@zeix/cause-effect'
+
+// Good: External DOM element that changes outside reactive system
+const elementRef = new Ref(document.getElementById('status'))
+
+createEffect(() => {
+  const el = elementRef.get()
+  console.log(`Element classes: ${el.className}`)
+})
+
+// When DOM changes externally (via other libraries, user interaction, etc.)
+elementRef.notify() // Manually trigger reactivity
+```
+
+#### When to Use
+
+Use `Ref` specifically for **non-reactive objects** that change externally:
+
+- **DOM elements**
+- **Third-party objects** (Map, Set, Date, WebSocket, Database connections)
+- **External APIs** that mutate objects directly
+- **Server resources** where you can detect but not control changes
+
+```js
+// Good: Map that changes via external API calls
+const cache = new Map([['user1', { name: 'Alice' }]])
+const cacheRef = new Ref(cache)
+
+createEffect(() => {
+  const map = cacheRef.get()
+  console.log(`Cache size: ${map.size}`)
+})
+
+// When external API updates the cache
+cache.set('user2', { name: 'Bob' })
+cacheRef.notify() // Manual notification required
+
+// Bad: Use State instead for plain objects
+// const config = { host: 'localhost' }  // Use new State(config)
+// const configRef = new Ref(config)     // Don't do this!
+```
+>>>>>>> Stashed changes
 
 ### Computed Signals
 

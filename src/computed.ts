@@ -1,5 +1,15 @@
+<<<<<<< Updated upstream:src/computed.ts
 import { isEqual } from './diff'
 import { CircularDependencyError } from './errors'
+=======
+import { isEqual } from '../src/diff'
+import {
+	CircularDependencyError,
+	createError,
+	InvalidCallbackError,
+	NullishSignalValueError,
+} from '../src/errors'
+>>>>>>> Stashed changes:archive/computed.ts
 import {
 	createWatcher,
 	flush,
@@ -13,7 +23,6 @@ import {
 	isAsyncFunction,
 	isFunction,
 	isObjectOfType,
-	toError,
 	UNSET,
 } from './util'
 
@@ -66,7 +75,7 @@ const createComputed = <T extends {}>(fn: ComputedCallback<T>): Computed<T> => {
 		error = undefined
 	}
 	const err = (e: unknown): undefined => {
-		const newError = toError(e)
+		const newError = createError(e)
 		changed =
 			!error ||
 			newError.name !== error.name ||

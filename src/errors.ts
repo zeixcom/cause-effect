@@ -1,3 +1,15 @@
+<<<<<<< Updated upstream
+=======
+import { isMutableSignal, type MutableSignal } from './signal'
+import { isFunction, isSymbol, UNSET, valueString } from './util'
+
+/* === Types === */
+
+type Guard<T> = (value: unknown) => value is T
+
+/* === Classes === */
+
+>>>>>>> Stashed changes
 class CircularDependencyError extends Error {
 	constructor(where: string) {
 		super(`Circular dependency detected in ${where}`)
@@ -5,6 +17,34 @@ class CircularDependencyError extends Error {
 	}
 }
 
+<<<<<<< Updated upstream
+=======
+class DuplicateKeyError extends Error {
+	constructor(where: string, key: string, value?: unknown) {
+		super(
+			`Could not add ${where} key "${key}"${
+				value ? ` with value ${valueString(value)}` : ''
+			} because it already exists`,
+		)
+		this.name = 'DuplicateKeyError'
+	}
+}
+
+class InvalidCallbackError extends TypeError {
+	constructor(where: string, value: unknown) {
+		super(`Invalid ${where} callback ${valueString(value)}`)
+		this.name = 'InvalidCallbackError'
+	}
+}
+
+class InvalidCollectionSourceError extends TypeError {
+	constructor(where: string, value: unknown) {
+		super(`Invalid ${where} source ${valueString(value)}`)
+		this.name = 'InvalidCollectionSourceError'
+	}
+}
+
+>>>>>>> Stashed changes
 class InvalidSignalValueError extends TypeError {
 	constructor(where: string, value: string) {
 		super(`Invalid signal value ${value} in ${where}`)
@@ -28,6 +68,7 @@ class StoreKeyExistsError extends Error {
 	}
 }
 
+<<<<<<< Updated upstream
 class StoreKeyRangeError extends RangeError {
 	constructor(index: number) {
 		super(
@@ -35,6 +76,19 @@ class StoreKeyRangeError extends RangeError {
 		)
 		this.name = 'StoreKeyRangeError'
 	}
+=======
+/* === Functions === */
+
+const createError = /*#__PURE__*/ (reason: unknown): Error =>
+	reason instanceof Error ? reason : Error(String(reason))
+
+const validateCallback = (
+	where: string,
+	value: unknown,
+	guard: (value: unknown) => boolean = isFunction,
+): void => {
+	if (!guard(value)) throw new InvalidCallbackError(where, value)
+>>>>>>> Stashed changes
 }
 
 class StoreKeyReadonlyError extends Error {
@@ -47,10 +101,24 @@ class StoreKeyReadonlyError extends Error {
 }
 
 export {
+	type Guard,
 	CircularDependencyError,
+<<<<<<< Updated upstream
 	InvalidSignalValueError,
 	NullishSignalValueError,
 	StoreKeyExistsError,
 	StoreKeyRangeError,
 	StoreKeyReadonlyError,
+=======
+	DuplicateKeyError,
+	InvalidCallbackError,
+	InvalidCollectionSourceError,
+	InvalidSignalValueError,
+	NullishSignalValueError,
+	ReadonlySignalError,
+	createError,
+	validateCallback,
+	validateSignalValue,
+	guardMutableSignal,
+>>>>>>> Stashed changes
 }

@@ -61,6 +61,7 @@ const hasMethod = /*#__PURE__*/ <
 const isAbortError = /*#__PURE__*/ (error: unknown): boolean =>
 	error instanceof DOMException && error.name === 'AbortError'
 
+<<<<<<< Updated upstream
 const toError = /*#__PURE__*/ (reason: unknown): Error =>
 	reason instanceof Error ? reason : Error(String(reason))
 
@@ -85,6 +86,8 @@ const recordToArray = /*#__PURE__*/ <T>(
 	return array
 }
 
+=======
+>>>>>>> Stashed changes
 const valueString = /*#__PURE__*/ (value: unknown): string =>
 	isString(value)
 		? `"${value}"`
@@ -106,8 +109,11 @@ export {
 	isRecordOrArray,
 	hasMethod,
 	isAbortError,
+<<<<<<< Updated upstream
 	toError,
 	arrayToRecord,
 	recordToArray,
+=======
+>>>>>>> Stashed changes
 	valueString,
 }

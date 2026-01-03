@@ -1,6 +1,10 @@
 {
 	"name": "@zeix/cause-effect",
+<<<<<<< Updated upstream
 	"version": "0.15.2",
+=======
+	"version": "0.17.1",
+>>>>>>> Stashed changes
 	"author": "Esther Brunner",
 	"main": "index.js",
 	"module": "index.ts",
