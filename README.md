@@ -11,6 +11,8 @@ Version 0.17.1
 ### Core Concepts
 
 - **State signals**: Hold values that can be directly modified: `createState()`
+- **Memo signals**: Derive memoized values from other signals: `new Memo()`
+- **Task signals**: Execute asynchronous functions of other signals: `new Task()`
 - **Store signals**: Hold objects of nested reactive properties: `createStore()`
 - **List signals**: Create keyed lists with reactive items: `new List()`
 - **Collection signals**: Read-only derived array transformations: `new DerivedCollection()`
@@ -29,13 +31,13 @@ Version 0.17.1
 ## Quick Start
 
 ```js
-import { createState, createComputed, createEffect } from '@zeix/cause-effect'
+import { createEffect, Memo, State } from '@zeix/cause-effect'
 
 // 1. Create state
-const user = createState({ name: 'Alice', age: 30 })
+const user = new State({ name: 'Alice', age: 30 })
 
 // 2. Create computed values
-const greeting = createComputed(() => `Hello ${user.get().name}!`)
+const greeting = new Memo(() => `Hello ${user.get().name}!`)
 
 // 3. React to changes
 createEffect(() => {
@@ -63,7 +65,7 @@ bun add @zeix/cause-effect
 `new State()` creates a mutable signal. Every signal has a `.get()` method to access its current value. State signals also provide `.set()` to directly assign a new value and `.update()` to modify the value with a function.
 
 ```js
-import { State, createEffect } from '@zeix/cause-effect'
+import { createEffect, State } from '@zeix/cause-effect'
 
 const count = new State(42)
 createEffect(() => {
@@ -75,6 +77,84 @@ document.querySelector('.increment').addEventListener('click', () => {
 })
 // Click on button logs '25', '26', and so on
 ```
+
+### Computed Signals
+
+`new Memo()` creates a memoized read-only signal that automatically tracks dependencies and updates only when those dependencies change.
+
+```js
+import { State, Memo, createEffect } from '@zeix/cause-effect'
+
+const count = new State(42)
+const isEven = new Memo(() => !(count.get() % 2))
+createEffect(() => console.log(isEven.get())) // logs 'true'
+count.set(24) // logs nothing because 24 is also an even number
+document.querySelector('button.increment').addEventListener('click', () => {
+  count.update(v => ++v)
+})
+// Click on button logs 'false', 'true', and so on
+```
+
+#### When to Use
+
+**Performance tip**: For simple derivations, plain functions often outperform computed signals:
+
+```js
+// More performant for simple calculations
+const isEven = () => !(count.get() % 2)
+```
+
+**When to use which approach:**
+
+- **Use functions when**: The calculation is simple, inexpensive, or called infrequently
+- **Use `new Memo()` when**:
+  - The calculation is expensive
+  - You need to share the result between multiple consumers
+  - You're working with asynchronous operations
+  - You need to track specific error states
+
+#### Reducer Capabilities
+
+Computed signals can access their previous value, enabling reducer patterns for state accumulation and transitions:
+
+```js
+import { State, Memo } from '@zeix/cause-effect'
+
+const actions = new State('reset')
+const counter = new Memo((prev) => {
+  const action = actions.get()
+  switch (action) {
+    case 'increment': return prev + 1
+    case 'decrement': return prev - 1
+    case 'reset': return 0
+    default: return prev
+  }
+}, 0) // Initial value
+
+actions.set('increment') // counter.get() === 1
+actions.set('increment') // counter.get() === 2
+actions.set('reset')     // counter.get() === 0
+```
+
+#### Asynchronous Computations with Automatic Cancellation
+
+`new Task()` handles asynchronous operations with built-in cancellation support:
+
+```js
+import { State, Task } from '@zeix/cause-effect'
+
+const id = new State(1)
+const data = new Task(async (oldValue, abort) => {
+  const response = await fetch(`/api/users/${id.get()}`, { signal: abort })
+  if (!response.ok) throw new Error('Failed to fetch')
+  return response.json()
+})
+
+// When id changes, previous fetch is automatically cancelled
+id.set(2) // Cancels fetch for user 1, starts fetch for user 2
+```
+
+**Note**: Always use `new Task()` (not plain functions) for async operations to benefit from automatic cancellation, memoization, and state management.
 
 ### Store Signals
 
@@ -112,6 +192,13 @@ createEffect(() => {
 })
 ```
 
+#### When to Use
+
+**When to use stores vs states:**
+
+- **Use `createStore()`** for objects with properties that you want to access and modify individually.
+- **Use `new State()`** for primitive values (numbers, strings, booleans) or objects you access and replace entirely.
+
 #### Dynamic Properties
 
 Stores support dynamic property addition and removal at runtime using the `add()` and `remove()` methods:
@@ -141,7 +228,92 @@ The `add()` and `remove()` methods are optimized for performance:
 - They're perfect for frequent single-property additions/removals
 - They trigger the same events and reactivity as other store operations
 
+#### Store Change Notifications
+
+Stores emit notifications (sort of light-weight events) when properties are added, changed, or removed. You can listen to these notications using the `.on()` method:
+
+```js
+import { createStore } from '@zeix/cause-effect'
+
+const user = createStore({ name: 'Alice', age: 30 })
+
+// Listen for property additions
+const offAdd = user.on('add', (added) => {
+  console.log('Added properties:', added)
+})
+
+// Listen for property changes
+const offChange = user.on('change', (changed) => {
+  console.log('Changed properties:', changed)
+})
+
+// Listen for property removals
+const offRemove = user.on('remove', (removed) => {
+  console.log('Removed properties:', removed)
+})
+
+// These will trigger the respective notifications:
+user.add('email', 'alice@example.com') // Logs: "Added properties: { email: 'alice@example.com' }"
+user.age.set(31)                       // Logs: "Changed properties: { age: 31 }"
+user.remove('email')                   // Logs: "Removed properties: { email: UNSET }"
+
+Notifications are also fired when using `set()` or `update()` methods on the entire store:
+
+```js
+// This will fire multiple notifications based on what changed
+user.update(u => ({ ...u, name: 'Bob', city: 'New York' }))
+// Logs: "Changed properties: { name: 'Bob' }"
+// Logs: "Added properties: { city: 'New York' }"
+```
+
+To stop listening to notifications, call the returned cleanup function:
+
+```js
+offAdd() // Stops listening to add notifications
+offChange() // Stops listening to change notifications
+offRemove() // Stops listening to remove notifications
+```
+
 ### List Signals
+
+`new List()` creates a mutable signal for arrays with individually reactive items and stable keys. Each item becomes its own signal while maintaining persistent identity through sorting and reordering:
+
+```js
+import { List, createEffect } from '@zeix/cause-effect'
+
+const items = new List(['banana', 'apple', 'cherry'])
+
+// Duck-typing: behaves like an array
+console.log(items.length) // 3
+console.log(typeof items.length) // 'number'
+
+// Individual items are reactive
+createEffect(() => {
+  console.log(`First item: ${items[0].get()}`)
+})
+
+// Single-parameter add() appends to end
+items.add('date') // Adds at index 3
+console.log(items.get()) // ['banana', 'apple', 'cherry', 'date']
+
+// Splice allows removal and insertion at specific indices
+items.splice(1, 1, 'orange') // Removes 'apple' and inserts 'orange' at index 1
+console.log(items.get()) // ['banana', 'orange', 'cherry', 'date']
+
+// Listen for sort notifications (useful for UI animations)
+const items = createStore(['banana', 'apple', 'cherry'])
+const offSort = items.on('sort', (newOrder) => {
+  console.log('Items reordered:', newOrder)
+})
+
+// Efficient sorting preserves signal references
+items.sort() // Default: string comparison
+console.log(items.get()) // ['apple', 'banana', 'cherry', 'date', 'orange']
+
+// Custom sorting
+items.sort((a, b) => b.localeCompare(a)) // Reverse alphabetical
+console.log(items.get()) // ['orange', 'date', 'cherry', 'banana', 'apple']
+```
 
 List signals have stable unique keys for entries. This means that the keys for each item in the list will not change even if the items are reordered. Keys default to a string representation of an auto-incrementing number. You can customize keys by passing a prefix string or a function to derive the key from the entry value as the second argument to `new List()`:
 
@@ -240,61 +412,6 @@ const userSummaries = users.deriveCollection(user => ({
 - **Use `new DerivedCollection()`** for read-only transformations, filtering, or async processing of Lists
 - **Chain collections** to create multi-step data pipelines with automatic memoization
 
-#### Store Change Notifications
-
-Stores emit notifications (sort of light-weight events) when properties are added, changed, or removed. You can listen to these notications using the `.on()` method:
-
-```js
-import { createStore } from '@zeix/cause-effect'
-
-const user = createStore({ name: 'Alice', age: 30 })
-
-// Listen for property additions
-const offAdd = user.on('add', (added) => {
-  console.log('Added properties:', added)
-})
-
-// Listen for property changes
-const offChange = user.on('change', (changed) => {
-  console.log('Changed properties:', changed)
-})
-
-// Listen for property removals
-const offRemove = user.on('remove', (removed) => {
-  console.log('Removed properties:', removed)
-})
-
-// These will trigger the respective notifications:
-user.add('email', 'alice@example.com') // Logs: "Added properties: { email: 'alice@example.com' }"
-user.age.set(31)                       // Logs: "Changed properties: { age: 31 }"
-user.remove('email')                   // Logs: "Removed properties: { email: UNSET }"
-
-// Listen for sort notifications (useful for UI animations)
-const items = createStore(['banana', 'apple', 'cherry'])
-items.sort((a, b) => b.localeCompare(a)) // Reverse alphabetical
-const offSort = items.on('sort', (newOrder) => {
-  console.log('Items reordered:', newOrder) // ['2', '1', '0']
-})
-```
-
-Notifications are also fired when using `set()` or `update()` methods on the entire store:
-
-```js
-// This will fire multiple notifications based on what changed
-user.update(u => ({ ...u, name: 'Bob', city: 'New York' }))
-// Logs: "Changed properties: { name: 'Bob' }"
-// Logs: "Added properties: { city: 'New York' }"
-```
-
-To stop listening to notifications, call the returned cleanup function:
-
-```js
-offAdd() // Stops listening to add notifications
-offChange() // Stops listening to change notifications
-offRemove() // Stops listening to remove notifications
-offSort() // Stops listening to sort notifications
-```
-
 ### Ref Signals
 
 `new Ref()` creates a signal that holds a reference to an external object that can change outside the reactive system. Unlike other signals that automatically detect changes, `Ref` signals require manual notification via `.notify()` when the referenced object changes.
@@ -307,7 +424,6 @@ offSort() // Stops listening to sort notifications
 ```js
 import { createEffect, Ref } from '@zeix/cause-effect'
 
-// Good: External DOM element that changes outside reactive system
 const elementRef = new Ref(document.getElementById('status'))
 
 createEffect(() => {
@@ -329,7 +445,6 @@ Use `Ref` specifically for **non-reactive objects** that change externally:
 - **Server resources** where you can detect but not control changes
 
 ```js
-// Good: Map that changes via external API calls
 const cache = new Map([['user1', { name: 'Alice' }]])
 const cacheRef = new Ref(cache)
 
@@ -341,109 +456,7 @@ createEffect(() => {
 // When external API updates the cache
 cache.set('user2', { name: 'Bob' })
 cacheRef.notify() // Manual notification required
-
-// Bad: Use State instead for plain objects
-// const config = { host: 'localhost' }  // Use new State(config)
-// const configRef = new Ref(config)     // Don't do this!
 ```
-
-### Computed Signals
-
-`new Memo()` creates a memoized read-only signal that automatically tracks dependencies and updates only when those dependencies change.
-
-```js
-import { State, Memo, createEffect } from '@zeix/cause-effect'
-
-const count = new State(42)
-const isEven = new Memo(() => !(count.get() % 2))
-createEffect(() => console.log(isEven.get())) // logs 'true'
-count.set(24) // logs nothing because 24 is also an even number
-document.querySelector('button.increment').addEventListener('click', () => {
-  count.update(v => ++v)
-})
-// Click on button logs 'false', 'true', and so on
-```
-
-#### When to Use
-
-**Performance tip**: For simple derivations, plain functions often outperform computed signals:
-
-```js
-// More performant for simple calculations
-const isEven = () => !(count.get() % 2)
-```
-
-**When to use which approach:**
-
-- **Use functions when**: The calculation is simple, inexpensive, or called infrequently
-- **Use `new Memo()` when**:
-  - The calculation is expensive
-  - You need to share the result between multiple consumers
-  - You're working with asynchronous operations
-  - You need to track specific error states
-
-#### Reducer Capabilities
-
-Computed signals can access their previous value, enabling reducer patterns for state accumulation and transitions:
-
-```js
-import { State, Memo } from '@zeix/cause-effect'
-
-const actions = new State('reset')
-const counter = new Memo((prev) => {
-  const action = actions.get()
-  switch (action) {
-    case 'increment': return prev + 1
-    case 'decrement': return prev - 1
-    case 'reset': return 0
-    default: return prev
-  }
-}, 0) // Initial value
-
-actions.set('increment') // counter.get() === 1
-actions.set('increment') // counter.get() === 2
-actions.set('reset')     // counter.get() === 0
-```
-
-#### Asynchronous Computations with Automatic Cancellation
-
-`new Task()` handles asynchronous operations with built-in cancellation support:
-
-```js
-import { State, Task } from '@zeix/cause-effect'
-
-const id = new State(1)
-const data = new Task(async (oldValue, abort) => {
-  const response = await fetch(`/api/users/${id.get()}`, { signal: abort })
-  if (!response.ok) throw new Error('Failed to fetch')
-  return response.json()
-})
-
-// When id changes, previous fetch is automatically cancelled
-id.set(2) // Cancels fetch for user 1, starts fetch for user 2
-```
-
-Use helper functions to handle different states:
-
-```js
-import { resolve, match } from '@zeix/cause-effect'
-
-createEffect(() => {
-  match(resolve({ data }), {
-    ok: ({ data }) => console.log('User:', data),
-    nil: () => console.log('Loading...'), 
-    err: (errors) => console.error('Error:', errors[0])
-  })
-})
-```
-
-// When id changes, the previous request is automatically canceled
-document.querySelector('button.next').addEventListener('click', () => {
-  id.update(v => ++v)
-})
-```
-
-**Note**: Always use `new Task()` (not plain functions) for async operations to benefit from automatic cancellation, memoization, and state management.
 
 ## Effects and Error Handling
 
@@ -659,4 +672,4 @@ Feel free to contribute, report issues, or suggest improvements.
 
 License: [MIT](LICENSE)
 
-(c) 2025 - 2026 [Zeix AG](https://zeix.com)
+(c) 2024 - 2026 [Zeix AG](https://zeix.com)
