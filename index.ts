@@ -1,16 +1,10 @@
 /**
  * @name Cause & Effect
-<<<<<<< Updated upstream
- * @version 0.16.0
-=======
  * @version 0.17.1
->>>>>>> Stashed changes
  * @author Esther Brunner
  */
 
 export {
-<<<<<<< Updated upstream
-=======
 	type Collection,
 	type CollectionCallback,
 	type CollectionSource,
@@ -19,16 +13,16 @@ export {
 	TYPE_COLLECTION,
 } from './src/classes/collection'
 export {
->>>>>>> Stashed changes
 	type Computed,
-	type ComputedCallback,
 	createComputed,
 	isComputed,
-	isComputedCallback,
+	isMemoCallback,
+	isTaskCallback,
+	Memo,
+	type MemoCallback,
+	Task,
+	type TaskCallback,
 	TYPE_COMPUTED,
-<<<<<<< Updated upstream
-} from './src/computed'
-=======
 } from './src/classes/computed'
 export {
 	type ArrayToRecord,
@@ -46,14 +40,12 @@ export {
 	type Store,
 	TYPE_STORE,
 } from './src/classes/store'
->>>>>>> Stashed changes
 export {
 	type DiffResult,
 	diff,
 	isEqual,
 	type UnknownArray,
 	type UnknownRecord,
-	type UnknownRecordOrArray,
 } from './src/diff'
 export {
 	createEffect,
@@ -62,13 +54,6 @@ export {
 } from './src/effect'
 export {
 	CircularDependencyError,
-<<<<<<< Updated upstream
-	InvalidSignalValueError,
-	NullishSignalValueError,
-	StoreKeyExistsError,
-	StoreKeyRangeError,
-	StoreKeyReadonlyError,
-=======
 	createError,
 	DuplicateKeyError,
 	type Guard,
@@ -80,28 +65,29 @@ export {
 	ReadonlySignalError,
 	validateCallback,
 	validateSignalValue,
->>>>>>> Stashed changes
 } from './src/errors'
 export { type MatchHandlers, match } from './src/match'
 export { type ResolveResult, resolve } from './src/resolve'
 export {
+	createSignal,
 	isMutableSignal,
 	isSignal,
 	type Signal,
 	type SignalValues,
-	toSignal,
 	type UnknownSignalRecord,
 } from './src/signal'
-export { createState, isState, type State, TYPE_STATE } from './src/state'
-export { createStore, isStore, type Store, TYPE_STORE } from './src/store'
 export {
-	batch,
+	batchSignalWrites,
 	type Cleanup,
 	createWatcher,
-	flush,
-	notify,
-	observe,
-	subscribe,
+	emitNotification,
+	flushPendingReactions,
+	type Listener,
+	type Listeners,
+	type Notifications,
+	notifyWatchers,
+	subscribeActiveWatcher,
+	trackSignalReads,
 	type Watcher,
 } from './src/system'
 export {
@@ -109,6 +95,7 @@ export {
 	isAsyncFunction,
 	isFunction,
 	isNumber,
+	isObjectOfType,
 	isRecord,
 	isRecordOrArray,
 	isString,

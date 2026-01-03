@@ -23,6 +23,15 @@ const isAsyncFunction = /*#__PURE__*/ <T>(
 ): fn is (...args: unknown[]) => Promise<T> =>
 	isFunction(fn) && fn.constructor.name === 'AsyncFunction'
 
+const isSyncFunction = /*#__PURE__*/ <T extends unknown & { then?: undefined }>(
+	fn: unknown,
+): fn is (...args: unknown[]) => T =>
+	isFunction(fn) && fn.constructor.name !== 'AsyncFunction'
+
+const isNonNullObject = /*#__PURE__*/ (
+	value: unknown,
+): value is NonNullable<object> => value != null && typeof value === 'object'
+
 const isObjectOfType = /*#__PURE__*/ <T>(
 	value: unknown,
 	type: string,
@@ -38,17 +47,10 @@ const isRecordOrArray = /*#__PURE__*/ <
 	value: unknown,
 ): value is T => isRecord(value) || Array.isArray(value)
 
-const validArrayIndexes = /*#__PURE__*/ (
-	keys: Array<PropertyKey>,
-): number[] | null => {
-	if (!keys.length) return null
-	const indexes = keys.map(k =>
-		isString(k) ? parseInt(k, 10) : isNumber(k) ? k : NaN,
-	)
-	return indexes.every(index => Number.isFinite(index) && index >= 0)
-		? indexes.sort((a, b) => a - b)
-		: null
-}
+const isUniformArray = <T>(
+	value: unknown,
+	guard = (item: T): item is T & {} => item != null,
+): value is T[] => Array.isArray(value) && value.every(guard)
 
 const hasMethod = /*#__PURE__*/ <
 	T extends object & Record<string, (...args: unknown[]) => unknown>,
@@ -61,33 +63,6 @@ const hasMethod = /*#__PURE__*/ <
 const isAbortError = /*#__PURE__*/ (error: unknown): boolean =>
 	error instanceof DOMException && error.name === 'AbortError'
 
-<<<<<<< Updated upstream
-const toError = /*#__PURE__*/ (reason: unknown): Error =>
-	reason instanceof Error ? reason : Error(String(reason))
-
-const arrayToRecord = /*#__PURE__*/ <T>(array: T[]): Record<string, T> => {
-	const record: Record<string, T> = {}
-	for (let i = 0; i < array.length; i++) {
-		record[String(i)] = array[i]
-	}
-	return record
-}
-
-const recordToArray = /*#__PURE__*/ <T>(
-	record: Record<string | number, T>,
-): Record<string, T> | T[] => {
-	const indexes = validArrayIndexes(Object.keys(record))
-	if (indexes === null) return record
-
-	const array: T[] = []
-	for (const index of indexes) {
-		array.push(record[String(index)])
-	}
-	return array
-}
-
-=======
->>>>>>> Stashed changes
 const valueString = /*#__PURE__*/ (value: unknown): string =>
 	isString(value)
 		? `"${value}"`
@@ -104,16 +79,13 @@ export {
 	isSymbol,
 	isFunction,
 	isAsyncFunction,
+	isSyncFunction,
+	isNonNullObject,
 	isObjectOfType,
 	isRecord,
 	isRecordOrArray,
+	isUniformArray,
 	hasMethod,
 	isAbortError,
-<<<<<<< Updated upstream
-	toError,
-	arrayToRecord,
-	recordToArray,
-=======
->>>>>>> Stashed changes
 	valueString,
 }

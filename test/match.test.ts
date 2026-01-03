@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'bun:test'
-import { createComputed, createState, match, resolve, UNSET } from '../'
+import { Memo, match, resolve, State, Task, UNSET } from '../index.ts'
 
 /* === Tests === */
 
 describe('Match Function', () => {
 	test('should call ok handler for successful resolution', () => {
-		const a = createState(10)
-		const b = createState('hello')
+		const a = new State(10)
+		const b = new State('hello')
 		let okCalled = false
 		let okValues: { a: number; b: string } | null = null
 
@@ -32,8 +32,8 @@ describe('Match Function', () => {
 	})
 
 	test('should call nil handler for pending signals', () => {
-		const a = createState(10)
-		const b = createState(UNSET)
+		const a = new State(10)
+		const b = new State(UNSET)
 		let nilCalled = false
 
 		match(resolve({ a, b }), {
@@ -52,8 +52,8 @@ describe('Match Function', () => {
 	})
 
 	test('should call error handler for error signals', () => {
-		const a = createState(10)
-		const b = createComputed(() => {
+		const a = new State(10)
+		const b = new Memo(() => {
 			throw new Error('Test error')
 		})
 		let errCalled = false
@@ -78,7 +78,7 @@ describe('Match Function', () => {
 	})
 
 	test('should handle missing optional handlers gracefully', () => {
-		const a = createState(10)
+		const a = new State(10)
 		const result = resolve({ a })
 
 		// Should not throw even with only required ok handler (err and nil are optional)
@@ -92,7 +92,7 @@ describe('Match Function', () => {
 	})
 
 	test('should return void always', () => {
-		const a = createState(42)
+		const a = new State(42)
 
 		const returnValue = match(resolve({ a }), {
 			ok: () => {
@@ -105,7 +105,7 @@ describe('Match Function', () => {
 	})
 
 	test('should handle handler errors by calling error handler', () => {
-		const a = createState(10)
+		const a = new State(10)
 		let handlerErrorCalled = false
 		let handlerError: Error | null = null
 
@@ -125,7 +125,7 @@ describe('Match Function', () => {
 	})
 
 	test('should rethrow handler errors if no error handler available', () => {
-		const a = createState(10)
+		const a = new State(10)
 
 		expect(() => {
 			match(resolve({ a }), {
@@ -137,7 +137,7 @@ describe('Match Function', () => {
 	})
 
 	test('should combine existing errors with handler errors', () => {
-		const a = createComputed(() => {
+		const a = new Memo(() => {
 			throw new Error('Signal error')
 		})
 		let allErrors: readonly Error[] | null = null
@@ -167,9 +167,9 @@ describe('Match Function', () => {
 	})
 
 	test('should work with complex type inference', () => {
-		const user = createState({ id: 1, name: 'Alice' })
-		const posts = createState([{ id: 1, title: 'Hello' }])
-		const settings = createState({ theme: 'dark' })
+		const user = new State({ id: 1, name: 'Alice' })
+		const posts = new State([{ id: 1, title: 'Hello' }])
+		const settings = new State({ theme: 'dark' })
 
 		let typeTestPassed = false
 
@@ -194,8 +194,8 @@ describe('Match Function', () => {
 	})
 
 	test('should handle side effects only pattern', () => {
-		const count = createState(5)
-		const name = createState('test')
+		const count = new State(5)
+		const name = new State('test')
 		let sideEffectExecuted = false
 		let capturedData = ''
 
@@ -214,10 +214,10 @@ describe('Match Function', () => {
 	})
 
 	test('should handle multiple error types correctly', () => {
-		const error1 = createComputed(() => {
+		const error1 = new Memo(() => {
 			throw new Error('First error')
 		})
-		const error2 = createComputed(() => {
+		const error2 = new Memo(() => {
 			throw new Error('Second error')
 		})
 		let errorMessages: string[] = []
@@ -240,7 +240,7 @@ describe('Match Function', () => {
 		const wait = (ms: number) =>
 			new Promise(resolve => setTimeout(resolve, ms))
 
-		const asyncSignal = createComputed(async () => {
+		const asyncSignal = new Task(async () => {
 			await wait(10)
 			return 'async result'
 		})
@@ -280,7 +280,7 @@ describe('Match Function', () => {
 	})
 
 	test('should maintain referential transparency', () => {
-		const a = createState(42)
+		const a = new State(42)
 		const result = resolve({ a })
 		let callCount = 0
 
@@ -303,7 +303,7 @@ describe('Match Function', () => {
 
 describe('Match Function Integration', () => {
 	test('should work seamlessly with resolve', () => {
-		const data = createState({ id: 1, value: 'test' })
+		const data = new State({ id: 1, value: 'test' })
 		let processed = false
 		let processedValue = ''
 
@@ -322,12 +322,12 @@ describe('Match Function Integration', () => {
 		const wait = (ms: number) =>
 			new Promise(resolve => setTimeout(resolve, ms))
 
-		const syncData = createState('available')
-		const asyncData = createComputed(async () => {
+		const syncData = new State('available')
+		const asyncData = new Task(async () => {
 			await wait(10)
 			return 'loaded'
 		})
-		const errorData = createComputed(() => {
+		const errorData = new Memo(() => {
 			throw new Error('Failed to load')
 		})
 

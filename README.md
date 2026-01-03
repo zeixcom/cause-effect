@@ -1,10 +1,6 @@
 # Cause & Effect
 
-<<<<<<< Updated upstream
-Version 0.15.2
-=======
 Version 0.17.1
->>>>>>> Stashed changes
 
 **Cause & Effect** is a lightweight, reactive state management library for JavaScript applications. It uses fine-grained reactivity with signals to create predictable and efficient data flow in your app.
 
@@ -16,12 +12,8 @@ Version 0.17.1
 
 - **State signals**: Hold values that can be directly modified: `createState()`
 - **Store signals**: Hold objects of nested reactive properties: `createStore()`
-<<<<<<< Updated upstream
-- **Computed signals**: Derive memoized values from other signals: `createComputed()`
-=======
 - **List signals**: Create keyed lists with reactive items: `new List()`
 - **Collection signals**: Read-only derived array transformations: `new DerivedCollection()`
->>>>>>> Stashed changes
 - **Effects**: Run side effects when signals change: `createEffect()`
 
 ## Key Features
@@ -180,8 +172,6 @@ items.sort((a, b) => b.localeCompare(a)) // Reverse alphabetical
 console.log(items.get()) // ['date', 'cherry', 'banana', 'apple']
 ```
 
-<<<<<<< Updated upstream
-=======
 List signals have stable unique keys for entries. This means that the keys for each item in the list will not change even if the items are reordered. Keys default to a string representation of an auto-incrementing number. You can customize keys by passing a prefix string or a function to derive the key from the entry value as the second argument to `new List()`:
 
 ```js
@@ -279,7 +269,6 @@ const userSummaries = users.deriveCollection(user => ({
 - **Use `new DerivedCollection()`** for read-only transformations, filtering, or async processing of Lists
 - **Chain collections** to create multi-step data pipelines with automatic memoization
 
->>>>>>> Stashed changes
 #### Store Change Notifications
 
 Stores emit notifications (sort of light-weight events) when properties are added, changed, or removed. You can listen to these notications using the `.on()` method:
@@ -335,11 +324,6 @@ offRemove() // Stops listening to remove notifications
 offSort() // Stops listening to sort notifications
 ```
 
-<<<<<<< Updated upstream
-**When to use stores vs states:**
-- **Use `createStore()`** for objects with reactive properties that you want to access individually
-- **Use `createState()`** for primitive values or objects you replace entirely
-=======
 ### Ref Signals
 
 `new Ref()` creates a signal that holds a reference to an external object that can change outside the reactive system. Unlike other signals that automatically detect changes, `Ref` signals require manual notification via `.notify()` when the referenced object changes.
@@ -391,7 +375,6 @@ cacheRef.notify() // Manual notification required
 // const config = { host: 'localhost' }  // Use new State(config)
 // const configRef = new Ref(config)     // Don't do this!
 ```
->>>>>>> Stashed changes
 
 ### Computed Signals
 

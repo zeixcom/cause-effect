@@ -1,5 +1,3 @@
-<<<<<<< Updated upstream
-=======
 import { isMutableSignal, type MutableSignal } from './signal'
 import { isFunction, isSymbol, UNSET, valueString } from './util'
 
@@ -9,7 +7,6 @@ type Guard<T> = (value: unknown) => value is T
 
 /* === Classes === */
 
->>>>>>> Stashed changes
 class CircularDependencyError extends Error {
 	constructor(where: string) {
 		super(`Circular dependency detected in ${where}`)
@@ -17,8 +14,6 @@ class CircularDependencyError extends Error {
 	}
 }
 
-<<<<<<< Updated upstream
-=======
 class DuplicateKeyError extends Error {
 	constructor(where: string, key: string, value?: unknown) {
 		super(
@@ -44,10 +39,9 @@ class InvalidCollectionSourceError extends TypeError {
 	}
 }
 
->>>>>>> Stashed changes
 class InvalidSignalValueError extends TypeError {
-	constructor(where: string, value: string) {
-		super(`Invalid signal value ${value} in ${where}`)
+	constructor(where: string, value: unknown) {
+		super(`Invalid signal value ${valueString(value)} in ${where}`)
 		this.name = 'InvalidSignalValueError'
 	}
 }
@@ -59,24 +53,15 @@ class NullishSignalValueError extends TypeError {
 	}
 }
 
-class StoreKeyExistsError extends Error {
-	constructor(key: string, value: string) {
+class ReadonlySignalError extends Error {
+	constructor(what: string, value: unknown) {
 		super(
-			`Could not add store key "${key}" with value ${value} because it already exists`,
+			`Could not set ${what} to ${valueString(value)} because signal is read-only`,
 		)
-		this.name = 'StoreKeyExistsError'
+		this.name = 'ReadonlySignalError'
 	}
 }
 
-<<<<<<< Updated upstream
-class StoreKeyRangeError extends RangeError {
-	constructor(index: number) {
-		super(
-			`Could not remove store index ${String(index)} because it is out of range`,
-		)
-		this.name = 'StoreKeyRangeError'
-	}
-=======
 /* === Functions === */
 
 const createError = /*#__PURE__*/ (reason: unknown): Error =>
@@ -88,28 +73,30 @@ const validateCallback = (
 	guard: (value: unknown) => boolean = isFunction,
 ): void => {
 	if (!guard(value)) throw new InvalidCallbackError(where, value)
->>>>>>> Stashed changes
 }
 
-class StoreKeyReadonlyError extends Error {
-	constructor(key: string, value: string) {
-		super(
-			`Could not set store key "${key}" to ${value} because it is readonly`,
-		)
-		this.name = 'StoreKeyReadonlyError'
-	}
+const validateSignalValue = (
+	where: string,
+	value: unknown,
+	guard: (value: unknown) => boolean = () =>
+		!(isSymbol(value) && value !== UNSET) || isFunction(value),
+): void => {
+	if (value == null) throw new NullishSignalValueError(where)
+	if (!guard(value)) throw new InvalidSignalValueError(where, value)
+}
+
+const guardMutableSignal = <T extends {}>(
+	what: string,
+	value: unknown,
+	signal: unknown,
+): signal is MutableSignal<T> => {
+	if (!isMutableSignal(signal)) throw new ReadonlySignalError(what, value)
+	return true
 }
 
 export {
 	type Guard,
 	CircularDependencyError,
-<<<<<<< Updated upstream
-	InvalidSignalValueError,
-	NullishSignalValueError,
-	StoreKeyExistsError,
-	StoreKeyRangeError,
-	StoreKeyReadonlyError,
-=======
 	DuplicateKeyError,
 	InvalidCallbackError,
 	InvalidCollectionSourceError,
@@ -120,5 +107,4 @@ export {
 	validateCallback,
 	validateSignalValue,
 	guardMutableSignal,
->>>>>>> Stashed changes
 }

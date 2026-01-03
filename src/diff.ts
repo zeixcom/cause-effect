@@ -1,20 +1,16 @@
 import { CircularDependencyError } from './errors'
-import { isRecord, isRecordOrArray, UNSET } from './util'
+import { isNonNullObject, isRecord, isRecordOrArray, UNSET } from './util'
 
 /* === Types === */
 
-type UnknownRecord = Record<string, unknown & {}>
+type UnknownRecord = Record<string, unknown>
 type UnknownArray = ReadonlyArray<unknown & {}>
-type ArrayToRecord<T extends UnknownArray> = {
-	[key: string]: T extends Array<infer U extends {}> ? U : never
-}
-type UnknownRecordOrArray = UnknownRecord | ArrayToRecord<UnknownArray>
 
-type DiffResult<T extends UnknownRecordOrArray = UnknownRecord> = {
+type DiffResult = {
 	changed: boolean
-	add: Partial<T>
-	change: Partial<T>
-	remove: Partial<T>
+	add: UnknownRecord
+	change: UnknownRecord
+	remove: UnknownRecord
 }
 
 /* === Functions === */
@@ -32,14 +28,14 @@ const isEqual = <T>(a: T, b: T, visited?: WeakSet<object>): boolean => {
 	// Fast paths
 	if (Object.is(a, b)) return true
 	if (typeof a !== typeof b) return false
-	if (typeof a !== 'object' || a === null || b === null) return false
+	if (!isNonNullObject(a) || !isNonNullObject(b)) return false
 
 	// Cycle detection
 	if (!visited) visited = new WeakSet()
 	if (visited.has(a as object) || visited.has(b as object))
 		throw new CircularDependencyError('isEqual')
-	visited.add(a as object)
-	visited.add(b as object)
+	visited.add(a)
+	visited.add(b)
 
 	try {
 		if (Array.isArray(a) && Array.isArray(b)) {
@@ -59,14 +55,7 @@ const isEqual = <T>(a: T, b: T, visited?: WeakSet<object>): boolean => {
 			if (aKeys.length !== bKeys.length) return false
 			for (const key of aKeys) {
 				if (!(key in b)) return false
-				if (
-					!isEqual(
-						(a as Record<string, unknown>)[key],
-						(b as Record<string, unknown>)[key],
-						visited,
-					)
-				)
-					return false
+				if (!isEqual(a[key], b[key], visited)) return false
 			}
 			return true
 		}
@@ -75,8 +64,8 @@ const isEqual = <T>(a: T, b: T, visited?: WeakSet<object>): boolean => {
 		// (which would have been caught by Object.is at the beginning)
 		return false
 	} finally {
-		visited.delete(a as object)
-		visited.delete(b as object)
+		visited.delete(a)
+		visited.delete(b)
 	}
 }
 
@@ -86,12 +75,9 @@ const isEqual = <T>(a: T, b: T, visited?: WeakSet<object>): boolean => {
  * @since 0.15.0
  * @param {T} oldObj - The old record to compare
  * @param {T} newObj - The new record to compare
- * @returns {DiffResult<T>} The result of the comparison
+ * @returns {DiffResult} The result of the comparison
  */
-const diff = <T extends UnknownRecordOrArray>(
-	oldObj: T,
-	newObj: T,
-): DiffResult<T> => {
+const diff = <T extends UnknownRecord>(oldObj: T, newObj: T): DiffResult => {
 	// Guard against non-objects that can't be diffed properly with Object.keys and 'in' operator
 	const oldValid = isRecordOrArray(oldObj)
 	const newValid = isRecordOrArray(newObj)
@@ -108,9 +94,9 @@ const diff = <T extends UnknownRecordOrArray>(
 
 	const visited = new WeakSet()
 
-	const add: Partial<T> = {}
-	const change: Partial<T> = {}
-	const remove: Partial<T> = {}
+	const add = {} as UnknownRecord
+	const change = {} as UnknownRecord
+	const remove = {} as UnknownRecord
 
 	const oldKeys = Object.keys(oldObj)
 	const newKeys = Object.keys(newObj)
@@ -121,41 +107,31 @@ const diff = <T extends UnknownRecordOrArray>(
 		const newHas = key in newObj
 
 		if (!oldHas && newHas) {
-			add[key as keyof T] = newObj[key] as T[keyof T]
+			add[key] = newObj[key]
 			continue
 		} else if (oldHas && !newHas) {
-			remove[key as keyof T] = UNSET
+			remove[key] = UNSET
 			continue
 		}
 
-		const oldValue = oldObj[key] as T[keyof T]
-		const newValue = newObj[key] as T[keyof T]
+		const oldValue = oldObj[key]
+		const newValue = newObj[key]
 
-		if (!isEqual(oldValue, newValue, visited))
-			change[key as keyof T] = newValue
+		if (!isEqual(oldValue, newValue, visited)) change[key] = newValue
 	}
 
-	const changed =
-		Object.keys(add).length > 0 ||
-		Object.keys(change).length > 0 ||
-		Object.keys(remove).length > 0
-
 	return {
-		changed,
 		add,
 		change,
 		remove,
+		changed: !!(
+			Object.keys(add).length ||
+			Object.keys(change).length ||
+			Object.keys(remove).length
+		),
 	}
 }
 
 /* === Exports === */
 
-export {
-	type ArrayToRecord,
-	type DiffResult,
-	diff,
-	isEqual,
-	type UnknownRecord,
-	type UnknownArray,
-	type UnknownRecordOrArray,
-}
+export { type DiffResult, diff, isEqual, type UnknownRecord, type UnknownArray }

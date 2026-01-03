@@ -5,7 +5,7 @@ import {
 	isEqual,
 	UNSET,
 	type UnknownRecord,
-} from '..'
+} from '../index.ts'
 
 describe('diff', () => {
 	describe('basic object diffing', () => {
@@ -379,7 +379,7 @@ describe('diff', () => {
 		type OptionalKeysType = {
 			required: string
 			optional?: number
-			maybeUndefined?: string | undefined
+			maybeUndefined?: string
 		}
 
 		test('should handle optional keys correctly', () => {
