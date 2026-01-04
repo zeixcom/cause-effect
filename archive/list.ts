@@ -10,13 +10,14 @@ import {
 	batchSignalWrites,
 	type Cleanup,
 	createWatcher,
-	emitNotification,
-	type Listener,
-	type Listeners,
-	type Notifications,
+	type Hook,
+	type HookCallback,
+	type HookCallbacks,
 	notifyWatchers,
 	subscribeActiveWatcher,
 	trackSignalReads,
+	triggerHook,
+	UNSET,
 	type Watcher,
 } from '../src/system'
 import {
@@ -26,7 +27,6 @@ import {
 	isRecord,
 	isString,
 	isSymbol,
-	UNSET,
 } from '../src/util'
 import {
 	type Collection,
@@ -63,7 +63,7 @@ type List<T extends {}> = {
 	update(fn: (value: T) => T): void
 	sort<U = T>(compareFn?: (a: U, b: U) => number): void
 	splice(start: number, deleteCount?: number, ...items: T[]): T[]
-	on<K extends keyof Notifications>(type: K, listener: Listener<K>): Cleanup
+	on(type: Hook, callback: HookCallback): Cleanup
 	remove(index: number): void
 }
 
@@ -90,12 +90,7 @@ const createList = <T extends {}>(
 	if (initialValue == null) throw new NullishSignalValueError('store')
 
 	const watchers = new Set<Watcher>()
-	const listeners: Listeners = {
-		add: new Set<Listener<'add'>>(),
-		change: new Set<Listener<'change'>>(),
-		remove: new Set<Listener<'remove'>>(),
-		sort: new Set<Listener<'sort'>>(),
-	}
+	const hookCallbacks: HookCallbacks = {}
 	const signals = new Map<string, MutableSignal<T>>()
 	const ownWatchers = new Map<string, Watcher>()
 
@@ -163,7 +158,7 @@ const createList = <T extends {}>(
 		const watcher = createWatcher(() => {
 			trackSignalReads(watcher, () => {
 				signal.get() // Subscribe to the signal
-				emitNotification(listeners.change, [key])
+				triggerHook(hookCallbacks.change, [key])
 			})
 		})
 		ownWatchers.set(key, watcher)
@@ -191,11 +186,11 @@ const createList = <T extends {}>(
 		signals.set(key, signal)
 		if (!order.includes(key)) order.push(key)
 		// @ts-expect-error ignore
-		if (listeners.change.size) addOwnWatcher(key, signal)
+		if (hookCallbacks.change?.size) addOwnWatcher(key, signal)
 
 		if (single) {
 			notifyWatchers(watchers)
-			emitNotification(listeners.add, [key])
+			triggerHook(hookCallbacks.add, [key])
 		}
 		return true
 	}
@@ -218,7 +213,7 @@ const createList = <T extends {}>(
 		if (single) {
 			order = order.filter(() => true) // Compact array
 			notifyWatchers(watchers)
-			emitNotification(listeners.remove, [key])
+			triggerHook(hookCallbacks.remove, [key])
 		}
 	}
 
@@ -233,9 +228,9 @@ const createList = <T extends {}>(
 			// Queue initial additions event to allow listeners to be added first
 			if (initialRun)
 				setTimeout(() => {
-					emitNotification(listeners.add, Object.keys(changes.add))
+					triggerHook(hookCallbacks.add, Object.keys(changes.add))
 				}, 0)
-			else emitNotification(listeners.add, Object.keys(changes.add))
+			else triggerHook(hookCallbacks.add, Object.keys(changes.add))
 		}
 
 		// Changes
@@ -249,7 +244,7 @@ const createList = <T extends {}>(
 					if (isMutableSignal(signal)) signal.set(value)
 					else throw new ReadonlySignalError(key, value)
 				}
-				emitNotification(listeners.change, Object.keys(changes.change))
+				triggerHook(hookCallbacks.change, Object.keys(changes.change))
 			})
 		}
 
@@ -257,7 +252,7 @@ const createList = <T extends {}>(
 		if (Object.keys(changes.remove).length) {
 			for (const key in changes.remove) removeProperty(key)
 			order = order.filter(() => true)
-			emitNotification(listeners.remove, Object.keys(changes.remove))
+			triggerHook(hookCallbacks.remove, Object.keys(changes.remove))
 		}
 
 		return changes.changed
@@ -401,7 +396,7 @@ const createList = <T extends {}>(
 				if (!isEqual(newOrder, order)) {
 					order = newOrder
 					notifyWatchers(watchers)
-					emitNotification(listeners.sort, order)
+					triggerHook(hookCallbacks.sort, order)
 				}
 			},
 		},
@@ -473,18 +468,16 @@ const createList = <T extends {}>(
 			},
 		},
 		on: {
-			value: <K extends keyof Notifications>(
-				type: K,
-				listener: Listener<K>,
-			): Cleanup => {
-				listeners[type].add(listener)
+			value: (type: Hook, callback: HookCallback): Cleanup => {
+				hookCallbacks[type] ||= new Set()
+				hookCallbacks[type].add(callback)
 				if (type === 'change' && !ownWatchers.size) {
 					for (const [key, signal] of signals)
 						addOwnWatcher(key, signal)
 				}
 				return () => {
-					listeners[type].delete(listener)
-					if (type === 'change' && !listeners.change.size) {
+					hookCallbacks[type]?.delete(callback)
+					if (type === 'change' && !hookCallbacks.change?.size) {
 						if (ownWatchers.size) {
 							for (const watcher of ownWatchers.values())
 								watcher.stop()

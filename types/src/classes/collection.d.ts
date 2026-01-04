@@ -31,7 +31,7 @@ declare class DerivedCollection<T extends {}, U extends {}> implements Collectio
     byKey(key: string): Computed<T> | undefined;
     keyAt(index: number): string | undefined;
     indexOfKey(key: string): number;
-    on<K extends Hook>(type: K, callback: HookCallback): Cleanup;
+    on(type: Hook, callback: HookCallback): Cleanup;
     deriveCollection<R extends {}>(callback: (sourceValue: T) => R): DerivedCollection<R, T>;
     deriveCollection<R extends {}>(callback: (sourceValue: T, abort: AbortSignal) => Promise<R>): DerivedCollection<R, T>;
     get length(): number;

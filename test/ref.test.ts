@@ -1,6 +1,7 @@
 import { expect, mock, test } from 'bun:test'
 import { isRef, Ref } from '../src/classes/ref'
 import { createEffect } from '../src/effect'
+import { HOOK_WATCH } from '../src/system'
 
 test('Ref - basic functionality', () => {
 	const obj = { name: 'test', value: 42 }
@@ -224,4 +225,157 @@ test('Ref - handles complex nested objects', () => {
 	ref.notify()
 
 	expect(userCount).toBe(2)
+})
+
+test('Ref - HOOK_WATCH lazy resource management', async () => {
+	// 1. Create Ref with current Date
+	const currentDate = new Date()
+	const ref = new Ref(currentDate)
+
+	let counter = 0
+	let intervalId: Timer | undefined
+
+	// 2. Add HOOK_WATCH callback that starts setInterval and returns cleanup
+	const cleanupHookCallback = ref.on(HOOK_WATCH, () => {
+		intervalId = setInterval(() => {
+			counter++
+		}, 10) // Use short interval for faster test
+
+		// Return cleanup function to clear interval
+		return () => {
+			if (intervalId) {
+				clearInterval(intervalId)
+				intervalId = undefined
+			}
+		}
+	})
+
+	// 3. Counter should not be running yet
+	expect(counter).toBe(0)
+
+	// Wait a bit to ensure counter doesn't increment
+	await new Promise(resolve => setTimeout(resolve, 50))
+	expect(counter).toBe(0)
+	expect(intervalId).toBeUndefined()
+
+	// 4. Effect subscribes by .get()ting the signal value
+	const effectCleanup = createEffect(() => {
+		ref.get()
+	})
+
+	// 5. Counter should now be running
+	await new Promise(resolve => setTimeout(resolve, 50))
+	expect(counter).toBeGreaterThan(0)
+	expect(intervalId).toBeDefined()
+
+	// 6. Call effect cleanup, which should stop internal watcher and unsubscribe
+	effectCleanup()
+	const counterAfterStop = counter
+
+	// 7. Ref signal should call #unwatch() and counter should stop incrementing
+	await new Promise(resolve => setTimeout(resolve, 50))
+	expect(counter).toBe(counterAfterStop) // Counter should not have incremented
+	expect(intervalId).toBeUndefined() // Interval should be cleared
+
+	// Clean up hook callback registration
+	cleanupHookCallback()
+})
+
+test('Ref - HOOK_WATCH exception handling', async () => {
+	const ref = new Ref({ test: 'value' })
+
+	// Mock console.error to capture error logs
+	const originalError = console.error
+	const errorSpy = mock(() => {})
+	console.error = errorSpy
+
+	let successfulCallbackCalled = false
+	let throwingCallbackCalled = false
+
+	// Add callback that throws an exception
+	const cleanup1 = ref.on(HOOK_WATCH, () => {
+		throwingCallbackCalled = true
+		throw new Error('Test error in HOOK_WATCH callback')
+	})
+
+	// Add callback that works normally
+	const cleanup2 = ref.on(HOOK_WATCH, () => {
+		successfulCallbackCalled = true
+		return () => {
+			// cleanup function
+		}
+	})
+
+	// Subscribe to trigger HOOK_WATCH callbacks
+	const effectCleanup = createEffect(() => {
+		ref.get()
+	})
+
+	// Both callbacks should have been called despite the exception
+	expect(throwingCallbackCalled).toBe(true)
+	expect(successfulCallbackCalled).toBe(true)
+
+	// Error should have been logged
+	expect(errorSpy).toHaveBeenCalledWith(
+		'Error in effect callback:',
+		expect.any(Error),
+	)
+
+	// Cleanup
+	effectCleanup()
+	cleanup1()
+	cleanup2()
+	console.error = originalError
+})
+
+test('Ref - cleanup function exception handling', async () => {
+	const ref = new Ref({ test: 'value' })
+
+	// Mock console.error to capture error logs
+	const originalError = console.error
+	const errorSpy = mock(() => {})
+	console.error = errorSpy
+
+	let cleanup1Called = false
+	let cleanup2Called = false
+
+	// Add callbacks with cleanup functions, one throws
+	const hookCleanup1 = ref.on(HOOK_WATCH, () => {
+		return () => {
+			cleanup1Called = true
+			throw new Error('Test error in cleanup function')
+		}
+	})
+
+	const hookCleanup2 = ref.on(HOOK_WATCH, () => {
+		return () => {
+			cleanup2Called = true
+		}
+	})
+
+	// Subscribe and then unsubscribe to trigger cleanup
+	const effectCleanup = createEffect(() => {
+		ref.get()
+	})
+
+	// Unsubscribe to trigger cleanup functions
+	effectCleanup()
+
+	// Wait a bit for cleanup to complete
+	await new Promise(resolve => setTimeout(resolve, 10))
+
+	// Both cleanup functions should have been called despite the exception
+	expect(cleanup1Called).toBe(true)
+	expect(cleanup2Called).toBe(true)
+
+	// Error should have been logged
+	expect(errorSpy).toHaveBeenCalledWith(
+		'Error in effect cleanup:',
+		expect.any(Error),
+	)
+
+	// Cleanup
+	hookCleanup1()
+	hookCleanup2()
+	console.error = originalError
 })

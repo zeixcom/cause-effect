@@ -62,7 +62,10 @@ const createEffect = (callback: EffectCallback): Cleanup => {
 						})
 						.catch(error => {
 							if (!isAbortError(error))
-								console.error('Async effect error:', error)
+								console.error(
+									'Error in async effect callback:',
+									error,
+								)
 						})
 				} else {
 					cleanup = callback()
@@ -70,7 +73,7 @@ const createEffect = (callback: EffectCallback): Cleanup => {
 				}
 			} catch (error) {
 				if (!isAbortError(error))
-					console.error('Effect callback error:', error)
+					console.error('Error in effect callback:', error)
 			}
 
 			running = false
@@ -80,7 +83,11 @@ const createEffect = (callback: EffectCallback): Cleanup => {
 	watcher()
 	return () => {
 		controller?.abort()
-		watcher.stop()
+		try {
+			watcher.stop()
+		} catch (error) {
+			console.error('Error in effect cleanup:', error)
+		}
 	}
 }
 

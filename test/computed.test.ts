@@ -10,6 +10,7 @@ import {
 	Task,
 	UNSET,
 } from '../index.ts'
+import { HOOK_WATCH } from '../src/system'
 
 /* === Utility Functions === */
 
@@ -864,6 +865,262 @@ describe('Computed', () => {
 
 			expect(computationCount).toBe(6) // Initial + 5 updates
 			expect(accumulator.get()).toBe(115) // Final accumulated value
+		})
+	})
+
+	describe('HOOK_WATCH - Lazy Resource Management', () => {
+		test('Memo - should manage external resources lazily', async () => {
+			const source = new State(1)
+			let counter = 0
+			let intervalId: Timer | undefined
+
+			// Create memo that depends on source
+			const computed = new Memo((oldValue: number) => {
+				return source.get() * 2 + (oldValue || 0)
+			}, 0)
+
+			// Add HOOK_WATCH callback that starts interval
+			const cleanupHookCallback = computed.on(HOOK_WATCH, () => {
+				intervalId = setInterval(() => {
+					counter++
+				}, 10) // Fast interval for testing
+
+				// Return cleanup function
+				return () => {
+					if (intervalId) {
+						clearInterval(intervalId)
+						intervalId = undefined
+					}
+				}
+			})
+
+			// Counter should not be running yet
+			expect(counter).toBe(0)
+			await wait(50)
+			expect(counter).toBe(0)
+			expect(intervalId).toBeUndefined()
+
+			// Effect subscribes to computed, triggering HOOK_WATCH
+			const effectCleanup = createEffect(() => {
+				computed.get()
+			})
+
+			// Counter should now be running
+			await wait(50)
+			expect(counter).toBeGreaterThan(0)
+			expect(intervalId).toBeDefined()
+
+			// Stop effect, should cleanup resources
+			effectCleanup()
+			const counterAfterStop = counter
+
+			// Counter should stop incrementing
+			await wait(50)
+			expect(counter).toBe(counterAfterStop)
+			expect(intervalId).toBeUndefined()
+
+			// Cleanup
+			cleanupHookCallback()
+		})
+
+		test('Task - should manage external resources lazily', async () => {
+			const source = new State('initial')
+			let counter = 0
+			let intervalId: Timer | undefined
+
+			// Create task that depends on source
+			const computed = new Task(
+				async (oldValue: string, abort: AbortSignal) => {
+					const value = source.get()
+					await wait(10) // Simulate async work
+
+					if (abort.aborted) throw new Error('Aborted')
+
+					return `${value}-processed-${oldValue || 'none'}`
+				},
+				'default',
+			)
+
+			// Add HOOK_WATCH callback
+			const cleanupHookCallback = computed.on(HOOK_WATCH, () => {
+				intervalId = setInterval(() => {
+					counter++
+				}, 10)
+
+				return () => {
+					if (intervalId) {
+						clearInterval(intervalId)
+						intervalId = undefined
+					}
+				}
+			})
+
+			// Counter should not be running yet
+			expect(counter).toBe(0)
+			await wait(50)
+			expect(counter).toBe(0)
+			expect(intervalId).toBeUndefined()
+
+			// Effect subscribes to computed
+			const effectCleanup = createEffect(() => {
+				computed.get()
+			})
+
+			// Wait for async computation and counter to start
+			await wait(100)
+			expect(counter).toBeGreaterThan(0)
+			expect(intervalId).toBeDefined()
+
+			// Stop effect
+			effectCleanup()
+			const counterAfterStop = counter
+
+			// Counter should stop incrementing
+			await wait(50)
+			expect(counter).toBe(counterAfterStop)
+			expect(intervalId).toBeUndefined()
+
+			// Cleanup
+			cleanupHookCallback()
+		})
+
+		test('Memo - multiple watchers should share resources', async () => {
+			const source = new State(10)
+			let subscriptionCount = 0
+
+			const computed = new Memo((oldValue: number) => {
+				return source.get() + (oldValue || 0)
+			}, 0)
+
+			// HOOK_WATCH should only be called once for multiple watchers
+			const cleanupHookCallback = computed.on(HOOK_WATCH, () => {
+				subscriptionCount++
+				return () => {
+					subscriptionCount--
+				}
+			})
+
+			expect(subscriptionCount).toBe(0)
+
+			// Create multiple effects
+			const effect1 = createEffect(() => {
+				computed.get()
+			})
+			const effect2 = createEffect(() => {
+				computed.get()
+			})
+
+			// Should only increment once
+			expect(subscriptionCount).toBe(1)
+
+			// Stop first effect
+			effect1()
+			expect(subscriptionCount).toBe(1) // Still active due to second watcher
+
+			// Stop second effect
+			effect2()
+			expect(subscriptionCount).toBe(0) // Now cleaned up
+
+			// Cleanup
+			cleanupHookCallback()
+		})
+
+		test('Task - should handle abort signals in external resources', async () => {
+			const source = new State('test')
+			const abortedControllers: AbortController[] = []
+
+			const computed = new Task(
+				async (oldValue: string, abort: AbortSignal) => {
+					await wait(20)
+					if (abort.aborted) throw new Error('Aborted')
+					return `${source.get()}-${oldValue || 'initial'}`
+				},
+				'default',
+			)
+
+			// HOOK_WATCH that creates external resources with abort handling
+			const cleanupHookCallback = computed.on(HOOK_WATCH, () => {
+				const controller = new AbortController()
+
+				// Simulate external async operation (catch rejections to avoid unhandled errors)
+				new Promise(resolve => {
+					const timeout = setTimeout(() => {
+						if (controller.signal.aborted) {
+							resolve('External operation aborted')
+						} else {
+							resolve('External operation completed')
+						}
+					}, 50)
+
+					controller.signal.addEventListener('abort', () => {
+						clearTimeout(timeout)
+						resolve('External operation aborted')
+					})
+				}).catch(() => {
+					// Ignore promise rejections in test
+				})
+
+				return () => {
+					controller.abort()
+					abortedControllers.push(controller)
+				}
+			})
+
+			const effect1 = createEffect(() => {
+				computed.get()
+			})
+
+			// Change source to trigger recomputation
+			source.set('updated')
+
+			// Stop effect to trigger cleanup
+			effect1()
+
+			// Wait for cleanup to complete
+			await wait(100)
+
+			// Should have aborted external controllers
+			expect(abortedControllers.length).toBeGreaterThan(0)
+			expect(abortedControllers[0].signal.aborted).toBe(true)
+
+			// Cleanup
+			cleanupHookCallback()
+		})
+
+		test('Exception handling in computed HOOK_WATCH callbacks', async () => {
+			const source = new State(1)
+			const computed = new Memo(() => source.get() * 2)
+
+			let successfulCallbackCalled = false
+			let throwingCallbackCalled = false
+
+			// Add throwing callback
+			const cleanup1 = computed.on(HOOK_WATCH, () => {
+				throwingCallbackCalled = true
+				throw new Error('Test error in computed HOOK_WATCH')
+			})
+
+			// Add successful callback
+			const cleanup2 = computed.on(HOOK_WATCH, () => {
+				successfulCallbackCalled = true
+				return () => {
+					// cleanup
+				}
+			})
+
+			// Trigger callbacks - should throw due to exception in callback
+			expect(() => computed.get()).toThrow(
+				'Test error in computed HOOK_WATCH',
+			)
+
+			// Throwing callback should have been called
+			expect(throwingCallbackCalled).toBe(true)
+			// Successful callback should also have been called (resilient collection)
+			expect(successfulCallbackCalled).toBe(true)
+
+			// Cleanup
+			cleanup1()
+			cleanup2()
 		})
 	})
 })

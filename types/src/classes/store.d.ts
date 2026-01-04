@@ -1,6 +1,6 @@
 import { type UnknownRecord } from '../diff';
 import { type MutableSignal } from '../signal';
-import { type Cleanup, type HookCallback } from '../system';
+import { type Cleanup, type Hook, type HookCallback } from '../system';
 import type { List } from './list';
 import type { State } from './state';
 type Store<T extends UnknownRecord> = BaseStore<T> & {
@@ -23,14 +23,14 @@ declare class BaseStore<T extends UnknownRecord> {
         string,
         MutableSignal<T[keyof T] & {}>
     ]>;
-    get(): T;
-    set(newValue: T): void;
     keys(): IterableIterator<string>;
     byKey<K extends keyof T & string>(key: K): T[K] extends readonly (infer U extends {})[] ? List<U> : T[K] extends UnknownRecord ? Store<T[K]> : T[K] extends unknown & {} ? State<T[K] & {}> : State<T[K] & {}> | undefined;
+    get(): T;
+    set(newValue: T): void;
     update(fn: (oldValue: T) => T): void;
     add<K extends keyof T & string>(key: K, value: T[K]): K;
     remove(key: string): void;
-    on<K extends 'add' | 'change' | 'remove'>(type: K, callback: HookCallback): Cleanup;
+    on(type: Hook, callback: HookCallback): Cleanup;
 }
 /**
  * Create a new store with deeply nested reactive properties

@@ -8,6 +8,7 @@ import {
 	State,
 	UNSET,
 } from '../index.ts'
+import { HOOK_WATCH } from '../src/system'
 
 describe('store', () => {
 	describe('creation and basic operations', () => {
@@ -225,54 +226,54 @@ describe('store', () => {
 		})
 	})
 
-	describe('change tracking and notifications', () => {
-		test('emits add notifications', () => {
-			let addNotification: readonly string[] | undefined
+	describe('Hooks', () => {
+		test('triggers HOOK_ADD when properties are added', () => {
+			let addedKeys: readonly string[] | undefined
 			const user = createStore<{ name: string; email?: string }>({
 				name: 'John',
 			})
 			user.on('add', add => {
-				addNotification = add
+				addedKeys = add
 			})
 			user.add('email', 'john@example.com')
-			expect(addNotification).toContain('email')
+			expect(addedKeys).toContain('email')
 		})
 
-		test('emits change notifications when properties are modified', () => {
+		test('triggers HOOK_CHANGE when properties are modified', () => {
 			const user = createStore({ name: 'John' })
-			let changeNotification: readonly string[] | undefined
+			let changedKeys: readonly string[] | undefined
 			user.on('change', change => {
-				changeNotification = change
+				changedKeys = change
 			})
 			user.name.set('Jane')
-			expect(changeNotification).toContain('name')
+			expect(changedKeys).toContain('name')
 		})
 
-		test('emits change notifications for nested property changes', () => {
+		test('triggers HOOK_CHANGE for nested property changes', () => {
 			const user = createStore({
 				preferences: {
 					theme: 'light',
 				},
 			})
-			let changeNotification: readonly string[] | undefined
+			let changedKeys: readonly string[] | undefined
 			user.on('change', change => {
-				changeNotification = change
+				changedKeys = change
 			})
 			user.preferences.theme.set('dark')
-			expect(changeNotification).toContain('preferences')
+			expect(changedKeys).toContain('preferences')
 		})
 
-		test('emits remove notifications when properties are removed', () => {
+		test('triggers HOOK_REMOVE when properties are removed', () => {
 			const user = createStore({
 				name: 'John',
 				email: 'john@example.com',
 			})
-			let removeNotification: readonly string[] | undefined
+			let removedKeys: readonly string[] | undefined
 			user.on('remove', remove => {
-				removeNotification = remove
+				removedKeys = remove
 			})
 			user.remove('email')
-			expect(removeNotification).toContain('email')
+			expect(removedKeys).toContain('email')
 		})
 
 		test('set() correctly handles mixed changes, additions, and removals', () => {
@@ -289,18 +290,18 @@ describe('store', () => {
 				},
 			})
 
-			let changeNotification: readonly string[] | undefined
-			let addNotification: readonly string[] | undefined
-			let removeNotification: readonly string[] | undefined
+			let changedKeys: readonly string[] | undefined
+			let addedKeys: readonly string[] | undefined
+			let removedKeys: readonly string[] | undefined
 
 			user.on('change', change => {
-				changeNotification = change
+				changedKeys = change
 			})
 			user.on('add', add => {
-				addNotification = add
+				addedKeys = add
 			})
 			user.on('remove', remove => {
-				removeNotification = remove
+				removedKeys = remove
 			})
 
 			user.set({
@@ -311,13 +312,13 @@ describe('store', () => {
 				age: 30,
 			})
 
-			expect(changeNotification).toContain('name')
-			expect(changeNotification).toContain('preferences')
-			expect(addNotification).toContain('age')
-			expect(removeNotification).toContain('email')
+			expect(changedKeys).toContain('name')
+			expect(changedKeys).toContain('preferences')
+			expect(addedKeys).toContain('age')
+			expect(removedKeys).toContain('email')
 		})
 
-		test('notification listeners can be removed', () => {
+		test('hooks can be removed', () => {
 			const user = createStore({ name: 'John' })
 			let notificationCount = 0
 			const listener = () => {
@@ -658,6 +659,450 @@ describe('store', () => {
 			expect(isStore(config.database)).toBe(true)
 			expect(config.database.host.get()).toBe('localhost')
 			expect(config.database.port.get()).toBe(5432)
+		})
+	})
+
+	describe('HOOK_WATCH - Store Hierarchy Resource Management', () => {
+		test('Store HOOK_WATCH triggers for all nested stores when accessing parent', async () => {
+			const store = createStore({
+				app: {
+					database: {
+						host: 'localhost',
+						port: 5432,
+					},
+					cache: {
+						ttl: 3600,
+					},
+				},
+			})
+
+			let appCounter = 0
+			let databaseCounter = 0
+			let cacheCounter = 0
+
+			const appCleanup = store.app.on(HOOK_WATCH, () => {
+				appCounter++
+				return () => {
+					appCounter--
+				}
+			})
+
+			const databaseCleanup = store.app.database.on(HOOK_WATCH, () => {
+				databaseCounter++
+				return () => {
+					databaseCounter--
+				}
+			})
+
+			const cacheCleanup = store.app.cache.on(HOOK_WATCH, () => {
+				cacheCounter++
+				return () => {
+					cacheCounter--
+				}
+			})
+
+			// Initially no watchers
+			expect(appCounter).toBe(0)
+			expect(databaseCounter).toBe(0)
+			expect(cacheCounter).toBe(0)
+
+			// Access app store - should trigger ALL nested HOOK_WATCH callbacks
+			const appEffect = createEffect(() => {
+				store.app.get()
+			})
+
+			expect(appCounter).toBe(1)
+			expect(databaseCounter).toBe(1)
+			expect(cacheCounter).toBe(1)
+
+			// Cleanup should reset all counters
+			appEffect()
+			expect(appCounter).toBe(0)
+			expect(databaseCounter).toBe(0)
+			expect(cacheCounter).toBe(0)
+
+			appCleanup()
+			databaseCleanup()
+			cacheCleanup()
+		})
+
+		test('Nested store cleanup only happens when all levels are unwatched', async () => {
+			const store = createStore({
+				user: {
+					profile: {
+						settings: {
+							theme: 'dark',
+						},
+					},
+				},
+			})
+
+			let counter = 0
+			let intervalId: Timer | undefined
+
+			// Add HOOK_WATCH to deepest nested store
+			const settingsCleanup = store.user.profile.settings.on(
+				HOOK_WATCH,
+				() => {
+					intervalId = setInterval(() => {
+						counter++
+					}, 10)
+
+					return () => {
+						if (intervalId) {
+							clearInterval(intervalId)
+							intervalId = undefined
+						}
+					}
+				},
+			)
+
+			expect(counter).toBe(0)
+
+			// Access parent store - should trigger settings HOOK_WATCH
+			const parentEffect = createEffect(() => {
+				store.user.get()
+			})
+
+			await new Promise(resolve => setTimeout(resolve, 50))
+			expect(counter).toBeGreaterThan(0)
+			expect(intervalId).toBeDefined()
+
+			// Access intermediate store - settings should still be active
+			const profileEffect = createEffect(() => {
+				store.user.profile.get()
+			})
+
+			const counterAfterProfile = counter
+			await new Promise(resolve => setTimeout(resolve, 50))
+			expect(counter).toBeGreaterThan(counterAfterProfile)
+			expect(intervalId).toBeDefined()
+
+			// Remove parent watcher, but profile watcher still active
+			parentEffect()
+
+			const counterAfterParentRemoval = counter
+			await new Promise(resolve => setTimeout(resolve, 50))
+			expect(counter).toBeGreaterThan(counterAfterParentRemoval)
+			expect(intervalId).toBeDefined() // Still running
+
+			// Remove profile watcher - now should cleanup
+			profileEffect()
+
+			const counterAfterAllRemoval = counter
+			await new Promise(resolve => setTimeout(resolve, 50))
+			expect(counter).toBe(counterAfterAllRemoval) // Stopped
+			expect(intervalId).toBeUndefined()
+
+			settingsCleanup()
+		})
+
+		test('Root store HOOK_WATCH triggered only by direct store access', async () => {
+			const store = createStore({
+				user: {
+					name: 'John',
+					profile: {
+						email: 'john@example.com',
+					},
+				},
+			})
+
+			let rootStoreCounter = 0
+			let intervalId: Timer | undefined
+
+			// Add HOOK_WATCH callback to root store
+			const cleanupHookCallback = store.on(HOOK_WATCH, () => {
+				intervalId = setInterval(() => {
+					rootStoreCounter++
+				}, 10)
+
+				return () => {
+					if (intervalId) {
+						clearInterval(intervalId)
+						intervalId = undefined
+					}
+				}
+			})
+
+			expect(rootStoreCounter).toBe(0)
+			await new Promise(resolve => setTimeout(resolve, 50))
+			expect(rootStoreCounter).toBe(0)
+
+			// Access nested property directly - should NOT trigger root HOOK_WATCH
+			const nestedEffectCleanup = createEffect(() => {
+				store.user.name.get()
+			})
+
+			await new Promise(resolve => setTimeout(resolve, 50))
+			expect(rootStoreCounter).toBe(0) // Still 0 - nested access doesn't trigger root
+			expect(intervalId).toBeUndefined()
+
+			// Access root store directly - should trigger HOOK_WATCH
+			const rootEffectCleanup = createEffect(() => {
+				store.get()
+			})
+
+			await new Promise(resolve => setTimeout(resolve, 50))
+			expect(rootStoreCounter).toBeGreaterThan(0) // Now triggered
+			expect(intervalId).toBeDefined()
+
+			// Cleanup
+			rootEffectCleanup()
+			nestedEffectCleanup()
+			await new Promise(resolve => setTimeout(resolve, 50))
+			expect(intervalId).toBeUndefined()
+
+			cleanupHookCallback()
+		})
+
+		test('Each store level manages its own HOOK_WATCH independently', async () => {
+			const store = createStore({
+				config: {
+					database: {
+						host: 'localhost',
+						port: 5432,
+					},
+				},
+			})
+
+			let rootCounter = 0
+			let configCounter = 0
+			let databaseCounter = 0
+
+			// Add HOOK_WATCH to each level
+			const rootCleanup = store.on(HOOK_WATCH, () => {
+				rootCounter++
+				return () => {
+					rootCounter--
+				}
+			})
+
+			const configCleanup = store.config.on(HOOK_WATCH, () => {
+				configCounter++
+				return () => {
+					configCounter--
+				}
+			})
+
+			const databaseCleanup = store.config.database.on(HOOK_WATCH, () => {
+				databaseCounter++
+				return () => {
+					databaseCounter--
+				}
+			})
+
+			// All should start at 0
+			expect(rootCounter).toBe(0)
+			expect(configCounter).toBe(0)
+			expect(databaseCounter).toBe(0)
+
+			// Access deepest level - should NOT trigger any store HOOK_WATCH
+			// because we're only accessing the State signal, not calling .get() on stores
+			const deepEffectCleanup = createEffect(() => {
+				store.config.database.host.get()
+			})
+
+			expect(rootCounter).toBe(0)
+			expect(configCounter).toBe(0)
+			expect(databaseCounter).toBe(0)
+
+			// Access config level - should trigger config AND database HOOK_WATCH
+			const configEffectCleanup = createEffect(() => {
+				store.config.get()
+			})
+
+			expect(rootCounter).toBe(0)
+			expect(configCounter).toBe(1)
+			expect(databaseCounter).toBe(1) // Triggered by parent access
+
+			// Access root level - should trigger root HOOK_WATCH (config/database already active)
+			const rootEffectCleanup = createEffect(() => {
+				store.get()
+			})
+
+			expect(rootCounter).toBe(1)
+			expect(configCounter).toBe(1)
+			expect(databaseCounter).toBe(1)
+
+			// Cleanup in reverse order - database should stay active until config is cleaned up
+			rootEffectCleanup()
+			expect(rootCounter).toBe(0)
+			expect(configCounter).toBe(1)
+			expect(databaseCounter).toBe(1) // Still active due to config watcher
+
+			configEffectCleanup()
+			expect(rootCounter).toBe(0)
+			expect(configCounter).toBe(0)
+			expect(databaseCounter).toBe(0) // Now cleaned up
+
+			deepEffectCleanup()
+			expect(rootCounter).toBe(0)
+			expect(configCounter).toBe(0)
+			expect(databaseCounter).toBe(0)
+
+			// Cleanup hooks
+			rootCleanup()
+			configCleanup()
+			databaseCleanup()
+		})
+
+		test('Store HOOK_WATCH with multiple watchers at same level', async () => {
+			const store = createStore({
+				data: {
+					items: [] as string[],
+					count: 0,
+				},
+			})
+
+			let dataStoreCounter = 0
+
+			const dataCleanup = store.data.on(HOOK_WATCH, () => {
+				dataStoreCounter++
+				return () => {
+					dataStoreCounter--
+				}
+			})
+
+			expect(dataStoreCounter).toBe(0)
+
+			// Create multiple effects watching the data store
+			const effect1 = createEffect(() => {
+				store.data.get()
+			})
+			const effect2 = createEffect(() => {
+				store.data.get()
+			})
+
+			// Should only trigger once (shared resources)
+			expect(dataStoreCounter).toBe(1)
+
+			// Stop one effect
+			effect1()
+			expect(dataStoreCounter).toBe(1) // Still active
+
+			// Stop second effect
+			effect2()
+			expect(dataStoreCounter).toBe(0) // Now cleaned up
+
+			dataCleanup()
+		})
+
+		test('Store property addition/removal affects individual store HOOK_WATCH', async () => {
+			const store = createStore({
+				users: {} as Record<string, { name: string }>,
+			})
+
+			let usersStoreCounter = 0
+
+			const usersCleanup = store.users.on(HOOK_WATCH, () => {
+				usersStoreCounter++
+				return () => {
+					usersStoreCounter--
+				}
+			})
+
+			expect(usersStoreCounter).toBe(0)
+
+			// Watch the users store
+			const usersEffect = createEffect(() => {
+				store.users.get()
+			})
+			expect(usersStoreCounter).toBe(1)
+
+			// Add a user - this modifies the users store content but doesn't affect HOOK_WATCH
+			store.users.add('user1', { name: 'Alice' })
+			expect(usersStoreCounter).toBe(1) // Still 1
+
+			// Watch a specific user property - this doesn't trigger users store HOOK_WATCH
+			const userEffect = createEffect(() => {
+				store.users.user1?.name.get()
+			})
+			expect(usersStoreCounter).toBe(1) // Still 1
+
+			// Cleanup user effect
+			userEffect()
+			expect(usersStoreCounter).toBe(1) // Still active due to usersEffect
+
+			// Cleanup users effect
+			usersEffect()
+			expect(usersStoreCounter).toBe(0) // Now cleaned up
+
+			usersCleanup()
+		})
+
+		test('Exception handling in store HOOK_WATCH callbacks', async () => {
+			const store = createStore({
+				config: { theme: 'dark' },
+			})
+
+			let successfulCallbackCalled = false
+			let throwingCallbackCalled = false
+
+			// Add throwing callback
+			const cleanup1 = store.on(HOOK_WATCH, () => {
+				throwingCallbackCalled = true
+				throw new Error('Test error in store HOOK_WATCH')
+			})
+
+			// Add successful callback
+			const cleanup2 = store.on(HOOK_WATCH, () => {
+				successfulCallbackCalled = true
+				return () => {
+					// cleanup
+				}
+			})
+
+			// Trigger callbacks through direct store access - should throw
+			expect(() => store.get()).toThrow('Test error in store HOOK_WATCH')
+
+			// Both callbacks should have been called
+			expect(throwingCallbackCalled).toBe(true)
+			expect(successfulCallbackCalled).toBe(true)
+
+			cleanup1()
+			cleanup2()
+		})
+
+		test('Nested store HOOK_WATCH with computed signals', async () => {
+			const store = createStore({
+				user: {
+					firstName: 'John',
+					lastName: 'Doe',
+				},
+			})
+
+			let userStoreCounter = 0
+
+			const userCleanup = store.user.on(HOOK_WATCH, () => {
+				userStoreCounter++
+				return () => {
+					userStoreCounter--
+				}
+			})
+
+			expect(userStoreCounter).toBe(0)
+
+			// Access user store directly - should trigger user store HOOK_WATCH
+			const userEffect = createEffect(() => {
+				store.user.get()
+			})
+			expect(userStoreCounter).toBe(1)
+
+			// Access individual properties - should NOT trigger user store HOOK_WATCH again
+			const nameEffect = createEffect(() => {
+				store.user.firstName.get()
+			})
+			expect(userStoreCounter).toBe(1) // Still 1
+
+			// Cleanup individual property effect first
+			nameEffect()
+			expect(userStoreCounter).toBe(1) // Still active due to user store effect
+
+			// Cleanup user store effect - now should be cleaned up
+			userEffect()
+			expect(userStoreCounter).toBe(0) // Now cleaned up
+
+			userCleanup()
 		})
 	})
 })

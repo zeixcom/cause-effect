@@ -8,9 +8,11 @@ import {
 import {
 	createWatcher,
 	flushPendingReactions,
+	HOOK_CLEANUP,
 	notifyWatchers,
 	subscribeActiveWatcher,
 	trackSignalReads,
+	UNSET,
 	type Watcher,
 } from '../src/system'
 import {
@@ -18,7 +20,6 @@ import {
 	isAsyncFunction,
 	isFunction,
 	isObjectOfType,
-	UNSET,
 } from '../src/util'
 
 /* === Types === */
@@ -102,7 +103,7 @@ const createComputed = <T extends {}>(
 		if (watchers.size) notifyWatchers(watchers)
 		else watcher.stop()
 	})
-	watcher.onCleanup(() => {
+	watcher.on(HOOK_CLEANUP, () => {
 		controller?.abort()
 	})
 

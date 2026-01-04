@@ -13,11 +13,9 @@ import {
 	HOOK_CLEANUP,
 	HOOK_WATCH,
 	type HookCallback,
-	type HookCallbacks,
 	notifyWatchers,
 	subscribeActiveWatcher,
 	trackSignalReads,
-	triggerHook,
 	UNSET,
 	type Watcher,
 	type WatchHook,
@@ -62,7 +60,7 @@ class Memo<T extends {}> {
 	#dirty = true
 	#computing = false
 	#watcher: Watcher | undefined
-	#hookCallbacks: HookCallbacks = {}
+	#watchHookCallbacks: Set<HookCallback> | undefined
 
 	/**
 	 * Create a new memoized signal.
@@ -87,9 +85,7 @@ class Memo<T extends {}> {
 				this.#dirty = true
 				if (!notifyWatchers(this.#watchers)) this.#watcher?.stop()
 			})
-			const unwatch = triggerHook(this.#hookCallbacks[HOOK_WATCH])
 			this.#watcher.on(HOOK_CLEANUP, () => {
-				if (unwatch) unwatch()
 				this.#watcher = undefined
 			})
 		}
@@ -108,7 +104,7 @@ class Memo<T extends {}> {
 	 * @throws {Error} If an error occurs during computation
 	 */
 	get(): T {
-		subscribeActiveWatcher(this.#watchers)
+		subscribeActiveWatcher(this.#watchers, this.#watchHookCallbacks)
 		flushPendingReactions()
 
 		if (this.#dirty) {
@@ -155,10 +151,10 @@ class Memo<T extends {}> {
 	 */
 	on(type: WatchHook, callback: HookCallback): Cleanup {
 		if (type === HOOK_WATCH) {
-			this.#hookCallbacks[HOOK_WATCH] ||= new Set()
-			this.#hookCallbacks[HOOK_WATCH].add(callback)
+			this.#watchHookCallbacks ||= new Set()
+			this.#watchHookCallbacks.add(callback)
 			return () => {
-				this.#hookCallbacks[HOOK_WATCH]?.delete(callback)
+				this.#watchHookCallbacks?.delete(callback)
 			}
 		}
 		throw new InvalidHookError(this.constructor.name, type)
@@ -180,7 +176,7 @@ class Task<T extends {}> {
 	#changed = false
 	#watcher: Watcher | undefined
 	#controller: AbortController | undefined
-	#hookCallbacks: HookCallbacks = {}
+	#watchHookCallbacks: Set<HookCallback> | undefined
 
 	/**
 	 * Create a new task signal for an asynchronous function.
@@ -206,11 +202,9 @@ class Task<T extends {}> {
 				this.#controller?.abort()
 				if (!notifyWatchers(this.#watchers)) this.#watcher?.stop()
 			})
-			const unwatch = triggerHook(this.#hookCallbacks[HOOK_WATCH])
 			this.#watcher.on(HOOK_CLEANUP, () => {
 				this.#controller?.abort()
 				this.#controller = undefined
-				if (unwatch) unwatch()
 				this.#watcher = undefined
 			})
 		}
@@ -229,7 +223,7 @@ class Task<T extends {}> {
 	 * @throws {Error} If an error occurs during computation
 	 */
 	get(): T {
-		subscribeActiveWatcher(this.#watchers)
+		subscribeActiveWatcher(this.#watchers, this.#watchHookCallbacks)
 		flushPendingReactions()
 
 		// Functions to update internal state
@@ -323,10 +317,10 @@ class Task<T extends {}> {
 	 */
 	on(type: WatchHook, callback: HookCallback): Cleanup {
 		if (type === HOOK_WATCH) {
-			this.#hookCallbacks[HOOK_WATCH] ||= new Set()
-			this.#hookCallbacks[HOOK_WATCH].add(callback)
+			this.#watchHookCallbacks ||= new Set()
+			this.#watchHookCallbacks.add(callback)
 			return () => {
-				this.#hookCallbacks[HOOK_WATCH]?.delete(callback)
+				this.#watchHookCallbacks?.delete(callback)
 			}
 		}
 		throw new InvalidHookError(this.constructor.name, type)

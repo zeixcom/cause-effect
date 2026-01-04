@@ -230,46 +230,46 @@ describe('collection', () => {
 		})
 	})
 
-	describe('change notifications', () => {
-		test('emits add notifications', () => {
+	describe('Hooks', () => {
+		test('triggers HOOK_ADD when items are added', () => {
 			const numbers = new List([1, 2])
 			const doubled = new DerivedCollection(numbers, (x: number) => x * 2)
 
-			let arrayAddNotification: readonly string[] | undefined
+			let addedKeys: readonly string[] | undefined
 			doubled.on('add', keys => {
-				arrayAddNotification = keys
+				addedKeys = keys
 			})
 
 			numbers.add(3)
-			expect(arrayAddNotification).toHaveLength(1)
-			const doubledKey = arrayAddNotification?.[0]
+			expect(addedKeys).toHaveLength(1)
+			const doubledKey = addedKeys?.[0]
 			if (doubledKey) expect(doubled.byKey(doubledKey)?.get()).toBe(6)
 		})
 
-		test('emits remove notifications when items are removed', () => {
+		test('triggers HOOK_REMOVE when items are removed', () => {
 			const items = new List([1, 2, 3])
 			const doubled = new DerivedCollection(items, (x: number) => x * 2)
 
-			let arrayRemoveNotification: readonly string[] | undefined
+			let removedKeys: readonly string[] | undefined
 			doubled.on('remove', keys => {
-				arrayRemoveNotification = keys
+				removedKeys = keys
 			})
 
 			items.remove(1)
-			expect(arrayRemoveNotification).toHaveLength(1)
+			expect(removedKeys).toHaveLength(1)
 		})
 
-		test('emits sort notifications when source is sorted', () => {
+		test('triggers HOOK_SORT when source is sorted', () => {
 			const numbers = new List([3, 1, 2])
 			const doubled = new DerivedCollection(numbers, (x: number) => x * 2)
 
-			let sortNotification: readonly string[] | undefined
+			let order: readonly string[] | undefined
 			doubled.on('sort', newOrder => {
-				sortNotification = newOrder
+				order = newOrder
 			})
 
 			numbers.sort((a, b) => a - b)
-			expect(sortNotification).toHaveLength(3)
+			expect(order).toHaveLength(3)
 			expect(doubled.get()).toEqual([2, 4, 6])
 		})
 	})
@@ -849,6 +849,264 @@ describe('collection', () => {
 				expect(enhanced.at(1)?.get().status).toBe('inactive')
 				expect(enhanced.at(1)?.get().category).toBe('high')
 			})
+		})
+	})
+
+	describe('hooks system', () => {
+		test('Collection HOOK_WATCH is called when effect accesses collection.get()', () => {
+			const numbers = new List([10, 20, 30])
+			const doubled = numbers.deriveCollection(x => x * 2)
+
+			let collectionHookWatchCalled = false
+			let collectionUnwatchCalled = false
+
+			// Set up HOOK_WATCH callback on the collection itself
+			doubled.on('watch', () => {
+				collectionHookWatchCalled = true
+				return () => {
+					collectionUnwatchCalled = true
+				}
+			})
+
+			expect(collectionHookWatchCalled).toBe(false)
+
+			// Access collection via collection.get() - this should trigger collection's HOOK_WATCH
+			let effectValue: number[] = []
+			const cleanup = createEffect(() => {
+				effectValue = doubled.get()
+			})
+
+			expect(collectionHookWatchCalled).toBe(true)
+			expect(effectValue).toEqual([20, 40, 60])
+			expect(collectionUnwatchCalled).toBe(false)
+
+			// Cleanup effect - should trigger unwatch
+			cleanup()
+			expect(collectionUnwatchCalled).toBe(true)
+		})
+
+		test('List item HOOK_WATCH is triggered when accessing collection items via collection.at().get()', () => {
+			const numbers = new List([42, 84])
+			const doubled = numbers.deriveCollection(x => x * 2)
+
+			// Set up hook on source item BEFORE creating the effect
+			// biome-ignore lint/style/noNonNullAssertion: test
+			const firstSourceItem = numbers.at(0)!
+			let sourceItemHookCalled = false
+
+			firstSourceItem.on('watch', () => {
+				sourceItemHookCalled = true
+				return () => {
+					// Note: Unwatch behavior in computed signals is complex and depends on
+					// internal watcher management. We focus on verifying hook triggering.
+				}
+			})
+
+			expect(sourceItemHookCalled).toBe(false)
+
+			// Access collection item - the computed signal internally calls sourceItem.get()
+			let effectValue: number | undefined
+			const cleanup = createEffect(() => {
+				const firstCollectionItem = doubled.at(0)
+				effectValue = firstCollectionItem?.get()
+			})
+
+			expect(sourceItemHookCalled).toBe(true) // Source item HOOK_WATCH triggered
+			expect(effectValue).toBe(84) // 42 * 2
+
+			cleanup()
+		})
+
+		test('Collection and List item hooks work independently', () => {
+			const items = new List(['hello', 'world'])
+			const uppercased = items.deriveCollection(x => x.toUpperCase())
+
+			let collectionHookCalled = false
+			let collectionUnwatchCalled = false
+			let sourceItemHookCalled = false
+
+			// Set up hooks on both collection and source item
+			uppercased.on('watch', () => {
+				collectionHookCalled = true
+				return () => {
+					collectionUnwatchCalled = true
+				}
+			})
+
+			// biome-ignore lint/style/noNonNullAssertion: test
+			const firstSourceItem = items.at(0)!
+			firstSourceItem.on('watch', () => {
+				sourceItemHookCalled = true
+				return () => {
+					// Source item unwatch behavior is complex in computed context
+				}
+			})
+
+			// Effect 1: Access collection-level data - triggers both hooks
+			let collectionValue: string[] = []
+			const collectionCleanup = createEffect(() => {
+				collectionValue = uppercased.get()
+			})
+
+			expect(collectionHookCalled).toBe(true)
+			expect(sourceItemHookCalled).toBe(true) // Source items accessed by collection.get()
+			expect(collectionValue).toEqual(['HELLO', 'WORLD'])
+
+			// Effect 2: Access individual collection item independently
+			let itemValue: string | undefined
+			const itemCleanup = createEffect(() => {
+				itemValue = uppercased.at(0)?.get()
+			})
+
+			expect(itemValue).toBe('HELLO')
+
+			// Clean up effects
+			collectionCleanup()
+			expect(collectionUnwatchCalled).toBe(true)
+
+			itemCleanup()
+		})
+
+		test('source List item hooks are properly managed when items are removed', () => {
+			const items = new List(['first', 'second', 'third'])
+			const processed = items.deriveCollection(x => x.toUpperCase())
+
+			let firstItemHookCalled = false
+			let secondItemHookCalled = false
+
+			// Set up hooks on multiple source items
+			// biome-ignore lint/style/noNonNullAssertion: test
+			const firstSourceItem = items.at(0)!
+			// biome-ignore lint/style/noNonNullAssertion: test
+			const secondSourceItem = items.at(1)!
+
+			firstSourceItem.on('watch', () => {
+				firstItemHookCalled = true
+				return () => {
+					// Collection computed signals manage source watching internally
+				}
+			})
+
+			secondSourceItem.on('watch', () => {
+				secondItemHookCalled = true
+				return () => {
+					// Collection computed signals manage source watching internally
+				}
+			})
+
+			// Access both collection items to trigger source hooks
+			let firstValue: string | undefined
+			let secondValue: string | undefined
+
+			const cleanup1 = createEffect(() => {
+				firstValue = processed.at(0)?.get()
+			})
+
+			const cleanup2 = createEffect(() => {
+				secondValue = processed.at(1)?.get()
+			})
+
+			// Both source item hooks should be triggered
+			expect(firstItemHookCalled).toBe(true)
+			expect(secondItemHookCalled).toBe(true)
+			expect(firstValue).toBe('FIRST')
+			expect(secondValue).toBe('SECOND')
+
+			cleanup1()
+			cleanup2()
+		})
+
+		test('newly added source List items have hooks triggered through collection access', () => {
+			const numbers = new List<number>([])
+			const squared = numbers.deriveCollection(x => x * x)
+
+			// Add first item to source list
+			numbers.add(5)
+
+			// Set up hook on the newly added source item
+			// biome-ignore lint/style/noNonNullAssertion: test
+			const sourceItem = numbers.at(0)!
+			let sourceHookCalled = false
+
+			sourceItem.on('watch', () => {
+				sourceHookCalled = true
+				return () => {
+					// Hook cleanup managed by computed signal system
+				}
+			})
+
+			expect(sourceHookCalled).toBe(false)
+
+			// Access the collection item - should trigger source item hook
+			let effectValue: number | undefined
+			const cleanup = createEffect(() => {
+				effectValue = squared.at(0)?.get()
+			})
+
+			expect(sourceHookCalled).toBe(true) // Source hook triggered through collection
+			expect(effectValue).toBe(25) // 5 * 5
+
+			cleanup()
+		})
+
+		test('Collection length access triggers Collection HOOK_WATCH', () => {
+			const numbers = new List([1, 2, 3])
+			const doubled = numbers.deriveCollection(x => x * 2)
+
+			let collectionHookWatchCalled = false
+			let collectionUnwatchCalled = false
+
+			doubled.on('watch', () => {
+				collectionHookWatchCalled = true
+				return () => {
+					collectionUnwatchCalled = true
+				}
+			})
+
+			// Access via collection.length - this should trigger collection's HOOK_WATCH
+			let effectValue: number = 0
+			const cleanup = createEffect(() => {
+				effectValue = doubled.length
+			})
+
+			expect(collectionHookWatchCalled).toBe(true)
+			expect(effectValue).toBe(3)
+			expect(collectionUnwatchCalled).toBe(false)
+
+			cleanup()
+			expect(collectionUnwatchCalled).toBe(true)
+		})
+
+		test('chained collections maintain proper hook propagation to original source', () => {
+			const numbers = new List([2, 3])
+			const doubled = numbers.deriveCollection(x => x * 2)
+			const quadrupled = doubled.deriveCollection(x => x * 2)
+
+			// Set up hook on original source item
+			// biome-ignore lint/style/noNonNullAssertion: test
+			const sourceItem = numbers.at(0)!
+			let sourceHookCalled = false
+
+			sourceItem.on('watch', () => {
+				sourceHookCalled = true
+				return () => {
+					// Chained computed signals manage cleanup through dependency chain
+				}
+			})
+
+			expect(sourceHookCalled).toBe(false)
+
+			// Access chained collection item - should trigger original source hook
+			// Chain: quadrupled.at(0).get() -> doubled.at(0).get() -> numbers.at(0).get()
+			let effectValue: number | undefined
+			const cleanup = createEffect(() => {
+				effectValue = quadrupled.at(0)?.get()
+			})
+
+			expect(sourceHookCalled).toBe(true) // Original source hook triggered through chain
+			expect(effectValue).toBe(8) // 2 * 2 * 2
+
+			cleanup()
 		})
 	})
 })

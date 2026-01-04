@@ -173,6 +173,10 @@ const activeUserSummaries = users
   .filter(Boolean)
 ```
 
+## Resource Management
+
+All signals support `.on('watch', callback)` for lazy resource allocation. Resources are only created when signals are accessed by effects and automatically cleaned up when no longer watched.
+
 ## When suggesting code:
 1. Follow the established patterns for signal creation and usage
 2. Use proper TypeScript types and generics

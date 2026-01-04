@@ -3,10 +3,8 @@ import {
 	type Cleanup,
 	HOOK_WATCH,
 	type HookCallback,
-	type HookCallbacks,
 	notifyWatchers,
 	subscribeActiveWatcher,
-	triggerHook,
 	type Watcher,
 	type WatchHook,
 } from '../system'
@@ -26,8 +24,7 @@ const TYPE_REF = 'Ref'
 class Ref<T extends {}> {
 	#watchers = new Set<Watcher>()
 	#value: T
-	#hookCallbacks: HookCallbacks = {}
-	#unwatch: Cleanup | undefined
+	#watchHookCallbacks: Set<HookCallback> | undefined
 
 	/**
 	 * Create a new ref signal.
@@ -53,9 +50,8 @@ class Ref<T extends {}> {
 	 * @returns {T} - Object reference
 	 */
 	get(): T {
-		const startWatching = subscribeActiveWatcher(this.#watchers)
-		if (startWatching)
-			this.#unwatch = triggerHook(this.#hookCallbacks[HOOK_WATCH])
+		subscribeActiveWatcher(this.#watchers, this.#watchHookCallbacks)
+
 		return this.#value
 	}
 
@@ -63,7 +59,7 @@ class Ref<T extends {}> {
 	 * Notify watchers of relevant changes in the external reference.
 	 */
 	notify(): void {
-		if (!notifyWatchers(this.#watchers) && this.#unwatch) this.#unwatch()
+		notifyWatchers(this.#watchers)
 	}
 
 	/**
@@ -75,13 +71,13 @@ class Ref<T extends {}> {
 	 */
 	on(type: WatchHook, callback: HookCallback): Cleanup {
 		if (type === HOOK_WATCH) {
-			this.#hookCallbacks[HOOK_WATCH] ||= new Set()
-			this.#hookCallbacks[HOOK_WATCH].add(callback)
+			this.#watchHookCallbacks ||= new Set()
+			this.#watchHookCallbacks.add(callback)
 			return () => {
-				this.#hookCallbacks[HOOK_WATCH]?.delete(callback)
+				this.#watchHookCallbacks?.delete(callback)
 			}
 		}
-		throw new InvalidHookError(this.constructor.name, type)
+		throw new InvalidHookError(TYPE_REF, type)
 	}
 }
 

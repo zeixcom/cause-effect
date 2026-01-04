@@ -1,13 +1,16 @@
 import type { DiffResult, UnknownRecord } from '../diff'
-import { guardMutableSignal } from '../errors'
+import { guardMutableSignal, InvalidHookError } from '../errors'
 import type { Signal } from '../signal'
 import {
 	batchSignalWrites,
 	type Cleanup,
 	createWatcher,
+	HOOK_ADD,
 	HOOK_CHANGE,
+	HOOK_REMOVE,
 	type HookCallback,
 	type HookCallbacks,
+	isHandledHook,
 	trackSignalReads,
 	triggerHook,
 	type Watcher,
@@ -141,6 +144,9 @@ class Composite<T extends UnknownRecord, S extends Signal<T[keyof T] & {}>> {
 	}
 
 	on(type: CompositeHook, callback: HookCallback): Cleanup {
+		if (!isHandledHook(type, [HOOK_ADD, HOOK_CHANGE, HOOK_REMOVE]))
+			throw new InvalidHookError('Composite', type)
+
 		this.#hookCallbacks[type] ||= new Set()
 		this.#hookCallbacks[type].add(callback)
 		if (type === HOOK_CHANGE && !this.#watchers.size) {

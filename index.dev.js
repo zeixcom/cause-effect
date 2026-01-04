@@ -1,5 +1,21 @@
+// src/util.ts
+var isString = (value) => typeof value === "string";
+var isNumber = (value) => typeof value === "number";
+var isSymbol = (value) => typeof value === "symbol";
+var isFunction = (fn) => typeof fn === "function";
+var isAsyncFunction = (fn) => isFunction(fn) && fn.constructor.name === "AsyncFunction";
+var isSyncFunction = (fn) => isFunction(fn) && fn.constructor.name !== "AsyncFunction";
+var isNonNullObject = (value) => value != null && typeof value === "object";
+var isObjectOfType = (value, type) => Object.prototype.toString.call(value) === `[object ${type}]`;
+var isRecord = (value) => isObjectOfType(value, "Object");
+var isRecordOrArray = (value) => isRecord(value) || Array.isArray(value);
+var isUniformArray = (value, guard = (item) => item != null) => Array.isArray(value) && value.every(guard);
+var isAbortError = (error) => error instanceof DOMException && error.name === "AbortError";
+var valueString = (value) => isString(value) ? `"${value}"` : !!value && typeof value === "object" ? JSON.stringify(value) : String(value);
+
 // src/system.ts
 var activeWatcher;
+var unwatchMap = new WeakMap;
 var pendingReactions = new Set;
 var batchDepth = 0;
 var UNSET = Symbol();
@@ -19,20 +35,44 @@ var createWatcher = (react) => {
       throw new InvalidHookError("watcher", type);
   };
   watcher.stop = () => {
-    for (const cleanup of cleanups)
-      cleanup();
-    cleanups.clear();
+    try {
+      for (const cleanup of cleanups)
+        cleanup();
+    } finally {
+      cleanups.clear();
+    }
   };
   return watcher;
 };
-var subscribeActiveWatcher = (watchers) => {
-  const isFirst = !watchers.size;
+var subscribeActiveWatcher = (watchers, watchHookCallbacks) => {
+  if (!watchers.size && watchHookCallbacks?.size) {
+    const unwatch = triggerHook(watchHookCallbacks);
+    if (unwatch) {
+      const unwatchCallbacks = unwatchMap.get(watchers) ?? new Set;
+      unwatchCallbacks.add(unwatch);
+      if (!unwatchMap.has(watchers))
+        unwatchMap.set(watchers, unwatchCallbacks);
+    }
+  }
   if (activeWatcher && !watchers.has(activeWatcher)) {
     const watcher = activeWatcher;
-    watcher.on(HOOK_CLEANUP, () => watchers.delete(watcher));
+    watcher.on(HOOK_CLEANUP, () => {
+      watchers.delete(watcher);
+      if (!watchers.size) {
+        const unwatchCallbacks = unwatchMap.get(watchers);
+        if (unwatchCallbacks) {
+          try {
+            for (const unwatch of unwatchCallbacks)
+              unwatch();
+          } finally {
+            unwatchCallbacks.clear();
+            unwatchMap.delete(watchers);
+          }
+        }
+      }
+    });
     watchers.add(watcher);
   }
-  return isFirst;
 };
 var notifyWatchers = (watchers) => {
   if (!watchers.size)
@@ -75,32 +115,40 @@ var triggerHook = (callbacks, payload) => {
   if (!callbacks)
     return;
   const cleanups = [];
+  const errors = [];
+  const throwError = (inCleanup) => {
+    if (errors.length) {
+      if (errors.length === 1)
+        throw errors[0];
+      throw new AggregateError(errors, `Errors in hook ${inCleanup ? "cleanup" : "callback"}:`);
+    }
+  };
   for (const callback of callbacks) {
-    const cleanup = callback(payload);
-    if (cleanup)
-      cleanups.push(cleanup);
+    try {
+      const cleanup = callback(payload);
+      if (isFunction(cleanup))
+        cleanups.push(cleanup);
+    } catch (error) {
+      errors.push(createError(error));
+    }
   }
+  throwError();
+  if (!cleanups.length)
+    return;
+  if (cleanups.length === 1)
+    return cleanups[0];
   return () => {
-    for (const cleanup of cleanups)
-      cleanup();
+    for (const cleanup of cleanups) {
+      try {
+        cleanup();
+      } catch (error) {
+        errors.push(createError(error));
+      }
+    }
+    throwError(true);
   };
 };
 var isHandledHook = (type, handled) => handled.includes(type);
-
-// src/util.ts
-var isString = (value) => typeof value === "string";
-var isNumber = (value) => typeof value === "number";
-var isSymbol = (value) => typeof value === "symbol";
-var isFunction = (fn) => typeof fn === "function";
-var isAsyncFunction = (fn) => isFunction(fn) && fn.constructor.name === "AsyncFunction";
-var isSyncFunction = (fn) => isFunction(fn) && fn.constructor.name !== "AsyncFunction";
-var isNonNullObject = (value) => value != null && typeof value === "object";
-var isObjectOfType = (value, type) => Object.prototype.toString.call(value) === `[object ${type}]`;
-var isRecord = (value) => isObjectOfType(value, "Object");
-var isRecordOrArray = (value) => isRecord(value) || Array.isArray(value);
-var isUniformArray = (value, guard = (item) => item != null) => Array.isArray(value) && value.every(guard);
-var isAbortError = (error) => error instanceof DOMException && error.name === "AbortError";
-var valueString = (value) => isString(value) ? `"${value}"` : !!value && typeof value === "object" ? JSON.stringify(value) : String(value);
 
 // src/diff.ts
 var isEqual = (a, b, visited) => {
@@ -200,7 +248,7 @@ class Memo {
   #dirty = true;
   #computing = false;
   #watcher;
-  #hookCallbacks = {};
+  #watchHookCallbacks;
   constructor(callback, initialValue = UNSET) {
     validateCallback(this.constructor.name, callback, isMemoCallback);
     validateSignalValue(this.constructor.name, initialValue);
@@ -214,10 +262,7 @@ class Memo {
         if (!notifyWatchers(this.#watchers))
           this.#watcher?.stop();
       });
-      const unwatch = triggerHook(this.#hookCallbacks[HOOK_WATCH]);
       this.#watcher.on(HOOK_CLEANUP, () => {
-        if (unwatch)
-          unwatch();
         this.#watcher = undefined;
       });
     }
@@ -227,7 +272,7 @@ class Memo {
     return TYPE_COMPUTED;
   }
   get() {
-    subscribeActiveWatcher(this.#watchers);
+    subscribeActiveWatcher(this.#watchers, this.#watchHookCallbacks);
     flushPendingReactions();
     if (this.#dirty) {
       const watcher = this.#getWatcher();
@@ -261,10 +306,10 @@ class Memo {
   }
   on(type, callback) {
     if (type === HOOK_WATCH) {
-      this.#hookCallbacks[HOOK_WATCH] ||= new Set;
-      this.#hookCallbacks[HOOK_WATCH].add(callback);
+      this.#watchHookCallbacks ||= new Set;
+      this.#watchHookCallbacks.add(callback);
       return () => {
-        this.#hookCallbacks[HOOK_WATCH]?.delete(callback);
+        this.#watchHookCallbacks?.delete(callback);
       };
     }
     throw new InvalidHookError(this.constructor.name, type);
@@ -281,7 +326,7 @@ class Task {
   #changed = false;
   #watcher;
   #controller;
-  #hookCallbacks = {};
+  #watchHookCallbacks;
   constructor(callback, initialValue = UNSET) {
     validateCallback(this.constructor.name, callback, isTaskCallback);
     validateSignalValue(this.constructor.name, initialValue);
@@ -296,12 +341,9 @@ class Task {
         if (!notifyWatchers(this.#watchers))
           this.#watcher?.stop();
       });
-      const unwatch = triggerHook(this.#hookCallbacks[HOOK_WATCH]);
       this.#watcher.on(HOOK_CLEANUP, () => {
         this.#controller?.abort();
         this.#controller = undefined;
-        if (unwatch)
-          unwatch();
         this.#watcher = undefined;
       });
     }
@@ -311,7 +353,7 @@ class Task {
     return TYPE_COMPUTED;
   }
   get() {
-    subscribeActiveWatcher(this.#watchers);
+    subscribeActiveWatcher(this.#watchers, this.#watchHookCallbacks);
     flushPendingReactions();
     const ok = (v) => {
       if (!isEqual(v, this.#value)) {
@@ -381,10 +423,10 @@ class Task {
   }
   on(type, callback) {
     if (type === HOOK_WATCH) {
-      this.#hookCallbacks[HOOK_WATCH] ||= new Set;
-      this.#hookCallbacks[HOOK_WATCH].add(callback);
+      this.#watchHookCallbacks ||= new Set;
+      this.#watchHookCallbacks.add(callback);
       return () => {
-        this.#hookCallbacks[HOOK_WATCH]?.delete(callback);
+        this.#watchHookCallbacks?.delete(callback);
       };
     }
     throw new InvalidHookError(this.constructor.name, type);
@@ -487,6 +529,8 @@ class Composite {
     return true;
   }
   on(type, callback) {
+    if (!isHandledHook(type, [HOOK_ADD, HOOK_CHANGE, HOOK_REMOVE]))
+      throw new InvalidHookError("Composite", type);
     this.#hookCallbacks[type] ||= new Set;
     this.#hookCallbacks[type].add(callback);
     if (type === HOOK_CHANGE && !this.#watchers.size) {
@@ -514,19 +558,20 @@ var TYPE_STATE = "State";
 class State {
   #watchers = new Set;
   #value;
+  #watchHookCallbacks;
   constructor(initialValue) {
-    validateSignalValue("state", initialValue);
+    validateSignalValue(TYPE_STATE, initialValue);
     this.#value = initialValue;
   }
   get [Symbol.toStringTag]() {
     return TYPE_STATE;
   }
   get() {
-    subscribeActiveWatcher(this.#watchers);
+    subscribeActiveWatcher(this.#watchers, this.#watchHookCallbacks);
     return this.#value;
   }
   set(newValue) {
-    validateSignalValue("state", newValue);
+    validateSignalValue(TYPE_STATE, newValue);
     if (isEqual(this.#value, newValue))
       return;
     this.#value = newValue;
@@ -536,8 +581,18 @@ class State {
       this.#watchers.clear();
   }
   update(updater) {
-    validateCallback("state update", updater);
+    validateCallback(`${TYPE_STATE} update`, updater);
     this.set(updater(this.#value));
+  }
+  on(type, callback) {
+    if (type === HOOK_WATCH) {
+      this.#watchHookCallbacks ||= new Set;
+      this.#watchHookCallbacks.add(callback);
+      return () => {
+        this.#watchHookCallbacks?.delete(callback);
+      };
+    }
+    throw new InvalidHookError(this.constructor.name, type);
   }
 }
 var isState = (value) => isObjectOfType(value, TYPE_STATE);
@@ -592,11 +647,11 @@ class List {
     }
   }
   get length() {
-    subscribeActiveWatcher(this.#watchers);
+    subscribeActiveWatcher(this.#watchers, this.#hookCallbacks[HOOK_WATCH]);
     return this.#order.length;
   }
   get() {
-    subscribeActiveWatcher(this.#watchers);
+    subscribeActiveWatcher(this.#watchers, this.#hookCallbacks[HOOK_WATCH]);
     return this.#value;
   }
   set(newValue) {
@@ -728,10 +783,11 @@ var TYPE_STORE = "Store";
 class BaseStore {
   #composite;
   #watchers = new Set;
+  #watchHookCallbacks;
   constructor(initialValue) {
-    validateSignalValue("store", initialValue, isRecord);
+    validateSignalValue(TYPE_STORE, initialValue, isRecord);
     this.#composite = new Composite(initialValue, (key, value) => {
-      validateSignalValue(`store for key "${key}"`, value);
+      validateSignalValue(`${TYPE_STORE} for key "${key}"`, value);
       return true;
     }, (value) => createMutableSignal(value));
   }
@@ -751,8 +807,14 @@ class BaseStore {
     for (const [key, signal] of this.#composite.signals.entries())
       yield [key, signal];
   }
+  keys() {
+    return this.#composite.signals.keys();
+  }
+  byKey(key) {
+    return this.#composite.signals.get(key);
+  }
   get() {
-    subscribeActiveWatcher(this.#watchers);
+    subscribeActiveWatcher(this.#watchers, this.#watchHookCallbacks);
     return this.#value;
   }
   set(newValue) {
@@ -767,18 +829,12 @@ class BaseStore {
     if (changed)
       notifyWatchers(this.#watchers);
   }
-  keys() {
-    return this.#composite.signals.keys();
-  }
-  byKey(key) {
-    return this.#composite.signals.get(key);
-  }
   update(fn) {
     this.set(fn(this.get()));
   }
   add(key, value) {
     if (this.#composite.signals.has(key))
-      throw new DuplicateKeyError("store", key, value);
+      throw new DuplicateKeyError(TYPE_STORE, key, value);
     const ok = this.#composite.add(key, value);
     if (ok)
       notifyWatchers(this.#watchers);
@@ -790,7 +846,16 @@ class BaseStore {
       notifyWatchers(this.#watchers);
   }
   on(type, callback) {
-    return this.#composite.on(type, callback);
+    if (type === HOOK_WATCH) {
+      this.#watchHookCallbacks ||= new Set;
+      this.#watchHookCallbacks.add(callback);
+      return () => {
+        this.#watchHookCallbacks?.delete(callback);
+      };
+    } else if (isHandledHook(type, [HOOK_ADD, HOOK_CHANGE, HOOK_REMOVE])) {
+      return this.#composite.on(type, callback);
+    }
+    throw new InvalidHookError(TYPE_STORE, type);
   }
 }
 var createStore = (initialValue) => {
@@ -1036,7 +1101,7 @@ class DerivedCollection {
     return this.#order.values();
   }
   get() {
-    subscribeActiveWatcher(this.#watchers);
+    subscribeActiveWatcher(this.#watchers, this.#hookCallbacks[HOOK_WATCH]);
     return this.#order.map((key) => this.#signals.get(key)?.get()).filter((v) => v != null && v !== UNSET);
   }
   at(index) {
@@ -1052,28 +1117,37 @@ class DerivedCollection {
     return this.#order.indexOf(key);
   }
   on(type, callback) {
-    this.#hookCallbacks[type] ||= new Set;
-    this.#hookCallbacks[type].add(callback);
-    if (type === HOOK_CHANGE && !this.#ownWatchers.size) {
-      for (const key of this.#signals.keys())
-        this.#addWatcher(key);
-    }
-    return () => {
-      this.#hookCallbacks[type]?.delete(callback);
-      if (type === HOOK_CHANGE && !this.#hookCallbacks.change?.size) {
-        if (this.#ownWatchers.size) {
-          for (const watcher of this.#ownWatchers.values())
-            watcher.stop();
-          this.#ownWatchers.clear();
-        }
+    if (isHandledHook(type, [
+      HOOK_ADD,
+      HOOK_CHANGE,
+      HOOK_REMOVE,
+      HOOK_SORT,
+      HOOK_WATCH
+    ])) {
+      this.#hookCallbacks[type] ||= new Set;
+      this.#hookCallbacks[type].add(callback);
+      if (type === HOOK_CHANGE && !this.#ownWatchers.size) {
+        for (const key of this.#signals.keys())
+          this.#addWatcher(key);
       }
-    };
+      return () => {
+        this.#hookCallbacks[type]?.delete(callback);
+        if (type === HOOK_CHANGE && !this.#hookCallbacks.change?.size) {
+          if (this.#ownWatchers.size) {
+            for (const watcher of this.#ownWatchers.values())
+              watcher.stop();
+            this.#ownWatchers.clear();
+          }
+        }
+      };
+    }
+    throw new InvalidHookError(TYPE_COLLECTION, type);
   }
   deriveCollection(callback) {
     return new DerivedCollection(this, callback);
   }
   get length() {
-    subscribeActiveWatcher(this.#watchers);
+    subscribeActiveWatcher(this.#watchers, this.#hookCallbacks[HOOK_WATCH]);
     return this.#order.length;
   }
 }
@@ -1086,8 +1160,7 @@ var TYPE_REF = "Ref";
 class Ref {
   #watchers = new Set;
   #value;
-  #hookCallbacks = {};
-  #unwatch;
+  #watchHookCallbacks;
   constructor(value, guard) {
     validateSignalValue(TYPE_REF, value, guard);
     this.#value = value;
@@ -1096,24 +1169,21 @@ class Ref {
     return TYPE_REF;
   }
   get() {
-    const startWatching = subscribeActiveWatcher(this.#watchers);
-    if (startWatching)
-      this.#unwatch = triggerHook(this.#hookCallbacks[HOOK_WATCH]);
+    subscribeActiveWatcher(this.#watchers, this.#watchHookCallbacks);
     return this.#value;
   }
   notify() {
-    if (!notifyWatchers(this.#watchers) && this.#unwatch)
-      this.#unwatch();
+    notifyWatchers(this.#watchers);
   }
   on(type, callback) {
     if (type === HOOK_WATCH) {
-      this.#hookCallbacks[HOOK_WATCH] ||= new Set;
-      this.#hookCallbacks[HOOK_WATCH].add(callback);
+      this.#watchHookCallbacks ||= new Set;
+      this.#watchHookCallbacks.add(callback);
       return () => {
-        this.#hookCallbacks[HOOK_WATCH]?.delete(callback);
+        this.#watchHookCallbacks?.delete(callback);
       };
     }
-    throw new InvalidHookError(this.constructor.name, type);
+    throw new InvalidHookError(TYPE_REF, type);
   }
 }
 var isRef = (value) => isObjectOfType(value, TYPE_REF);
@@ -1140,7 +1210,7 @@ var createEffect = (callback) => {
             watcher.on(HOOK_CLEANUP, cleanup2);
         }).catch((error) => {
           if (!isAbortError(error))
-            console.error("Async effect error:", error);
+            console.error("Error in async effect callback:", error);
         });
       } else {
         cleanup = callback();
@@ -1149,14 +1219,18 @@ var createEffect = (callback) => {
       }
     } catch (error) {
       if (!isAbortError(error))
-        console.error("Effect callback error:", error);
+        console.error("Error in effect callback:", error);
     }
     running = false;
   }));
   watcher();
   return () => {
     controller?.abort();
-    watcher.stop();
+    try {
+      watcher.stop();
+    } catch (error) {
+      console.error("Error in effect cleanup:", error);
+    }
   };
 };
 // src/match.ts

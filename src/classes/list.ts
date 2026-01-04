@@ -6,12 +6,12 @@ import {
 } from '../errors'
 import {
 	type Cleanup,
-	type Hook,
 	HOOK_ADD,
 	HOOK_CHANGE,
 	HOOK_REMOVE,
 	HOOK_SORT,
 	HOOK_WATCH,
+	type Hook,
 	type HookCallback,
 	type HookCallbacks,
 	isHandledHook,
@@ -108,12 +108,12 @@ class List<T extends {}> {
 	}
 
 	get length(): number {
-		subscribeActiveWatcher(this.#watchers)
+		subscribeActiveWatcher(this.#watchers, this.#hookCallbacks[HOOK_WATCH])
 		return this.#order.length
 	}
 
 	get(): T[] {
-		subscribeActiveWatcher(this.#watchers)
+		subscribeActiveWatcher(this.#watchers, this.#hookCallbacks[HOOK_WATCH])
 		return this.#value
 	}
 
