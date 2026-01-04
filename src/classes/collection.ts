@@ -27,6 +27,7 @@ type Collection<T extends {}> = {
 	readonly [Symbol.toStringTag]: 'Collection'
 	readonly [Symbol.isConcatSpreadable]: true
 	[Symbol.iterator](): IterableIterator<Signal<T>>
+	keys(): IterableIterator<string>
 	get: () => T[]
 	at: (index: number) => Signal<T> | undefined
 	byKey: (key: string) => Signal<T> | undefined
@@ -173,9 +174,8 @@ class DerivedCollection<T extends {}, U extends {}> implements Collection<T> {
 		}
 	}
 
-	get length(): number {
-		subscribeActiveWatcher(this.#watchers)
-		return this.#order.length
+	keys(): IterableIterator<string> {
+		return this.#order.values()
 	}
 
 	get(): T[] {
@@ -187,10 +187,6 @@ class DerivedCollection<T extends {}, U extends {}> implements Collection<T> {
 
 	at(index: number): Computed<T> | undefined {
 		return this.#signals.get(this.#order[index])
-	}
-
-	keys(): IterableIterator<string> {
-		return this.#order.values()
 	}
 
 	byKey(key: string): Computed<T> | undefined {
@@ -234,6 +230,11 @@ class DerivedCollection<T extends {}, U extends {}> implements Collection<T> {
 	): DerivedCollection<R, T> {
 		return new DerivedCollection(this, callback)
 	}
+
+	get length(): number {
+		subscribeActiveWatcher(this.#watchers)
+		return this.#order.length
+	}
 }
 
 /* === Functions === */
@@ -241,13 +242,13 @@ class DerivedCollection<T extends {}, U extends {}> implements Collection<T> {
 /**
  * Check if a value is a collection signal
  *
- * @since 0.17.0
+ * @since 0.17.2
  * @param {unknown} value - Value to check
  * @returns {boolean} - True if value is a collection signal, false otherwise
  */
-const isCollection = /*#__PURE__*/ <T extends {}, U extends {}>(
+const isCollection = /*#__PURE__*/ <T extends {}>(
 	value: unknown,
-): value is DerivedCollection<T, U> => isObjectOfType(value, TYPE_COLLECTION)
+): value is Collection<T> => isObjectOfType(value, TYPE_COLLECTION)
 
 /**
  * Check if a value is a collection source

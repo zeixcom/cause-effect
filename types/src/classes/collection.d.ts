@@ -8,6 +8,7 @@ type Collection<T extends {}> = {
     readonly [Symbol.toStringTag]: 'Collection';
     readonly [Symbol.isConcatSpreadable]: true;
     [Symbol.iterator](): IterableIterator<Signal<T>>;
+    keys(): IterableIterator<string>;
     get: () => T[];
     at: (index: number) => Signal<T> | undefined;
     byKey: (key: string) => Signal<T> | undefined;
@@ -24,23 +25,23 @@ declare class DerivedCollection<T extends {}, U extends {}> implements Collectio
     get [Symbol.toStringTag](): 'Collection';
     get [Symbol.isConcatSpreadable](): true;
     [Symbol.iterator](): IterableIterator<Computed<T>>;
-    get length(): number;
+    keys(): IterableIterator<string>;
     get(): T[];
     at(index: number): Computed<T> | undefined;
-    keys(): IterableIterator<string>;
     byKey(key: string): Computed<T> | undefined;
     keyAt(index: number): string | undefined;
     indexOfKey(key: string): number;
     on<K extends keyof Listeners>(type: K, listener: Listener<K>): Cleanup;
     deriveCollection<R extends {}>(callback: (sourceValue: T) => R): DerivedCollection<R, T>;
     deriveCollection<R extends {}>(callback: (sourceValue: T, abort: AbortSignal) => Promise<R>): DerivedCollection<R, T>;
+    get length(): number;
 }
 /**
  * Check if a value is a collection signal
  *
- * @since 0.17.0
+ * @since 0.17.2
  * @param {unknown} value - Value to check
  * @returns {boolean} - True if value is a collection signal, false otherwise
  */
-declare const isCollection: <T extends {}, U extends {}>(value: unknown) => value is DerivedCollection<T, U>;
+declare const isCollection: <T extends {}>(value: unknown) => value is Collection<T>;
 export { type Collection, type CollectionSource, type CollectionCallback, DerivedCollection, isCollection, TYPE_COLLECTION, };
