@@ -1,8 +1,3 @@
-/* === Constants === */
-
-// biome-ignore lint/suspicious/noExplicitAny: Deliberately using any to be used as a placeholder value in any signal
-const UNSET: any = Symbol()
-
 /* === Utility Functions === */
 
 const isString = /*#__PURE__*/ (value: unknown): value is string =>
@@ -73,7 +68,6 @@ const valueString = /*#__PURE__*/ (value: unknown): string =>
 /* === Exports === */
 
 export {
-	UNSET,
 	isString,
 	isNumber,
 	isSymbol,

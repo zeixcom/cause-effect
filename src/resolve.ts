@@ -1,7 +1,7 @@
 import type { UnknownRecord } from './diff'
 import { createError } from './errors'
 import type { SignalValues, UnknownSignalRecord } from './signal'
-import { UNSET } from './util'
+import { UNSET } from './system'
 
 /* === Types === */
 

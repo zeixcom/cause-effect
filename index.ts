@@ -1,6 +1,6 @@
 /**
  * @name Cause & Effect
- * @version 0.17.1
+ * @version 0.17.2
  * @author Esther Brunner
  */
 
@@ -80,14 +80,24 @@ export {
 	batchSignalWrites,
 	type Cleanup,
 	createWatcher,
-	emitNotification,
 	flushPendingReactions,
-	type Listener,
-	type Listeners,
-	type Notifications,
+	HOOK_ADD,
+	HOOK_CHANGE,
+	HOOK_CLEANUP,
+	HOOK_REMOVE,
+	HOOK_SORT,
+	HOOK_WATCH,
+	type Hook,
+	type CleanupHook,
+	type WatchHook,
+	type HookCallback,
+	type HookCallbacks,
+	isHandledHook,
 	notifyWatchers,
 	subscribeActiveWatcher,
 	trackSignalReads,
+	triggerHook,
+	UNSET,
 	type Watcher,
 } from './src/system'
 export {
@@ -100,6 +110,5 @@ export {
 	isRecordOrArray,
 	isString,
 	isSymbol,
-	UNSET,
 	valueString,
 } from './src/util'

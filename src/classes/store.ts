@@ -3,13 +3,13 @@ import { DuplicateKeyError, validateSignalValue } from '../errors'
 import { createMutableSignal, type MutableSignal, type Signal } from '../signal'
 import {
 	type Cleanup,
-	type Listener,
-	type Listeners,
+	type HookCallback,
 	notifyWatchers,
 	subscribeActiveWatcher,
+	UNSET,
 	type Watcher,
 } from '../system'
-import { isFunction, isObjectOfType, isRecord, isSymbol, UNSET } from '../util'
+import { isFunction, isObjectOfType, isRecord, isSymbol } from '../util'
 import { Composite } from './composite'
 import type { List } from './list'
 import type { State } from './state'
@@ -140,11 +140,11 @@ class BaseStore<T extends UnknownRecord> {
 		if (ok) notifyWatchers(this.#watchers)
 	}
 
-	on<K extends keyof Omit<Listeners, 'sort'>>(
+	on<K extends 'add' | 'change' | 'remove'>(
 		type: K,
-		listener: Listener<K>,
+		callback: HookCallback,
 	): Cleanup {
-		return this.#composite.on(type, listener)
+		return this.#composite.on(type, callback)
 	}
 }
 

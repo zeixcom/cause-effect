@@ -235,22 +235,22 @@ describe('collection', () => {
 			const numbers = new List([1, 2])
 			const doubled = new DerivedCollection(numbers, (x: number) => x * 2)
 
-			let arrayAddNotification: readonly string[] = []
+			let arrayAddNotification: readonly string[] | undefined
 			doubled.on('add', keys => {
 				arrayAddNotification = keys
 			})
 
 			numbers.add(3)
 			expect(arrayAddNotification).toHaveLength(1)
-			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(doubled.byKey(arrayAddNotification[0]!)?.get()).toBe(6)
+			const doubledKey = arrayAddNotification?.[0]
+			if (doubledKey) expect(doubled.byKey(doubledKey)?.get()).toBe(6)
 		})
 
 		test('emits remove notifications when items are removed', () => {
 			const items = new List([1, 2, 3])
 			const doubled = new DerivedCollection(items, (x: number) => x * 2)
 
-			let arrayRemoveNotification: readonly string[] = []
+			let arrayRemoveNotification: readonly string[] | undefined
 			doubled.on('remove', keys => {
 				arrayRemoveNotification = keys
 			})
@@ -263,7 +263,7 @@ describe('collection', () => {
 			const numbers = new List([3, 1, 2])
 			const doubled = new DerivedCollection(numbers, (x: number) => x * 2)
 
-			let sortNotification: readonly string[] = []
+			let sortNotification: readonly string[] | undefined
 			doubled.on('sort', newOrder => {
 				sortNotification = newOrder
 			})
@@ -732,15 +732,16 @@ describe('collection', () => {
 					(x: number) => x * 2,
 				)
 
-				let addedKeys: readonly string[] = []
+				let addedKeys: readonly string[] | undefined
 				quadrupled.on('add', keys => {
 					addedKeys = keys
 				})
 
 				numbers.add(3)
 				expect(addedKeys).toHaveLength(1)
-				// biome-ignore lint/style/noNonNullAssertion: test
-				expect(quadrupled.byKey(addedKeys[0]!)?.get()).toBe(12)
+				const quadrupledKey = addedKeys?.[0]
+				if (quadrupledKey)
+					expect(quadrupled.byKey(quadrupledKey)?.get()).toBe(12)
 			})
 
 			test('emits remove events when source removes items', () => {
@@ -753,7 +754,7 @@ describe('collection', () => {
 					(x: number) => x * 2,
 				)
 
-				let removedKeys: readonly string[] = []
+				let removedKeys: readonly string[] | undefined
 				quadrupled.on('remove', keys => {
 					removedKeys = keys
 				})
@@ -772,7 +773,7 @@ describe('collection', () => {
 					(x: number) => x * 2,
 				)
 
-				let sortedKeys: readonly string[] = []
+				let sortedKeys: readonly string[] | undefined
 				quadrupled.on('sort', newOrder => {
 					sortedKeys = newOrder
 				})

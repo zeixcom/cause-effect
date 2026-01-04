@@ -1,16 +1,27 @@
 import { diff, isEqual, type UnknownArray } from '../diff'
-import { DuplicateKeyError, validateSignalValue } from '../errors'
+import {
+	DuplicateKeyError,
+	InvalidHookError,
+	validateSignalValue,
+} from '../errors'
 import {
 	type Cleanup,
-	emitNotification,
-	type Listener,
-	type Listeners,
-	type Notifications,
+	type Hook,
+	HOOK_ADD,
+	HOOK_CHANGE,
+	HOOK_REMOVE,
+	HOOK_SORT,
+	HOOK_WATCH,
+	type HookCallback,
+	type HookCallbacks,
+	isHandledHook,
 	notifyWatchers,
 	subscribeActiveWatcher,
+	triggerHook,
+	UNSET,
 	type Watcher,
 } from '../system'
-import { isFunction, isNumber, isObjectOfType, isString, UNSET } from '../util'
+import { isFunction, isNumber, isObjectOfType, isString } from '../util'
 import { type CollectionCallback, DerivedCollection } from './collection'
 import { Composite } from './composite'
 import { State } from './state'
@@ -32,14 +43,12 @@ const TYPE_LIST = 'List' as const
 class List<T extends {}> {
 	#composite: Composite<Record<string, T>, State<T>>
 	#watchers = new Set<Watcher>()
-	#listeners: Pick<Listeners, 'sort'> = {
-		sort: new Set<Listener<'sort'>>(),
-	}
+	#hookCallbacks: HookCallbacks = {}
 	#order: string[] = []
 	#generateKey: (item: T) => string
 
 	constructor(initialValue: T[], keyConfig?: KeyConfig<T>) {
-		validateSignalValue('list', initialValue, Array.isArray)
+		validateSignalValue(TYPE_LIST, initialValue, Array.isArray)
 
 		let keyCounter = 0
 		this.#generateKey = isString(keyConfig)
@@ -51,7 +60,7 @@ class List<T extends {}> {
 		this.#composite = new Composite<ArrayToRecord<T[]>, State<T>>(
 			this.#toRecord(initialValue),
 			(key: string, value: unknown): value is T => {
-				validateSignalValue(`list for key "${key}"`, value)
+				validateSignalValue(`${TYPE_LIST} for key "${key}"`, value)
 				return true
 			},
 			value => new State(value),
@@ -198,7 +207,7 @@ class List<T extends {}> {
 		if (!isEqual(this.#order, newOrder)) {
 			this.#order = newOrder
 			notifyWatchers(this.#watchers)
-			emitNotification(this.#listeners.sort, this.#order)
+			triggerHook(this.#hookCallbacks.sort, this.#order)
 		}
 	}
 
@@ -258,21 +267,17 @@ class List<T extends {}> {
 		return Object.values(remove)
 	}
 
-	on<K extends keyof Notifications>(type: K, listener: Listener<K>): Cleanup {
-		if (type === 'sort') {
-			this.#listeners.sort.add(listener as Listener<'sort'>)
+	on(type: Hook, callback: HookCallback): Cleanup {
+		if (isHandledHook(type, [HOOK_SORT, HOOK_WATCH])) {
+			this.#hookCallbacks[type] ||= new Set<HookCallback>()
+			this.#hookCallbacks[type].add(callback)
 			return () => {
-				this.#listeners.sort.delete(listener as Listener<'sort'>)
+				this.#hookCallbacks[type]?.delete(callback)
 			}
+		} else if (isHandledHook(type, [HOOK_ADD, HOOK_CHANGE, HOOK_REMOVE])) {
+			return this.#composite.on(type, callback)
 		}
-
-		// For other types, delegate to the composite
-		return this.#composite.on(
-			type,
-			listener as Listener<
-				keyof Pick<Notifications, 'add' | 'remove' | 'change'>
-			>,
-		)
+		throw new InvalidHookError(TYPE_LIST, type)
 	}
 
 	deriveCollection<R extends {}>(

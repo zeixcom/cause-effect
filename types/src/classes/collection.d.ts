@@ -1,5 +1,5 @@
 import type { Signal } from '../signal';
-import { type Cleanup, type Listener, type Listeners } from '../system';
+import { type Cleanup, type Hook, type HookCallback } from '../system';
 import { type Computed } from './computed';
 import { type List } from './list';
 type CollectionSource<T extends {}> = List<T> | Collection<T>;
@@ -14,7 +14,7 @@ type Collection<T extends {}> = {
     byKey: (key: string) => Signal<T> | undefined;
     keyAt: (index: number) => string | undefined;
     indexOfKey: (key: string) => number | undefined;
-    on: <K extends keyof Listeners>(type: K, listener: Listener<K>) => Cleanup;
+    on: <K extends Hook>(type: K, callback: HookCallback) => Cleanup;
     deriveCollection: <R extends {}>(callback: CollectionCallback<R, T>) => DerivedCollection<R, T>;
     readonly length: number;
 };
@@ -31,7 +31,7 @@ declare class DerivedCollection<T extends {}, U extends {}> implements Collectio
     byKey(key: string): Computed<T> | undefined;
     keyAt(index: number): string | undefined;
     indexOfKey(key: string): number;
-    on<K extends keyof Listeners>(type: K, listener: Listener<K>): Cleanup;
+    on<K extends Hook>(type: K, callback: HookCallback): Cleanup;
     deriveCollection<R extends {}>(callback: (sourceValue: T) => R): DerivedCollection<R, T>;
     deriveCollection<R extends {}>(callback: (sourceValue: T, abort: AbortSignal) => Promise<R>): DerivedCollection<R, T>;
     get length(): number;

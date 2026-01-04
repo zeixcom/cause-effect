@@ -1,21 +1,26 @@
 type Cleanup = () => void;
+type MaybeCleanup = Cleanup | undefined | void;
 type Watcher = {
     (): void;
-    onCleanup(cleanup: Cleanup): void;
+    on(type: Hook, cleanup: Cleanup): void;
     stop(): void;
 };
-type Notifications = {
-    add: readonly string[];
-    change: readonly string[];
-    remove: readonly string[];
-    sort: readonly string[];
+type Hook = 'add' | 'change' | 'cleanup' | 'remove' | 'sort' | 'watch';
+type CleanupHook = 'cleanup';
+type WatchHook = 'watch';
+type HookCallback = (payload?: readonly string[]) => MaybeCleanup;
+type HookCallbacks = {
+    [K in Hook]?: Set<HookCallback>;
 };
-type Listener<K extends keyof Notifications> = (payload: Notifications[K]) => void;
-type Listeners = {
-    [K in keyof Notifications]: Set<Listener<K>>;
-};
+declare const UNSET: any;
+declare const HOOK_ADD = "add";
+declare const HOOK_CHANGE = "change";
+declare const HOOK_CLEANUP = "cleanup";
+declare const HOOK_REMOVE = "remove";
+declare const HOOK_SORT = "sort";
+declare const HOOK_WATCH = "watch";
 /**
- * Create a watcher that can be used to observe changes to a signal
+ * Create a watcher to observe changes to a signal.
  *
  * A watcher is a reaction function with onCleanup and stop methods
  *
@@ -25,29 +30,31 @@ type Listeners = {
  */
 declare const createWatcher: (react: () => void) => Watcher;
 /**
- * Subscribe by adding active watcher to the Set of watchers of a signal
+ * Subscribe by adding active watcher to the Set of watchers of a signal.
  *
  * @param {Set<Watcher>} watchers - Watchers of the signal
+ * @returns {boolean} - Whether the watcher was the first to subscribe
  */
-declare const subscribeActiveWatcher: (watchers: Set<Watcher>) => void;
+declare const subscribeActiveWatcher: (watchers: Set<Watcher>) => boolean;
 /**
- * Notify watchers of a signal change
+ * Notify watchers of a signal change.
  *
  * @param {Set<Watcher>} watchers - Watchers of the signal
+ * @returns {boolean} - Whether any watchers were notified
  */
-declare const notifyWatchers: (watchers: Set<Watcher>) => void;
+declare const notifyWatchers: (watchers: Set<Watcher>) => boolean;
 /**
- * Flush all pending reactions of enqueued watchers
+ * Flush all pending reactions of enqueued watchers.
  */
 declare const flushPendingReactions: () => void;
 /**
- * Batch multiple signal writes
+ * Batch multiple signal writes.
  *
  * @param {() => void} callback - Function with multiple signal writes to be batched
  */
 declare const batchSignalWrites: (callback: () => void) => void;
 /**
- * Run a function with signal reads in a tracking context (or temporarily untrack)
+ * Run a function with signal reads in a tracking context (or temporarily untrack).
  *
  * @param {Watcher | false} watcher - Watcher to be called when the signal changes
  *                                    or false for temporary untracking while inserting auto-hydrating DOM nodes
@@ -56,10 +63,19 @@ declare const batchSignalWrites: (callback: () => void) => void;
  */
 declare const trackSignalReads: (watcher: Watcher | false, run: () => void) => void;
 /**
- * Emit a notification to listeners
+ * Trigger a hook.
  *
- * @param {Set<Listener>} listeners - Listeners to be notified
- * @param {Notifications[K]} payload - Payload to be sent to listeners
+ * @param {Set<HookCallback>} callbacks - Callbacks to be called when the hook is triggered
+ * @param {readonly string[] | undefined} payload - Payload to be sent to listeners
+ * @return {Cleanup | undefined} Cleanup function to be called when the hook is unmounted
  */
-declare const emitNotification: <T extends keyof Notifications>(listeners: Set<Listener<T>>, payload: Notifications[T]) => void;
-export { type Cleanup, type Watcher, type Notifications, type Listener, type Listeners, createWatcher, subscribeActiveWatcher, notifyWatchers, flushPendingReactions, batchSignalWrites, trackSignalReads, emitNotification, };
+declare const triggerHook: (callbacks: Set<HookCallback> | undefined, payload?: readonly string[]) => Cleanup | undefined;
+/**
+ * Check whether a hook type is handled in a signal.
+ *
+ * @param {Hook} type - Type of hook to check
+ * @param {readonly (keyof Notification)[]} handled - List of handled hook types
+ * @returns {type is keyof Notification}
+ */
+declare const isHandledHook: <T extends readonly Hook[]>(type: Hook, handled: T) => type is T[number];
+export { type Cleanup, type MaybeCleanup, type Watcher, type Hook, type CleanupHook, type WatchHook, type HookCallback, type HookCallbacks, HOOK_ADD, HOOK_CHANGE, HOOK_CLEANUP, HOOK_REMOVE, HOOK_SORT, HOOK_WATCH, UNSET, createWatcher, subscribeActiveWatcher, notifyWatchers, flushPendingReactions, batchSignalWrites, trackSignalReads, triggerHook, isHandledHook, };

@@ -1,5 +1,4 @@
-import { type Cleanup } from './system';
-type MaybeCleanup = Cleanup | undefined | void;
+import { type Cleanup, type MaybeCleanup } from './system';
 type EffectCallback = (() => MaybeCleanup) | ((abort: AbortSignal) => Promise<MaybeCleanup>);
 /**
  * Define what happens when a reactive state changes

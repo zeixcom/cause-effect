@@ -1,5 +1,15 @@
-import { type Guard, validateSignalValue } from '../errors'
-import { notifyWatchers, subscribeActiveWatcher, type Watcher } from '../system'
+import { type Guard, InvalidHookError, validateSignalValue } from '../errors'
+import {
+	type Cleanup,
+	HOOK_WATCH,
+	type HookCallback,
+	type HookCallbacks,
+	notifyWatchers,
+	subscribeActiveWatcher,
+	triggerHook,
+	type Watcher,
+	type WatchHook,
+} from '../system'
 import { isObjectOfType } from '../util'
 
 /* === Constants === */
@@ -16,6 +26,8 @@ const TYPE_REF = 'Ref'
 class Ref<T extends {}> {
 	#watchers = new Set<Watcher>()
 	#value: T
+	#hookCallbacks: HookCallbacks = {}
+	#unwatch: Cleanup | undefined
 
 	/**
 	 * Create a new ref signal.
@@ -26,7 +38,7 @@ class Ref<T extends {}> {
 	 * @throws {InvalidSignalValueError} - If the value is invalid
 	 */
 	constructor(value: T, guard?: Guard<T>) {
-		validateSignalValue('ref', value, guard)
+		validateSignalValue(TYPE_REF, value, guard)
 
 		this.#value = value
 	}
@@ -41,15 +53,35 @@ class Ref<T extends {}> {
 	 * @returns {T} - Object reference
 	 */
 	get(): T {
-		subscribeActiveWatcher(this.#watchers)
+		const startWatching = subscribeActiveWatcher(this.#watchers)
+		if (startWatching)
+			this.#unwatch = triggerHook(this.#hookCallbacks[HOOK_WATCH])
 		return this.#value
 	}
 
 	/**
-	 * Notify watchers of relevant changes in the external reference
+	 * Notify watchers of relevant changes in the external reference.
 	 */
 	notify(): void {
-		notifyWatchers(this.#watchers)
+		if (!notifyWatchers(this.#watchers) && this.#unwatch) this.#unwatch()
+	}
+
+	/**
+	 * Register a callback to be called when HOOK_WATCH is triggered.
+	 *
+	 * @param {WatchHook} type - The type of hook to register the callback for; only HOOK_WATCH is supported
+	 * @param {HookCallback} callback - The callback to register
+	 * @returns {Cleanup} - A function to unregister the callback
+	 */
+	on(type: WatchHook, callback: HookCallback): Cleanup {
+		if (type === HOOK_WATCH) {
+			this.#hookCallbacks[HOOK_WATCH] ||= new Set()
+			this.#hookCallbacks[HOOK_WATCH].add(callback)
+			return () => {
+				this.#hookCallbacks[HOOK_WATCH]?.delete(callback)
+			}
+		}
+		throw new InvalidHookError(this.constructor.name, type)
 	}
 }
 

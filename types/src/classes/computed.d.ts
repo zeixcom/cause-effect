@@ -1,3 +1,4 @@
+import { type Cleanup, type Hook, type HookCallback } from '../system';
 type Computed<T extends {}> = {
     readonly [Symbol.toStringTag]: 'Computed';
     get(): T;
@@ -34,6 +35,14 @@ declare class Memo<T extends {}> {
      * @throws {Error} If an error occurs during computation
      */
     get(): T;
+    /**
+     * Register a callback to be called when HOOK_WATCH is triggered.
+     *
+     * @param {Hook} type - The type of hook to register the callback for; only HOOK_WATCH is supported
+     * @param {HookCallback} callback - The callback to register
+     * @returns {Cleanup} - A function to unregister the callback
+     */
+    on(type: Hook, callback: HookCallback): Cleanup;
 }
 /**
  * Create a new task signals that memoizes the result of an asynchronous function.
@@ -60,6 +69,14 @@ declare class Task<T extends {}> {
      * @throws {Error} If an error occurs during computation
      */
     get(): T;
+    /**
+     * Register a callback to be called when HOOK_WATCH is triggered.
+     *
+     * @param {Hook} type - The type of hook to register the callback for; only HOOK_WATCH is supported
+     * @param {HookCallback} callback - The callback to register
+     * @returns {Cleanup} - A function to unregister the callback
+     */
+    on(type: Hook, callback: HookCallback): Cleanup;
 }
 /**
  * Create a derived signal from existing signals

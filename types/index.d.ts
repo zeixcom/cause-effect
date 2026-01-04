@@ -1,6 +1,6 @@
 /**
  * @name Cause & Effect
- * @version 0.17.1
+ * @version 0.17.2
  * @author Esther Brunner
  */
 export { type Collection, type CollectionCallback, type CollectionSource, DerivedCollection, isCollection, TYPE_COLLECTION, } from './src/classes/collection';
@@ -15,5 +15,5 @@ export { CircularDependencyError, createError, DuplicateKeyError, type Guard, gu
 export { type MatchHandlers, match } from './src/match';
 export { type ResolveResult, resolve } from './src/resolve';
 export { createSignal, isMutableSignal, isSignal, type Signal, type SignalValues, type UnknownSignalRecord, } from './src/signal';
-export { batchSignalWrites, type Cleanup, createWatcher, emitNotification, flushPendingReactions, type Listener, type Listeners, type Notifications, notifyWatchers, subscribeActiveWatcher, trackSignalReads, type Watcher, } from './src/system';
-export { isAbortError, isAsyncFunction, isFunction, isNumber, isObjectOfType, isRecord, isRecordOrArray, isString, isSymbol, UNSET, valueString, } from './src/util';
+export { batchSignalWrites, type Cleanup, createWatcher, flushPendingReactions, HOOK_ADD, HOOK_CHANGE, HOOK_CLEANUP, HOOK_REMOVE, HOOK_SORT, HOOK_WATCH, type Hook, type CleanupHook, type WatchHook, type HookCallback, type HookCallbacks, isHandledHook, notifyWatchers, subscribeActiveWatcher, trackSignalReads, triggerHook, UNSET, type Watcher, } from './src/system';
+export { isAbortError, isAsyncFunction, isFunction, isNumber, isObjectOfType, isRecord, isRecordOrArray, isString, isSymbol, valueString, } from './src/util';

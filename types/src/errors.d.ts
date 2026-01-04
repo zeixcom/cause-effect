@@ -12,6 +12,9 @@ declare class InvalidCallbackError extends TypeError {
 declare class InvalidCollectionSourceError extends TypeError {
     constructor(where: string, value: unknown);
 }
+declare class InvalidHookError extends TypeError {
+    constructor(where: string, type: string);
+}
 declare class InvalidSignalValueError extends TypeError {
     constructor(where: string, value: unknown);
 }
@@ -25,4 +28,4 @@ declare const createError: (reason: unknown) => Error;
 declare const validateCallback: (where: string, value: unknown, guard?: (value: unknown) => boolean) => void;
 declare const validateSignalValue: (where: string, value: unknown, guard?: (value: unknown) => boolean) => void;
 declare const guardMutableSignal: <T extends {}>(what: string, value: unknown, signal: unknown) => signal is MutableSignal<T>;
-export { type Guard, CircularDependencyError, DuplicateKeyError, InvalidCallbackError, InvalidCollectionSourceError, InvalidSignalValueError, NullishSignalValueError, ReadonlySignalError, createError, validateCallback, validateSignalValue, guardMutableSignal, };
+export { type Guard, CircularDependencyError, DuplicateKeyError, InvalidCallbackError, InvalidCollectionSourceError, InvalidHookError, InvalidSignalValueError, NullishSignalValueError, ReadonlySignalError, createError, validateCallback, validateSignalValue, guardMutableSignal, };

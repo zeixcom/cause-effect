@@ -132,7 +132,7 @@ describe('list', () => {
 
 		test('emits sort notification with new order', () => {
 			const numbers = new List([3, 1, 2])
-			let sortNotification: readonly string[] = []
+			let sortNotification: readonly string[] | undefined
 			numbers.on('sort', sort => {
 				sortNotification = sort
 			})
@@ -305,7 +305,7 @@ describe('list', () => {
 	describe('change notifications', () => {
 		test('emits add notifications', () => {
 			const numbers = new List([1, 2])
-			let arrayAddNotification: readonly string[] = []
+			let arrayAddNotification: readonly string[] | undefined
 			let newArray: number[] = []
 			numbers.on('add', add => {
 				arrayAddNotification = add
@@ -318,7 +318,7 @@ describe('list', () => {
 
 		test('emits change notifications when properties are modified', () => {
 			const items = new List([{ value: 10 }])
-			let arrayChangeNotification: readonly string[] = []
+			let arrayChangeNotification: readonly string[] | undefined
 			let newArray: { value: number }[] = []
 			items.on('change', change => {
 				arrayChangeNotification = change
@@ -331,7 +331,7 @@ describe('list', () => {
 
 		test('emits remove notifications when items are removed', () => {
 			const items = new List([1, 2, 3])
-			let arrayRemoveNotification: readonly string[] = []
+			let arrayRemoveNotification: readonly string[] | undefined
 			let newArray: number[] = []
 			items.on('remove', remove => {
 				arrayRemoveNotification = remove
@@ -670,7 +670,7 @@ describe('list', () => {
 					(value: number) => value * 2,
 				)
 
-				let addedKeys: readonly string[] = []
+				let addedKeys: readonly string[] | undefined
 				doubled.on('add', keys => {
 					addedKeys = keys
 				})
@@ -685,7 +685,7 @@ describe('list', () => {
 					(value: number) => value * 2,
 				)
 
-				let removedKeys: readonly string[] = []
+				let removedKeys: readonly string[] | undefined
 				doubled.on('remove', keys => {
 					removedKeys = keys
 				})
@@ -700,7 +700,7 @@ describe('list', () => {
 					(value: number) => value * 2,
 				)
 
-				let sortedKeys: readonly string[] = []
+				let sortedKeys: readonly string[] | undefined
 				doubled.on('sort', keys => {
 					sortedKeys = keys
 				})

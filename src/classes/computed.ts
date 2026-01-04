@@ -2,23 +2,31 @@ import { isEqual } from '../diff'
 import {
 	CircularDependencyError,
 	createError,
+	InvalidHookError,
 	validateCallback,
 	validateSignalValue,
 } from '../errors'
 import {
+	type Cleanup,
 	createWatcher,
 	flushPendingReactions,
+	HOOK_CLEANUP,
+	HOOK_WATCH,
+	type HookCallback,
+	type HookCallbacks,
 	notifyWatchers,
 	subscribeActiveWatcher,
 	trackSignalReads,
+	triggerHook,
+	UNSET,
 	type Watcher,
+	type WatchHook,
 } from '../system'
 import {
 	isAbortError,
 	isAsyncFunction,
 	isObjectOfType,
 	isSyncFunction,
-	UNSET,
 } from '../util'
 
 /* === Types === */
@@ -53,7 +61,8 @@ class Memo<T extends {}> {
 	#error: Error | undefined
 	#dirty = true
 	#computing = false
-	#watcher: Watcher
+	#watcher: Watcher | undefined
+	#hookCallbacks: HookCallbacks = {}
 
 	/**
 	 * Create a new memoized signal.
@@ -64,18 +73,27 @@ class Memo<T extends {}> {
 	 * @throws {InvalidSignalValueError} If the initial value is not valid
 	 */
 	constructor(callback: MemoCallback<T>, initialValue: T = UNSET) {
-		validateCallback('memo', callback, isMemoCallback)
-		validateSignalValue('memo', initialValue)
+		validateCallback(this.constructor.name, callback, isMemoCallback)
+		validateSignalValue(this.constructor.name, initialValue)
 
 		this.#callback = callback
 		this.#value = initialValue
+	}
 
-		// Own watcher: called by notifyWatchers() in upstream signals (push)
-		this.#watcher = createWatcher(() => {
-			this.#dirty = true
-			if (this.#watchers.size) notifyWatchers(this.#watchers)
-			else this.#watcher.stop()
-		})
+	#getWatcher(): Watcher {
+		if (!this.#watcher) {
+			// Own watcher: called by notifyWatchers() in upstream signals (push)
+			this.#watcher = createWatcher(() => {
+				this.#dirty = true
+				if (!notifyWatchers(this.#watchers)) this.#watcher?.stop()
+			})
+			const unwatch = triggerHook(this.#hookCallbacks[HOOK_WATCH])
+			this.#watcher.on(HOOK_CLEANUP, () => {
+				if (unwatch) unwatch()
+				this.#watcher = undefined
+			})
+		}
+		return this.#watcher
 	}
 
 	get [Symbol.toStringTag](): 'Computed' {
@@ -94,7 +112,8 @@ class Memo<T extends {}> {
 		flushPendingReactions()
 
 		if (this.#dirty) {
-			trackSignalReads(this.#watcher, () => {
+			const watcher = this.#getWatcher()
+			trackSignalReads(watcher, () => {
 				if (this.#computing) throw new CircularDependencyError('memo')
 
 				let result: T
@@ -126,6 +145,24 @@ class Memo<T extends {}> {
 		if (this.#error) throw this.#error
 		return this.#value
 	}
+
+	/**
+	 * Register a callback to be called when HOOK_WATCH is triggered.
+	 *
+	 * @param {WatchHook} type - The type of hook to register the callback for; only HOOK_WATCH is supported
+	 * @param {HookCallback} callback - The callback to register
+	 * @returns {Cleanup} - A function to unregister the callback
+	 */
+	on(type: WatchHook, callback: HookCallback): Cleanup {
+		if (type === HOOK_WATCH) {
+			this.#hookCallbacks[HOOK_WATCH] ||= new Set()
+			this.#hookCallbacks[HOOK_WATCH].add(callback)
+			return () => {
+				this.#hookCallbacks[HOOK_WATCH]?.delete(callback)
+			}
+		}
+		throw new InvalidHookError(this.constructor.name, type)
+	}
 }
 
 /**
@@ -141,8 +178,9 @@ class Task<T extends {}> {
 	#dirty = true
 	#computing = false
 	#changed = false
-	#watcher: Watcher
+	#watcher: Watcher | undefined
 	#controller: AbortController | undefined
+	#hookCallbacks: HookCallbacks = {}
 
 	/**
 	 * Create a new task signal for an asynchronous function.
@@ -153,22 +191,30 @@ class Task<T extends {}> {
 	 * @throws {InvalidSignalValueError} If the initial value is not valid
 	 */
 	constructor(callback: TaskCallback<T>, initialValue: T = UNSET) {
-		validateCallback('task', callback, isTaskCallback)
-		validateSignalValue('task', initialValue)
+		validateCallback(this.constructor.name, callback, isTaskCallback)
+		validateSignalValue(this.constructor.name, initialValue)
 
 		this.#callback = callback
 		this.#value = initialValue
+	}
 
-		// Own watcher: called by notifyWatchers() in upstream signals (push)
-		this.#watcher = createWatcher(() => {
-			this.#dirty = true
-			this.#controller?.abort()
-			if (this.#watchers.size) notifyWatchers(this.#watchers)
-			else this.#watcher.stop()
-		})
-		this.#watcher.onCleanup(() => {
-			this.#controller?.abort()
-		})
+	#getWatcher(): Watcher {
+		if (!this.#watcher) {
+			// Own watcher: called by notifyWatchers() in upstream signals (push)
+			this.#watcher = createWatcher(() => {
+				this.#dirty = true
+				this.#controller?.abort()
+				if (!notifyWatchers(this.#watchers)) this.#watcher?.stop()
+			})
+			const unwatch = triggerHook(this.#hookCallbacks[HOOK_WATCH])
+			this.#watcher.on(HOOK_CLEANUP, () => {
+				this.#controller?.abort()
+				this.#controller = undefined
+				if (unwatch) unwatch()
+				this.#watcher = undefined
+			})
+		}
+		return this.#watcher
 	}
 
 	get [Symbol.toStringTag](): 'Computed' {
@@ -215,11 +261,12 @@ class Task<T extends {}> {
 				this.#computing = false
 				this.#controller = undefined
 				fn(arg)
-				if (this.#changed) notifyWatchers(this.#watchers)
+				if (this.#changed && !notifyWatchers(this.#watchers))
+					this.#watcher?.stop()
 			}
 
 		const compute = () =>
-			trackSignalReads(this.#watcher, () => {
+			trackSignalReads(this.#getWatcher(), () => {
 				if (this.#computing) throw new CircularDependencyError('task')
 				this.#changed = false
 
@@ -265,6 +312,24 @@ class Task<T extends {}> {
 
 		if (this.#error) throw this.#error
 		return this.#value
+	}
+
+	/**
+	 * Register a callback to be called when HOOK_WATCH is triggered.
+	 *
+	 * @param {WatchHook} type - The type of hook to register the callback for; only HOOK_WATCH is supported
+	 * @param {HookCallback} callback - The callback to register
+	 * @returns {Cleanup} - A function to unregister the callback
+	 */
+	on(type: WatchHook, callback: HookCallback): Cleanup {
+		if (type === HOOK_WATCH) {
+			this.#hookCallbacks[HOOK_WATCH] ||= new Set()
+			this.#hookCallbacks[HOOK_WATCH].add(callback)
+			return () => {
+				this.#hookCallbacks[HOOK_WATCH]?.delete(callback)
+			}
+		}
+		throw new InvalidHookError(this.constructor.name, type)
 	}
 }
 

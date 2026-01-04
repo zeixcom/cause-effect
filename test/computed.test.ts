@@ -429,49 +429,49 @@ describe('Computed', () => {
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
 				new Memo(null)
-			}).toThrow('Invalid memo callback null')
+			}).toThrow('Invalid Memo callback null')
 
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
 				new Memo(undefined)
-			}).toThrow('Invalid memo callback undefined')
+			}).toThrow('Invalid Memo callback undefined')
 
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
 				new Memo(42)
-			}).toThrow('Invalid memo callback 42')
+			}).toThrow('Invalid Memo callback 42')
 
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
 				new Memo('not a function')
-			}).toThrow('Invalid memo callback "not a function"')
+			}).toThrow('Invalid Memo callback "not a function"')
 
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
 				new Memo({ not: 'a function' })
-			}).toThrow('Invalid memo callback {"not":"a function"}')
+			}).toThrow('Invalid Memo callback {"not":"a function"}')
 
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
 				new Memo((_a: unknown, _b: unknown, _c: unknown) => 42)
-			}).toThrow('Invalid memo callback (_a, _b, _c) => 42')
+			}).toThrow('Invalid Memo callback (_a, _b, _c) => 42')
 
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
 				new Memo(async (_a: unknown, _b: unknown) => 42)
-			}).toThrow('Invalid memo callback async (_a, _b) => 42')
+			}).toThrow('Invalid Memo callback async (_a, _b) => 42')
 
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
 				new Task((_a: unknown) => 42)
-			}).toThrow('Invalid task callback (_a) => 42')
+			}).toThrow('Invalid Task callback (_a) => 42')
 		})
 
 		test('should throw NullishSignalValueError when initialValue is null', () => {
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
 				new Memo(() => 42, null)
-			}).toThrow('Nullish signal values are not allowed in memo')
+			}).toThrow('Nullish signal values are not allowed in Memo')
 		})
 
 		test('should throw specific error types for invalid inputs', () => {
@@ -482,7 +482,7 @@ describe('Computed', () => {
 			} catch (error) {
 				expect(error).toBeInstanceOf(TypeError)
 				expect(error.name).toBe('InvalidCallbackError')
-				expect(error.message).toBe('Invalid memo callback null')
+				expect(error.message).toBe('Invalid Memo callback null')
 			}
 
 			try {
@@ -493,7 +493,7 @@ describe('Computed', () => {
 				expect(error).toBeInstanceOf(TypeError)
 				expect(error.name).toBe('NullishSignalValueError')
 				expect(error.message).toBe(
-					'Nullish signal values are not allowed in memo',
+					'Nullish signal values are not allowed in Memo',
 				)
 			}
 		})

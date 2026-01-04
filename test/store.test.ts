@@ -227,7 +227,7 @@ describe('store', () => {
 
 	describe('change tracking and notifications', () => {
 		test('emits add notifications', () => {
-			let addNotification: readonly string[] = []
+			let addNotification: readonly string[] | undefined
 			const user = createStore<{ name: string; email?: string }>({
 				name: 'John',
 			})
@@ -240,7 +240,7 @@ describe('store', () => {
 
 		test('emits change notifications when properties are modified', () => {
 			const user = createStore({ name: 'John' })
-			let changeNotification: readonly string[] = []
+			let changeNotification: readonly string[] | undefined
 			user.on('change', change => {
 				changeNotification = change
 			})
@@ -254,7 +254,7 @@ describe('store', () => {
 					theme: 'light',
 				},
 			})
-			let changeNotification: readonly string[] = []
+			let changeNotification: readonly string[] | undefined
 			user.on('change', change => {
 				changeNotification = change
 			})
@@ -267,7 +267,7 @@ describe('store', () => {
 				name: 'John',
 				email: 'john@example.com',
 			})
-			let removeNotification: readonly string[] = []
+			let removeNotification: readonly string[] | undefined
 			user.on('remove', remove => {
 				removeNotification = remove
 			})
@@ -289,9 +289,9 @@ describe('store', () => {
 				},
 			})
 
-			let changeNotification: readonly string[] = []
-			let addNotification: readonly string[] = []
-			let removeNotification: readonly string[] = []
+			let changeNotification: readonly string[] | undefined
+			let addNotification: readonly string[] | undefined
+			let removeNotification: readonly string[] | undefined
 
 			user.on('change', change => {
 				changeNotification = change

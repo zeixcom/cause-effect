@@ -1,4 +1,3 @@
-declare const UNSET: any;
 declare const isString: (value: unknown) => value is string;
 declare const isNumber: (value: unknown) => value is number;
 declare const isSymbol: (value: unknown) => value is symbol;
@@ -15,4 +14,4 @@ declare const isUniformArray: <T>(value: unknown, guard?: (item: T) => item is T
 declare const hasMethod: <T extends object & Record<string, (...args: unknown[]) => unknown>>(obj: T, methodName: string) => obj is T & Record<string, (...args: unknown[]) => unknown>;
 declare const isAbortError: (error: unknown) => boolean;
 declare const valueString: (value: unknown) => string;
-export { UNSET, isString, isNumber, isSymbol, isFunction, isAsyncFunction, isSyncFunction, isNonNullObject, isObjectOfType, isRecord, isRecordOrArray, isUniformArray, hasMethod, isAbortError, valueString, };
+export { isString, isNumber, isSymbol, isFunction, isAsyncFunction, isSyncFunction, isNonNullObject, isObjectOfType, isRecord, isRecordOrArray, isUniformArray, hasMethod, isAbortError, valueString, };

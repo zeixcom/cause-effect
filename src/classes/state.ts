@@ -1,7 +1,12 @@
 import { isEqual } from '../diff'
 import { validateCallback, validateSignalValue } from '../errors'
-import { notifyWatchers, subscribeActiveWatcher, type Watcher } from '../system'
-import { isObjectOfType, UNSET } from '../util'
+import {
+	notifyWatchers,
+	subscribeActiveWatcher,
+	UNSET,
+	type Watcher,
+} from '../system'
+import { isObjectOfType } from '../util'
 
 /* === Constants === */
 
@@ -58,7 +63,7 @@ class State<T extends {}> {
 
 		if (isEqual(this.#value, newValue)) return
 		this.#value = newValue
-		notifyWatchers(this.#watchers)
+		if (this.#watchers.size) notifyWatchers(this.#watchers)
 
 		// Setting to UNSET clears the watchers so the signal can be garbage collected
 		if (UNSET === this.#value) this.#watchers.clear()

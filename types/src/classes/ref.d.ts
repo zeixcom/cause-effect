@@ -1,4 +1,5 @@
 import { type Guard } from '../errors';
+import { type Cleanup, type HookCallback, type WatchHook } from '../system';
 declare const TYPE_REF = "Ref";
 /**
  * Create a new ref signal.
@@ -24,9 +25,17 @@ declare class Ref<T extends {}> {
      */
     get(): T;
     /**
-     * Notify watchers of relevant changes in the external reference
+     * Notify watchers of relevant changes in the external reference.
      */
     notify(): void;
+    /**
+     * Register a callback to be called when HOOK_WATCH is triggered.
+     *
+     * @param {WatchHook} type - The type of hook to register the callback for; only HOOK_WATCH is supported
+     * @param {HookCallback} callback - The callback to register
+     * @returns {Cleanup} - A function to unregister the callback
+     */
+    on(type: WatchHook, callback: HookCallback): Cleanup;
 }
 /**
  * Check if the provided value is a Ref instance

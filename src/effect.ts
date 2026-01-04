@@ -1,11 +1,14 @@
 import { CircularDependencyError, InvalidCallbackError } from './errors'
-import { type Cleanup, createWatcher, trackSignalReads } from './system'
+import {
+	type Cleanup,
+	createWatcher,
+	HOOK_CLEANUP,
+	type MaybeCleanup,
+	trackSignalReads,
+} from './system'
 import { isAbortError, isAsyncFunction, isFunction } from './util'
 
 /* === Types === */
-
-// biome-ignore lint/suspicious/noConfusingVoidType: optional Cleanup return type
-type MaybeCleanup = Cleanup | undefined | void
 
 type EffectCallback =
 	| (() => MaybeCleanup)
@@ -55,7 +58,7 @@ const createEffect = (callback: EffectCallback): Cleanup => {
 								isFunction(cleanup) &&
 								controller === currentController
 							)
-								watcher.onCleanup(cleanup)
+								watcher.on(HOOK_CLEANUP, cleanup)
 						})
 						.catch(error => {
 							if (!isAbortError(error))
@@ -63,7 +66,7 @@ const createEffect = (callback: EffectCallback): Cleanup => {
 						})
 				} else {
 					cleanup = callback()
-					if (isFunction(cleanup)) watcher.onCleanup(cleanup)
+					if (isFunction(cleanup)) watcher.on(HOOK_CLEANUP, cleanup)
 				}
 			} catch (error) {
 				if (!isAbortError(error))
