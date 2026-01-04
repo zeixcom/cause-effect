@@ -971,9 +971,8 @@ class DerivedCollection {
         yield signal;
     }
   }
-  get length() {
-    subscribeActiveWatcher(this.#watchers);
-    return this.#order.length;
+  keys() {
+    return this.#order.values();
   }
   get() {
     subscribeActiveWatcher(this.#watchers);
@@ -981,9 +980,6 @@ class DerivedCollection {
   }
   at(index) {
     return this.#signals.get(this.#order[index]);
-  }
-  keys() {
-    return this.#order.values();
   }
   byKey(key) {
     return this.#signals.get(key);
@@ -1013,6 +1009,10 @@ class DerivedCollection {
   }
   deriveCollection(callback) {
     return new DerivedCollection(this, callback);
+  }
+  get length() {
+    subscribeActiveWatcher(this.#watchers);
+    return this.#order.length;
   }
 }
 var isCollection = (value) => isObjectOfType(value, TYPE_COLLECTION);
