@@ -5,16 +5,17 @@ import type { Signal } from '../src/signal'
 import {
 	type Cleanup,
 	createWatcher,
-	emitNotification,
-	type Listener,
-	type Listeners,
-	type Notifications,
+	triggerHook,
+	type HookCallback,
+	type HookCallbacks,
+	type Hook,
 	notifyWatchers,
 	subscribeActiveWatcher,
 	trackSignalReads,
 	type Watcher,
+	UNSET,
 } from '../src/system'
-import { isAsyncFunction, isObjectOfType, isSymbol, UNSET } from '../src/util'
+import { isAsyncFunction, isObjectOfType, isSymbol } from '../src/util'
 import { type Computed, createComputed } from './computed'
 import type { List } from './list'
 
@@ -39,7 +40,7 @@ type Collection<T extends {}> = {
 	get(): T[]
 	keyAt(index: number): string | undefined
 	indexOfKey(key: string): number
-	on<K extends keyof Notifications>(type: K, listener: Listener<K>): Cleanup
+	on(type: Hook, callback: HookCallback): Cleanup
 	sort(compareFn?: (a: T, b: T) => number): void
 }
 
@@ -66,12 +67,7 @@ const createCollection = <T extends {}, O extends {}>(
 	callback: CollectionCallback<T, O>,
 ): Collection<T> => {
 	const watchers = new Set<Watcher>()
-	const listeners: Listeners = {
-		add: new Set<Listener<'add'>>(),
-		change: new Set<Listener<'change'>>(),
-		remove: new Set<Listener<'remove'>>(),
-		sort: new Set<Listener<'sort'>>(),
-	}
+	const hookCallbacks: HookCallbacks = {}
 	const signals = new Map<string, Signal<T>>()
 	const signalWatchers = new Map<string, Watcher>()
 
@@ -121,7 +117,7 @@ const createCollection = <T extends {}, O extends {}>(
 		const watcher = createWatcher(() =>
 			trackSignalReads(watcher, () => {
 				signal.get() // Subscribe to the signal
-				emitNotification(listeners.change, [key])
+				triggerHook(hookCallbacks.change, [key])
 			}),
 		)
 		watcher()
@@ -152,25 +148,29 @@ const createCollection = <T extends {}, O extends {}>(
 		addProperty(key)
 	}
 	origin.on('add', additions => {
+		if (!additions?.length) return
 		for (const key of additions) {
 			if (!signals.has(key)) addProperty(key)
 		}
 		notifyWatchers(watchers)
-		emitNotification(listeners.add, additions)
+		triggerHook(hookCallbacks.add, additions)
 	})
 	origin.on('remove', removals => {
+		if (!removals?.length) return
 		for (const key of Object.keys(removals)) {
 			if (!signals.has(key)) continue
 			removeProperty(key)
 		}
 		order = order.filter(() => true) // Compact array
 		notifyWatchers(watchers)
-		emitNotification(listeners.remove, removals)
+		triggerHook(hookCallbacks.remove, removals)
 	})
 	origin.on('sort', newOrder => {
-		order = [...newOrder]
-		notifyWatchers(watchers)
-		emitNotification(listeners.sort, newOrder)
+		if (newOrder) {
+			order = [...newOrder]
+			notifyWatchers(watchers)
+			triggerHook(hookCallbacks.sort, newOrder)
+		}
 	})
 
 	// Get signal by key or index
@@ -247,16 +247,14 @@ const createCollection = <T extends {}, O extends {}>(
 				order = entries.map(([_, key]) => key)
 
 				notifyWatchers(watchers)
-				emitNotification(listeners.sort, order)
+				triggerHook(hookCallbacks.sort, order)
 			},
 		},
 		on: {
-			value: <K extends keyof Listeners>(
-				type: K,
-				listener: Listener<K>,
-			): Cleanup => {
-				listeners[type].add(listener)
-				return () => listeners[type].delete(listener)
+			value: (type: Hook, callback: HookCallback): Cleanup => {
+				hookCallbacks[type] ||= new Set()
+				hookCallbacks[type].add(callback)
+				return () => hookCallbacks[type]?.delete(callback)
 			},
 		},
 		length: {

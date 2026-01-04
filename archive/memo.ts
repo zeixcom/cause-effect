@@ -10,9 +10,10 @@ import {
 	notifyWatchers,
 	subscribeActiveWatcher,
 	trackSignalReads,
+	UNSET,
 	type Watcher,
 } from '../src/system'
-import { isObjectOfType, isSyncFunction, UNSET } from '../src/util'
+import { isObjectOfType, isSyncFunction } from '../src/util'
 
 /* === Types === */
 

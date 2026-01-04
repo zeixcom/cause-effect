@@ -223,7 +223,7 @@ describe('Effect', () => {
 
 			// Check if console.error was called with the error message
 			expect(mockConsoleError).toHaveBeenCalledWith(
-				'Effect callback error:',
+				'Error in effect callback:',
 				expect.any(Error),
 			)
 		} finally {
@@ -507,7 +507,7 @@ describe('Effect - Async with AbortSignal', () => {
 
 			// Should have logged the async error
 			expect(mockConsoleError).toHaveBeenCalledWith(
-				'Async effect error:',
+				'Error in async effect callback:',
 				expect.any(Error),
 			)
 		} finally {

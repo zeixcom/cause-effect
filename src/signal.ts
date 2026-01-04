@@ -10,7 +10,6 @@ import { isList, List } from './classes/list'
 import { isState, State } from './classes/state'
 import { createStore, isStore, type Store } from './classes/store'
 import type { UnknownRecord } from './diff'
-// import type { Collection } from './signals/collection'
 import { isRecord, isUniformArray } from './util'
 
 /* === Types === */

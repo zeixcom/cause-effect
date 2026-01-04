@@ -1,5 +1,6 @@
 import { isMutableSignal, type MutableSignal } from './signal'
-import { isFunction, isSymbol, UNSET, valueString } from './util'
+import { UNSET } from './system'
+import { isFunction, isSymbol, valueString } from './util'
 
 /* === Types === */
 
@@ -36,6 +37,13 @@ class InvalidCollectionSourceError extends TypeError {
 	constructor(where: string, value: unknown) {
 		super(`Invalid ${where} source ${valueString(value)}`)
 		this.name = 'InvalidCollectionSourceError'
+	}
+}
+
+class InvalidHookError extends TypeError {
+	constructor(where: string, type: string) {
+		super(`Invalid hook "${type}" in  ${where}`)
+		this.name = 'InvalidHookError'
 	}
 }
 
@@ -100,6 +108,7 @@ export {
 	DuplicateKeyError,
 	InvalidCallbackError,
 	InvalidCollectionSourceError,
+	InvalidHookError,
 	InvalidSignalValueError,
 	NullishSignalValueError,
 	ReadonlySignalError,

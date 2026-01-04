@@ -3,9 +3,10 @@ import { InvalidCallbackError, NullishSignalValueError } from '../src/errors'
 import {
 	notifyWatchers,
 	subscribeActiveWatcher,
+	UNSET,
 	type Watcher,
 } from '../src/system'
-import { isFunction, isObjectOfType, UNSET } from '../src/util'
+import { isFunction, isObjectOfType } from '../src/util'
 
 /* === Types === */
 

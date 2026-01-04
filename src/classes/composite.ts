@@ -1,20 +1,24 @@
 import type { DiffResult, UnknownRecord } from '../diff'
-import { guardMutableSignal } from '../errors'
+import { guardMutableSignal, InvalidHookError } from '../errors'
 import type { Signal } from '../signal'
 import {
 	batchSignalWrites,
 	type Cleanup,
 	createWatcher,
-	emitNotification,
-	type Listener,
-	type Listeners,
+	HOOK_ADD,
+	HOOK_CHANGE,
+	HOOK_REMOVE,
+	type HookCallback,
+	type HookCallbacks,
+	isHandledHook,
 	trackSignalReads,
+	triggerHook,
 	type Watcher,
 } from '../system'
 
 /* === Types === */
 
-type CompositeListeners = Pick<Listeners, 'add' | 'change' | 'remove'>
+type CompositeHook = 'add' | 'change' | 'remove'
 
 /* === Class Definitions === */
 
@@ -26,11 +30,7 @@ class Composite<T extends UnknownRecord, S extends Signal<T[keyof T] & {}>> {
 	) => value is T[K] & {}
 	#create: <V extends T[keyof T] & {}>(value: V) => S
 	#watchers = new Map<string, Watcher>()
-	#listeners: CompositeListeners = {
-		add: new Set<Listener<'add'>>(),
-		change: new Set<Listener<'change'>>(),
-		remove: new Set<Listener<'remove'>>(),
-	}
+	#hookCallbacks: HookCallbacks = {}
 	#batching = false
 
 	constructor(
@@ -59,7 +59,7 @@ class Composite<T extends UnknownRecord, S extends Signal<T[keyof T] & {}>> {
 			trackSignalReads(watcher, () => {
 				this.signals.get(key)?.get() // Subscribe to the signal
 				if (!this.#batching)
-					emitNotification(this.#listeners.change, [key])
+					triggerHook(this.#hookCallbacks.change, [key])
 			})
 		})
 		this.#watchers.set(key, watcher)
@@ -70,9 +70,9 @@ class Composite<T extends UnknownRecord, S extends Signal<T[keyof T] & {}>> {
 		if (!this.#validate(key, value)) return false
 
 		this.signals.set(key, this.#create(value))
-		if (this.#listeners.change.size) this.#addWatcher(key)
+		if (this.#hookCallbacks.change?.size) this.#addWatcher(key)
 
-		if (!this.#batching) emitNotification(this.#listeners.add, [key])
+		if (!this.#batching) triggerHook(this.#hookCallbacks.add, [key])
 		return true
 	}
 
@@ -86,7 +86,7 @@ class Composite<T extends UnknownRecord, S extends Signal<T[keyof T] & {}>> {
 			this.#watchers.delete(key)
 		}
 
-		if (!this.#batching) emitNotification(this.#listeners.remove, [key])
+		if (!this.#batching) triggerHook(this.#hookCallbacks.remove, [key])
 		return true
 	}
 
@@ -103,7 +103,7 @@ class Composite<T extends UnknownRecord, S extends Signal<T[keyof T] & {}>> {
 
 			// Queue initial additions event to allow listeners to be added first
 			const notify = () =>
-				emitNotification(this.#listeners.add, Object.keys(changes.add))
+				triggerHook(this.#hookCallbacks.add, Object.keys(changes.add))
 			if (initialRun) setTimeout(notify, 0)
 			else notify()
 		}
@@ -121,20 +121,14 @@ class Composite<T extends UnknownRecord, S extends Signal<T[keyof T] & {}>> {
 						signal.set(value)
 				}
 			})
-			emitNotification(
-				this.#listeners.change,
-				Object.keys(changes.change),
-			)
+			triggerHook(this.#hookCallbacks.change, Object.keys(changes.change))
 		}
 
 		// Removals
 		if (Object.keys(changes.remove).length) {
 			for (const key in changes.remove)
 				this.remove(key as keyof T & string)
-			emitNotification(
-				this.#listeners.remove,
-				Object.keys(changes.remove),
-			)
+			triggerHook(this.#hookCallbacks.remove, Object.keys(changes.remove))
 		}
 
 		this.#batching = false
@@ -145,24 +139,25 @@ class Composite<T extends UnknownRecord, S extends Signal<T[keyof T] & {}>> {
 		const keys = Array.from(this.signals.keys())
 		this.signals.clear()
 		this.#watchers.clear()
-		emitNotification(this.#listeners.remove, keys)
+		triggerHook(this.#hookCallbacks.remove, keys)
 		return true
 	}
 
-	on<K extends keyof CompositeListeners>(
-		type: K,
-		listener: Listener<K>,
-	): Cleanup {
-		this.#listeners[type].add(listener)
-		if (type === 'change' && !this.#watchers.size) {
+	on(type: CompositeHook, callback: HookCallback): Cleanup {
+		if (!isHandledHook(type, [HOOK_ADD, HOOK_CHANGE, HOOK_REMOVE]))
+			throw new InvalidHookError('Composite', type)
+
+		this.#hookCallbacks[type] ||= new Set()
+		this.#hookCallbacks[type].add(callback)
+		if (type === HOOK_CHANGE && !this.#watchers.size) {
 			this.#batching = true
 			for (const key of this.signals.keys()) this.#addWatcher(key)
 			this.#batching = false
 		}
 
 		return () => {
-			this.#listeners[type].delete(listener)
-			if (type === 'change' && !this.#listeners.change.size) {
+			this.#hookCallbacks[type]?.delete(callback)
+			if (type === HOOK_CHANGE && !this.#hookCallbacks.change?.size) {
 				if (this.#watchers.size) {
 					for (const watcher of this.#watchers.values())
 						watcher.stop()
@@ -173,4 +168,4 @@ class Composite<T extends UnknownRecord, S extends Signal<T[keyof T] & {}>> {
 	}
 }
 
-export { Composite, type CompositeListeners }
+export { Composite, type CompositeHook as CompositeListeners }

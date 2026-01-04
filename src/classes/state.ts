@@ -1,7 +1,20 @@
 import { isEqual } from '../diff'
-import { validateCallback, validateSignalValue } from '../errors'
-import { notifyWatchers, subscribeActiveWatcher, type Watcher } from '../system'
-import { isObjectOfType, UNSET } from '../util'
+import {
+	InvalidHookError,
+	validateCallback,
+	validateSignalValue,
+} from '../errors'
+import {
+	type Cleanup,
+	HOOK_WATCH,
+	type HookCallback,
+	notifyWatchers,
+	subscribeActiveWatcher,
+	UNSET,
+	type Watcher,
+	type WatchHook,
+} from '../system'
+import { isObjectOfType } from '../util'
 
 /* === Constants === */
 
@@ -17,6 +30,7 @@ const TYPE_STATE = 'State' as const
 class State<T extends {}> {
 	#watchers = new Set<Watcher>()
 	#value: T
+	#watchHookCallbacks: Set<HookCallback> | undefined
 
 	/**
 	 * Create a new state signal.
@@ -26,7 +40,7 @@ class State<T extends {}> {
 	 * @throws {InvalidSignalValueError} - If the initial value is invalid
 	 */
 	constructor(initialValue: T) {
-		validateSignalValue('state', initialValue)
+		validateSignalValue(TYPE_STATE, initialValue)
 
 		this.#value = initialValue
 	}
@@ -41,7 +55,8 @@ class State<T extends {}> {
 	 * @returns {T} - Current value of the state
 	 */
 	get(): T {
-		subscribeActiveWatcher(this.#watchers)
+		subscribeActiveWatcher(this.#watchers, this.#watchHookCallbacks)
+
 		return this.#value
 	}
 
@@ -54,11 +69,11 @@ class State<T extends {}> {
 	 * @throws {InvalidSignalValueError} - If the initial value is invalid
 	 */
 	set(newValue: T): void {
-		validateSignalValue('state', newValue)
+		validateSignalValue(TYPE_STATE, newValue)
 
 		if (isEqual(this.#value, newValue)) return
 		this.#value = newValue
-		notifyWatchers(this.#watchers)
+		if (this.#watchers.size) notifyWatchers(this.#watchers)
 
 		// Setting to UNSET clears the watchers so the signal can be garbage collected
 		if (UNSET === this.#value) this.#watchers.clear()
@@ -74,9 +89,27 @@ class State<T extends {}> {
 	 * @throws {InvalidSignalValueError} - If the initial value is invalid
 	 */
 	update(updater: (oldValue: T) => T): void {
-		validateCallback('state update', updater)
+		validateCallback(`${TYPE_STATE} update`, updater)
 
 		this.set(updater(this.#value))
+	}
+
+	/**
+	 * Register a callback to be called when HOOK_WATCH is triggered.
+	 *
+	 * @param {WatchHook} type - The type of hook to register the callback for; only HOOK_WATCH is supported
+	 * @param {HookCallback} callback - The callback to register
+	 * @returns {Cleanup} - A function to unregister the callback
+	 */
+	on(type: WatchHook, callback: HookCallback): Cleanup {
+		if (type === HOOK_WATCH) {
+			this.#watchHookCallbacks ||= new Set()
+			this.#watchHookCallbacks.add(callback)
+			return () => {
+				this.#watchHookCallbacks?.delete(callback)
+			}
+		}
+		throw new InvalidHookError(this.constructor.name, type)
 	}
 }
 

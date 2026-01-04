@@ -1,6 +1,6 @@
 # Cause & Effect
 
-Version 0.17.1
+Version 0.17.2
 
 **Cause & Effect** is a tiny (~5kB gzipped), dependency-free reactive state library for JavaScript. It uses fine-grained signals so derived values and side effects update automatically when their dependencies change.
 
@@ -168,7 +168,7 @@ settings.add('timeout', 5000)
 settings.remove('timeout')
 ```
 
-Change Notifications using the `.on()` method:
+Subscribe to hooks using the `.on()` method:
 
 ```js
 const user = createStore({ name: 'Alice', age: 30 })
@@ -177,17 +177,18 @@ const offChange = user.on('change', changed => console.log(changed))
 const offAdd = user.on('add', added => console.log(added))
 const offRemove = user.on('remove', removed => console.log(removed))
 
-// These will trigger the respective notifications:
+// These will trigger the respective hooks:
 user.add('email', 'alice@example.com') // Logs: "Added properties: ['email']"
 user.age.set(31)                       // Logs: "Changed properties: ['age']"
 user.remove('email')                   // Logs: "Removed properties: ['email']"
+```
 
-To stop listening to notifications, call the returned cleanup functions:
+To unregister hooks, call the returned cleanup functions:
 
 ```js
-offAdd() // Stop listening to add notifications
-offChange() // Stop listening to change notifications
-offRemove() // Stop listening to remove notifications
+offAdd() // Stop listening to add hook
+offChange() // Stop listening to change hook
+offRemove() // Stop listening to remove hook
 ```
 
 ### List
@@ -397,6 +398,42 @@ cleanup() // Logs: 'Cleanup' and unsubscribes from signal `user`
 
 user.set({ name: 'Bob', age: 28 }) // Won't trigger the effect anymore
 ```
+
+### Resource Management with Hooks
+
+All signals support the `watch` hook for lazy resource management. Resources are only allocated when the signal is first accessed by an effect, and automatically cleaned up when no effects are watching:
+
+```js
+import { State, createEffect } from '@zeix/cause-effect'
+
+const config = new State({ apiUrl: 'https://api.example.com' })
+
+// Set up lazy resource management
+config.on('watch', () => {
+  console.log('Setting up API client...')
+  const client = new ApiClient(config.get().apiUrl)
+  
+  // Return cleanup function
+  return () => {
+    console.log('Cleaning up API client...')
+    client.disconnect()
+  }
+})
+
+// Resource is created only when effect runs
+const cleanup = createEffect(() => {
+  console.log('API URL:', config.get().apiUrl)
+})
+
+// Resource is cleaned up when effect stops
+cleanup()
+```
+
+This pattern is ideal for:
+- Event listeners that should only be active when data is being watched
+- Network connections that can be lazily established
+- Expensive computations that should pause when not needed
+- External subscriptions (WebSocket, Server-Sent Events, etc.)
 
 ### resolve()
 

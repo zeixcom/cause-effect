@@ -1,17 +1,29 @@
-import { InvalidCollectionSourceError, validateCallback } from '../errors'
+import {
+	InvalidCollectionSourceError,
+	InvalidHookError,
+	validateCallback,
+} from '../errors'
 import type { Signal } from '../signal'
 import {
 	type Cleanup,
 	createWatcher,
-	emitNotification,
-	type Listener,
-	type Listeners,
+	HOOK_ADD,
+	HOOK_CHANGE,
+	HOOK_REMOVE,
+	HOOK_SORT,
+	HOOK_WATCH,
+	type Hook,
+	type HookCallback,
+	type HookCallbacks,
+	isHandledHook,
 	notifyWatchers,
 	subscribeActiveWatcher,
 	trackSignalReads,
+	triggerHook,
+	UNSET,
 	type Watcher,
 } from '../system'
-import { isAsyncFunction, isFunction, isObjectOfType, UNSET } from '../util'
+import { isAsyncFunction, isFunction, isObjectOfType } from '../util'
 import { type Computed, createComputed } from './computed'
 import { isList, type List } from './list'
 
@@ -33,7 +45,7 @@ type Collection<T extends {}> = {
 	byKey: (key: string) => Signal<T> | undefined
 	keyAt: (index: number) => string | undefined
 	indexOfKey: (key: string) => number | undefined
-	on: <K extends keyof Listeners>(type: K, listener: Listener<K>) => Cleanup
+	on: <K extends Hook>(type: K, callback: HookCallback) => Cleanup
 	deriveCollection: <R extends {}>(
 		callback: CollectionCallback<R, T>,
 	) => DerivedCollection<R, T>
@@ -52,23 +64,18 @@ class DerivedCollection<T extends {}, U extends {}> implements Collection<T> {
 	#callback: CollectionCallback<T, U>
 	#signals = new Map<string, Computed<T>>()
 	#ownWatchers = new Map<string, Watcher>()
-	#listeners: Listeners = {
-		add: new Set<Listener<'add'>>(),
-		change: new Set<Listener<'change'>>(),
-		remove: new Set<Listener<'remove'>>(),
-		sort: new Set<Listener<'sort'>>(),
-	}
+	#hookCallbacks: HookCallbacks = {}
 	#order: string[] = []
 
 	constructor(
 		source: CollectionSource<U> | (() => CollectionSource<U>),
 		callback: CollectionCallback<T, U>,
 	) {
-		validateCallback('collection', callback)
+		validateCallback(TYPE_COLLECTION, callback)
 
 		if (isFunction(source)) source = source()
 		if (!isCollectionSource(source))
-			throw new InvalidCollectionSourceError('derived collection', source)
+			throw new InvalidCollectionSourceError(TYPE_COLLECTION, source)
 		this.#source = source
 
 		this.#callback = callback
@@ -80,7 +87,8 @@ class DerivedCollection<T extends {}, U extends {}> implements Collection<T> {
 			this.#add(key)
 		}
 
-		this.#source.on('add', additions => {
+		this.#source.on(HOOK_ADD, additions => {
+			if (!additions) return
 			for (const key of additions) {
 				if (!this.#signals.has(key)) {
 					this.#add(key)
@@ -91,10 +99,11 @@ class DerivedCollection<T extends {}, U extends {}> implements Collection<T> {
 				}
 			}
 			notifyWatchers(this.#watchers)
-			emitNotification(this.#listeners.add, additions)
+			triggerHook(this.#hookCallbacks.add, additions)
 		})
 
-		this.#source.on('remove', removals => {
+		this.#source.on(HOOK_REMOVE, removals => {
+			if (!removals) return
 			for (const key of removals) {
 				if (!this.#signals.has(key)) continue
 
@@ -110,31 +119,25 @@ class DerivedCollection<T extends {}, U extends {}> implements Collection<T> {
 			}
 			this.#order = this.#order.filter(() => true) // Compact array
 			notifyWatchers(this.#watchers)
-			emitNotification(this.#listeners.remove, removals)
+			triggerHook(this.#hookCallbacks.remove, removals)
 		})
 
-		this.#source.on('sort', newOrder => {
-			this.#order = [...newOrder]
+		this.#source.on(HOOK_SORT, newOrder => {
+			if (newOrder) this.#order = [...newOrder]
 			notifyWatchers(this.#watchers)
-			emitNotification(this.#listeners.sort, newOrder)
+			triggerHook(this.#hookCallbacks.sort, newOrder)
 		})
 	}
 
 	#add(key: string): boolean {
 		const computedCallback = isAsyncCollectionCallback<T>(this.#callback)
 			? async (_: T, abort: AbortSignal) => {
-					const sourceSignal = this.#source.byKey(key)
-					if (!sourceSignal) return UNSET
-
-					const sourceValue = sourceSignal.get() as U
+					const sourceValue = this.#source.byKey(key)?.get() as U
 					if (sourceValue === UNSET) return UNSET
 					return this.#callback(sourceValue, abort)
 				}
 			: () => {
-					const sourceSignal = this.#source.byKey(key)
-					if (!sourceSignal) return UNSET
-
-					const sourceValue = sourceSignal.get() as U
+					const sourceValue = this.#source.byKey(key)?.get() as U
 					if (sourceValue === UNSET) return UNSET
 					return (this.#callback as (sourceValue: U) => T)(
 						sourceValue,
@@ -145,7 +148,7 @@ class DerivedCollection<T extends {}, U extends {}> implements Collection<T> {
 
 		this.#signals.set(key, signal)
 		if (!this.#order.includes(key)) this.#order.push(key)
-		if (this.#listeners.change.size) this.#addWatcher(key)
+		if (this.#hookCallbacks.change?.size) this.#addWatcher(key)
 		return true
 	}
 
@@ -179,7 +182,7 @@ class DerivedCollection<T extends {}, U extends {}> implements Collection<T> {
 	}
 
 	get(): T[] {
-		subscribeActiveWatcher(this.#watchers)
+		subscribeActiveWatcher(this.#watchers, this.#hookCallbacks[HOOK_WATCH])
 		return this.#order
 			.map(key => this.#signals.get(key)?.get())
 			.filter(v => v != null && v !== UNSET) as T[]
@@ -201,22 +204,34 @@ class DerivedCollection<T extends {}, U extends {}> implements Collection<T> {
 		return this.#order.indexOf(key)
 	}
 
-	on<K extends keyof Listeners>(type: K, listener: Listener<K>): Cleanup {
-		this.#listeners[type].add(listener)
-		if (type === 'change' && !this.#ownWatchers.size) {
-			for (const key of this.#signals.keys()) this.#addWatcher(key)
-		}
+	on(type: Hook, callback: HookCallback): Cleanup {
+		if (
+			isHandledHook(type, [
+				HOOK_ADD,
+				HOOK_CHANGE,
+				HOOK_REMOVE,
+				HOOK_SORT,
+				HOOK_WATCH,
+			])
+		) {
+			this.#hookCallbacks[type] ||= new Set()
+			this.#hookCallbacks[type].add(callback)
+			if (type === HOOK_CHANGE && !this.#ownWatchers.size) {
+				for (const key of this.#signals.keys()) this.#addWatcher(key)
+			}
 
-		return () => {
-			this.#listeners[type].delete(listener)
-			if (type === 'change' && !this.#listeners.change.size) {
-				if (this.#ownWatchers.size) {
-					for (const watcher of this.#ownWatchers.values())
-						watcher.stop()
-					this.#ownWatchers.clear()
+			return () => {
+				this.#hookCallbacks[type]?.delete(callback)
+				if (type === HOOK_CHANGE && !this.#hookCallbacks.change?.size) {
+					if (this.#ownWatchers.size) {
+						for (const watcher of this.#ownWatchers.values())
+							watcher.stop()
+						this.#ownWatchers.clear()
+					}
 				}
 			}
 		}
+		throw new InvalidHookError(TYPE_COLLECTION, type)
 	}
 
 	deriveCollection<R extends {}>(
@@ -232,7 +247,7 @@ class DerivedCollection<T extends {}, U extends {}> implements Collection<T> {
 	}
 
 	get length(): number {
-		subscribeActiveWatcher(this.#watchers)
+		subscribeActiveWatcher(this.#watchers, this.#hookCallbacks[HOOK_WATCH])
 		return this.#order.length
 	}
 }

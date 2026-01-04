@@ -1,15 +1,25 @@
 import { diff, type UnknownRecord } from '../diff'
-import { DuplicateKeyError, validateSignalValue } from '../errors'
+import {
+	DuplicateKeyError,
+	InvalidHookError,
+	validateSignalValue,
+} from '../errors'
 import { createMutableSignal, type MutableSignal, type Signal } from '../signal'
 import {
 	type Cleanup,
-	type Listener,
-	type Listeners,
+	HOOK_ADD,
+	HOOK_CHANGE,
+	HOOK_REMOVE,
+	HOOK_WATCH,
+	type Hook,
+	type HookCallback,
+	isHandledHook,
 	notifyWatchers,
 	subscribeActiveWatcher,
+	UNSET,
 	type Watcher,
 } from '../system'
-import { isFunction, isObjectOfType, isRecord, isSymbol, UNSET } from '../util'
+import { isFunction, isObjectOfType, isRecord, isSymbol } from '../util'
 import { Composite } from './composite'
 import type { List } from './list'
 import type { State } from './state'
@@ -33,6 +43,7 @@ const TYPE_STORE = 'Store' as const
 class BaseStore<T extends UnknownRecord> {
 	#composite: Composite<T, Signal<T[keyof T] & {}>>
 	#watchers = new Set<Watcher>()
+	#watchHookCallbacks: Set<HookCallback> | undefined
 
 	/**
 	 * Create a new store with the given initial value.
@@ -42,7 +53,7 @@ class BaseStore<T extends UnknownRecord> {
 	 * @throws {InvalidSignalValueError} - If the initial value is not an object
 	 */
 	constructor(initialValue: T) {
-		validateSignalValue('store', initialValue, isRecord)
+		validateSignalValue(TYPE_STORE, initialValue, isRecord)
 
 		this.#composite = new Composite<T, Signal<T[keyof T] & {}>>(
 			initialValue,
@@ -50,7 +61,7 @@ class BaseStore<T extends UnknownRecord> {
 				key: K,
 				value: unknown,
 			): value is T[K] & {} => {
-				validateSignalValue(`store for key "${key}"`, value)
+				validateSignalValue(`${TYPE_STORE} for key "${key}"`, value)
 				return true
 			},
 			value => createMutableSignal(value),
@@ -80,24 +91,6 @@ class BaseStore<T extends UnknownRecord> {
 			yield [key, signal as MutableSignal<T[keyof T] & {}>]
 	}
 
-	get(): T {
-		subscribeActiveWatcher(this.#watchers)
-		return this.#value
-	}
-
-	set(newValue: T): void {
-		if (UNSET === newValue) {
-			this.#composite.clear()
-			notifyWatchers(this.#watchers)
-			this.#watchers.clear()
-			return
-		}
-
-		const oldValue = this.#value
-		const changed = this.#composite.change(diff(oldValue, newValue))
-		if (changed) notifyWatchers(this.#watchers)
-	}
-
 	keys(): IterableIterator<string> {
 		return this.#composite.signals.keys()
 	}
@@ -122,13 +115,31 @@ class BaseStore<T extends UnknownRecord> {
 					: State<T[K] & {}> | undefined
 	}
 
+	get(): T {
+		subscribeActiveWatcher(this.#watchers, this.#watchHookCallbacks)
+		return this.#value
+	}
+
+	set(newValue: T): void {
+		if (UNSET === newValue) {
+			this.#composite.clear()
+			notifyWatchers(this.#watchers)
+			this.#watchers.clear()
+			return
+		}
+
+		const oldValue = this.#value
+		const changed = this.#composite.change(diff(oldValue, newValue))
+		if (changed) notifyWatchers(this.#watchers)
+	}
+
 	update(fn: (oldValue: T) => T): void {
 		this.set(fn(this.get()))
 	}
 
 	add<K extends keyof T & string>(key: K, value: T[K]): K {
 		if (this.#composite.signals.has(key))
-			throw new DuplicateKeyError('store', key, value)
+			throw new DuplicateKeyError(TYPE_STORE, key, value)
 
 		const ok = this.#composite.add(key, value)
 		if (ok) notifyWatchers(this.#watchers)
@@ -140,11 +151,17 @@ class BaseStore<T extends UnknownRecord> {
 		if (ok) notifyWatchers(this.#watchers)
 	}
 
-	on<K extends keyof Omit<Listeners, 'sort'>>(
-		type: K,
-		listener: Listener<K>,
-	): Cleanup {
-		return this.#composite.on(type, listener)
+	on(type: Hook, callback: HookCallback): Cleanup {
+		if (type === HOOK_WATCH) {
+			this.#watchHookCallbacks ||= new Set<HookCallback>()
+			this.#watchHookCallbacks.add(callback)
+			return () => {
+				this.#watchHookCallbacks?.delete(callback)
+			}
+		} else if (isHandledHook(type, [HOOK_ADD, HOOK_CHANGE, HOOK_REMOVE])) {
+			return this.#composite.on(type, callback)
+		}
+		throw new InvalidHookError(TYPE_STORE, type)
 	}
 }
 

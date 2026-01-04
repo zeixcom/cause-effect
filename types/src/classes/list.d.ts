@@ -1,5 +1,5 @@
 import { type UnknownArray } from '../diff';
-import { type Cleanup, type Listener, type Notifications } from '../system';
+import { type Cleanup, type Hook, type HookCallback } from '../system';
 import { DerivedCollection } from './collection';
 import { State } from './state';
 type ArrayToRecord<T extends UnknownArray> = {
@@ -26,7 +26,7 @@ declare class List<T extends {}> {
     remove(keyOrIndex: string | number): void;
     sort(compareFn?: (a: T, b: T) => number): void;
     splice(start: number, deleteCount?: number, ...items: T[]): T[];
-    on<K extends keyof Notifications>(type: K, listener: Listener<K>): Cleanup;
+    on(type: Hook, callback: HookCallback): Cleanup;
     deriveCollection<R extends {}>(callback: (sourceValue: T) => R): DerivedCollection<R, T>;
     deriveCollection<R extends {}>(callback: (sourceValue: T, abort: AbortSignal) => Promise<R>): DerivedCollection<R, T>;
 }

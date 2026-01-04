@@ -125,12 +125,12 @@ describe('State', () => {
 				expect(() => {
 					// @ts-expect-error - Testing invalid input
 					new State(null)
-				}).toThrow('Nullish signal values are not allowed in state')
+				}).toThrow('Nullish signal values are not allowed in State')
 
 				expect(() => {
 					// @ts-expect-error - Testing invalid input
 					new State(undefined)
-				}).toThrow('Nullish signal values are not allowed in state')
+				}).toThrow('Nullish signal values are not allowed in State')
 			})
 
 			test('should throw NullishSignalValueError when newValue is nullish in set()', () => {
@@ -139,12 +139,12 @@ describe('State', () => {
 				expect(() => {
 					// @ts-expect-error - Testing invalid input
 					state.set(null)
-				}).toThrow('Nullish signal values are not allowed in state')
+				}).toThrow('Nullish signal values are not allowed in State')
 
 				expect(() => {
 					// @ts-expect-error - Testing invalid input
 					state.set(undefined)
-				}).toThrow('Nullish signal values are not allowed in state')
+				}).toThrow('Nullish signal values are not allowed in State')
 			})
 
 			test('should throw specific error types for nullish values', () => {
@@ -156,7 +156,7 @@ describe('State', () => {
 					expect(error).toBeInstanceOf(TypeError)
 					expect(error.name).toBe('NullishSignalValueError')
 					expect(error.message).toBe(
-						'Nullish signal values are not allowed in state',
+						'Nullish signal values are not allowed in State',
 					)
 				}
 
@@ -169,7 +169,7 @@ describe('State', () => {
 					expect(error).toBeInstanceOf(TypeError)
 					expect(error.name).toBe('NullishSignalValueError')
 					expect(error.message).toBe(
-						'Nullish signal values are not allowed in state',
+						'Nullish signal values are not allowed in State',
 					)
 				}
 			})
@@ -213,22 +213,22 @@ describe('State', () => {
 				expect(() => {
 					// @ts-expect-error - Testing invalid input
 					state.update(null)
-				}).toThrow('Invalid state update callback null')
+				}).toThrow('Invalid State update callback null')
 
 				expect(() => {
 					// @ts-expect-error - Testing invalid input
 					state.update(undefined)
-				}).toThrow('Invalid state update callback undefined')
+				}).toThrow('Invalid State update callback undefined')
 
 				expect(() => {
 					// @ts-expect-error - Testing invalid input
 					state.update('not a function')
-				}).toThrow('Invalid state update callback "not a function"')
+				}).toThrow('Invalid State update callback "not a function"')
 
 				expect(() => {
 					// @ts-expect-error - Testing invalid input
 					state.update(42)
-				}).toThrow('Invalid state update callback 42')
+				}).toThrow('Invalid State update callback 42')
 			})
 
 			test('should throw specific error type for non-function updater', () => {
@@ -242,7 +242,7 @@ describe('State', () => {
 					expect(error).toBeInstanceOf(TypeError)
 					expect(error.name).toBe('InvalidCallbackError')
 					expect(error.message).toBe(
-						'Invalid state update callback null',
+						'Invalid State update callback null',
 					)
 				}
 			})
@@ -266,12 +266,12 @@ describe('State', () => {
 				expect(() => {
 					// @ts-expect-error - Testing invalid return value
 					state.update(() => null)
-				}).toThrow('Nullish signal values are not allowed in state')
+				}).toThrow('Nullish signal values are not allowed in State')
 
 				expect(() => {
 					// @ts-expect-error - Testing invalid return value
 					state.update(() => undefined)
-				}).toThrow('Nullish signal values are not allowed in state')
+				}).toThrow('Nullish signal values are not allowed in State')
 
 				// State should remain unchanged after error
 				expect(state.get()).toBe(42)
