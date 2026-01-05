@@ -1328,6 +1328,7 @@ export {
   Memo,
   List,
   InvalidSignalValueError,
+  InvalidHookError,
   InvalidCollectionSourceError,
   InvalidCallbackError,
   HOOK_WATCH,
