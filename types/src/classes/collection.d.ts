@@ -1,5 +1,5 @@
 import type { Signal } from '../signal';
-import { type Cleanup, type Hook, type HookCallback } from '../system';
+import { type SignalOptions } from '../system';
 import { type Computed } from './computed';
 import { type List } from './list';
 type CollectionSource<T extends {}> = List<T> | Collection<T>;
@@ -14,14 +14,13 @@ type Collection<T extends {}> = {
     byKey: (key: string) => Signal<T> | undefined;
     keyAt: (index: number) => string | undefined;
     indexOfKey: (key: string) => number | undefined;
-    on: <K extends Hook>(type: K, callback: HookCallback) => Cleanup;
     deriveCollection: <R extends {}>(callback: CollectionCallback<R, T>) => DerivedCollection<R, T>;
     readonly length: number;
 };
 declare const TYPE_COLLECTION: "Collection";
 declare class DerivedCollection<T extends {}, U extends {}> implements Collection<T> {
     #private;
-    constructor(source: CollectionSource<U> | (() => CollectionSource<U>), callback: CollectionCallback<T, U>);
+    constructor(source: CollectionSource<U> | (() => CollectionSource<U>), callback: CollectionCallback<T, U>, options?: SignalOptions<T[]>);
     get [Symbol.toStringTag](): 'Collection';
     get [Symbol.isConcatSpreadable](): true;
     [Symbol.iterator](): IterableIterator<Computed<T>>;
@@ -31,7 +30,6 @@ declare class DerivedCollection<T extends {}, U extends {}> implements Collectio
     byKey(key: string): Computed<T> | undefined;
     keyAt(index: number): string | undefined;
     indexOfKey(key: string): number;
-    on(type: Hook, callback: HookCallback): Cleanup;
     deriveCollection<R extends {}>(callback: (sourceValue: T) => R): DerivedCollection<R, T>;
     deriveCollection<R extends {}>(callback: (sourceValue: T, abort: AbortSignal) => Promise<R>): DerivedCollection<R, T>;
     get length(): number;

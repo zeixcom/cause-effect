@@ -18,6 +18,7 @@ type Signal<T extends {}> = {
 	get(): T
 }
 
+type UnknownSignal = Signal<unknown & {}>
 type MutableSignal<T extends {}> = T extends readonly (infer U extends {})[]
 	? List<U>
 	: T extends UnknownRecord
@@ -25,7 +26,7 @@ type MutableSignal<T extends {}> = T extends readonly (infer U extends {})[]
 		: State<T>
 type ReadonlySignal<T extends {}> = Computed<T> // | Collection<T>
 
-type UnknownSignalRecord = Record<string, Signal<unknown & {}>>
+type UnknownSignalRecord = Record<string, UnknownSignal>
 
 type SignalValues<S extends UnknownSignalRecord> = {
 	[K in keyof S]: S[K] extends Signal<infer T> ? T : never
@@ -100,5 +101,6 @@ export {
 	type ReadonlySignal,
 	type Signal,
 	type SignalValues,
+	type UnknownSignal,
 	type UnknownSignalRecord,
 }

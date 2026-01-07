@@ -230,50 +230,6 @@ describe('collection', () => {
 		})
 	})
 
-	describe('Hooks', () => {
-		test('triggers HOOK_ADD when items are added', () => {
-			const numbers = new List([1, 2])
-			const doubled = new DerivedCollection(numbers, (x: number) => x * 2)
-
-			let addedKeys: readonly string[] | undefined
-			doubled.on('add', keys => {
-				addedKeys = keys
-			})
-
-			numbers.add(3)
-			expect(addedKeys).toHaveLength(1)
-			const doubledKey = addedKeys?.[0]
-			if (doubledKey) expect(doubled.byKey(doubledKey)?.get()).toBe(6)
-		})
-
-		test('triggers HOOK_REMOVE when items are removed', () => {
-			const items = new List([1, 2, 3])
-			const doubled = new DerivedCollection(items, (x: number) => x * 2)
-
-			let removedKeys: readonly string[] | undefined
-			doubled.on('remove', keys => {
-				removedKeys = keys
-			})
-
-			items.remove(1)
-			expect(removedKeys).toHaveLength(1)
-		})
-
-		test('triggers HOOK_SORT when source is sorted', () => {
-			const numbers = new List([3, 1, 2])
-			const doubled = new DerivedCollection(numbers, (x: number) => x * 2)
-
-			let order: readonly string[] | undefined
-			doubled.on('sort', newOrder => {
-				order = newOrder
-			})
-
-			numbers.sort((a, b) => a - b)
-			expect(order).toHaveLength(3)
-			expect(doubled.get()).toEqual([2, 4, 6])
-		})
-	})
-
 	describe('edge cases', () => {
 		test('handles empty collections correctly', () => {
 			const empty = new List<number>([])

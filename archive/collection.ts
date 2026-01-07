@@ -3,17 +3,11 @@ import { match } from '../src/match'
 import { resolve } from '../src/resolve'
 import type { Signal } from '../src/signal'
 import {
-	type Cleanup,
 	createWatcher,
-	triggerHook,
-	type HookCallback,
-	type HookCallbacks,
-	type Hook,
 	notifyWatchers,
 	subscribeActiveWatcher,
-	trackSignalReads,
-	type Watcher,
 	UNSET,
+	type Watcher,
 } from '../src/system'
 import { isAsyncFunction, isObjectOfType, isSymbol } from '../src/util'
 import { type Computed, createComputed } from './computed'
@@ -40,7 +34,6 @@ type Collection<T extends {}> = {
 	get(): T[]
 	keyAt(index: number): string | undefined
 	indexOfKey(key: string): number
-	on(type: Hook, callback: HookCallback): Cleanup
 	sort(compareFn?: (a: T, b: T) => number): void
 }
 
@@ -67,7 +60,6 @@ const createCollection = <T extends {}, O extends {}>(
 	callback: CollectionCallback<T, O>,
 ): Collection<T> => {
 	const watchers = new Set<Watcher>()
-	const hookCallbacks: HookCallbacks = {}
 	const signals = new Map<string, Signal<T>>()
 	const signalWatchers = new Map<string, Watcher>()
 
@@ -114,31 +106,15 @@ const createCollection = <T extends {}, O extends {}>(
 		// Set internal states
 		signals.set(key, signal)
 		if (!order.includes(key)) order.push(key)
-		const watcher = createWatcher(() =>
-			trackSignalReads(watcher, () => {
+		const watcher = createWatcher(
+			() => {
 				signal.get() // Subscribe to the signal
-				triggerHook(hookCallbacks.change, [key])
-			}),
+			},
+			() => {},
 		)
 		watcher()
 		signalWatchers.set(key, watcher)
 		return true
-	}
-
-	// Remove nested signal and effect
-	const removeProperty = (key: string) => {
-		// Remove signal for key
-		const ok = signals.delete(key)
-		if (!ok) return
-
-		// Clean up internal states
-		const index = order.indexOf(key)
-		if (index >= 0) order.splice(index, 1)
-		const watcher = signalWatchers.get(key)
-		if (watcher) {
-			watcher.stop()
-			signalWatchers.delete(key)
-		}
 	}
 
 	// Initialize properties
@@ -147,31 +123,6 @@ const createCollection = <T extends {}, O extends {}>(
 		if (!key) continue
 		addProperty(key)
 	}
-	origin.on('add', additions => {
-		if (!additions?.length) return
-		for (const key of additions) {
-			if (!signals.has(key)) addProperty(key)
-		}
-		notifyWatchers(watchers)
-		triggerHook(hookCallbacks.add, additions)
-	})
-	origin.on('remove', removals => {
-		if (!removals?.length) return
-		for (const key of Object.keys(removals)) {
-			if (!signals.has(key)) continue
-			removeProperty(key)
-		}
-		order = order.filter(() => true) // Compact array
-		notifyWatchers(watchers)
-		triggerHook(hookCallbacks.remove, removals)
-	})
-	origin.on('sort', newOrder => {
-		if (newOrder) {
-			order = [...newOrder]
-			notifyWatchers(watchers)
-			triggerHook(hookCallbacks.sort, newOrder)
-		}
-	})
 
 	// Get signal by key or index
 	const getSignal = (prop: string): Signal<T> | undefined => {
@@ -247,14 +198,6 @@ const createCollection = <T extends {}, O extends {}>(
 				order = entries.map(([_, key]) => key)
 
 				notifyWatchers(watchers)
-				triggerHook(hookCallbacks.sort, order)
-			},
-		},
-		on: {
-			value: (type: Hook, callback: HookCallback): Cleanup => {
-				hookCallbacks[type] ||= new Set()
-				hookCallbacks[type].add(callback)
-				return () => hookCallbacks[type]?.delete(callback)
 			},
 		},
 		length: {

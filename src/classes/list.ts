@@ -1,25 +1,12 @@
 import { diff, isEqual, type UnknownArray } from '../diff'
+import { DuplicateKeyError, validateSignalValue } from '../errors'
 import {
-	DuplicateKeyError,
-	InvalidHookError,
-	validateSignalValue,
-} from '../errors'
-import {
-	type Cleanup,
-	HOOK_ADD,
-	HOOK_CHANGE,
-	HOOK_REMOVE,
-	HOOK_SORT,
-	HOOK_WATCH,
-	type Hook,
-	type HookCallback,
-	type HookCallbacks,
-	isHandledHook,
-	notifyWatchers,
-	subscribeActiveWatcher,
-	triggerHook,
+	notifyOf,
+	registerWatchCallbacks,
+	type SignalOptions,
+	subscribeTo,
 	UNSET,
-	type Watcher,
+	unsubscribeAllFrom,
 } from '../system'
 import { isFunction, isNumber, isObjectOfType, isString } from '../util'
 import { type CollectionCallback, DerivedCollection } from './collection'
@@ -33,6 +20,9 @@ type ArrayToRecord<T extends UnknownArray> = {
 }
 
 type KeyConfig<T> = string | ((item: T) => string)
+type ListOptions<T> = SignalOptions<T[]> & {
+	keyConfig?: KeyConfig<T>
+}
 
 /* === Constants === */
 
@@ -42,15 +32,14 @@ const TYPE_LIST = 'List' as const
 
 class List<T extends {}> {
 	#composite: Composite<Record<string, T>, State<T>>
-	#watchers = new Set<Watcher>()
-	#hookCallbacks: HookCallbacks = {}
 	#order: string[] = []
 	#generateKey: (item: T) => string
 
-	constructor(initialValue: T[], keyConfig?: KeyConfig<T>) {
+	constructor(initialValue: T[], options?: ListOptions<T>) {
 		validateSignalValue(TYPE_LIST, initialValue, Array.isArray)
 
 		let keyCounter = 0
+		const keyConfig = options?.keyConfig
 		this.#generateKey = isString(keyConfig)
 			? () => `${keyConfig}${keyCounter++}`
 			: isFunction<string>(keyConfig)
@@ -65,6 +54,8 @@ class List<T extends {}> {
 			},
 			value => new State(value),
 		)
+		if (options?.watched)
+			registerWatchCallbacks(this, options.watched, options.unwatched)
 	}
 
 	// Convert array to record with stable keys
@@ -108,20 +99,20 @@ class List<T extends {}> {
 	}
 
 	get length(): number {
-		subscribeActiveWatcher(this.#watchers, this.#hookCallbacks[HOOK_WATCH])
+		subscribeTo(this)
 		return this.#order.length
 	}
 
 	get(): T[] {
-		subscribeActiveWatcher(this.#watchers, this.#hookCallbacks[HOOK_WATCH])
+		subscribeTo(this)
 		return this.#value
 	}
 
 	set(newValue: T[]): void {
 		if (UNSET === newValue) {
 			this.#composite.clear()
-			notifyWatchers(this.#watchers)
-			this.#watchers.clear()
+			notifyOf(this)
+			unsubscribeAllFrom(this)
 			return
 		}
 
@@ -136,7 +127,7 @@ class List<T extends {}> {
 				if (index !== -1) this.#order.splice(index, 1)
 			}
 			this.#order = this.#order.filter(() => true)
-			notifyWatchers(this.#watchers)
+			notifyOf(this)
 		}
 	}
 
@@ -171,7 +162,7 @@ class List<T extends {}> {
 
 		if (!this.#order.includes(key)) this.#order.push(key)
 		const ok = this.#composite.add(key, value)
-		if (ok) notifyWatchers(this.#watchers)
+		if (ok) notifyOf(this)
 		return key
 	}
 
@@ -184,7 +175,7 @@ class List<T extends {}> {
 				: this.#order.indexOf(key)
 			if (index >= 0) this.#order.splice(index, 1)
 			this.#order = this.#order.filter(() => true)
-			notifyWatchers(this.#watchers)
+			notifyOf(this)
 		}
 	}
 
@@ -206,8 +197,7 @@ class List<T extends {}> {
 
 		if (!isEqual(this.#order, newOrder)) {
 			this.#order = newOrder
-			notifyWatchers(this.#watchers)
-			triggerHook(this.#hookCallbacks.sort, this.#order)
+			notifyOf(this)
 		}
 	}
 
@@ -261,35 +251,25 @@ class List<T extends {}> {
 				changed,
 			})
 			this.#order = newOrder.filter(() => true) // Update order array
-			notifyWatchers(this.#watchers)
+			notifyOf(this)
 		}
 
 		return Object.values(remove)
 	}
 
-	on(type: Hook, callback: HookCallback): Cleanup {
-		if (isHandledHook(type, [HOOK_SORT, HOOK_WATCH])) {
-			this.#hookCallbacks[type] ||= new Set<HookCallback>()
-			this.#hookCallbacks[type].add(callback)
-			return () => {
-				this.#hookCallbacks[type]?.delete(callback)
-			}
-		} else if (isHandledHook(type, [HOOK_ADD, HOOK_CHANGE, HOOK_REMOVE])) {
-			return this.#composite.on(type, callback)
-		}
-		throw new InvalidHookError(TYPE_LIST, type)
-	}
-
 	deriveCollection<R extends {}>(
 		callback: (sourceValue: T) => R,
+		options?: SignalOptions<R[]>,
 	): DerivedCollection<R, T>
 	deriveCollection<R extends {}>(
 		callback: (sourceValue: T, abort: AbortSignal) => Promise<R>,
+		options?: SignalOptions<R[]>,
 	): DerivedCollection<R, T>
 	deriveCollection<R extends {}>(
 		callback: CollectionCallback<R, T>,
+		options?: SignalOptions<R[]>,
 	): DerivedCollection<R, T> {
-		return new DerivedCollection(this, callback)
+		return new DerivedCollection(this, callback, options)
 	}
 }
 
@@ -307,4 +287,11 @@ const isList = <T extends {}>(value: unknown): value is List<T> =>
 
 /* === Exports === */
 
-export { isList, List, TYPE_LIST, type ArrayToRecord, type KeyConfig }
+export {
+	isList,
+	List,
+	TYPE_LIST,
+	type ArrayToRecord,
+	type KeyConfig,
+	type ListOptions,
+}

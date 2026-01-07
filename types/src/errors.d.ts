@@ -24,8 +24,9 @@ declare class NullishSignalValueError extends TypeError {
 declare class ReadonlySignalError extends Error {
     constructor(what: string, value: unknown);
 }
+declare function assert(condition: unknown, msg?: string): asserts condition;
 declare const createError: (reason: unknown) => Error;
 declare const validateCallback: (where: string, value: unknown, guard?: (value: unknown) => boolean) => void;
 declare const validateSignalValue: (where: string, value: unknown, guard?: (value: unknown) => boolean) => void;
 declare const guardMutableSignal: <T extends {}>(what: string, value: unknown, signal: unknown) => signal is MutableSignal<T>;
-export { type Guard, CircularDependencyError, DuplicateKeyError, InvalidCallbackError, InvalidCollectionSourceError, InvalidHookError, InvalidSignalValueError, NullishSignalValueError, ReadonlySignalError, createError, validateCallback, validateSignalValue, guardMutableSignal, };
+export { type Guard, CircularDependencyError, DuplicateKeyError, InvalidCallbackError, InvalidCollectionSourceError, InvalidHookError, InvalidSignalValueError, NullishSignalValueError, ReadonlySignalError, assert, createError, validateCallback, validateSignalValue, guardMutableSignal, };

@@ -8,10 +8,8 @@ import {
 import {
 	createWatcher,
 	flushPendingReactions,
-	HOOK_CLEANUP,
 	notifyWatchers,
 	subscribeActiveWatcher,
-	trackSignalReads,
 	UNSET,
 	type Watcher,
 } from '../src/system'
@@ -93,19 +91,14 @@ const createTask = <T extends {}>(
 		}
 
 	// Own watcher: called when notified from sources (push)
-	const watcher = createWatcher(() => {
-		dirty = true
-		controller?.abort()
-		if (watchers.size) notifyWatchers(watchers)
-		else watcher.stop()
-	})
-	watcher.on(HOOK_CLEANUP, () => {
-		controller?.abort()
-	})
-
-	// Called when requested by dependencies (pull)
-	const compute = () =>
-		trackSignalReads(watcher, () => {
+	const watcher = createWatcher(
+		() => {
+			dirty = true
+			controller?.abort()
+			if (watchers.size) notifyWatchers(watchers)
+			else watcher.stop()
+		},
+		() => {
 			if (computing) throw new CircularDependencyError('computed')
 			changed = false
 			// Return current value until promise resolves
@@ -117,7 +110,7 @@ const createTask = <T extends {}>(
 				() => {
 					computing = false
 					controller = undefined
-					compute() // Retry computation with updated state
+					watcher.run() // Retry computation with updated state
 				},
 				{
 					once: true,
@@ -138,7 +131,11 @@ const createTask = <T extends {}>(
 			else if (null == result || UNSET === result) nil()
 			else ok(result)
 			computing = false
-		})
+		},
+	)
+	watcher.onCleanup(() => {
+		controller?.abort()
+	})
 
 	const task: Record<PropertyKey, unknown> = {}
 	Object.defineProperties(task, {
@@ -149,7 +146,8 @@ const createTask = <T extends {}>(
 			value: (): T => {
 				subscribeActiveWatcher(watchers)
 				flushPendingReactions()
-				if (dirty) compute()
+
+				if (dirty) watcher.run()
 				if (error) throw error
 				return value
 			},

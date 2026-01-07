@@ -1,20 +1,16 @@
-import { type Cleanup, type HookCallback, type WatchHook } from '../system';
+import { type SignalOptions } from '../system';
 declare const TYPE_STATE: "State";
 /**
  * Create a new state signal.
  *
  * @since 0.17.0
+ * @param {T} initialValue - Initial value of the state
+ * @throws {NullishSignalValueError} - If the initial value is null or undefined
+ * @throws {InvalidSignalValueError} - If the initial value is invalid
  */
 declare class State<T extends {}> {
     #private;
-    /**
-     * Create a new state signal.
-     *
-     * @param {T} initialValue - Initial value of the state
-     * @throws {NullishSignalValueError} - If the initial value is null or undefined
-     * @throws {InvalidSignalValueError} - If the initial value is invalid
-     */
-    constructor(initialValue: T);
+    constructor(initialValue: T, options?: SignalOptions<T>);
     get [Symbol.toStringTag](): string;
     /**
      * Get the current value of the state signal.
@@ -41,14 +37,6 @@ declare class State<T extends {}> {
      * @throws {InvalidSignalValueError} - If the initial value is invalid
      */
     update(updater: (oldValue: T) => T): void;
-    /**
-     * Register a callback to be called when HOOK_WATCH is triggered.
-     *
-     * @param {WatchHook} type - The type of hook to register the callback for; only HOOK_WATCH is supported
-     * @param {HookCallback} callback - The callback to register
-     * @returns {Cleanup} - A function to unregister the callback
-     */
-    on(type: WatchHook, callback: HookCallback): Cleanup;
 }
 /**
  * Check if the provided value is a State instance

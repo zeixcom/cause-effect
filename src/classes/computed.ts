@@ -2,23 +2,18 @@ import { isEqual } from '../diff'
 import {
 	CircularDependencyError,
 	createError,
-	InvalidHookError,
 	validateCallback,
 	validateSignalValue,
 } from '../errors'
 import {
-	type Cleanup,
 	createWatcher,
 	flushPendingReactions,
-	HOOK_CLEANUP,
-	HOOK_WATCH,
-	type HookCallback,
-	notifyWatchers,
-	subscribeActiveWatcher,
-	trackSignalReads,
+	notifyOf,
+	registerWatchCallbacks,
+	type SignalOptions,
+	subscribeTo,
 	UNSET,
 	type Watcher,
-	type WatchHook,
 } from '../system'
 import {
 	isAbortError,
@@ -32,6 +27,10 @@ import {
 type Computed<T extends {}> = {
 	readonly [Symbol.toStringTag]: 'Computed'
 	get(): T
+}
+
+type ComputedOptions<T extends {}> = SignalOptions<T> & {
+	initialValue?: T
 }
 
 type MemoCallback<T extends {} & { then?: undefined }> = (oldValue: T) => T
@@ -51,65 +50,38 @@ const TYPE_COMPUTED = 'Computed' as const
  * Create a new memoized signal for a synchronous function.
  *
  * @since 0.17.0
+ * @param {MemoCallback<T>} callback - Callback function to compute the memoized value
+ * @param {T} [initialValue = UNSET] - Initial value of the signal
+ * @throws {InvalidCallbackError} If the callback is not an sync function
+ * @throws {InvalidSignalValueError} If the initial value is not valid
  */
 class Memo<T extends {}> {
-	#watchers: Set<Watcher> = new Set()
 	#callback: MemoCallback<T>
 	#value: T
 	#error: Error | undefined
 	#dirty = true
 	#computing = false
 	#watcher: Watcher | undefined
-	#watchHookCallbacks: Set<HookCallback> | undefined
 
-	/**
-	 * Create a new memoized signal.
-	 *
-	 * @param {MemoCallback<T>} callback - Callback function to compute the memoized value
-	 * @param {T} [initialValue = UNSET] - Initial value of the signal
-	 * @throws {InvalidCallbackError} If the callback is not an sync function
-	 * @throws {InvalidSignalValueError} If the initial value is not valid
-	 */
-	constructor(callback: MemoCallback<T>, initialValue: T = UNSET) {
+	constructor(callback: MemoCallback<T>, options?: ComputedOptions<T>) {
 		validateCallback(this.constructor.name, callback, isMemoCallback)
-		validateSignalValue(this.constructor.name, initialValue)
+		const initialValue = options?.initialValue ?? UNSET
+		validateSignalValue(this.constructor.name, initialValue, options?.guard)
 
 		this.#callback = callback
 		this.#value = initialValue
+		if (options?.watched)
+			registerWatchCallbacks(this, options.watched, options.unwatched)
 	}
 
 	#getWatcher(): Watcher {
-		if (!this.#watcher) {
-			// Own watcher: called by notifyWatchers() in upstream signals (push)
-			this.#watcher = createWatcher(() => {
+		// Own watcher: called by notifyWatchers() in upstream signals (push)
+		this.#watcher ||= createWatcher(
+			() => {
 				this.#dirty = true
-				if (!notifyWatchers(this.#watchers)) this.#watcher?.stop()
-			})
-			this.#watcher.on(HOOK_CLEANUP, () => {
-				this.#watcher = undefined
-			})
-		}
-		return this.#watcher
-	}
-
-	get [Symbol.toStringTag](): 'Computed' {
-		return TYPE_COMPUTED
-	}
-
-	/**
-	 * Return the memoized value after computing it if necessary.
-	 *
-	 * @returns {T}
-	 * @throws {CircularDependencyError} If a circular dependency is detected
-	 * @throws {Error} If an error occurs during computation
-	 */
-	get(): T {
-		subscribeActiveWatcher(this.#watchers, this.#watchHookCallbacks)
-		flushPendingReactions()
-
-		if (this.#dirty) {
-			const watcher = this.#getWatcher()
-			trackSignalReads(watcher, () => {
+				if (!notifyOf(this)) this.#watcher?.stop()
+			},
+			() => {
 				if (this.#computing) throw new CircularDependencyError('memo')
 
 				let result: T
@@ -135,29 +107,33 @@ class Memo<T extends {}> {
 					this.#dirty = false
 				}
 				this.#computing = false
-			})
-		}
+			},
+		)
+		this.#watcher.onCleanup(() => {
+			this.#watcher = undefined
+		})
 
-		if (this.#error) throw this.#error
-		return this.#value
+		return this.#watcher
+	}
+
+	get [Symbol.toStringTag](): 'Computed' {
+		return TYPE_COMPUTED
 	}
 
 	/**
-	 * Register a callback to be called when HOOK_WATCH is triggered.
+	 * Return the memoized value after computing it if necessary.
 	 *
-	 * @param {WatchHook} type - The type of hook to register the callback for; only HOOK_WATCH is supported
-	 * @param {HookCallback} callback - The callback to register
-	 * @returns {Cleanup} - A function to unregister the callback
+	 * @returns {T}
+	 * @throws {CircularDependencyError} If a circular dependency is detected
+	 * @throws {Error} If an error occurs during computation
 	 */
-	on(type: WatchHook, callback: HookCallback): Cleanup {
-		if (type === HOOK_WATCH) {
-			this.#watchHookCallbacks ||= new Set()
-			this.#watchHookCallbacks.add(callback)
-			return () => {
-				this.#watchHookCallbacks?.delete(callback)
-			}
-		}
-		throw new InvalidHookError(this.constructor.name, type)
+	get(): T {
+		subscribeTo(this)
+		flushPendingReactions()
+
+		if (this.#dirty) this.#getWatcher().run()
+		if (this.#error) throw this.#error
+		return this.#value
 	}
 }
 
@@ -165,9 +141,12 @@ class Memo<T extends {}> {
  * Create a new task signals that memoizes the result of an asynchronous function.
  *
  * @since 0.17.0
+ * @param {TaskCallback<T>} callback - The asynchronous function to compute the memoized value
+ * @param {T} [initialValue = UNSET] - Initial value of the signal
+ * @throws {InvalidCallbackError} If the callback is not an async function
+ * @throws {InvalidSignalValueError} If the initial value is not valid
  */
 class Task<T extends {}> {
-	#watchers: Set<Watcher> = new Set()
 	#callback: TaskCallback<T>
 	#value: T
 	#error: Error | undefined
@@ -176,38 +155,109 @@ class Task<T extends {}> {
 	#changed = false
 	#watcher: Watcher | undefined
 	#controller: AbortController | undefined
-	#watchHookCallbacks: Set<HookCallback> | undefined
 
-	/**
-	 * Create a new task signal for an asynchronous function.
-	 *
-	 * @param {TaskCallback<T>} callback - The asynchronous function to compute the memoized value
-	 * @param {T} [initialValue = UNSET] - Initial value of the signal
-	 * @throws {InvalidCallbackError} If the callback is not an async function
-	 * @throws {InvalidSignalValueError} If the initial value is not valid
-	 */
-	constructor(callback: TaskCallback<T>, initialValue: T = UNSET) {
+	constructor(callback: TaskCallback<T>, options?: ComputedOptions<T>) {
 		validateCallback(this.constructor.name, callback, isTaskCallback)
-		validateSignalValue(this.constructor.name, initialValue)
+		const initialValue = options?.initialValue ?? UNSET
+		validateSignalValue(this.constructor.name, initialValue, options?.guard)
 
 		this.#callback = callback
 		this.#value = initialValue
+		if (options?.watched)
+			registerWatchCallbacks(this, options.watched, options.unwatched)
 	}
 
 	#getWatcher(): Watcher {
 		if (!this.#watcher) {
-			// Own watcher: called by notifyWatchers() in upstream signals (push)
-			this.#watcher = createWatcher(() => {
-				this.#dirty = true
-				this.#controller?.abort()
-				if (!notifyWatchers(this.#watchers)) this.#watcher?.stop()
-			})
-			this.#watcher.on(HOOK_CLEANUP, () => {
+			// Functions to update internal state
+			const ok = (v: T): undefined => {
+				if (!isEqual(v, this.#value)) {
+					this.#value = v
+					this.#changed = true
+				}
+				this.#error = undefined
+				this.#dirty = false
+			}
+			const nil = (): undefined => {
+				this.#changed = UNSET !== this.#value
+				this.#value = UNSET
+				this.#error = undefined
+			}
+			const err = (e: unknown): undefined => {
+				const newError = createError(e)
+				this.#changed =
+					!this.#error ||
+					newError.name !== this.#error.name ||
+					newError.message !== this.#error.message
+				this.#value = UNSET
+				this.#error = newError
+			}
+			const settle =
+				<T>(fn: (arg: T) => void) =>
+				(arg: T) => {
+					this.#computing = false
+					this.#controller = undefined
+					fn(arg)
+					if (this.#changed && !notifyOf(this)) this.#watcher?.stop()
+				}
+
+			// Own watcher: called by notifyOf() in upstream signals (push)
+			this.#watcher = createWatcher(
+				() => {
+					this.#dirty = true
+					this.#controller?.abort()
+					if (!notifyOf(this)) this.#watcher?.stop()
+				},
+				() => {
+					if (this.#computing)
+						throw new CircularDependencyError('task')
+					this.#changed = false
+
+					// Return current value until promise resolves
+					if (this.#controller) return this.#value
+
+					this.#controller = new AbortController()
+					this.#controller.signal.addEventListener(
+						'abort',
+						() => {
+							this.#computing = false
+							this.#controller = undefined
+
+							// Retry computation with updated state
+							this.#getWatcher().run()
+						},
+						{
+							once: true,
+						},
+					)
+					let result: Promise<T>
+					this.#computing = true
+					try {
+						result = this.#callback(
+							this.#value,
+							this.#controller.signal,
+						)
+					} catch (e) {
+						if (isAbortError(e)) nil()
+						else err(e)
+						this.#computing = false
+						return
+					}
+
+					if (result instanceof Promise)
+						result.then(settle(ok), settle(err))
+					else if (null == result || UNSET === result) nil()
+					else ok(result)
+					this.#computing = false
+				},
+			)
+			this.#watcher.onCleanup(() => {
 				this.#controller?.abort()
 				this.#controller = undefined
 				this.#watcher = undefined
 			})
 		}
+
 		return this.#watcher
 	}
 
@@ -223,107 +273,12 @@ class Task<T extends {}> {
 	 * @throws {Error} If an error occurs during computation
 	 */
 	get(): T {
-		subscribeActiveWatcher(this.#watchers, this.#watchHookCallbacks)
+		subscribeTo(this)
 		flushPendingReactions()
 
-		// Functions to update internal state
-		const ok = (v: T): undefined => {
-			if (!isEqual(v, this.#value)) {
-				this.#value = v
-				this.#changed = true
-			}
-			this.#error = undefined
-			this.#dirty = false
-		}
-		const nil = (): undefined => {
-			this.#changed = UNSET !== this.#value
-			this.#value = UNSET
-			this.#error = undefined
-		}
-		const err = (e: unknown): undefined => {
-			const newError = createError(e)
-			this.#changed =
-				!this.#error ||
-				newError.name !== this.#error.name ||
-				newError.message !== this.#error.message
-			this.#value = UNSET
-			this.#error = newError
-		}
-		const settle =
-			<T>(fn: (arg: T) => void) =>
-			(arg: T) => {
-				this.#computing = false
-				this.#controller = undefined
-				fn(arg)
-				if (this.#changed && !notifyWatchers(this.#watchers))
-					this.#watcher?.stop()
-			}
-
-		const compute = () =>
-			trackSignalReads(this.#getWatcher(), () => {
-				if (this.#computing) throw new CircularDependencyError('task')
-				this.#changed = false
-
-				// Return current value until promise resolves
-				if (this.#controller) return this.#value
-
-				this.#controller = new AbortController()
-				this.#controller.signal.addEventListener(
-					'abort',
-					() => {
-						this.#computing = false
-						this.#controller = undefined
-
-						// Retry computation with updated state
-						compute()
-					},
-					{
-						once: true,
-					},
-				)
-				let result: Promise<T>
-				this.#computing = true
-				try {
-					result = this.#callback(
-						this.#value,
-						this.#controller.signal,
-					)
-				} catch (e) {
-					if (isAbortError(e)) nil()
-					else err(e)
-					this.#computing = false
-					return
-				}
-
-				if (result instanceof Promise)
-					result.then(settle(ok), settle(err))
-				else if (null == result || UNSET === result) nil()
-				else ok(result)
-				this.#computing = false
-			})
-
-		if (this.#dirty) compute()
-
+		if (this.#dirty) this.#getWatcher().run()
 		if (this.#error) throw this.#error
 		return this.#value
-	}
-
-	/**
-	 * Register a callback to be called when HOOK_WATCH is triggered.
-	 *
-	 * @param {WatchHook} type - The type of hook to register the callback for; only HOOK_WATCH is supported
-	 * @param {HookCallback} callback - The callback to register
-	 * @returns {Cleanup} - A function to unregister the callback
-	 */
-	on(type: WatchHook, callback: HookCallback): Cleanup {
-		if (type === HOOK_WATCH) {
-			this.#watchHookCallbacks ||= new Set()
-			this.#watchHookCallbacks.add(callback)
-			return () => {
-				this.#watchHookCallbacks?.delete(callback)
-			}
-		}
-		throw new InvalidHookError(this.constructor.name, type)
 	}
 }
 
@@ -334,14 +289,15 @@ class Task<T extends {}> {
  *
  * @since 0.9.0
  * @param {MemoCallback<T> | TaskCallback<T>} callback - Computation callback function
+ * @param {ComputedOptions<T>} options - Optional configuration
  */
 const createComputed = <T extends {}>(
 	callback: TaskCallback<T> | MemoCallback<T>,
-	initialValue: T = UNSET,
+	options?: ComputedOptions<T>,
 ) =>
 	isAsyncFunction(callback)
-		? new Task(callback as TaskCallback<T>, initialValue)
-		: new Memo(callback as MemoCallback<T>, initialValue)
+		? new Task(callback as TaskCallback<T>, options)
+		: new Memo(callback as MemoCallback<T>, options)
 
 /**
  * Check if a value is a computed signal
@@ -387,6 +343,7 @@ export {
 	Memo,
 	Task,
 	type Computed,
+	type ComputedOptions,
 	type MemoCallback,
 	type TaskCallback,
 }

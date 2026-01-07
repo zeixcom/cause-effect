@@ -1,23 +1,13 @@
 import { diff, type UnknownRecord } from '../diff'
-import {
-	DuplicateKeyError,
-	InvalidHookError,
-	validateSignalValue,
-} from '../errors'
+import { DuplicateKeyError, validateSignalValue } from '../errors'
 import { createMutableSignal, type MutableSignal, type Signal } from '../signal'
 import {
-	type Cleanup,
-	HOOK_ADD,
-	HOOK_CHANGE,
-	HOOK_REMOVE,
-	HOOK_WATCH,
-	type Hook,
-	type HookCallback,
-	isHandledHook,
-	notifyWatchers,
-	subscribeActiveWatcher,
+	notifyOf,
+	registerWatchCallbacks,
+	type SignalOptions,
+	subscribeTo,
 	UNSET,
-	type Watcher,
+	unsubscribeAllFrom,
 } from '../system'
 import { isFunction, isObjectOfType, isRecord, isSymbol } from '../util'
 import { Composite } from './composite'
@@ -40,20 +30,23 @@ const TYPE_STORE = 'Store' as const
 
 /* === Store Implementation === */
 
+/**
+ * Create a new store with the given initial value.
+ *
+ * @since 0.17.0
+ * @param {T} initialValue - The initial value of the store
+ * @throws {NullishSignalValueError} - If the initial value is null or undefined
+ * @throws {InvalidSignalValueError} - If the initial value is not an object
+ */
 class BaseStore<T extends UnknownRecord> {
 	#composite: Composite<T, Signal<T[keyof T] & {}>>
-	#watchers = new Set<Watcher>()
-	#watchHookCallbacks: Set<HookCallback> | undefined
 
-	/**
-	 * Create a new store with the given initial value.
-	 *
-	 * @param {T} initialValue - The initial value of the store
-	 * @throws {NullishSignalValueError} - If the initial value is null or undefined
-	 * @throws {InvalidSignalValueError} - If the initial value is not an object
-	 */
-	constructor(initialValue: T) {
-		validateSignalValue(TYPE_STORE, initialValue, isRecord)
+	constructor(initialValue: T, options?: SignalOptions<T>) {
+		validateSignalValue(
+			TYPE_STORE,
+			initialValue,
+			options?.guard ?? isRecord,
+		)
 
 		this.#composite = new Composite<T, Signal<T[keyof T] & {}>>(
 			initialValue,
@@ -66,6 +59,8 @@ class BaseStore<T extends UnknownRecord> {
 			},
 			value => createMutableSignal(value),
 		)
+		if (options?.watched)
+			registerWatchCallbacks(this, options.watched, options.unwatched)
 	}
 
 	get #value(): T {
@@ -116,21 +111,21 @@ class BaseStore<T extends UnknownRecord> {
 	}
 
 	get(): T {
-		subscribeActiveWatcher(this.#watchers, this.#watchHookCallbacks)
+		subscribeTo(this)
 		return this.#value
 	}
 
 	set(newValue: T): void {
 		if (UNSET === newValue) {
 			this.#composite.clear()
-			notifyWatchers(this.#watchers)
-			this.#watchers.clear()
+			notifyOf(this)
+			unsubscribeAllFrom(this)
 			return
 		}
 
 		const oldValue = this.#value
 		const changed = this.#composite.change(diff(oldValue, newValue))
-		if (changed) notifyWatchers(this.#watchers)
+		if (changed) notifyOf(this)
 	}
 
 	update(fn: (oldValue: T) => T): void {
@@ -142,26 +137,13 @@ class BaseStore<T extends UnknownRecord> {
 			throw new DuplicateKeyError(TYPE_STORE, key, value)
 
 		const ok = this.#composite.add(key, value)
-		if (ok) notifyWatchers(this.#watchers)
+		if (ok) notifyOf(this)
 		return key
 	}
 
 	remove(key: string): void {
 		const ok = this.#composite.remove(key)
-		if (ok) notifyWatchers(this.#watchers)
-	}
-
-	on(type: Hook, callback: HookCallback): Cleanup {
-		if (type === HOOK_WATCH) {
-			this.#watchHookCallbacks ||= new Set<HookCallback>()
-			this.#watchHookCallbacks.add(callback)
-			return () => {
-				this.#watchHookCallbacks?.delete(callback)
-			}
-		} else if (isHandledHook(type, [HOOK_ADD, HOOK_CHANGE, HOOK_REMOVE])) {
-			return this.#composite.on(type, callback)
-		}
-		throw new InvalidHookError(TYPE_STORE, type)
+		if (ok) notifyOf(this)
 	}
 }
 
@@ -172,10 +154,14 @@ class BaseStore<T extends UnknownRecord> {
  *
  * @since 0.15.0
  * @param {T} initialValue - Initial object or array value of the store
+ * @param {SignalOptions<T>} options - Options for the store
  * @returns {Store<T>} - New store with reactive properties that preserves the original type T
  */
-const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
-	const instance = new BaseStore(initialValue)
+const createStore = <T extends UnknownRecord>(
+	initialValue: T,
+	options?: SignalOptions<T>,
+): Store<T> => {
+	const instance = new BaseStore(initialValue, options)
 
 	// Return proxy for property access
 	return new Proxy(instance, {
