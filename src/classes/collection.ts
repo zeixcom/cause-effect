@@ -47,8 +47,8 @@ class DerivedCollection<T extends {}, U extends {}> implements Collection<T> {
 	#source: CollectionSource<U>
 	#callback: CollectionCallback<T, U>
 	#signals = new Map<string, Computed<T>>()
-	#order: string[] = []
-	#dirty = false
+	#keys: string[] = []
+	#dirty = true
 	#watcher: Watcher | undefined
 
 	constructor(
@@ -72,26 +72,41 @@ class DerivedCollection<T extends {}, U extends {}> implements Collection<T> {
 			this.#add(key)
 		}
 
-		registerWatchCallbacks(
-			this,
+		if (options?.watched)
+			registerWatchCallbacks(this, options.watched, options.unwatched)
+	}
+
+	#getWatcher(): Watcher {
+		this.#watcher ||= createWatcher(
 			() => {
-				this.#watcher = createWatcher(
-					() => {
-						this.#dirty = true
-						if (!notifyOf(this)) this.#watcher?.stop()
-					},
-					() => {
-						this.#source.get()
-					},
-				)
-				options?.watched?.()
+				this.#dirty = true
+				if (!notifyOf(this)) this.#watcher?.stop()
 			},
 			() => {
-				options?.unwatched?.()
-				this.#watcher?.stop()
-				this.#watcher = undefined
+				const newKeys = Array.from(this.#source.keys())
+				const allKeys = new Set([...this.#keys, ...newKeys])
+				const addedKeys: string[] = []
+				const removedKeys: string[] = []
+
+				for (const key of allKeys) {
+					const oldHas = this.#keys.includes(key)
+					const newHas = newKeys.includes(key)
+
+					if (!oldHas && newHas) addedKeys.push(key)
+					else if (oldHas && !newHas) removedKeys.push(key)
+				}
+
+				for (const key of removedKeys) this.#signals.delete(key)
+				for (const key of addedKeys) this.#add(key)
+				this.#keys = newKeys
+				this.#dirty = false
 			},
 		)
+		this.#watcher.onCleanup(() => {
+			this.#watcher = undefined
+		})
+
+		return this.#watcher
 	}
 
 	#add(key: string): boolean {
@@ -112,7 +127,7 @@ class DerivedCollection<T extends {}, U extends {}> implements Collection<T> {
 		const signal = createComputed(computedCallback)
 
 		this.#signals.set(key, signal)
-		if (!this.#order.includes(key)) this.#order.push(key)
+		if (!this.#keys.includes(key)) this.#keys.push(key)
 		return true
 	}
 
@@ -125,27 +140,29 @@ class DerivedCollection<T extends {}, U extends {}> implements Collection<T> {
 	}
 
 	*[Symbol.iterator](): IterableIterator<Computed<T>> {
-		for (const key of this.#order) {
+		for (const key of this.#keys) {
 			const signal = this.#signals.get(key)
 			if (signal) yield signal as Computed<T>
 		}
 	}
 
 	keys(): IterableIterator<string> {
-		return this.#order.values()
+		subscribeTo(this)
+		if (this.#dirty) this.#getWatcher().run()
+		return this.#keys.values()
 	}
 
 	get(): T[] {
 		subscribeTo(this)
 
-		if (this.#dirty) this.#watcher?.run()
-		return this.#order
+		if (this.#dirty) this.#getWatcher().run()
+		return this.#keys
 			.map(key => this.#signals.get(key)?.get())
 			.filter(v => v != null && v !== UNSET) as T[]
 	}
 
 	at(index: number): Computed<T> | undefined {
-		return this.#signals.get(this.#order[index])
+		return this.#signals.get(this.#keys[index])
 	}
 
 	byKey(key: string): Computed<T> | undefined {
@@ -153,20 +170,20 @@ class DerivedCollection<T extends {}, U extends {}> implements Collection<T> {
 	}
 
 	keyAt(index: number): string | undefined {
-		return this.#order[index]
+		return this.#keys[index]
 	}
 
 	indexOfKey(key: string): number {
-		return this.#order.indexOf(key)
+		return this.#keys.indexOf(key)
 	}
 
 	deriveCollection<R extends {}>(
 		callback: (sourceValue: T) => R,
-		options?: SignalOptions<R>,
+		options?: SignalOptions<R[]>,
 	): DerivedCollection<R, T>
 	deriveCollection<R extends {}>(
 		callback: (sourceValue: T, abort: AbortSignal) => Promise<R>,
-		options?: SignalOptions<R>,
+		options?: SignalOptions<R[]>,
 	): DerivedCollection<R, T>
 	deriveCollection<R extends {}>(
 		callback: CollectionCallback<R, T>,
@@ -177,9 +194,8 @@ class DerivedCollection<T extends {}, U extends {}> implements Collection<T> {
 
 	get length(): number {
 		subscribeTo(this)
-
-		if (this.#dirty) this.#watcher?.run()
-		return this.#order.length
+		if (this.#dirty) this.#getWatcher().run()
+		return this.#keys.length
 	}
 }
 

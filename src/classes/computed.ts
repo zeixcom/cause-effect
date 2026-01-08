@@ -7,7 +7,7 @@ import {
 } from '../errors'
 import {
 	createWatcher,
-	flushPendingReactions,
+	flush,
 	notifyOf,
 	registerWatchCallbacks,
 	type SignalOptions,
@@ -129,7 +129,7 @@ class Memo<T extends {}> {
 	 */
 	get(): T {
 		subscribeTo(this)
-		flushPendingReactions()
+		flush()
 
 		if (this.#dirty) this.#getWatcher().run()
 		if (this.#error) throw this.#error
@@ -274,7 +274,7 @@ class Task<T extends {}> {
 	 */
 	get(): T {
 		subscribeTo(this)
-		flushPendingReactions()
+		flush()
 
 		if (this.#dirty) this.#getWatcher().run()
 		if (this.#error) throw this.#error

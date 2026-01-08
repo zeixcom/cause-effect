@@ -7,7 +7,7 @@ import {
 } from '../src/errors'
 import { isMutableSignal, type MutableSignal } from '../src/signal'
 import {
-	batchSignalWrites,
+	batch,
 	notifyWatchers,
 	subscribeActiveWatcher,
 	UNSET,
@@ -204,7 +204,7 @@ const createList = <T extends {}>(
 
 		// Changes
 		if (Object.keys(changes.change).length) {
-			batchSignalWrites(() => {
+			batch(() => {
 				for (const key in changes.change) {
 					const value = changes.change[key] as T
 					if (!isValidValue(key, value)) continue

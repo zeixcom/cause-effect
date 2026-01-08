@@ -30,8 +30,8 @@ declare class DerivedCollection<T extends {}, U extends {}> implements Collectio
     byKey(key: string): Computed<T> | undefined;
     keyAt(index: number): string | undefined;
     indexOfKey(key: string): number;
-    deriveCollection<R extends {}>(callback: (sourceValue: T) => R): DerivedCollection<R, T>;
-    deriveCollection<R extends {}>(callback: (sourceValue: T, abort: AbortSignal) => Promise<R>): DerivedCollection<R, T>;
+    deriveCollection<R extends {}>(callback: (sourceValue: T) => R, options?: SignalOptions<R[]>): DerivedCollection<R, T>;
+    deriveCollection<R extends {}>(callback: (sourceValue: T, abort: AbortSignal) => Promise<R>, options?: SignalOptions<R[]>): DerivedCollection<R, T>;
     get length(): number;
 }
 /**

@@ -194,7 +194,7 @@ const notifyWatchers = (watchers: Set<Watcher>): boolean => {
 /**
  * Flush all pending reactions of enqueued watchers.
  */
-const flushPendingReactions = () => {
+const flush = () => {
 	while (pendingReactions.size) {
 		const watchers = Array.from(pendingReactions)
 		pendingReactions.clear()
@@ -207,12 +207,12 @@ const flushPendingReactions = () => {
  *
  * @param {() => void} callback - Function with multiple signal writes to be batched
  */
-const batchSignalWrites = (callback: () => void) => {
+const batch = (callback: () => void) => {
 	batchDepth++
 	try {
 		callback()
 	} finally {
-		flushPendingReactions()
+		flush()
 		batchDepth--
 	}
 }
@@ -225,7 +225,7 @@ const batchSignalWrites = (callback: () => void) => {
  *                                    that might read signals (e.g., Web Components)
  * @param {() => void} run - Function to run the computation or effect
  */
-const trackSignalReads = (watcher: Watcher | false, run: () => void): void => {
+const track = (watcher: Watcher | false, run: () => void): void => {
 	const prev = activeWatcher
 	activeWatcher = watcher || undefined
 	try {
@@ -250,7 +250,8 @@ export {
 	unsubscribeAllFrom,
 	notifyOf,
 	notifyWatchers,
-	flushPendingReactions,
-	batchSignalWrites,
-	trackSignalReads,
+	flush,
+	batch,
+	track,
+	untrack,
 }

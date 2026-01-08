@@ -430,7 +430,10 @@ describe('list', () => {
 				])
 
 				const enrichedUsers = users.deriveCollection(
-					async (user, abort: AbortSignal) => {
+					async (
+						user: { id: number; name: string },
+						abort: AbortSignal,
+					) => {
 						// Simulate API call
 						await new Promise(resolve => setTimeout(resolve, 10))
 						if (abort.aborted) throw new Error('Aborted')

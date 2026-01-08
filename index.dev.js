@@ -1,18 +1,3 @@
-// src/util.ts
-var isString = (value) => typeof value === "string";
-var isNumber = (value) => typeof value === "number";
-var isSymbol = (value) => typeof value === "symbol";
-var isFunction = (fn) => typeof fn === "function";
-var isAsyncFunction = (fn) => isFunction(fn) && fn.constructor.name === "AsyncFunction";
-var isSyncFunction = (fn) => isFunction(fn) && fn.constructor.name !== "AsyncFunction";
-var isNonNullObject = (value) => value != null && typeof value === "object";
-var isObjectOfType = (value, type) => Object.prototype.toString.call(value) === `[object ${type}]`;
-var isRecord = (value) => isObjectOfType(value, "Object");
-var isRecordOrArray = (value) => isRecord(value) || Array.isArray(value);
-var isUniformArray = (value, guard = (item) => item != null) => Array.isArray(value) && value.every(guard);
-var isAbortError = (error) => error instanceof DOMException && error.name === "AbortError";
-var valueString = (value) => isString(value) ? `"${value}"` : !!value && typeof value === "object" ? JSON.stringify(value) : String(value);
-
 // src/system.ts
 var activeWatcher;
 var watchersMap = new WeakMap;
@@ -21,15 +6,18 @@ var unwatchedCallbackMap = new WeakMap;
 var pendingReactions = new Set;
 var batchDepth = 0;
 var UNSET = Symbol();
-var HOOK_ADD = "add";
-var HOOK_CHANGE = "change";
-var HOOK_CLEANUP = "cleanup";
-var HOOK_REMOVE = "remove";
-var HOOK_SORT = "sort";
-var HOOK_WATCH = "watch";
-var createWatcher = (react) => {
+var createWatcher = (push, pull) => {
   const cleanups = new Set;
-  const watcher = react;
+  const watcher = push;
+  watcher.run = () => {
+    const prev = activeWatcher;
+    activeWatcher = watcher;
+    try {
+      pull();
+    } finally {
+      activeWatcher = prev;
+    }
+  };
   watcher.onCleanup = (cleanup) => {
     cleanups.add(cleanup);
   };
@@ -43,11 +31,11 @@ var createWatcher = (react) => {
   };
   return watcher;
 };
-var untrack = (run) => {
+var untrack = (callback) => {
   const prev = activeWatcher;
   activeWatcher = undefined;
   try {
-    run();
+    callback();
   } finally {
     activeWatcher = prev;
   }
@@ -68,7 +56,7 @@ var subscribeTo = (signal) => {
   if (!watchers.size) {
     const watchedCallback = watchedCallbackMap.get(signal);
     if (watchedCallback)
-      untrack(() => watchedCallback(signal));
+      untrack(watchedCallback);
   }
   watchers.add(watcher);
   watcher.onCleanup(() => {
@@ -76,7 +64,7 @@ var subscribeTo = (signal) => {
     if (!watchers.size) {
       const unwatchedCallback = unwatchedCallbackMap.get(signal);
       if (unwatchedCallback)
-        untrack(() => unwatchedCallback(signal));
+        untrack(unwatchedCallback);
     }
   });
   return true;
@@ -101,7 +89,7 @@ var notifyOf = (signal) => {
   }
   return true;
 };
-var flushPendingReactions = () => {
+var flush = () => {
   while (pendingReactions.size) {
     const watchers = Array.from(pendingReactions);
     pendingReactions.clear();
@@ -109,16 +97,16 @@ var flushPendingReactions = () => {
       react();
   }
 };
-var batchSignalWrites = (callback) => {
+var batch = (callback) => {
   batchDepth++;
   try {
     callback();
   } finally {
-    flushPendingReactions();
+    flush();
     batchDepth--;
   }
 };
-var trackSignalReads = (watcher, run) => {
+var track = (watcher, run) => {
   const prev = activeWatcher;
   activeWatcher = watcher || undefined;
   try {
@@ -127,44 +115,21 @@ var trackSignalReads = (watcher, run) => {
     activeWatcher = prev;
   }
 };
-var triggerHook = (callbacks, payload) => {
-  if (!callbacks)
-    return;
-  const cleanups = [];
-  const errors = [];
-  const throwError = (inCleanup) => {
-    if (errors.length) {
-      if (errors.length === 1)
-        throw errors[0];
-      throw new AggregateError(errors, `Errors in hook ${inCleanup ? "cleanup" : "callback"}:`);
-    }
-  };
-  for (const callback of callbacks) {
-    try {
-      const cleanup = callback(payload);
-      if (isFunction(cleanup))
-        cleanups.push(cleanup);
-    } catch (error) {
-      errors.push(createError(error));
-    }
-  }
-  throwError();
-  if (!cleanups.length)
-    return;
-  if (cleanups.length === 1)
-    return cleanups[0];
-  return () => {
-    for (const cleanup of cleanups) {
-      try {
-        cleanup();
-      } catch (error) {
-        errors.push(createError(error));
-      }
-    }
-    throwError(true);
-  };
-};
-var isHandledHook = (type, handled) => handled.includes(type);
+
+// src/util.ts
+var isString = (value) => typeof value === "string";
+var isNumber = (value) => typeof value === "number";
+var isSymbol = (value) => typeof value === "symbol";
+var isFunction = (fn) => typeof fn === "function";
+var isAsyncFunction = (fn) => isFunction(fn) && fn.constructor.name === "AsyncFunction";
+var isSyncFunction = (fn) => isFunction(fn) && fn.constructor.name !== "AsyncFunction";
+var isNonNullObject = (value) => value != null && typeof value === "object";
+var isObjectOfType = (value, type) => Object.prototype.toString.call(value) === `[object ${type}]`;
+var isRecord = (value) => isObjectOfType(value, "Object");
+var isRecordOrArray = (value) => isRecord(value) || Array.isArray(value);
+var isUniformArray = (value, guard = (item) => item != null) => Array.isArray(value) && value.every(guard);
+var isAbortError = (error) => error instanceof DOMException && error.name === "AbortError";
+var valueString = (value) => isString(value) ? `"${value}"` : !!value && typeof value === "object" ? JSON.stringify(value) : String(value);
 
 // src/diff.ts
 var isEqual = (a, b, visited) => {
@@ -273,16 +238,36 @@ class Memo {
       registerWatchCallbacks(this, options.watched, options.unwatched);
   }
   #getWatcher() {
-    if (!this.#watcher) {
-      this.#watcher = createWatcher(() => {
-        this.#dirty = true;
-        if (!notifyOf(this))
-          this.#watcher?.stop();
-      });
-      this.#watcher.onCleanup(() => {
-        this.#watcher = undefined;
-      });
-    }
+    this.#watcher ||= createWatcher(() => {
+      this.#dirty = true;
+      if (!notifyOf(this))
+        this.#watcher?.stop();
+    }, () => {
+      if (this.#computing)
+        throw new CircularDependencyError("memo");
+      let result;
+      this.#computing = true;
+      try {
+        result = this.#callback(this.#value);
+      } catch (e) {
+        this.#value = UNSET;
+        this.#error = createError(e);
+        this.#computing = false;
+        return;
+      }
+      if (result == null || UNSET === result) {
+        this.#value = UNSET;
+        this.#error = undefined;
+      } else {
+        this.#value = result;
+        this.#error = undefined;
+        this.#dirty = false;
+      }
+      this.#computing = false;
+    });
+    this.#watcher.onCleanup(() => {
+      this.#watcher = undefined;
+    });
     return this.#watcher;
   }
   get [Symbol.toStringTag]() {
@@ -290,33 +275,9 @@ class Memo {
   }
   get() {
     subscribeTo(this);
-    flushPendingReactions();
-    if (this.#dirty) {
-      const watcher = this.#getWatcher();
-      trackSignalReads(watcher, () => {
-        if (this.#computing)
-          throw new CircularDependencyError("memo");
-        let result;
-        this.#computing = true;
-        try {
-          result = this.#callback(this.#value);
-        } catch (e) {
-          this.#value = UNSET;
-          this.#error = createError(e);
-          this.#computing = false;
-          return;
-        }
-        if (result == null || UNSET === result) {
-          this.#value = UNSET;
-          this.#error = undefined;
-        } else {
-          this.#value = result;
-          this.#error = undefined;
-          this.#dirty = false;
-        }
-        this.#computing = false;
-      });
-    }
+    flush();
+    if (this.#dirty)
+      this.#getWatcher().run();
     if (this.#error)
       throw this.#error;
     return this.#value;
@@ -343,11 +304,70 @@ class Task {
   }
   #getWatcher() {
     if (!this.#watcher) {
+      const ok = (v) => {
+        if (!isEqual(v, this.#value)) {
+          this.#value = v;
+          this.#changed = true;
+        }
+        this.#error = undefined;
+        this.#dirty = false;
+      };
+      const nil = () => {
+        this.#changed = UNSET !== this.#value;
+        this.#value = UNSET;
+        this.#error = undefined;
+      };
+      const err = (e) => {
+        const newError = createError(e);
+        this.#changed = !this.#error || newError.name !== this.#error.name || newError.message !== this.#error.message;
+        this.#value = UNSET;
+        this.#error = newError;
+      };
+      const settle = (fn) => (arg) => {
+        this.#computing = false;
+        this.#controller = undefined;
+        fn(arg);
+        if (this.#changed && !notifyOf(this))
+          this.#watcher?.stop();
+      };
       this.#watcher = createWatcher(() => {
         this.#dirty = true;
         this.#controller?.abort();
         if (!notifyOf(this))
           this.#watcher?.stop();
+      }, () => {
+        if (this.#computing)
+          throw new CircularDependencyError("task");
+        this.#changed = false;
+        if (this.#controller)
+          return this.#value;
+        this.#controller = new AbortController;
+        this.#controller.signal.addEventListener("abort", () => {
+          this.#computing = false;
+          this.#controller = undefined;
+          this.#getWatcher().run();
+        }, {
+          once: true
+        });
+        let result;
+        this.#computing = true;
+        try {
+          result = this.#callback(this.#value, this.#controller.signal);
+        } catch (e) {
+          if (isAbortError(e))
+            nil();
+          else
+            err(e);
+          this.#computing = false;
+          return;
+        }
+        if (result instanceof Promise)
+          result.then(settle(ok), settle(err));
+        else if (result == null || UNSET === result)
+          nil();
+        else
+          ok(result);
+        this.#computing = false;
       });
       this.#watcher.onCleanup(() => {
         this.#controller?.abort();
@@ -362,69 +382,9 @@ class Task {
   }
   get() {
     subscribeTo(this);
-    flushPendingReactions();
-    const ok = (v) => {
-      if (!isEqual(v, this.#value)) {
-        this.#value = v;
-        this.#changed = true;
-      }
-      this.#error = undefined;
-      this.#dirty = false;
-    };
-    const nil = () => {
-      this.#changed = UNSET !== this.#value;
-      this.#value = UNSET;
-      this.#error = undefined;
-    };
-    const err = (e) => {
-      const newError = createError(e);
-      this.#changed = !this.#error || newError.name !== this.#error.name || newError.message !== this.#error.message;
-      this.#value = UNSET;
-      this.#error = newError;
-    };
-    const settle = (fn) => (arg) => {
-      this.#computing = false;
-      this.#controller = undefined;
-      fn(arg);
-      if (this.#changed && !notifyOf(this))
-        this.#watcher?.stop();
-    };
-    const compute = () => trackSignalReads(this.#getWatcher(), () => {
-      if (this.#computing)
-        throw new CircularDependencyError("task");
-      this.#changed = false;
-      if (this.#controller)
-        return this.#value;
-      this.#controller = new AbortController;
-      this.#controller.signal.addEventListener("abort", () => {
-        this.#computing = false;
-        this.#controller = undefined;
-        compute();
-      }, {
-        once: true
-      });
-      let result;
-      this.#computing = true;
-      try {
-        result = this.#callback(this.#value, this.#controller.signal);
-      } catch (e) {
-        if (isAbortError(e))
-          nil();
-        else
-          err(e);
-        this.#computing = false;
-        return;
-      }
-      if (result instanceof Promise)
-        result.then(settle(ok), settle(err));
-      else if (result == null || UNSET === result)
-        nil();
-      else
-        ok(result);
-      this.#computing = false;
-    });
+    flush();
     if (this.#dirty)
-      compute();
+      this.#getWatcher().run();
     if (this.#error)
       throw this.#error;
     return this.#value;
@@ -434,59 +394,6 @@ var createComputed = (callback, options) => isAsyncFunction(callback) ? new Task
 var isComputed = (value) => isObjectOfType(value, TYPE_COMPUTED);
 var isMemoCallback = (value) => isSyncFunction(value) && value.length < 2;
 var isTaskCallback = (value) => isAsyncFunction(value) && value.length < 3;
-
-// src/classes/composite.ts
-class Composite {
-  signals = new Map;
-  #validate;
-  #create;
-  constructor(values, validate, create) {
-    this.#validate = validate;
-    this.#create = create;
-    this.change({
-      add: values,
-      change: {},
-      remove: {},
-      changed: true
-    });
-  }
-  add(key, value) {
-    if (!this.#validate(key, value))
-      return false;
-    this.signals.set(key, this.#create(value));
-    return true;
-  }
-  remove(key) {
-    return this.signals.delete(key);
-  }
-  change(changes) {
-    if (Object.keys(changes.add).length) {
-      for (const key in changes.add)
-        this.add(key, changes.add[key]);
-    }
-    if (Object.keys(changes.change).length) {
-      batchSignalWrites(() => {
-        for (const key in changes.change) {
-          const value = changes.change[key];
-          if (!this.#validate(key, value))
-            continue;
-          const signal = this.signals.get(key);
-          if (guardMutableSignal(`list item "${key}"`, value, signal))
-            signal.set(value);
-        }
-      });
-    }
-    if (Object.keys(changes.remove).length) {
-      for (const key in changes.remove)
-        this.remove(key);
-    }
-    return changes.changed;
-  }
-  clear() {
-    this.signals.clear();
-    return true;
-  }
-}
 
 // src/classes/state.ts
 var TYPE_STATE = "State";
@@ -526,18 +433,25 @@ var isState = (value) => isObjectOfType(value, TYPE_STATE);
 var TYPE_LIST = "List";
 
 class List {
-  #composite;
-  #order = [];
+  #signals = new Map;
+  #keys = [];
   #generateKey;
+  #validate;
   constructor(initialValue, options) {
     validateSignalValue(TYPE_LIST, initialValue, Array.isArray);
     let keyCounter = 0;
     const keyConfig = options?.keyConfig;
     this.#generateKey = isString(keyConfig) ? () => `${keyConfig}${keyCounter++}` : isFunction(keyConfig) ? (item) => keyConfig(item) : () => String(keyCounter++);
-    this.#composite = new Composite(this.#toRecord(initialValue), (key, value) => {
-      validateSignalValue(`${TYPE_LIST} for key "${key}"`, value);
+    this.#validate = (key, value) => {
+      validateSignalValue(`${TYPE_LIST} item for key "${key}"`, value, options?.guard);
       return true;
-    }, (value) => new State(value));
+    };
+    this.#change({
+      add: this.#toRecord(initialValue),
+      change: {},
+      remove: {},
+      changed: true
+    });
     if (options?.watched)
       registerWatchCallbacks(this, options.watched, options.unwatched);
   }
@@ -547,17 +461,51 @@ class List {
       const value = array[i];
       if (value === undefined)
         continue;
-      let key = this.#order[i];
+      let key = this.#keys[i];
       if (!key) {
         key = this.#generateKey(value);
-        this.#order[i] = key;
+        this.#keys[i] = key;
       }
       record[key] = value;
     }
     return record;
   }
+  #add(key, value) {
+    if (!this.#validate(key, value))
+      return false;
+    this.#signals.set(key, new State(value));
+    return true;
+  }
+  #change(changes) {
+    if (Object.keys(changes.add).length) {
+      for (const key in changes.add)
+        this.#add(key, changes.add[key]);
+    }
+    if (Object.keys(changes.change).length) {
+      batch(() => {
+        for (const key in changes.change) {
+          const value = changes.change[key];
+          if (!this.#validate(key, value))
+            continue;
+          const signal = this.#signals.get(key);
+          if (guardMutableSignal(`${TYPE_LIST} item "${key}"`, value, signal))
+            signal.set(value);
+        }
+      });
+    }
+    if (Object.keys(changes.remove).length) {
+      for (const key in changes.remove) {
+        this.#signals.delete(key);
+        const index = this.#keys.indexOf(key);
+        if (index !== -1)
+          this.#keys.splice(index, 1);
+      }
+      this.#keys = this.#keys.filter(() => true);
+    }
+    return changes.changed;
+  }
   get #value() {
-    return this.#order.map((key) => this.#composite.signals.get(key)?.get()).filter((v) => v !== undefined);
+    return this.#keys.map((key) => this.#signals.get(key)?.get()).filter((v) => v !== undefined);
   }
   get [Symbol.toStringTag]() {
     return TYPE_LIST;
@@ -566,15 +514,15 @@ class List {
     return true;
   }
   *[Symbol.iterator]() {
-    for (const key of this.#order) {
-      const signal = this.#composite.signals.get(key);
+    for (const key of this.#keys) {
+      const signal = this.#signals.get(key);
       if (signal)
         yield signal;
     }
   }
   get length() {
     subscribeTo(this);
-    return this.#order.length;
+    return this.#keys.length;
   }
   get() {
     subscribeTo(this);
@@ -582,110 +530,101 @@ class List {
   }
   set(newValue) {
     if (UNSET === newValue) {
-      this.#composite.clear();
+      this.#signals.clear();
       notifyOf(this);
       unsubscribeAllFrom(this);
       return;
     }
-    const oldValue = this.#value;
-    const changes = diff(this.#toRecord(oldValue), this.#toRecord(newValue));
-    const removedKeys = Object.keys(changes.remove);
-    const changed = this.#composite.change(changes);
-    if (changed) {
-      for (const key of removedKeys) {
-        const index = this.#order.indexOf(key);
-        if (index !== -1)
-          this.#order.splice(index, 1);
-      }
-      this.#order = this.#order.filter(() => true);
+    const changes = diff(this.#toRecord(this.#value), this.#toRecord(newValue));
+    if (this.#change(changes))
       notifyOf(this);
-    }
   }
   update(fn) {
     this.set(fn(this.get()));
   }
   at(index) {
-    return this.#composite.signals.get(this.#order[index]);
+    return this.#signals.get(this.#keys[index]);
   }
   keys() {
-    return this.#order.values();
+    subscribeTo(this);
+    return this.#keys.values();
   }
   byKey(key) {
-    return this.#composite.signals.get(key);
+    return this.#signals.get(key);
   }
   keyAt(index) {
-    return this.#order[index];
+    return this.#keys[index];
   }
   indexOfKey(key) {
-    return this.#order.indexOf(key);
+    return this.#keys.indexOf(key);
   }
   add(value) {
     const key = this.#generateKey(value);
-    if (this.#composite.signals.has(key))
+    if (this.#signals.has(key))
       throw new DuplicateKeyError("store", key, value);
-    if (!this.#order.includes(key))
-      this.#order.push(key);
-    const ok = this.#composite.add(key, value);
+    if (!this.#keys.includes(key))
+      this.#keys.push(key);
+    const ok = this.#add(key, value);
     if (ok)
       notifyOf(this);
     return key;
   }
   remove(keyOrIndex) {
-    const key = isNumber(keyOrIndex) ? this.#order[keyOrIndex] : keyOrIndex;
-    const ok = this.#composite.remove(key);
+    const key = isNumber(keyOrIndex) ? this.#keys[keyOrIndex] : keyOrIndex;
+    const ok = this.#signals.delete(key);
     if (ok) {
-      const index = isNumber(keyOrIndex) ? keyOrIndex : this.#order.indexOf(key);
+      const index = isNumber(keyOrIndex) ? keyOrIndex : this.#keys.indexOf(key);
       if (index >= 0)
-        this.#order.splice(index, 1);
-      this.#order = this.#order.filter(() => true);
+        this.#keys.splice(index, 1);
+      this.#keys = this.#keys.filter(() => true);
       notifyOf(this);
     }
   }
   sort(compareFn) {
-    const entries = this.#order.map((key) => [key, this.#composite.signals.get(key)?.get()]).sort(isFunction(compareFn) ? (a, b) => compareFn(a[1], b[1]) : (a, b) => String(a[1]).localeCompare(String(b[1])));
+    const entries = this.#keys.map((key) => [key, this.#signals.get(key)?.get()]).sort(isFunction(compareFn) ? (a, b) => compareFn(a[1], b[1]) : (a, b) => String(a[1]).localeCompare(String(b[1])));
     const newOrder = entries.map(([key]) => key);
-    if (!isEqual(this.#order, newOrder)) {
-      this.#order = newOrder;
+    if (!isEqual(this.#keys, newOrder)) {
+      this.#keys = newOrder;
       notifyOf(this);
     }
   }
   splice(start, deleteCount, ...items) {
-    const length = this.#order.length;
+    const length = this.#keys.length;
     const actualStart = start < 0 ? Math.max(0, length + start) : Math.min(start, length);
     const actualDeleteCount = Math.max(0, Math.min(deleteCount ?? Math.max(0, length - Math.max(0, actualStart)), length - actualStart));
     const add = {};
     const remove = {};
     for (let i = 0;i < actualDeleteCount; i++) {
       const index = actualStart + i;
-      const key = this.#order[index];
+      const key = this.#keys[index];
       if (key) {
-        const signal = this.#composite.signals.get(key);
+        const signal = this.#signals.get(key);
         if (signal)
           remove[key] = signal.get();
       }
     }
-    const newOrder = this.#order.slice(0, actualStart);
+    const newOrder = this.#keys.slice(0, actualStart);
     for (const item of items) {
       const key = this.#generateKey(item);
       newOrder.push(key);
       add[key] = item;
     }
-    newOrder.push(...this.#order.slice(actualStart + actualDeleteCount));
+    newOrder.push(...this.#keys.slice(actualStart + actualDeleteCount));
     const changed = !!(Object.keys(add).length || Object.keys(remove).length);
     if (changed) {
-      this.#composite.change({
+      this.#change({
         add,
         change: {},
         remove,
         changed
       });
-      this.#order = newOrder.filter(() => true);
+      this.#keys = newOrder.filter(() => true);
       notifyOf(this);
     }
     return Object.values(remove);
   }
-  deriveCollection(callback) {
-    return new DerivedCollection(this, callback);
+  deriveCollection(callback, options) {
+    return new DerivedCollection(this, callback, options);
   }
 }
 var isList = (value) => isObjectOfType(value, TYPE_LIST);
@@ -694,21 +633,56 @@ var isList = (value) => isObjectOfType(value, TYPE_LIST);
 var TYPE_STORE = "Store";
 
 class BaseStore {
-  #composite;
+  #signals = new Map;
   constructor(initialValue, options) {
     validateSignalValue(TYPE_STORE, initialValue, options?.guard ?? isRecord);
-    this.#composite = new Composite(initialValue, (key, value) => {
-      validateSignalValue(`${TYPE_STORE} for key "${key}"`, value);
-      return true;
-    }, (value) => createMutableSignal(value));
+    this.#change({
+      add: initialValue,
+      change: {},
+      remove: {},
+      changed: true
+    });
     if (options?.watched)
       registerWatchCallbacks(this, options.watched, options.unwatched);
   }
   get #value() {
     const record = {};
-    for (const [key, signal] of this.#composite.signals.entries())
+    for (const [key, signal] of this.#signals.entries())
       record[key] = signal.get();
     return record;
+  }
+  #validate(key, value) {
+    validateSignalValue(`${TYPE_STORE} for key "${key}"`, value);
+    return true;
+  }
+  #add(key, value) {
+    if (!this.#validate(key, value))
+      return false;
+    this.#signals.set(key, createMutableSignal(value));
+    return true;
+  }
+  #change(changes) {
+    if (Object.keys(changes.add).length) {
+      for (const key in changes.add)
+        this.add(key, changes.add[key]);
+    }
+    if (Object.keys(changes.change).length) {
+      batch(() => {
+        for (const key in changes.change) {
+          const value = changes.change[key];
+          if (!this.#validate(key, value))
+            continue;
+          const signal = this.#signals.get(key);
+          if (guardMutableSignal(`list item "${key}"`, value, signal))
+            signal.set(value);
+        }
+      });
+    }
+    if (Object.keys(changes.remove).length) {
+      for (const key in changes.remove)
+        this.remove(key);
+    }
+    return changes.changed;
   }
   get [Symbol.toStringTag]() {
     return TYPE_STORE;
@@ -717,14 +691,15 @@ class BaseStore {
     return false;
   }
   *[Symbol.iterator]() {
-    for (const [key, signal] of this.#composite.signals.entries())
+    for (const [key, signal] of this.#signals.entries())
       yield [key, signal];
   }
   keys() {
-    return this.#composite.signals.keys();
+    subscribeTo(this);
+    return this.#signals.keys();
   }
   byKey(key) {
-    return this.#composite.signals.get(key);
+    return this.#signals.get(key);
   }
   get() {
     subscribeTo(this);
@@ -732,13 +707,12 @@ class BaseStore {
   }
   set(newValue) {
     if (UNSET === newValue) {
-      this.#composite.clear();
+      this.#signals.clear();
       notifyOf(this);
       unsubscribeAllFrom(this);
       return;
     }
-    const oldValue = this.#value;
-    const changed = this.#composite.change(diff(oldValue, newValue));
+    const changed = this.#change(diff(this.#value, newValue));
     if (changed)
       notifyOf(this);
   }
@@ -746,15 +720,15 @@ class BaseStore {
     this.set(fn(this.get()));
   }
   add(key, value) {
-    if (this.#composite.signals.has(key))
+    if (this.#signals.has(key))
       throw new DuplicateKeyError(TYPE_STORE, key, value);
-    const ok = this.#composite.add(key, value);
+    const ok = this.#add(key, value);
     if (ok)
       notifyOf(this);
     return key;
   }
   remove(key) {
-    const ok = this.#composite.remove(key);
+    const ok = this.#signals.delete(key);
     if (ok)
       notifyOf(this);
   }
@@ -908,7 +882,9 @@ class DerivedCollection {
   #source;
   #callback;
   #signals = new Map;
-  #order = [];
+  #keys = [];
+  #dirty = true;
+  #watcher;
   constructor(source, callback, options) {
     validateCallback(TYPE_COLLECTION, callback);
     if (isFunction(source))
@@ -926,6 +902,36 @@ class DerivedCollection {
     if (options?.watched)
       registerWatchCallbacks(this, options.watched, options.unwatched);
   }
+  #getWatcher() {
+    this.#watcher ||= createWatcher(() => {
+      this.#dirty = true;
+      if (!notifyOf(this))
+        this.#watcher?.stop();
+    }, () => {
+      const newKeys = Array.from(this.#source.keys());
+      const allKeys = new Set([...this.#keys, ...newKeys]);
+      const addedKeys = [];
+      const removedKeys = [];
+      for (const key of allKeys) {
+        const oldHas = this.#keys.includes(key);
+        const newHas = newKeys.includes(key);
+        if (!oldHas && newHas)
+          addedKeys.push(key);
+        else if (oldHas && !newHas)
+          removedKeys.push(key);
+      }
+      for (const key of removedKeys)
+        this.#signals.delete(key);
+      for (const key of addedKeys)
+        this.#add(key);
+      this.#keys = newKeys;
+      this.#dirty = false;
+    });
+    this.#watcher.onCleanup(() => {
+      this.#watcher = undefined;
+    });
+    return this.#watcher;
+  }
   #add(key) {
     const computedCallback = isAsyncCollectionCallback(this.#callback) ? async (_, abort) => {
       const sourceValue = this.#source.byKey(key)?.get();
@@ -940,8 +946,8 @@ class DerivedCollection {
     };
     const signal = createComputed(computedCallback);
     this.#signals.set(key, signal);
-    if (!this.#order.includes(key))
-      this.#order.push(key);
+    if (!this.#keys.includes(key))
+      this.#keys.push(key);
     return true;
   }
   get [Symbol.toStringTag]() {
@@ -951,37 +957,44 @@ class DerivedCollection {
     return true;
   }
   *[Symbol.iterator]() {
-    for (const key of this.#order) {
+    for (const key of this.#keys) {
       const signal = this.#signals.get(key);
       if (signal)
         yield signal;
     }
   }
   keys() {
-    return this.#order.values();
+    subscribeTo(this);
+    if (this.#dirty)
+      this.#getWatcher().run();
+    return this.#keys.values();
   }
   get() {
     subscribeTo(this);
-    return this.#order.map((key) => this.#signals.get(key)?.get()).filter((v) => v != null && v !== UNSET);
+    if (this.#dirty)
+      this.#getWatcher().run();
+    return this.#keys.map((key) => this.#signals.get(key)?.get()).filter((v) => v != null && v !== UNSET);
   }
   at(index) {
-    return this.#signals.get(this.#order[index]);
+    return this.#signals.get(this.#keys[index]);
   }
   byKey(key) {
     return this.#signals.get(key);
   }
   keyAt(index) {
-    return this.#order[index];
+    return this.#keys[index];
   }
   indexOfKey(key) {
-    return this.#order.indexOf(key);
+    return this.#keys.indexOf(key);
   }
-  deriveCollection(callback) {
-    return new DerivedCollection(this, callback);
+  deriveCollection(callback, options) {
+    return new DerivedCollection(this, callback, options);
   }
   get length() {
     subscribeTo(this);
-    return this.#order.length;
+    if (this.#dirty)
+      this.#getWatcher().run();
+    return this.#keys.length;
   }
 }
 var isCollection = (value) => isObjectOfType(value, TYPE_COLLECTION);
@@ -1017,7 +1030,9 @@ var createEffect = (callback) => {
   const isAsync = isAsyncFunction(callback);
   let running = false;
   let controller;
-  const watcher = createWatcher(() => trackSignalReads(watcher, () => {
+  const watcher = createWatcher(() => {
+    watcher.run();
+  }, () => {
     if (running)
       throw new CircularDependencyError("effect");
     running = true;
@@ -1045,7 +1060,7 @@ var createEffect = (callback) => {
         console.error("Error in effect callback:", error);
     }
     running = false;
-  }));
+  });
   watcher();
   return () => {
     controller?.abort();
@@ -1099,8 +1114,8 @@ export {
   valueString,
   validateSignalValue,
   validateCallback,
-  triggerHook,
-  trackSignalReads,
+  untrack,
+  track,
   subscribeTo,
   resolve,
   notifyOf,
@@ -1119,7 +1134,6 @@ export {
   isMutableSignal,
   isMemoCallback,
   isList,
-  isHandledHook,
   isFunction,
   isEqual,
   isComputed,
@@ -1127,7 +1141,7 @@ export {
   isAsyncFunction,
   isAbortError,
   guardMutableSignal,
-  flushPendingReactions,
+  flush,
   diff,
   createWatcher,
   createStore,
@@ -1135,7 +1149,7 @@ export {
   createError,
   createEffect,
   createComputed,
-  batchSignalWrites,
+  batch,
   UNSET,
   Task,
   TYPE_STORE,
@@ -1154,12 +1168,6 @@ export {
   InvalidHookError,
   InvalidCollectionSourceError,
   InvalidCallbackError,
-  HOOK_WATCH,
-  HOOK_SORT,
-  HOOK_REMOVE,
-  HOOK_CLEANUP,
-  HOOK_CHANGE,
-  HOOK_ADD,
   DuplicateKeyError,
   DerivedCollection,
   CircularDependencyError,

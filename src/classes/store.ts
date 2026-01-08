@@ -1,7 +1,12 @@
-import { diff, type UnknownRecord } from '../diff'
-import { DuplicateKeyError, validateSignalValue } from '../errors'
-import { createMutableSignal, type MutableSignal, type Signal } from '../signal'
+import { type DiffResult, diff, type UnknownRecord } from '../diff'
 import {
+	DuplicateKeyError,
+	guardMutableSignal,
+	validateSignalValue,
+} from '../errors'
+import { createMutableSignal, type MutableSignal } from '../signal'
+import {
+	batch,
 	notifyOf,
 	registerWatchCallbacks,
 	type SignalOptions,
@@ -10,7 +15,6 @@ import {
 	unsubscribeAllFrom,
 } from '../system'
 import { isFunction, isObjectOfType, isRecord, isSymbol } from '../util'
-import { Composite } from './composite'
 import type { List } from './list'
 import type { State } from './state'
 
@@ -39,7 +43,7 @@ const TYPE_STORE = 'Store' as const
  * @throws {InvalidSignalValueError} - If the initial value is not an object
  */
 class BaseStore<T extends UnknownRecord> {
-	#composite: Composite<T, Signal<T[keyof T] & {}>>
+	#signals = new Map<keyof T & string, MutableSignal<T[keyof T] & {}>>()
 
 	constructor(initialValue: T, options?: SignalOptions<T>) {
 		validateSignalValue(
@@ -48,26 +52,73 @@ class BaseStore<T extends UnknownRecord> {
 			options?.guard ?? isRecord,
 		)
 
-		this.#composite = new Composite<T, Signal<T[keyof T] & {}>>(
-			initialValue,
-			<K extends keyof T & string>(
-				key: K,
-				value: unknown,
-			): value is T[K] & {} => {
-				validateSignalValue(`${TYPE_STORE} for key "${key}"`, value)
-				return true
-			},
-			value => createMutableSignal(value),
-		)
+		this.#change({
+			add: initialValue,
+			change: {},
+			remove: {},
+			changed: true,
+		})
 		if (options?.watched)
 			registerWatchCallbacks(this, options.watched, options.unwatched)
 	}
 
 	get #value(): T {
 		const record = {} as UnknownRecord
-		for (const [key, signal] of this.#composite.signals.entries())
+		for (const [key, signal] of this.#signals.entries())
 			record[key] = signal.get()
 		return record as T
+	}
+
+	#validate<K extends keyof T & string>(
+		key: K,
+		value: unknown,
+	): value is T[K] & {} {
+		validateSignalValue(`${TYPE_STORE} for key "${key}"`, value)
+		return true
+	}
+
+	#add<K extends keyof T & string>(key: K, value: T[K]): boolean {
+		if (!this.#validate(key, value)) return false
+
+		this.#signals.set(
+			key,
+			createMutableSignal(value) as unknown as MutableSignal<
+				T[keyof T] & {}
+			>,
+		)
+		return true
+	}
+
+	#change(changes: DiffResult): boolean {
+		// Additions
+		if (Object.keys(changes.add).length) {
+			for (const key in changes.add)
+				this.#add(
+					key,
+					changes.add[key] as T[Extract<keyof T, string>] & {},
+				)
+		}
+
+		// Changes
+		if (Object.keys(changes.change).length) {
+			batch(() => {
+				for (const key in changes.change) {
+					const value = changes.change[key]
+					if (!this.#validate(key, value)) continue
+
+					const signal = this.#signals.get(key)
+					if (guardMutableSignal(`list item "${key}"`, value, signal))
+						signal.set(value)
+				}
+			})
+		}
+
+		// Removals
+		if (Object.keys(changes.remove).length) {
+			for (const key in changes.remove) this.remove(key)
+		}
+
+		return changes.changed
 	}
 
 	// Public methods
@@ -82,12 +133,12 @@ class BaseStore<T extends UnknownRecord> {
 	*[Symbol.iterator](): IterableIterator<
 		[string, MutableSignal<T[keyof T] & {}>]
 	> {
-		for (const [key, signal] of this.#composite.signals.entries())
-			yield [key, signal as MutableSignal<T[keyof T] & {}>]
+		for (const [key, signal] of this.#signals.entries()) yield [key, signal]
 	}
 
 	keys(): IterableIterator<string> {
-		return this.#composite.signals.keys()
+		subscribeTo(this)
+		return this.#signals.keys()
 	}
 
 	byKey<K extends keyof T & string>(
@@ -99,9 +150,8 @@ class BaseStore<T extends UnknownRecord> {
 			: T[K] extends unknown & {}
 				? State<T[K] & {}>
 				: State<T[K] & {}> | undefined {
-		return this.#composite.signals.get(
-			key,
-		) as T[K] extends readonly (infer U extends {})[]
+		return this.#signals.get(key) as T[K] extends readonly (infer U extends
+			{})[]
 			? List<U>
 			: T[K] extends UnknownRecord
 				? Store<T[K]>
@@ -117,14 +167,13 @@ class BaseStore<T extends UnknownRecord> {
 
 	set(newValue: T): void {
 		if (UNSET === newValue) {
-			this.#composite.clear()
+			this.#signals.clear()
 			notifyOf(this)
 			unsubscribeAllFrom(this)
 			return
 		}
 
-		const oldValue = this.#value
-		const changed = this.#composite.change(diff(oldValue, newValue))
+		const changed = this.#change(diff(this.#value, newValue))
 		if (changed) notifyOf(this)
 	}
 
@@ -133,16 +182,16 @@ class BaseStore<T extends UnknownRecord> {
 	}
 
 	add<K extends keyof T & string>(key: K, value: T[K]): K {
-		if (this.#composite.signals.has(key))
+		if (this.#signals.has(key))
 			throw new DuplicateKeyError(TYPE_STORE, key, value)
 
-		const ok = this.#composite.add(key, value)
+		const ok = this.#add(key, value)
 		if (ok) notifyOf(this)
 		return key
 	}
 
 	remove(key: string): void {
-		const ok = this.#composite.remove(key)
+		const ok = this.#signals.delete(key)
 		if (ok) notifyOf(this)
 	}
 }

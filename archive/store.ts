@@ -7,7 +7,7 @@ import {
 } from '../src/errors'
 import { isMutableSignal, type MutableSignal } from '../src/signal'
 import {
-	batchSignalWrites,
+	batch,
 	notifyWatchers,
 	subscribeActiveWatcher,
 	UNSET,
@@ -166,7 +166,7 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 
 		// Changes
 		if (Object.keys(changes.change).length) {
-			batchSignalWrites(() => {
+			batch(() => {
 				for (const key in changes.change) {
 					const value = changes.change[key] as T[Extract<
 						keyof T,

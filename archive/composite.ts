@@ -1,7 +1,7 @@
-import type { DiffResult, UnknownRecord } from '../diff'
-import { guardMutableSignal } from '../errors'
-import type { Signal } from '../signal'
-import { batchSignalWrites } from '../system'
+import type { DiffResult, UnknownRecord } from '../src/diff'
+import { guardMutableSignal } from '../src/errors'
+import type { Signal } from '../src/signal'
+import { batch } from '../src/system'
 
 /* === Class Definitions === */
 
@@ -54,7 +54,7 @@ class Composite<T extends UnknownRecord, S extends Signal<T[keyof T] & {}>> {
 
 		// Changes
 		if (Object.keys(changes.change).length) {
-			batchSignalWrites(() => {
+			batch(() => {
 				for (const key in changes.change) {
 					const value = changes.change[key]
 					if (!this.#validate(key as keyof T & string, value))

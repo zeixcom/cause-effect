@@ -1,6 +1,6 @@
 /**
  * @name Cause & Effect
- * @version 0.17.2
+ * @version 0.17.3
  * @author Esther Brunner
  */
 
@@ -78,17 +78,16 @@ export {
 	type UnknownSignalRecord,
 } from './src/signal'
 export {
-	batchSignalWrites,
+	batch,
 	type Cleanup,
 	createWatcher,
-	flushPendingReactions,
+	flush,
 	notifyOf,
-	notifyWatchers,
 	type SignalOptions,
-	subscribeActiveWatcher,
 	subscribeTo,
-	trackSignalReads,
+	track,
 	UNSET,
+	untrack,
 	type Watcher,
 } from './src/system'
 export {

@@ -25,6 +25,12 @@ declare const UNSET: any;
  * @returns {Watcher} - Watcher object with off and cleanup methods
  */
 declare const createWatcher: (push: () => void, pull: () => void) => Watcher;
+/**
+ * Run a function with signal reads in a non-tracking context.
+ *
+ * @param {() => void} callback - Callback
+ */
+declare const untrack: (callback: () => void) => void;
 declare const registerWatchCallbacks: (signal: UnknownSignal, watched: () => void, unwatched?: () => void) => void;
 /**
  * Subscribe active watcher to a signal.
@@ -53,13 +59,13 @@ declare const notifyWatchers: (watchers: Set<Watcher>) => boolean;
 /**
  * Flush all pending reactions of enqueued watchers.
  */
-declare const flushPendingReactions: () => void;
+declare const flush: () => void;
 /**
  * Batch multiple signal writes.
  *
  * @param {() => void} callback - Function with multiple signal writes to be batched
  */
-declare const batchSignalWrites: (callback: () => void) => void;
+declare const batch: (callback: () => void) => void;
 /**
  * Run a function with signal reads in a tracking context (or temporarily untrack).
  *
@@ -68,5 +74,5 @@ declare const batchSignalWrites: (callback: () => void) => void;
  *                                    that might read signals (e.g., Web Components)
  * @param {() => void} run - Function to run the computation or effect
  */
-declare const trackSignalReads: (watcher: Watcher | false, run: () => void) => void;
-export { type Cleanup, type MaybeCleanup, type Watcher, type SignalOptions, UNSET, createWatcher, registerWatchCallbacks, subscribeTo, subscribeActiveWatcher, unsubscribeAllFrom, notifyOf, notifyWatchers, flushPendingReactions, batchSignalWrites, trackSignalReads, };
+declare const track: (watcher: Watcher | false, run: () => void) => void;
+export { type Cleanup, type MaybeCleanup, type Watcher, type SignalOptions, UNSET, createWatcher, registerWatchCallbacks, subscribeTo, subscribeActiveWatcher, unsubscribeAllFrom, notifyOf, notifyWatchers, flush, batch, track, untrack, };

@@ -7,7 +7,7 @@ import {
 } from '../src/errors'
 import {
 	createWatcher,
-	flushPendingReactions,
+	flush,
 	notifyWatchers,
 	subscribeActiveWatcher,
 	UNSET,
@@ -151,7 +151,7 @@ const createComputed = <T extends {}>(
 		get: {
 			value: (): T => {
 				subscribeActiveWatcher(watchers)
-				flushPendingReactions()
+				flush()
 				if (dirty) watcher.run()
 				if (error) throw error
 				return value

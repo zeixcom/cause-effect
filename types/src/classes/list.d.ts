@@ -6,7 +6,7 @@ type ArrayToRecord<T extends UnknownArray> = {
     [key: string]: T extends Array<infer U extends {}> ? U : never;
 };
 type KeyConfig<T> = string | ((item: T) => string);
-type ListOptions<T> = SignalOptions<T[]> & {
+type ListOptions<T extends {}> = SignalOptions<T> & {
     keyConfig?: KeyConfig<T>;
 };
 declare const TYPE_LIST: "List";
@@ -29,8 +29,8 @@ declare class List<T extends {}> {
     remove(keyOrIndex: string | number): void;
     sort(compareFn?: (a: T, b: T) => number): void;
     splice(start: number, deleteCount?: number, ...items: T[]): T[];
-    deriveCollection<R extends {}>(callback: (sourceValue: T) => R): DerivedCollection<R, T>;
-    deriveCollection<R extends {}>(callback: (sourceValue: T, abort: AbortSignal) => Promise<R>): DerivedCollection<R, T>;
+    deriveCollection<R extends {}>(callback: (sourceValue: T) => R, options?: SignalOptions<R[]>): DerivedCollection<R, T>;
+    deriveCollection<R extends {}>(callback: (sourceValue: T, abort: AbortSignal) => Promise<R>, options?: SignalOptions<R[]>): DerivedCollection<R, T>;
 }
 /**
  * Check if the provided value is a List instance

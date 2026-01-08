@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test'
-import { batchSignalWrites, createEffect, Memo, State } from '../index.ts'
+import { batch, createEffect, Memo, State } from '../index.ts'
 import { Counter, makeGraph, runGraph } from './util/dependency-graph'
 import type { Computed, ReactiveFramework } from './util/reactive-framework'
 
@@ -28,7 +28,7 @@ const framework = {
 		}
 	},
 	effect: (fn: () => undefined) => createEffect(fn),
-	withBatch: (fn: () => undefined) => batchSignalWrites(fn),
+	withBatch: (fn: () => undefined) => batch(fn),
 	withBuild: <T>(fn: () => T) => fn(),
 }
 const testPullCounts = true
@@ -449,6 +449,7 @@ describe('$mol_wire tests', () => {
 	const name = framework.name
 
 	test(`${name} | $mol_wire benchmark`, () => {
+		// @ts-expect-error test
 		const fib = (n: number) => {
 			if (n < 2) return 1
 			return fib(n - 1) + fib(n - 2)
@@ -618,6 +619,7 @@ describe('CellX tests', () => {
 		for (const layers in expected) {
 			// @ts-expect-error - Framework object has incompatible type constraints with ReactiveFramework
 			const [before, after] = cellx(framework, layers)
+			// @ts-expect-error - Framework object has incompatible type constraints with ReactiveFramework
 			const [expectedBefore, expectedAfter] = expected[layers]
 			expect(before.toString()).toBe(expectedBefore.toString())
 			expect(after.toString()).toBe(expectedAfter.toString())
