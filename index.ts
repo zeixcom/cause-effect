@@ -60,7 +60,6 @@ export {
 	guardMutableSignal,
 	InvalidCallbackError,
 	InvalidCollectionSourceError,
-	InvalidHookError,
 	InvalidSignalValueError,
 	NullishSignalValueError,
 	ReadonlySignalError,

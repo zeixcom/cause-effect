@@ -278,7 +278,7 @@ test('Ref - options.watched exception handling', async () => {
 		{
 			watched: () => {
 				throwingCallbackCalled = true
-				throw new Error('Test error in HOOK_WATCH callback')
+				throw new Error('Test error in watched callback')
 			},
 		},
 	)
@@ -290,7 +290,7 @@ test('Ref - options.watched exception handling', async () => {
 
 	let throwingCallbackCalled = false
 
-	// Subscribe to trigger HOOK_WATCH callbacks
+	// Subscribe to trigger watched callback
 	const effectCleanup = createEffect(() => {
 		ref.get()
 	})

@@ -175,7 +175,7 @@ const activeUserSummaries = users
 
 ## Resource Management
 
-All signals support `.on('watch', callback)` for lazy resource allocation. Resources are only created when signals are accessed by effects and automatically cleaned up when no longer watched.
+All signals support `watched` and `unwatched` callbacks in signal configuration (optional second parameter) for lazy resource allocation. Resources are only created when signals are accessed by effects and automatically cleaned up when no longer watched.
 
 ## When suggesting code:
 1. Follow the established patterns for signal creation and usage

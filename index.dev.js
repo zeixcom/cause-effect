@@ -827,13 +827,6 @@ class InvalidCollectionSourceError extends TypeError {
   }
 }
 
-class InvalidHookError extends TypeError {
-  constructor(where, type) {
-    super(`Invalid hook "${type}" in  ${where}`);
-    this.name = "InvalidHookError";
-  }
-}
-
 class InvalidSignalValueError extends TypeError {
   constructor(where, value) {
     super(`Invalid signal value ${valueString(value)} in ${where}`);
@@ -1165,7 +1158,6 @@ export {
   Memo,
   List,
   InvalidSignalValueError,
-  InvalidHookError,
   InvalidCollectionSourceError,
   InvalidCallbackError,
   DuplicateKeyError,

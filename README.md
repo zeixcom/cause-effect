@@ -2,7 +2,7 @@
 
 Version 0.17.3
 
-**Cause & Effect** is a tiny (~5kB gzipped), dependency-free reactive state library for JavaScript. It uses fine-grained signals so derived values and side effects update automatically when their dependencies change.
+**Cause & Effect** is a tiny (~5kB gzipped), dependency-free reactive state management library for JavaScript. It uses fine-grained signals so derived values and side effects update automatically when their dependencies change.
 
 ## What is Cause & Effect?
 
@@ -159,36 +159,23 @@ user.preferences.theme.set('light')
 createEffect(() => console.log('User:', user.get()))
 ```
 
-Dynamic properties using the `add()` and `remove()` methods:
+Iterator for keys using reactive `.keys()` method to observe structural changes:
+
+```js
+for (const key of user.keys()) {
+  console.log(key)
+}
+```
+
+Access items by key using `.byKey()` or via direct property access like `user.name` (enabled by the Proxy `createStore()` returns).
+
+Dynamic properties using the `.add()` and `.remove()` methods:
 
 ```js
 const settings = createStore({ autoSave: true })
 
 settings.add('timeout', 5000)
 settings.remove('timeout')
-```
-
-Subscribe to hooks using the `.on()` method:
-
-```js
-const user = createStore({ name: 'Alice', age: 30 })
-
-const offChange = user.on('change', changed => console.log(changed))
-const offAdd = user.on('add', added => console.log(added))
-const offRemove = user.on('remove', removed => console.log(removed))
-
-// These will trigger the respective hooks:
-user.add('email', 'alice@example.com') // Logs: "Added properties: ['email']"
-user.age.set(31)                       // Logs: "Changed properties: ['age']"
-user.remove('email')                   // Logs: "Removed properties: ['email']"
-```
-
-To unregister hooks, call the returned cleanup functions:
-
-```js
-offAdd() // Stop listening to add hook
-offChange() // Stop listening to change hook
-offRemove() // Stop listening to remove hook
 ```
 
 ### List
@@ -207,6 +194,8 @@ items.splice(1, 1, 'orange')
 items.sort()
 ```
 
+Access items by key using `.byKey()` or by index using `.at()`. `.indexOfKey()` returns the current index of an item in the list, while `.keyAt()` returns the key of an item at a given position.
+
 Keys are stable across reordering:
 
 ```js
@@ -218,7 +207,7 @@ console.log(items.byKey(key))     // 'orange'
 console.log(items.indexOfKey(key)) // current index
 ```
 
-Lists have `.add()`, `.remove()` and `.on()` methods like stores. In addition, they have `.sort()` and `.splice()` methods. But unlike stores, deeply nested properties in items are not converted to individual signals.
+Lists have `.keys()`, `.add()`, and `.remove()` methods like stores. Additionally, they have `.sort()`, `.splice()`, and a reactive `.length` property. But unlike stores, deeply nested properties in items are not converted to individual signals. Lists have no Proxy layer and don't support direct property access like `items[0].name`.
 
 ### Collection
 
@@ -399,22 +388,19 @@ cleanup() // Logs: 'Cleanup' and unsubscribes from signal `user`
 user.set({ name: 'Bob', age: 28 }) // Won't trigger the effect anymore
 ```
 
-### Resource Management with Hooks
+### Resource Management with Watch Callbacks
 
-All signals support the `watch` hook for lazy resource management. Resources are only allocated when the signal is first accessed by an effect, and automatically cleaned up when no effects are watching:
+All signals support a options object with `watched` and `unwatched` callbacks for lazy resource management. Resources are only allocated when the signal is first accessed by an effect, and automatically cleaned up when no effects are watching:
 
 ```js
 import { State, createEffect } from '@zeix/cause-effect'
 
-const config = new State({ apiUrl: 'https://api.example.com' })
-
-// Set up lazy resource management
-config.on('watch', () => {
-  console.log('Setting up API client...')
-  const client = new ApiClient(config.get().apiUrl)
-  
-  // Return cleanup function
-  return () => {
+const config = new State({ apiUrl: 'https://api.example.com' }, {
+  watched: () => {
+    console.log('Setting up API client...')
+    const client = new ApiClient(config.get().apiUrl)
+  },
+  unwatched: () => {
     console.log('Cleaning up API client...')
     client.disconnect()
   }

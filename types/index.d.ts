@@ -11,7 +11,7 @@ export { isState, State, TYPE_STATE } from './src/classes/state';
 export { BaseStore, createStore, isStore, type Store, TYPE_STORE, } from './src/classes/store';
 export { type DiffResult, diff, isEqual, type UnknownArray, type UnknownRecord, } from './src/diff';
 export { createEffect, type EffectCallback, type MaybeCleanup, } from './src/effect';
-export { CircularDependencyError, createError, DuplicateKeyError, type Guard, guardMutableSignal, InvalidCallbackError, InvalidCollectionSourceError, InvalidHookError, InvalidSignalValueError, NullishSignalValueError, ReadonlySignalError, validateCallback, validateSignalValue, } from './src/errors';
+export { CircularDependencyError, createError, DuplicateKeyError, type Guard, guardMutableSignal, InvalidCallbackError, InvalidCollectionSourceError, InvalidSignalValueError, NullishSignalValueError, ReadonlySignalError, validateCallback, validateSignalValue, } from './src/errors';
 export { type MatchHandlers, match } from './src/match';
 export { type ResolveResult, resolve } from './src/resolve';
 export { createSignal, isMutableSignal, isSignal, type Signal, type SignalValues, type UnknownSignalRecord, } from './src/signal';

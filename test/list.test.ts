@@ -657,18 +657,18 @@ describe('list', () => {
 
 	describe('Watch Callbacks', () => {
 		test('List watched callback is called when effect accesses list.get()', () => {
-			let listHookWatchCalled = false
-			let listUnwatchCalled = false
+			let linkWatchedCalled = false
+			let listUnwatchedCalled = false
 			const numbers = new List([10, 20, 30], {
 				watched: () => {
-					listHookWatchCalled = true
+					linkWatchedCalled = true
 				},
 				unwatched: () => {
-					listUnwatchCalled = true
+					listUnwatchedCalled = true
 				},
 			})
 
-			expect(listHookWatchCalled).toBe(false)
+			expect(linkWatchedCalled).toBe(false)
 
 			// Access list via list.get() - this should trigger list's watched callback
 			let effectValue: number[] = []
@@ -676,24 +676,24 @@ describe('list', () => {
 				effectValue = numbers.get()
 			})
 
-			expect(listHookWatchCalled).toBe(true)
+			expect(linkWatchedCalled).toBe(true)
 			expect(effectValue).toEqual([10, 20, 30])
-			expect(listUnwatchCalled).toBe(false)
+			expect(listUnwatchedCalled).toBe(false)
 
 			// Cleanup effect - should trigger unwatch
 			cleanup()
-			expect(listUnwatchCalled).toBe(true)
+			expect(listUnwatchedCalled).toBe(true)
 		})
 
 		test('List length access triggers List watched callback', () => {
-			let listHookWatchCalled = false
-			let listUnwatchCalled = false
+			let listWatchedCalled = false
+			let listUnwatchedCalled = false
 			const numbers = new List([1, 2, 3], {
 				watched: () => {
-					listHookWatchCalled = true
+					listWatchedCalled = true
 				},
 				unwatched: () => {
-					listUnwatchCalled = true
+					listUnwatchedCalled = true
 				},
 			})
 
@@ -703,12 +703,12 @@ describe('list', () => {
 				effectValue = numbers.length
 			})
 
-			expect(listHookWatchCalled).toBe(true)
+			expect(listWatchedCalled).toBe(true)
 			expect(effectValue).toBe(3)
-			expect(listUnwatchCalled).toBe(false)
+			expect(listUnwatchedCalled).toBe(false)
 
 			cleanup()
-			expect(listUnwatchCalled).toBe(true)
+			expect(listUnwatchedCalled).toBe(true)
 		})
 	})
 })
