@@ -1,7 +1,10 @@
-import { type Cleanup, type HookCallback, type WatchHook } from '../system';
+import { type SignalOptions } from '../system';
 type Computed<T extends {}> = {
     readonly [Symbol.toStringTag]: 'Computed';
     get(): T;
+};
+type ComputedOptions<T extends {}> = SignalOptions<T> & {
+    initialValue?: T;
 };
 type MemoCallback<T extends {} & {
     then?: undefined;
@@ -14,18 +17,14 @@ declare const TYPE_COMPUTED: "Computed";
  * Create a new memoized signal for a synchronous function.
  *
  * @since 0.17.0
+ * @param {MemoCallback<T>} callback - Callback function to compute the memoized value
+ * @param {T} [initialValue = UNSET] - Initial value of the signal
+ * @throws {InvalidCallbackError} If the callback is not an sync function
+ * @throws {InvalidSignalValueError} If the initial value is not valid
  */
 declare class Memo<T extends {}> {
     #private;
-    /**
-     * Create a new memoized signal.
-     *
-     * @param {MemoCallback<T>} callback - Callback function to compute the memoized value
-     * @param {T} [initialValue = UNSET] - Initial value of the signal
-     * @throws {InvalidCallbackError} If the callback is not an sync function
-     * @throws {InvalidSignalValueError} If the initial value is not valid
-     */
-    constructor(callback: MemoCallback<T>, initialValue?: T);
+    constructor(callback: MemoCallback<T>, options?: ComputedOptions<T>);
     get [Symbol.toStringTag](): 'Computed';
     /**
      * Return the memoized value after computing it if necessary.
@@ -35,31 +34,19 @@ declare class Memo<T extends {}> {
      * @throws {Error} If an error occurs during computation
      */
     get(): T;
-    /**
-     * Register a callback to be called when HOOK_WATCH is triggered.
-     *
-     * @param {WatchHook} type - The type of hook to register the callback for; only HOOK_WATCH is supported
-     * @param {HookCallback} callback - The callback to register
-     * @returns {Cleanup} - A function to unregister the callback
-     */
-    on(type: WatchHook, callback: HookCallback): Cleanup;
 }
 /**
  * Create a new task signals that memoizes the result of an asynchronous function.
  *
  * @since 0.17.0
+ * @param {TaskCallback<T>} callback - The asynchronous function to compute the memoized value
+ * @param {T} [initialValue = UNSET] - Initial value of the signal
+ * @throws {InvalidCallbackError} If the callback is not an async function
+ * @throws {InvalidSignalValueError} If the initial value is not valid
  */
 declare class Task<T extends {}> {
     #private;
-    /**
-     * Create a new task signal for an asynchronous function.
-     *
-     * @param {TaskCallback<T>} callback - The asynchronous function to compute the memoized value
-     * @param {T} [initialValue = UNSET] - Initial value of the signal
-     * @throws {InvalidCallbackError} If the callback is not an async function
-     * @throws {InvalidSignalValueError} If the initial value is not valid
-     */
-    constructor(callback: TaskCallback<T>, initialValue?: T);
+    constructor(callback: TaskCallback<T>, options?: ComputedOptions<T>);
     get [Symbol.toStringTag](): 'Computed';
     /**
      * Return the memoized value after executing the async function if necessary.
@@ -69,22 +56,15 @@ declare class Task<T extends {}> {
      * @throws {Error} If an error occurs during computation
      */
     get(): T;
-    /**
-     * Register a callback to be called when HOOK_WATCH is triggered.
-     *
-     * @param {WatchHook} type - The type of hook to register the callback for; only HOOK_WATCH is supported
-     * @param {HookCallback} callback - The callback to register
-     * @returns {Cleanup} - A function to unregister the callback
-     */
-    on(type: WatchHook, callback: HookCallback): Cleanup;
 }
 /**
  * Create a derived signal from existing signals
  *
  * @since 0.9.0
  * @param {MemoCallback<T> | TaskCallback<T>} callback - Computation callback function
+ * @param {ComputedOptions<T>} options - Optional configuration
  */
-declare const createComputed: <T extends {}>(callback: TaskCallback<T> | MemoCallback<T>, initialValue?: T) => Task<T> | Memo<T>;
+declare const createComputed: <T extends {}>(callback: TaskCallback<T> | MemoCallback<T>, options?: ComputedOptions<T>) => Task<T> | Memo<T>;
 /**
  * Check if a value is a computed signal
  *
@@ -111,4 +91,4 @@ declare const isMemoCallback: <T extends {} & {
  * @returns {boolean} - True if value is an async callback, false otherwise
  */
 declare const isTaskCallback: <T extends {}>(value: unknown) => value is TaskCallback<T>;
-export { TYPE_COMPUTED, createComputed, isComputed, isMemoCallback, isTaskCallback, Memo, Task, type Computed, type MemoCallback, type TaskCallback, };
+export { TYPE_COMPUTED, createComputed, isComputed, isMemoCallback, isTaskCallback, Memo, Task, type Computed, type ComputedOptions, type MemoCallback, type TaskCallback, };

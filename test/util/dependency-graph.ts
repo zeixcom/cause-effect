@@ -124,7 +124,7 @@ function makeDependentRows(
 ): Computed<number>[][] {
 	let prevRow = sources
 	const rand = new Random('seed')
-	const rows = []
+	const rows: Computed<number>[][] = []
 	for (let l = 0; l < numRows; l++) {
 		const row = makeRow(
 			prevRow,
@@ -135,7 +135,7 @@ function makeDependentRows(
 			l,
 			rand,
 		)
-		rows.push(row as never)
+		rows.push(row)
 		prevRow = row
 	}
 	return rows

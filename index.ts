@@ -1,6 +1,6 @@
 /**
  * @name Cause & Effect
- * @version 0.17.2
+ * @version 0.17.3
  * @author Esther Brunner
  */
 
@@ -60,7 +60,6 @@ export {
 	guardMutableSignal,
 	InvalidCallbackError,
 	InvalidCollectionSourceError,
-	InvalidHookError,
 	InvalidSignalValueError,
 	NullishSignalValueError,
 	ReadonlySignalError,
@@ -78,27 +77,16 @@ export {
 	type UnknownSignalRecord,
 } from './src/signal'
 export {
-	batchSignalWrites,
+	batch,
 	type Cleanup,
 	createWatcher,
-	flushPendingReactions,
-	HOOK_ADD,
-	HOOK_CHANGE,
-	HOOK_CLEANUP,
-	HOOK_REMOVE,
-	HOOK_SORT,
-	HOOK_WATCH,
-	type Hook,
-	type CleanupHook,
-	type WatchHook,
-	type HookCallback,
-	type HookCallbacks,
-	isHandledHook,
-	notifyWatchers,
-	subscribeActiveWatcher,
-	trackSignalReads,
-	triggerHook,
+	flush,
+	notifyOf,
+	type SignalOptions,
+	subscribeTo,
+	track,
 	UNSET,
+	untrack,
 	type Watcher,
 } from './src/system'
 export {

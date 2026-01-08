@@ -1,9 +1,11 @@
 {
 	"name": "@zeix/cause-effect",
-	"version": "0.17.2",
+	"version": "0.17.3",
 	"author": "Esther Brunner",
+	"type": "module",
 	"main": "index.js",
 	"module": "index.ts",
+	"types": "types/index.d.ts",
 	"devDependencies": {
 		"@biomejs/biome": "2.1.4",
 		"@types/bun": "latest",
@@ -12,7 +14,7 @@
 	"peerDependencies": {
 		"typescript": "^5.6.3"
 	},
-	"description": "Cause & Effect - reactive state management with signals.",
+	"description": "Cause & Effect - fine-grained reactive state management library.",
 	"license": "MIT",
 	"keywords": [
 		"Cause & Effect",
@@ -24,10 +26,8 @@
 		"access": "public"
 	},
 	"scripts": {
-		"build": "bunx tsc && bun build index.ts --outdir ./ --minify && bun build index.ts --outfile index.dev.js",
+		"build": "bunx tsc --project tsconfig.build.json && bun build index.ts --outdir ./ --minify && bun build index.ts --outfile index.dev.js",
 		"test": "bun test",
 		"lint": "bunx biome lint --write"
-	},
-	"type": "module",
-	"types": "types/index.d.ts"
+	}
 }

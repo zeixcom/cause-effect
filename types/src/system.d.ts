@@ -1,58 +1,71 @@
+import { type Guard } from './errors';
+import type { UnknownSignal } from './signal';
 type Cleanup = () => void;
 type MaybeCleanup = Cleanup | undefined | void;
-type Hook = 'add' | 'change' | 'cleanup' | 'remove' | 'sort' | 'watch';
-type CleanupHook = 'cleanup';
-type WatchHook = 'watch';
-type HookCallback = (payload?: readonly string[]) => MaybeCleanup;
-type HookCallbacks = {
-    [K in Hook]?: Set<HookCallback>;
-};
 type Watcher = {
     (): void;
-    on(type: CleanupHook, cleanup: Cleanup): void;
+    run(): void;
+    onCleanup(cleanup: Cleanup): void;
     stop(): void;
 };
+type SignalOptions<T extends unknown & {}> = {
+    guard?: Guard<T>;
+    watched?: () => void;
+    unwatched?: () => void;
+};
 declare const UNSET: any;
-declare const HOOK_ADD = "add";
-declare const HOOK_CHANGE = "change";
-declare const HOOK_CLEANUP = "cleanup";
-declare const HOOK_REMOVE = "remove";
-declare const HOOK_SORT = "sort";
-declare const HOOK_WATCH = "watch";
 /**
- * Create a watcher to observe changes to a signal.
+ * Create a watcher to observe changes in signals.
  *
- * A watcher is a reaction function with onCleanup and stop methods
+ * A watcher combines push and pull reaction functions with onCleanup and stop methods
  *
- * @since 0.14.1
- * @param {() => void} react - Function to be called when the state changes
+ * @since 0.17.3
+ * @param {() => void} push - Function to be called when the state changes (push)
+ * @param {() => void} pull - Function to be called on demand from consumers (pull)
  * @returns {Watcher} - Watcher object with off and cleanup methods
  */
-declare const createWatcher: (react: () => void) => Watcher;
+declare const createWatcher: (push: () => void, pull: () => void) => Watcher;
 /**
- * Subscribe by adding active watcher to the Set of watchers of a signal.
+ * Run a function with signal reads in a non-tracking context.
  *
- * @param {Set<Watcher>} watchers - Watchers of the signal
- * @param {Set<HookCallback>} watchHookCallbacks - HOOK_WATCH callbacks of the signal
+ * @param {() => void} callback - Callback
  */
-declare const subscribeActiveWatcher: (watchers: Set<Watcher>, watchHookCallbacks?: Set<HookCallback>) => void;
+declare const untrack: (callback: () => void) => void;
+declare const registerWatchCallbacks: (signal: UnknownSignal, watched: () => void, unwatched?: () => void) => void;
+/**
+ * Subscribe active watcher to a signal.
+ *
+ * @param {UnknownSignal} signal - Signal to subscribe to
+ * @returns {boolean} - true if the active watcher was subscribed,
+ *                      false if the watcher was already subscribed or there was no active watcher
+ */
+declare const subscribeTo: (signal: UnknownSignal) => boolean;
+declare const subscribeActiveWatcher: (watchers: Set<Watcher>) => boolean;
+/**
+ * Unsubscribe all watchers from a signal so it can be garbage collected.
+ *
+ * @param {UnknownSignal} signal - Signal to unsubscribe from
+ * @returns {void}
+ */
+declare const unsubscribeAllFrom: (signal: UnknownSignal) => void;
 /**
  * Notify watchers of a signal change.
  *
- * @param {Set<Watcher>} watchers - Watchers of the signal
+ * @param {UnknownSignal} signal - Signal to notify watchers of
  * @returns {boolean} - Whether any watchers were notified
  */
+declare const notifyOf: (signal: UnknownSignal) => boolean;
 declare const notifyWatchers: (watchers: Set<Watcher>) => boolean;
 /**
  * Flush all pending reactions of enqueued watchers.
  */
-declare const flushPendingReactions: () => void;
+declare const flush: () => void;
 /**
  * Batch multiple signal writes.
  *
  * @param {() => void} callback - Function with multiple signal writes to be batched
  */
-declare const batchSignalWrites: (callback: () => void) => void;
+declare const batch: (callback: () => void) => void;
 /**
  * Run a function with signal reads in a tracking context (or temporarily untrack).
  *
@@ -61,21 +74,5 @@ declare const batchSignalWrites: (callback: () => void) => void;
  *                                    that might read signals (e.g., Web Components)
  * @param {() => void} run - Function to run the computation or effect
  */
-declare const trackSignalReads: (watcher: Watcher | false, run: () => void) => void;
-/**
- * Trigger a hook.
- *
- * @param {Set<HookCallback> | undefined} callbacks - Callbacks to be called when the hook is triggered
- * @param {readonly string[] | undefined} payload - Payload to be sent to listeners
- * @return {Cleanup | undefined} Cleanup function to be called when the hook is unmounted
- */
-declare const triggerHook: (callbacks: Set<HookCallback> | undefined, payload?: readonly string[]) => Cleanup | undefined;
-/**
- * Check whether a hook type is handled in a signal.
- *
- * @param {Hook} type - Type of hook to check
- * @param {T} handled - List of handled hook types
- * @returns {type is T[number]} - Whether the hook type is handled
- */
-declare const isHandledHook: <T extends readonly Hook[]>(type: Hook, handled: T) => type is T[number];
-export { type Cleanup, type MaybeCleanup, type Watcher, type Hook, type CleanupHook, type WatchHook, type HookCallback, type HookCallbacks, HOOK_ADD, HOOK_CHANGE, HOOK_CLEANUP, HOOK_REMOVE, HOOK_SORT, HOOK_WATCH, UNSET, createWatcher, subscribeActiveWatcher, notifyWatchers, flushPendingReactions, batchSignalWrites, trackSignalReads, triggerHook, isHandledHook, };
+declare const track: (watcher: Watcher | false, run: () => void) => void;
+export { type Cleanup, type MaybeCleanup, type Watcher, type SignalOptions, UNSET, createWatcher, registerWatchCallbacks, subscribeTo, subscribeActiveWatcher, unsubscribeAllFrom, notifyOf, notifyWatchers, flush, batch, track, untrack, };

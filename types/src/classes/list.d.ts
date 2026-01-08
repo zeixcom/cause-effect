@@ -1,15 +1,18 @@
 import { type UnknownArray } from '../diff';
-import { type Cleanup, type Hook, type HookCallback } from '../system';
+import { type SignalOptions } from '../system';
 import { DerivedCollection } from './collection';
 import { State } from './state';
 type ArrayToRecord<T extends UnknownArray> = {
     [key: string]: T extends Array<infer U extends {}> ? U : never;
 };
 type KeyConfig<T> = string | ((item: T) => string);
+type ListOptions<T extends {}> = SignalOptions<T> & {
+    keyConfig?: KeyConfig<T>;
+};
 declare const TYPE_LIST: "List";
 declare class List<T extends {}> {
     #private;
-    constructor(initialValue: T[], keyConfig?: KeyConfig<T>);
+    constructor(initialValue: T[], options?: ListOptions<T>);
     get [Symbol.toStringTag](): 'List';
     get [Symbol.isConcatSpreadable](): true;
     [Symbol.iterator](): IterableIterator<State<T>>;
@@ -26,9 +29,8 @@ declare class List<T extends {}> {
     remove(keyOrIndex: string | number): void;
     sort(compareFn?: (a: T, b: T) => number): void;
     splice(start: number, deleteCount?: number, ...items: T[]): T[];
-    on(type: Hook, callback: HookCallback): Cleanup;
-    deriveCollection<R extends {}>(callback: (sourceValue: T) => R): DerivedCollection<R, T>;
-    deriveCollection<R extends {}>(callback: (sourceValue: T, abort: AbortSignal) => Promise<R>): DerivedCollection<R, T>;
+    deriveCollection<R extends {}>(callback: (sourceValue: T) => R, options?: SignalOptions<R[]>): DerivedCollection<R, T>;
+    deriveCollection<R extends {}>(callback: (sourceValue: T, abort: AbortSignal) => Promise<R>, options?: SignalOptions<R[]>): DerivedCollection<R, T>;
 }
 /**
  * Check if the provided value is a List instance
@@ -38,4 +40,4 @@ declare class List<T extends {}> {
  * @returns {boolean} - True if the value is a List instance, false otherwise
  */
 declare const isList: <T extends {}>(value: unknown) => value is List<T>;
-export { isList, List, TYPE_LIST, type ArrayToRecord, type KeyConfig };
+export { isList, List, TYPE_LIST, type ArrayToRecord, type KeyConfig, type ListOptions, };

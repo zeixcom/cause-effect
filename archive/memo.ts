@@ -6,10 +6,9 @@ import {
 } from '../src/errors'
 import {
 	createWatcher,
-	flushPendingReactions,
+	flush,
 	notifyWatchers,
 	subscribeActiveWatcher,
-	trackSignalReads,
 	UNSET,
 	type Watcher,
 } from '../src/system'
@@ -54,15 +53,13 @@ const createMemo = <T extends {}>(
 	let computing = false
 
 	// Own watcher: called when notified from sources (push)
-	const watcher = createWatcher(() => {
-		dirty = true
-		if (watchers.size) notifyWatchers(watchers)
-		else watcher.stop()
-	})
-
-	// Called when requested by dependencies (pull)
-	const compute = () =>
-		trackSignalReads(watcher, () => {
+	const watcher = createWatcher(
+		() => {
+			dirty = true
+			if (watchers.size) notifyWatchers(watchers)
+			else watcher.stop()
+		},
+		() => {
 			if (computing) throw new CircularDependencyError('memo')
 			let result: T
 			computing = true
@@ -87,7 +84,8 @@ const createMemo = <T extends {}>(
 				dirty = false
 			}
 			computing = false
-		})
+		},
+	)
 
 	const memo: Record<PropertyKey, unknown> = {}
 	Object.defineProperties(memo, {
@@ -97,8 +95,9 @@ const createMemo = <T extends {}>(
 		get: {
 			value: (): T => {
 				subscribeActiveWatcher(watchers)
-				flushPendingReactions()
-				if (dirty) compute()
+				flush()
+
+				if (dirty) watcher.run()
 				if (error) throw error
 				return value
 			},

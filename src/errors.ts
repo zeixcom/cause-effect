@@ -26,6 +26,13 @@ class DuplicateKeyError extends Error {
 	}
 }
 
+class FailedAssertionError extends Error {
+	constructor(message: string = 'unexpected condition') {
+		super(`Assertion failed: ${message}`)
+		this.name = 'FailedAssertionError'
+	}
+}
+
 class InvalidCallbackError extends TypeError {
 	constructor(where: string, value: unknown) {
 		super(`Invalid ${where} callback ${valueString(value)}`)
@@ -37,13 +44,6 @@ class InvalidCollectionSourceError extends TypeError {
 	constructor(where: string, value: unknown) {
 		super(`Invalid ${where} source ${valueString(value)}`)
 		this.name = 'InvalidCollectionSourceError'
-	}
-}
-
-class InvalidHookError extends TypeError {
-	constructor(where: string, type: string) {
-		super(`Invalid hook "${type}" in  ${where}`)
-		this.name = 'InvalidHookError'
 	}
 }
 
@@ -71,6 +71,10 @@ class ReadonlySignalError extends Error {
 }
 
 /* === Functions === */
+
+function assert(condition: unknown, msg?: string): asserts condition {
+	if (!condition) throw new FailedAssertionError(msg)
+}
 
 const createError = /*#__PURE__*/ (reason: unknown): Error =>
 	reason instanceof Error ? reason : Error(String(reason))
@@ -108,10 +112,10 @@ export {
 	DuplicateKeyError,
 	InvalidCallbackError,
 	InvalidCollectionSourceError,
-	InvalidHookError,
 	InvalidSignalValueError,
 	NullishSignalValueError,
 	ReadonlySignalError,
+	assert,
 	createError,
 	validateCallback,
 	validateSignalValue,

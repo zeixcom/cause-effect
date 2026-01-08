@@ -10,7 +10,6 @@ import {
 	Task,
 	UNSET,
 } from '../index.ts'
-import { HOOK_WATCH } from '../src/system'
 
 /* === Utility Functions === */
 
@@ -230,7 +229,7 @@ describe('Computed', () => {
 	test('should detect and throw error for circular dependencies', () => {
 		const a = new State(1)
 		const b = new Memo(() => c.get() + 1)
-		const c = new Memo(() => b.get() + a.get())
+		const c = new Memo((): number => b.get() + a.get())
 		expect(() => {
 			b.get() // This should trigger the circular dependency
 		}).toThrow('Circular dependency detected in memo')
@@ -269,7 +268,7 @@ describe('Computed', () => {
 			expect(a.get()).toBe(1)
 			expect(true).toBe(false) // This line should not be reached
 		} catch (error) {
-			expect(error.message).toBe('Calculation error')
+			expect((error as Error).message).toBe('Calculation error')
 		} finally {
 			expect(c.get()).toBe('c: recovered')
 			expect(okCount).toBe(2)
@@ -468,35 +467,11 @@ describe('Computed', () => {
 			}).toThrow('Invalid Task callback (_a) => 42')
 		})
 
-		test('should throw NullishSignalValueError when initialValue is null', () => {
+		test('should expect type error if null is passed for options.initialValue', () => {
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
-				new Memo(() => 42, null)
-			}).toThrow('Nullish signal values are not allowed in Memo')
-		})
-
-		test('should throw specific error types for invalid inputs', () => {
-			try {
-				// @ts-expect-error - Testing invalid input
-				new Memo(null)
-				expect(true).toBe(false) // Should not reach here
-			} catch (error) {
-				expect(error).toBeInstanceOf(TypeError)
-				expect(error.name).toBe('InvalidCallbackError')
-				expect(error.message).toBe('Invalid Memo callback null')
-			}
-
-			try {
-				// @ts-expect-error - Testing invalid input
-				new Memo(() => 42, null)
-				expect(true).toBe(false) // Should not reach here
-			} catch (error) {
-				expect(error).toBeInstanceOf(TypeError)
-				expect(error.name).toBe('NullishSignalValueError')
-				expect(error.message).toBe(
-					'Nullish signal values are not allowed in Memo',
-				)
-			}
+				new Memo(() => 42, { initialValue: null })
+			}).not.toThrow()
 		})
 
 		test('should allow valid callbacks and non-nullish initialValues', () => {
@@ -506,36 +481,43 @@ describe('Computed', () => {
 			}).not.toThrow()
 
 			expect(() => {
-				new Memo(() => 42, 0)
+				new Memo(() => 42, { initialValue: 0 })
 			}).not.toThrow()
 
 			expect(() => {
-				new Memo(() => 'foo', '')
+				new Memo(() => 'foo', { initialValue: '' })
 			}).not.toThrow()
 
 			expect(() => {
-				new Memo(() => true, false)
+				new Memo(() => true, { initialValue: false })
 			}).not.toThrow()
 
 			expect(() => {
-				new Task(async () => ({ id: 42, name: 'John' }), UNSET)
+				new Task(async () => ({ id: 42, name: 'John' }), {
+					initialValue: UNSET,
+				})
 			}).not.toThrow()
 		})
 	})
 
 	describe('Initial Value and Old Value', () => {
 		test('should use initialValue when provided', () => {
-			const computed = new Memo((oldValue: number) => oldValue + 1, 10)
+			const computed = new Memo((oldValue: number) => oldValue + 1, {
+				initialValue: 10,
+			})
 			expect(computed.get()).toBe(11)
 		})
 
 		test('should pass current value as oldValue to callback', () => {
 			const state = new State(5)
 			let receivedOldValue: number | undefined
-			const computed = new Memo((oldValue: number) => {
-				receivedOldValue = oldValue
-				return state.get() * 2
-			}, 0)
+			const computed = new Memo(
+				(oldValue: number) => {
+					receivedOldValue = oldValue
+					return state.get() * 2
+				},
+				{ initialValue: 0 },
+			)
 
 			expect(computed.get()).toBe(10)
 			expect(receivedOldValue).toBe(0)
@@ -547,10 +529,13 @@ describe('Computed', () => {
 
 		test('should work as reducer function with oldValue', () => {
 			const increment = new State(0)
-			const sum = new Memo((oldValue: number) => {
-				const inc = increment.get()
-				return inc === 0 ? oldValue : oldValue + inc
-			}, 0)
+			const sum = new Memo(
+				(oldValue: number) => {
+					const inc = increment.get()
+					return inc === 0 ? oldValue : oldValue + inc
+				},
+				{ initialValue: 0 },
+			)
 
 			expect(sum.get()).toBe(0)
 
@@ -566,10 +551,13 @@ describe('Computed', () => {
 
 		test('should handle array accumulation with oldValue', () => {
 			const item = new State('')
-			const items = new Memo((oldValue: string[]) => {
-				const newItem = item.get()
-				return newItem === '' ? oldValue : [...oldValue, newItem]
-			}, [] as string[])
+			const items = new Memo(
+				(oldValue: string[]) => {
+					const newItem = item.get()
+					return newItem === '' ? oldValue : [...oldValue, newItem]
+				},
+				{ initialValue: [] as string[] },
+			)
 
 			expect(items.get()).toEqual([])
 
@@ -586,11 +574,16 @@ describe('Computed', () => {
 		test('should handle counter with oldValue and multiple dependencies', () => {
 			const reset = new State(false)
 			const add = new State(0)
-			const counter = new Memo((oldValue: number) => {
-				if (reset.get()) return 0
-				const increment = add.get()
-				return increment === 0 ? oldValue : oldValue + increment
-			}, 0)
+			const counter = new Memo(
+				(oldValue: number) => {
+					if (reset.get()) return 0
+					const increment = add.get()
+					return increment === 0 ? oldValue : oldValue + increment
+				},
+				{
+					initialValue: 0,
+				},
+			)
 
 			expect(counter.get()).toBe(0)
 
@@ -623,11 +616,16 @@ describe('Computed', () => {
 		test('should work with async computation and oldValue', async () => {
 			let receivedOldValue: number | undefined
 
-			const asyncComputed = new Task(async (oldValue: number) => {
-				receivedOldValue = oldValue
-				await wait(50)
-				return oldValue + 5
-			}, 10)
+			const asyncComputed = new Task(
+				async (oldValue: number) => {
+					receivedOldValue = oldValue
+					await wait(50)
+					return oldValue + 5
+				},
+				{
+					initialValue: 10,
+				},
+			)
 
 			// Initially returns initialValue before async computation completes
 			expect(asyncComputed.get()).toBe(10)
@@ -648,7 +646,7 @@ describe('Computed', () => {
 					if (k === '' || v === '') return oldValue
 					return { ...oldValue, [k]: v }
 				},
-				{} as Record<string, string>,
+				{ initialValue: {} as Record<string, string> },
 			)
 
 			expect(obj.get()).toEqual({})
@@ -682,7 +680,9 @@ describe('Computed', () => {
 
 					return source.get() + oldValue
 				},
-				0,
+				{
+					initialValue: 0,
+				},
 			)
 
 			// Initial computation
@@ -704,14 +704,19 @@ describe('Computed', () => {
 			const shouldError = new State(false)
 			const counter = new State(1)
 
-			const computed = new Memo((oldValue: number) => {
-				if (shouldError.get()) {
-					throw new Error('Computation failed')
-				}
-				// Handle UNSET case by treating it as 0
-				const safeOldValue = oldValue === UNSET ? 0 : oldValue
-				return safeOldValue + counter.get()
-			}, 10)
+			const computed = new Memo(
+				(oldValue: number) => {
+					if (shouldError.get()) {
+						throw new Error('Computation failed')
+					}
+					// Handle UNSET case by treating it as 0
+					const safeOldValue = oldValue === UNSET ? 0 : oldValue
+					return safeOldValue + counter.get()
+				},
+				{
+					initialValue: 10,
+				},
+			)
 
 			expect(computed.get()).toBe(11) // 10 + 1
 
@@ -736,23 +741,28 @@ describe('Computed', () => {
 			>('increment')
 			const amount = new State(1)
 
-			const calculator = new Memo((oldValue: number) => {
-				const act = action.get()
-				const amt = amount.get()
+			const calculator = new Memo(
+				(oldValue: number) => {
+					const act = action.get()
+					const amt = amount.get()
 
-				switch (act) {
-					case 'increment':
-						return oldValue + amt
-					case 'decrement':
-						return oldValue - amt
-					case 'multiply':
-						return oldValue * amt
-					case 'reset':
-						return 0
-					default:
-						return oldValue
-				}
-			}, 0)
+					switch (act) {
+						case 'increment':
+							return oldValue + amt
+						case 'decrement':
+							return oldValue - amt
+						case 'multiply':
+							return oldValue * amt
+						case 'reset':
+							return 0
+						default:
+							return oldValue
+					}
+				},
+				{
+					initialValue: 0,
+				},
+			)
 
 			expect(calculator.get()).toBe(1) // 0 + 1
 
@@ -773,9 +783,10 @@ describe('Computed', () => {
 
 		test('should handle edge cases with initialValue and oldValue', () => {
 			// Test with null/undefined-like values
-			const nullishComputed = new Memo((oldValue: string) => {
-				return `${oldValue} updated`
-			}, '')
+			const nullishComputed = new Memo(
+				oldValue => `${oldValue} updated`,
+				{ initialValue: '' },
+			)
 
 			expect(nullishComputed.get()).toBe(' updated')
 
@@ -794,9 +805,11 @@ describe('Computed', () => {
 					items: [...oldValue.items, `item${oldValue.count + 1}`],
 				}),
 				{
-					count: 0,
-					items: [] as string[],
-					meta: { created: now },
+					initialValue: {
+						count: 0,
+						items: [] as string[],
+						meta: { created: now },
+					},
 				},
 			)
 
@@ -808,18 +821,28 @@ describe('Computed', () => {
 
 		test('should preserve initialValue type consistency', () => {
 			// Test that oldValue type is consistent with initialValue
-			const stringComputed = new Memo((oldValue: string) => {
-				expect(typeof oldValue).toBe('string')
-				return oldValue.toUpperCase()
-			}, 'hello')
+			const stringComputed = new Memo(
+				(oldValue: string) => {
+					expect(typeof oldValue).toBe('string')
+					return oldValue.toUpperCase()
+				},
+				{
+					initialValue: 'hello',
+				},
+			)
 
 			expect(stringComputed.get()).toBe('HELLO')
 
-			const numberComputed = new Memo((oldValue: number) => {
-				expect(typeof oldValue).toBe('number')
-				expect(Number.isFinite(oldValue)).toBe(true)
-				return oldValue * 2
-			}, 5)
+			const numberComputed = new Memo(
+				(oldValue: number) => {
+					expect(typeof oldValue).toBe('number')
+					expect(Number.isFinite(oldValue)).toBe(true)
+					return oldValue * 2
+				},
+				{
+					initialValue: 5,
+				},
+			)
 
 			expect(numberComputed.get()).toBe(10)
 		})
@@ -829,12 +852,16 @@ describe('Computed', () => {
 
 			const first = new Memo(
 				(oldValue: number) => oldValue + source.get(),
-				10,
+				{
+					initialValue: 10,
+				},
 			)
 
 			const second = new Memo(
 				(oldValue: number) => oldValue + first.get(),
-				20,
+				{
+					initialValue: 20,
+				},
 			)
 
 			expect(first.get()).toBe(11) // 10 + 1
@@ -849,10 +876,15 @@ describe('Computed', () => {
 			const trigger = new State(0)
 			let computationCount = 0
 
-			const accumulator = new Memo((oldValue: number) => {
-				computationCount++
-				return oldValue + trigger.get()
-			}, 100)
+			const accumulator = new Memo(
+				(oldValue: number) => {
+					computationCount++
+					return oldValue + trigger.get()
+				},
+				{
+					initialValue: 100,
+				},
+			)
 
 			expect(accumulator.get()).toBe(100) // 100 + 0
 			expect(computationCount).toBe(1)
@@ -868,30 +900,26 @@ describe('Computed', () => {
 		})
 	})
 
-	describe('HOOK_WATCH - Lazy Resource Management', () => {
+	describe('Signal Options - Lazy Resource Management', () => {
 		test('Memo - should manage external resources lazily', async () => {
 			const source = new State(1)
 			let counter = 0
 			let intervalId: Timer | undefined
 
 			// Create memo that depends on source
-			const computed = new Memo((oldValue: number) => {
-				return source.get() * 2 + (oldValue || 0)
-			}, 0)
-
-			// Add HOOK_WATCH callback that starts interval
-			const cleanupHookCallback = computed.on(HOOK_WATCH, () => {
-				intervalId = setInterval(() => {
-					counter++
-				}, 10) // Fast interval for testing
-
-				// Return cleanup function
-				return () => {
+			const computed = new Memo(oldValue => source.get() * 2 + oldValue, {
+				initialValue: 0,
+				watched: () => {
+					intervalId = setInterval(() => {
+						counter++
+					}, 10)
+				},
+				unwatched: () => {
 					if (intervalId) {
 						clearInterval(intervalId)
 						intervalId = undefined
 					}
-				}
+				},
 			})
 
 			// Counter should not be running yet
@@ -900,7 +928,7 @@ describe('Computed', () => {
 			expect(counter).toBe(0)
 			expect(intervalId).toBeUndefined()
 
-			// Effect subscribes to computed, triggering HOOK_WATCH
+			// Effect subscribes to computed, triggering watched callback
 			const effectCleanup = createEffect(() => {
 				computed.get()
 			})
@@ -918,9 +946,6 @@ describe('Computed', () => {
 			await wait(50)
 			expect(counter).toBe(counterAfterStop)
 			expect(intervalId).toBeUndefined()
-
-			// Cleanup
-			cleanupHookCallback()
 		})
 
 		test('Task - should manage external resources lazily', async () => {
@@ -938,22 +963,21 @@ describe('Computed', () => {
 
 					return `${value}-processed-${oldValue || 'none'}`
 				},
-				'default',
+				{
+					initialValue: 'default',
+					watched: () => {
+						intervalId = setInterval(() => {
+							counter++
+						}, 10)
+					},
+					unwatched: () => {
+						if (intervalId) {
+							clearInterval(intervalId)
+							intervalId = undefined
+						}
+					},
+				},
 			)
-
-			// Add HOOK_WATCH callback
-			const cleanupHookCallback = computed.on(HOOK_WATCH, () => {
-				intervalId = setInterval(() => {
-					counter++
-				}, 10)
-
-				return () => {
-					if (intervalId) {
-						clearInterval(intervalId)
-						intervalId = undefined
-					}
-				}
-			})
 
 			// Counter should not be running yet
 			expect(counter).toBe(0)
@@ -979,26 +1003,24 @@ describe('Computed', () => {
 			await wait(50)
 			expect(counter).toBe(counterAfterStop)
 			expect(intervalId).toBeUndefined()
-
-			// Cleanup
-			cleanupHookCallback()
 		})
 
 		test('Memo - multiple watchers should share resources', async () => {
 			const source = new State(10)
 			let subscriptionCount = 0
 
-			const computed = new Memo((oldValue: number) => {
-				return source.get() + (oldValue || 0)
-			}, 0)
-
-			// HOOK_WATCH should only be called once for multiple watchers
-			const cleanupHookCallback = computed.on(HOOK_WATCH, () => {
-				subscriptionCount++
-				return () => {
-					subscriptionCount--
-				}
-			})
+			const computed = new Memo(
+				(oldValue: number) => source.get() + oldValue,
+				{
+					initialValue: 0,
+					watched: () => {
+						subscriptionCount++
+					},
+					unwatched: () => {
+						subscriptionCount--
+					},
+				},
+			)
 
 			expect(subscriptionCount).toBe(0)
 
@@ -1020,13 +1042,11 @@ describe('Computed', () => {
 			// Stop second effect
 			effect2()
 			expect(subscriptionCount).toBe(0) // Now cleaned up
-
-			// Cleanup
-			cleanupHookCallback()
 		})
 
 		test('Task - should handle abort signals in external resources', async () => {
 			const source = new State('test')
+			let controller: AbortController | undefined
 			const abortedControllers: AbortController[] = []
 
 			const computed = new Task(
@@ -1035,36 +1055,37 @@ describe('Computed', () => {
 					if (abort.aborted) throw new Error('Aborted')
 					return `${source.get()}-${oldValue || 'initial'}`
 				},
-				'default',
+				{
+					initialValue: 'default',
+					watched: () => {
+						controller = new AbortController()
+
+						// Simulate external async operation (catch rejections to avoid unhandled errors)
+						new Promise(resolve => {
+							const timeout = setTimeout(() => {
+								if (!controller) return
+								if (controller.signal.aborted) {
+									resolve('External operation aborted')
+								} else {
+									resolve('External operation completed')
+								}
+							}, 50)
+
+							controller?.signal.addEventListener('abort', () => {
+								clearTimeout(timeout)
+								resolve('External operation aborted')
+							})
+						}).catch(() => {
+							// Ignore promise rejections in test
+						})
+					},
+					unwatched: () => {
+						if (!controller) return
+						controller.abort()
+						abortedControllers.push(controller)
+					},
+				},
 			)
-
-			// HOOK_WATCH that creates external resources with abort handling
-			const cleanupHookCallback = computed.on(HOOK_WATCH, () => {
-				const controller = new AbortController()
-
-				// Simulate external async operation (catch rejections to avoid unhandled errors)
-				new Promise(resolve => {
-					const timeout = setTimeout(() => {
-						if (controller.signal.aborted) {
-							resolve('External operation aborted')
-						} else {
-							resolve('External operation completed')
-						}
-					}, 50)
-
-					controller.signal.addEventListener('abort', () => {
-						clearTimeout(timeout)
-						resolve('External operation aborted')
-					})
-				}).catch(() => {
-					// Ignore promise rejections in test
-				})
-
-				return () => {
-					controller.abort()
-					abortedControllers.push(controller)
-				}
-			})
 
 			const effect1 = createEffect(() => {
 				computed.get()
@@ -1082,45 +1103,6 @@ describe('Computed', () => {
 			// Should have aborted external controllers
 			expect(abortedControllers.length).toBeGreaterThan(0)
 			expect(abortedControllers[0].signal.aborted).toBe(true)
-
-			// Cleanup
-			cleanupHookCallback()
-		})
-
-		test('Exception handling in computed HOOK_WATCH callbacks', async () => {
-			const source = new State(1)
-			const computed = new Memo(() => source.get() * 2)
-
-			let successfulCallbackCalled = false
-			let throwingCallbackCalled = false
-
-			// Add throwing callback
-			const cleanup1 = computed.on(HOOK_WATCH, () => {
-				throwingCallbackCalled = true
-				throw new Error('Test error in computed HOOK_WATCH')
-			})
-
-			// Add successful callback
-			const cleanup2 = computed.on(HOOK_WATCH, () => {
-				successfulCallbackCalled = true
-				return () => {
-					// cleanup
-				}
-			})
-
-			// Trigger callbacks - should throw due to exception in callback
-			expect(() => computed.get()).toThrow(
-				'Test error in computed HOOK_WATCH',
-			)
-
-			// Throwing callback should have been called
-			expect(throwingCallbackCalled).toBe(true)
-			// Successful callback should also have been called (resilient collection)
-			expect(successfulCallbackCalled).toBe(true)
-
-			// Cleanup
-			cleanup1()
-			cleanup2()
 		})
 	})
 })

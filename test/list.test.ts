@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import {
 	createEffect,
-	List,
 	createStore,
 	isCollection,
 	isList,
 	isStore,
+	List,
 	Memo,
 	State,
 	UNSET,
@@ -128,17 +128,6 @@ describe('list', () => {
 			const names = new List(['Charlie', 'Alice', 'Bob'])
 			names.sort((a, b) => a.localeCompare(b))
 			expect(names.get()).toEqual(['Alice', 'Bob', 'Charlie'])
-		})
-
-		test('triggers HOOK_SORT with new order', () => {
-			const numbers = new List([3, 1, 2])
-			let order: readonly string[] | undefined
-			numbers.on('sort', sort => {
-				order = sort
-			})
-			numbers.sort()
-			expect(order).toHaveLength(3)
-			expect(order).toEqual(['1', '2', '0'])
 		})
 
 		test('sort is reactive - watchers are notified', () => {
@@ -302,47 +291,6 @@ describe('list', () => {
 		})
 	})
 
-	describe('Hooks', () => {
-		test('trigger HOOK_ADD when adding items', () => {
-			const numbers = new List([1, 2])
-			let addedKeys: readonly string[] | undefined
-			let newArray: number[] = []
-			numbers.on('add', add => {
-				addedKeys = add
-				newArray = numbers.get()
-			})
-			numbers.add(3)
-			expect(addedKeys).toHaveLength(1)
-			expect(newArray).toEqual([1, 2, 3])
-		})
-
-		test('triggers HOOK_CHANGE when properties are modified', () => {
-			const items = new List([{ value: 10 }])
-			let changedKeys: readonly string[] | undefined
-			let newArray: { value: number }[] = []
-			items.on('change', change => {
-				changedKeys = change
-				newArray = items.get()
-			})
-			items.at(0)?.set({ value: 20 })
-			expect(changedKeys).toHaveLength(1)
-			expect(newArray).toEqual([{ value: 20 }])
-		})
-
-		test('triggers HOOK_REMOVE when items are removed', () => {
-			const items = new List([1, 2, 3])
-			let removedKeys: readonly string[] | undefined
-			let newArray: number[] = []
-			items.on('remove', remove => {
-				removedKeys = remove
-				newArray = items.get()
-			})
-			items.remove(1)
-			expect(removedKeys).toHaveLength(1)
-			expect(newArray).toEqual([1, 3])
-		})
-	})
-
 	describe('edge cases', () => {
 		test('handles empty lists correctly', () => {
 			const empty = new List([])
@@ -482,7 +430,10 @@ describe('list', () => {
 				])
 
 				const enrichedUsers = users.deriveCollection(
-					async (user, abort: AbortSignal) => {
+					async (
+						user: { id: number; name: string },
+						abort: AbortSignal,
+					) => {
 						// Simulate API call
 						await new Promise(resolve => setTimeout(resolve, 10))
 						if (abort.aborted) throw new Error('Aborted')
@@ -663,54 +614,6 @@ describe('list', () => {
 			})
 		})
 
-		describe('collection event handling', () => {
-			test('emits add events when source adds items', () => {
-				const numbers = new List([1, 2])
-				const doubled = numbers.deriveCollection(
-					(value: number) => value * 2,
-				)
-
-				let addedKeys: readonly string[] | undefined
-				doubled.on('add', keys => {
-					addedKeys = keys
-				})
-
-				numbers.add(3)
-				expect(addedKeys).toHaveLength(1)
-			})
-
-			test('emits remove events when source removes items', () => {
-				const numbers = new List([1, 2, 3])
-				const doubled = numbers.deriveCollection(
-					(value: number) => value * 2,
-				)
-
-				let removedKeys: readonly string[] | undefined
-				doubled.on('remove', keys => {
-					removedKeys = keys
-				})
-
-				numbers.remove(1)
-				expect(removedKeys).toHaveLength(1)
-			})
-
-			test('emits sort events when source is sorted', () => {
-				const numbers = new List([3, 1, 2])
-				const doubled = numbers.deriveCollection(
-					(value: number) => value * 2,
-				)
-
-				let sortedKeys: readonly string[] | undefined
-				doubled.on('sort', keys => {
-					sortedKeys = keys
-				})
-
-				numbers.sort()
-				expect(sortedKeys).toHaveLength(3)
-				expect(doubled.get()).toEqual([2, 4, 6]) // Sorted and doubled
-			})
-		})
-
 		describe('edge cases', () => {
 			test('handles empty list derivation', () => {
 				const empty = new List<number>([])
@@ -752,231 +655,60 @@ describe('list', () => {
 		})
 	})
 
-	describe('hooks system', () => {
-		test('List HOOK_WATCH is called when effect accesses list.get()', () => {
-			const numbers = new List([10, 20, 30])
-			let listHookWatchCalled = false
-			let listUnwatchCalled = false
-
-			// Set up HOOK_WATCH callback on the list itself
-			numbers.on('watch', () => {
-				listHookWatchCalled = true
-				return () => {
-					listUnwatchCalled = true
-				}
+	describe('Watch Callbacks', () => {
+		test('List watched callback is called when effect accesses list.get()', () => {
+			let linkWatchedCalled = false
+			let listUnwatchedCalled = false
+			const numbers = new List([10, 20, 30], {
+				watched: () => {
+					linkWatchedCalled = true
+				},
+				unwatched: () => {
+					listUnwatchedCalled = true
+				},
 			})
 
-			expect(listHookWatchCalled).toBe(false)
+			expect(linkWatchedCalled).toBe(false)
 
-			// Access list via list.get() - this should trigger list's HOOK_WATCH
+			// Access list via list.get() - this should trigger list's watched callback
 			let effectValue: number[] = []
 			const cleanup = createEffect(() => {
 				effectValue = numbers.get()
 			})
 
-			expect(listHookWatchCalled).toBe(true)
+			expect(linkWatchedCalled).toBe(true)
 			expect(effectValue).toEqual([10, 20, 30])
-			expect(listUnwatchCalled).toBe(false)
+			expect(listUnwatchedCalled).toBe(false)
 
 			// Cleanup effect - should trigger unwatch
 			cleanup()
-			expect(listUnwatchCalled).toBe(true)
+			expect(listUnwatchedCalled).toBe(true)
 		})
 
-		test('individual State signals have independent HOOK_WATCH when accessed via list.at().get()', () => {
-			const items = new List(['first', 'second'])
-			let firstItemHookCalled = false
-			let firstItemUnwatchCalled = false
-
-			// Get the first item signal and set up its HOOK_WATCH
-			// biome-ignore lint/style/noNonNullAssertion: test
-			const firstItemSignal = items.at(0)!
-			firstItemSignal.on('watch', () => {
-				firstItemHookCalled = true
-				return () => {
-					firstItemUnwatchCalled = true
-				}
+		test('List length access triggers List watched callback', () => {
+			let listWatchedCalled = false
+			let listUnwatchedCalled = false
+			const numbers = new List([1, 2, 3], {
+				watched: () => {
+					listWatchedCalled = true
+				},
+				unwatched: () => {
+					listUnwatchedCalled = true
+				},
 			})
 
-			expect(firstItemHookCalled).toBe(false)
-
-			// Access first item via signal.get() - this should trigger the State signal's HOOK_WATCH
-			let effectValue: string | undefined
-			const cleanup = createEffect(() => {
-				effectValue = firstItemSignal.get()
-			})
-
-			expect(firstItemHookCalled).toBe(true)
-			expect(effectValue).toBe('first')
-			expect(firstItemUnwatchCalled).toBe(false)
-
-			// Cleanup effect - should trigger State signal's unwatch
-			cleanup()
-			expect(firstItemUnwatchCalled).toBe(true)
-		})
-
-		test('State signal unwatch is called when item gets removed from list', () => {
-			const items = new List(['first', 'second'])
-			let firstItemUnwatchCalled = false
-
-			// Get the first item signal and set up its HOOK_WATCH
-			// biome-ignore lint/style/noNonNullAssertion: test
-			const firstItemSignal = items.at(0)!
-			firstItemSignal.on('watch', () => {
-				return () => {
-					firstItemUnwatchCalled = true
-				}
-			})
-
-			let effectValue: string | undefined
-			const cleanup = createEffect(() => {
-				effectValue = firstItemSignal.get()
-			})
-
-			expect(effectValue).toBe('first')
-			expect(firstItemUnwatchCalled).toBe(false)
-
-			// Remove the first item (index 0) - the State signal still exists but the list changed
-			items.remove(0)
-
-			// The State signal should still work (it's not automatically cleaned up)
-			expect(effectValue).toBe('first') // State signal retains its value
-			expect(firstItemUnwatchCalled).toBe(false) // Unwatch only happens when effect cleanup
-
-			// Cleanup the effect - this should call the State signal's unwatch
-			cleanup()
-			expect(firstItemUnwatchCalled).toBe(true)
-		})
-
-		test('new items added to list get independent State signals with their own hooks', () => {
-			const numbers = new List<number>([])
-
-			// Start with empty list - create effect that tries to access first item
-			let effectValue: number | undefined
-			const cleanup = createEffect(() => {
-				const firstItem = numbers.at(0)
-				effectValue = firstItem?.get()
-			})
-
-			// No items yet
-			expect(effectValue).toBe(undefined)
-
-			// Add first item
-			const key = numbers.add(42)
-			// biome-ignore lint/style/noNonNullAssertion: test
-			const newItemSignal = numbers.byKey(key)!
-
-			let newItemHookCalled = false
-			let newItemUnwatchCalled = false
-			newItemSignal.on('watch', () => {
-				newItemHookCalled = true
-				return () => {
-					newItemUnwatchCalled = true
-				}
-			})
-
-			// Create new effect to access the new item
-			let newEffectValue: number | undefined
-			const newCleanup = createEffect(() => {
-				newEffectValue = newItemSignal.get()
-			})
-
-			expect(newItemHookCalled).toBe(true)
-			expect(newEffectValue).toBe(42)
-			expect(newItemUnwatchCalled).toBe(false)
-
-			// Cleanup should trigger unwatch
-			newCleanup()
-			expect(newItemUnwatchCalled).toBe(true)
-
-			cleanup()
-		})
-
-		test('List length access triggers List HOOK_WATCH', () => {
-			const numbers = new List([1, 2, 3])
-			let listHookWatchCalled = false
-			let listUnwatchCalled = false
-
-			numbers.on('watch', () => {
-				listHookWatchCalled = true
-				return () => {
-					listUnwatchCalled = true
-				}
-			})
-
-			// Access via list.length - this should trigger list's HOOK_WATCH
+			// Access via list.length - this should trigger list's watched callback
 			let effectValue: number = 0
 			const cleanup = createEffect(() => {
 				effectValue = numbers.length
 			})
 
-			expect(listHookWatchCalled).toBe(true)
+			expect(listWatchedCalled).toBe(true)
 			expect(effectValue).toBe(3)
-			expect(listUnwatchCalled).toBe(false)
+			expect(listUnwatchedCalled).toBe(false)
 
 			cleanup()
-			expect(listUnwatchCalled).toBe(true)
-		})
-
-		test('exact scenario: List HOOK_WATCH triggered by list.at(0).get(), unwatch on item removal, restart on new item', () => {
-			const list = new List<number>([42])
-			let listHookWatchCallCount = 0
-			let listUnwatchCallCount = 0
-
-			// Set up List's HOOK_WATCH (this is triggered by list-level access like get() or length)
-			list.on('watch', () => {
-				listHookWatchCallCount++
-				return () => {
-					listUnwatchCallCount++
-				}
-			})
-
-			// Scenario 1: The list's HOOK_WATCH is called when an effect accesses the first item
-			// Note: list.at(0).get() accesses the State signal, not the list itself
-			// But if we access list.get() or list.length, it triggers the list's HOOK_WATCH
-			let effectValue: number | undefined
-			const cleanup1 = createEffect(() => {
-				// Access list first to trigger list HOOK_WATCH
-				const length = list.length
-				if (length > 0) {
-					effectValue = list.at(0)?.get()
-				} else {
-					effectValue = undefined
-				}
-			})
-
-			expect(listHookWatchCallCount).toBe(1) // List HOOK_WATCH called due to list.length access
-			expect(effectValue).toBe(42)
-
-			// Scenario 2: The list's unwatch callback is called when the only item with active subscription gets removed
-			list.remove(0)
-			// The effect should re-run due to list.length change and effectValue should now be undefined
-			expect(effectValue).toBe(undefined)
-
-			// The list unwatch is not called yet because the effect is still active (watching an empty list)
-			expect(listUnwatchCallCount).toBe(0)
-
-			// Clean up the first effect
-			cleanup1()
-			expect(listUnwatchCallCount).toBe(1) // Now unwatch is called
-
-			// Scenario 3: The list's HOOK_WATCH is restarted after a new item has been added that gets accessed by an effect
-			list.add(100)
-
-			const cleanup2 = createEffect(() => {
-				const length = list.length
-				if (length > 0) {
-					effectValue = list.at(0)?.get()
-				} else {
-					effectValue = undefined
-				}
-			})
-
-			expect(listHookWatchCallCount).toBe(2) // List HOOK_WATCH called again
-			expect(effectValue).toBe(100)
-
-			cleanup2()
-			expect(listUnwatchCallCount).toBe(2) // Second unwatch called
+			expect(listUnwatchedCalled).toBe(true)
 		})
 	})
 })

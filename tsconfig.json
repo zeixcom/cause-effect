@@ -13,6 +13,9 @@
 		"allowImportingTsExtensions": true,
 		"verbatimModuleSyntax": true,
 
+		// Editor-only mode - no emit
+		"noEmit": true,
+
 		// Best practices
 		"strict": true,
 		"skipLibCheck": true,
@@ -22,12 +25,7 @@
 		"noUnusedLocals": false,
 		"noUnusedParameters": false,
 		"noPropertyAccessFromIndexSignature": false,
-
-		// Declarations
-		"declaration": true,
-		"declarationDir": "./types",
-		"emitDeclarationOnly": true
 	},
-	"include": ["./*.ts", "./src/*.ts"],
-	"exclude": ["node_modules", "test", "types"]
+	"include": ["./**/*.ts"],
+	"exclude": ["node_modules", "types"],
 }

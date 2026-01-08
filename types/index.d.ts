@@ -1,6 +1,6 @@
 /**
  * @name Cause & Effect
- * @version 0.17.2
+ * @version 0.17.3
  * @author Esther Brunner
  */
 export { type Collection, type CollectionCallback, type CollectionSource, DerivedCollection, isCollection, TYPE_COLLECTION, } from './src/classes/collection';
@@ -11,9 +11,9 @@ export { isState, State, TYPE_STATE } from './src/classes/state';
 export { BaseStore, createStore, isStore, type Store, TYPE_STORE, } from './src/classes/store';
 export { type DiffResult, diff, isEqual, type UnknownArray, type UnknownRecord, } from './src/diff';
 export { createEffect, type EffectCallback, type MaybeCleanup, } from './src/effect';
-export { CircularDependencyError, createError, DuplicateKeyError, type Guard, guardMutableSignal, InvalidCallbackError, InvalidCollectionSourceError, InvalidHookError, InvalidSignalValueError, NullishSignalValueError, ReadonlySignalError, validateCallback, validateSignalValue, } from './src/errors';
+export { CircularDependencyError, createError, DuplicateKeyError, type Guard, guardMutableSignal, InvalidCallbackError, InvalidCollectionSourceError, InvalidSignalValueError, NullishSignalValueError, ReadonlySignalError, validateCallback, validateSignalValue, } from './src/errors';
 export { type MatchHandlers, match } from './src/match';
 export { type ResolveResult, resolve } from './src/resolve';
 export { createSignal, isMutableSignal, isSignal, type Signal, type SignalValues, type UnknownSignalRecord, } from './src/signal';
-export { batchSignalWrites, type Cleanup, createWatcher, flushPendingReactions, HOOK_ADD, HOOK_CHANGE, HOOK_CLEANUP, HOOK_REMOVE, HOOK_SORT, HOOK_WATCH, type Hook, type CleanupHook, type WatchHook, type HookCallback, type HookCallbacks, isHandledHook, notifyWatchers, subscribeActiveWatcher, trackSignalReads, triggerHook, UNSET, type Watcher, } from './src/system';
+export { batch, type Cleanup, createWatcher, flush, notifyOf, type SignalOptions, subscribeTo, track, UNSET, untrack, type Watcher, } from './src/system';
 export { isAbortError, isAsyncFunction, isFunction, isNumber, isObjectOfType, isRecord, isRecordOrArray, isString, isSymbol, valueString, } from './src/util';

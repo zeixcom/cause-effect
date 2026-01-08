@@ -1,18 +1,12 @@
 import { isEqual } from '../diff'
+import { validateCallback, validateSignalValue } from '../errors'
 import {
-	InvalidHookError,
-	validateCallback,
-	validateSignalValue,
-} from '../errors'
-import {
-	type Cleanup,
-	HOOK_WATCH,
-	type HookCallback,
-	notifyWatchers,
-	subscribeActiveWatcher,
+	type SignalOptions,
+	registerWatchCallbacks,
+	notifyOf,
+	subscribeTo,
 	UNSET,
-	type Watcher,
-	type WatchHook,
+	unsubscribeAllFrom,
 } from '../system'
 import { isObjectOfType } from '../util'
 
@@ -26,23 +20,19 @@ const TYPE_STATE = 'State' as const
  * Create a new state signal.
  *
  * @since 0.17.0
+ * @param {T} initialValue - Initial value of the state
+ * @throws {NullishSignalValueError} - If the initial value is null or undefined
+ * @throws {InvalidSignalValueError} - If the initial value is invalid
  */
 class State<T extends {}> {
-	#watchers = new Set<Watcher>()
 	#value: T
-	#watchHookCallbacks: Set<HookCallback> | undefined
 
-	/**
-	 * Create a new state signal.
-	 *
-	 * @param {T} initialValue - Initial value of the state
-	 * @throws {NullishSignalValueError} - If the initial value is null or undefined
-	 * @throws {InvalidSignalValueError} - If the initial value is invalid
-	 */
-	constructor(initialValue: T) {
-		validateSignalValue(TYPE_STATE, initialValue)
+	constructor(initialValue: T, options?: SignalOptions<T>) {
+		validateSignalValue(TYPE_STATE, initialValue, options?.guard)
 
 		this.#value = initialValue
+		if (options?.watched)
+			registerWatchCallbacks(this, options.watched, options.unwatched)
 	}
 
 	get [Symbol.toStringTag](): string {
@@ -55,8 +45,7 @@ class State<T extends {}> {
 	 * @returns {T} - Current value of the state
 	 */
 	get(): T {
-		subscribeActiveWatcher(this.#watchers, this.#watchHookCallbacks)
-
+		subscribeTo(this)
 		return this.#value
 	}
 
@@ -73,10 +62,10 @@ class State<T extends {}> {
 
 		if (isEqual(this.#value, newValue)) return
 		this.#value = newValue
-		if (this.#watchers.size) notifyWatchers(this.#watchers)
+		notifyOf(this)
 
 		// Setting to UNSET clears the watchers so the signal can be garbage collected
-		if (UNSET === this.#value) this.#watchers.clear()
+		if (UNSET === this.#value) unsubscribeAllFrom(this)
 	}
 
 	/**
@@ -92,24 +81,6 @@ class State<T extends {}> {
 		validateCallback(`${TYPE_STATE} update`, updater)
 
 		this.set(updater(this.#value))
-	}
-
-	/**
-	 * Register a callback to be called when HOOK_WATCH is triggered.
-	 *
-	 * @param {WatchHook} type - The type of hook to register the callback for; only HOOK_WATCH is supported
-	 * @param {HookCallback} callback - The callback to register
-	 * @returns {Cleanup} - A function to unregister the callback
-	 */
-	on(type: WatchHook, callback: HookCallback): Cleanup {
-		if (type === HOOK_WATCH) {
-			this.#watchHookCallbacks ||= new Set()
-			this.#watchHookCallbacks.add(callback)
-			return () => {
-				this.#watchHookCallbacks?.delete(callback)
-			}
-		}
-		throw new InvalidHookError(this.constructor.name, type)
 	}
 }
 

@@ -1,3 +1,121 @@
+// src/system.ts
+var activeWatcher;
+var watchersMap = new WeakMap;
+var watchedCallbackMap = new WeakMap;
+var unwatchedCallbackMap = new WeakMap;
+var pendingReactions = new Set;
+var batchDepth = 0;
+var UNSET = Symbol();
+var createWatcher = (push, pull) => {
+  const cleanups = new Set;
+  const watcher = push;
+  watcher.run = () => {
+    const prev = activeWatcher;
+    activeWatcher = watcher;
+    try {
+      pull();
+    } finally {
+      activeWatcher = prev;
+    }
+  };
+  watcher.onCleanup = (cleanup) => {
+    cleanups.add(cleanup);
+  };
+  watcher.stop = () => {
+    try {
+      for (const cleanup of cleanups)
+        cleanup();
+    } finally {
+      cleanups.clear();
+    }
+  };
+  return watcher;
+};
+var untrack = (callback) => {
+  const prev = activeWatcher;
+  activeWatcher = undefined;
+  try {
+    callback();
+  } finally {
+    activeWatcher = prev;
+  }
+};
+var registerWatchCallbacks = (signal, watched, unwatched) => {
+  watchedCallbackMap.set(signal, watched);
+  if (unwatched)
+    unwatchedCallbackMap.set(signal, unwatched);
+};
+var subscribeTo = (signal) => {
+  if (!activeWatcher || watchersMap.get(signal)?.has(activeWatcher))
+    return false;
+  const watcher = activeWatcher;
+  if (!watchersMap.has(signal))
+    watchersMap.set(signal, new Set);
+  const watchers = watchersMap.get(signal);
+  assert(watchers);
+  if (!watchers.size) {
+    const watchedCallback = watchedCallbackMap.get(signal);
+    if (watchedCallback)
+      untrack(watchedCallback);
+  }
+  watchers.add(watcher);
+  watcher.onCleanup(() => {
+    watchers.delete(watcher);
+    if (!watchers.size) {
+      const unwatchedCallback = unwatchedCallbackMap.get(signal);
+      if (unwatchedCallback)
+        untrack(unwatchedCallback);
+    }
+  });
+  return true;
+};
+var unsubscribeAllFrom = (signal) => {
+  const watchers = watchersMap.get(signal);
+  if (!watchers)
+    return;
+  for (const watcher of watchers)
+    watcher.stop();
+  watchers.clear();
+};
+var notifyOf = (signal) => {
+  const watchers = watchersMap.get(signal);
+  if (!watchers?.size)
+    return false;
+  for (const react of watchers) {
+    if (batchDepth)
+      pendingReactions.add(react);
+    else
+      react();
+  }
+  return true;
+};
+var flush = () => {
+  while (pendingReactions.size) {
+    const watchers = Array.from(pendingReactions);
+    pendingReactions.clear();
+    for (const react of watchers)
+      react();
+  }
+};
+var batch = (callback) => {
+  batchDepth++;
+  try {
+    callback();
+  } finally {
+    flush();
+    batchDepth--;
+  }
+};
+var track = (watcher, run) => {
+  const prev = activeWatcher;
+  activeWatcher = watcher || undefined;
+  try {
+    run();
+  } finally {
+    activeWatcher = prev;
+  }
+};
+
 // src/util.ts
 var isString = (value) => typeof value === "string";
 var isNumber = (value) => typeof value === "number";
@@ -12,143 +130,6 @@ var isRecordOrArray = (value) => isRecord(value) || Array.isArray(value);
 var isUniformArray = (value, guard = (item) => item != null) => Array.isArray(value) && value.every(guard);
 var isAbortError = (error) => error instanceof DOMException && error.name === "AbortError";
 var valueString = (value) => isString(value) ? `"${value}"` : !!value && typeof value === "object" ? JSON.stringify(value) : String(value);
-
-// src/system.ts
-var activeWatcher;
-var unwatchMap = new WeakMap;
-var pendingReactions = new Set;
-var batchDepth = 0;
-var UNSET = Symbol();
-var HOOK_ADD = "add";
-var HOOK_CHANGE = "change";
-var HOOK_CLEANUP = "cleanup";
-var HOOK_REMOVE = "remove";
-var HOOK_SORT = "sort";
-var HOOK_WATCH = "watch";
-var createWatcher = (react) => {
-  const cleanups = new Set;
-  const watcher = react;
-  watcher.on = (type, cleanup) => {
-    if (type === HOOK_CLEANUP)
-      cleanups.add(cleanup);
-    else
-      throw new InvalidHookError("watcher", type);
-  };
-  watcher.stop = () => {
-    try {
-      for (const cleanup of cleanups)
-        cleanup();
-    } finally {
-      cleanups.clear();
-    }
-  };
-  return watcher;
-};
-var subscribeActiveWatcher = (watchers, watchHookCallbacks) => {
-  if (!watchers.size && watchHookCallbacks?.size) {
-    const unwatch = triggerHook(watchHookCallbacks);
-    if (unwatch) {
-      const unwatchCallbacks = unwatchMap.get(watchers) ?? new Set;
-      unwatchCallbacks.add(unwatch);
-      if (!unwatchMap.has(watchers))
-        unwatchMap.set(watchers, unwatchCallbacks);
-    }
-  }
-  if (activeWatcher && !watchers.has(activeWatcher)) {
-    const watcher = activeWatcher;
-    watcher.on(HOOK_CLEANUP, () => {
-      watchers.delete(watcher);
-      if (!watchers.size) {
-        const unwatchCallbacks = unwatchMap.get(watchers);
-        if (unwatchCallbacks) {
-          try {
-            for (const unwatch of unwatchCallbacks)
-              unwatch();
-          } finally {
-            unwatchCallbacks.clear();
-            unwatchMap.delete(watchers);
-          }
-        }
-      }
-    });
-    watchers.add(watcher);
-  }
-};
-var notifyWatchers = (watchers) => {
-  if (!watchers.size)
-    return false;
-  for (const react of watchers) {
-    if (batchDepth)
-      pendingReactions.add(react);
-    else
-      react();
-  }
-  return true;
-};
-var flushPendingReactions = () => {
-  while (pendingReactions.size) {
-    const watchers = Array.from(pendingReactions);
-    pendingReactions.clear();
-    for (const watcher of watchers)
-      watcher();
-  }
-};
-var batchSignalWrites = (callback) => {
-  batchDepth++;
-  try {
-    callback();
-  } finally {
-    flushPendingReactions();
-    batchDepth--;
-  }
-};
-var trackSignalReads = (watcher, run) => {
-  const prev = activeWatcher;
-  activeWatcher = watcher || undefined;
-  try {
-    run();
-  } finally {
-    activeWatcher = prev;
-  }
-};
-var triggerHook = (callbacks, payload) => {
-  if (!callbacks)
-    return;
-  const cleanups = [];
-  const errors = [];
-  const throwError = (inCleanup) => {
-    if (errors.length) {
-      if (errors.length === 1)
-        throw errors[0];
-      throw new AggregateError(errors, `Errors in hook ${inCleanup ? "cleanup" : "callback"}:`);
-    }
-  };
-  for (const callback of callbacks) {
-    try {
-      const cleanup = callback(payload);
-      if (isFunction(cleanup))
-        cleanups.push(cleanup);
-    } catch (error) {
-      errors.push(createError(error));
-    }
-  }
-  throwError();
-  if (!cleanups.length)
-    return;
-  if (cleanups.length === 1)
-    return cleanups[0];
-  return () => {
-    for (const cleanup of cleanups) {
-      try {
-        cleanup();
-      } catch (error) {
-        errors.push(createError(error));
-      }
-    }
-    throwError(true);
-  };
-};
-var isHandledHook = (type, handled) => handled.includes(type);
 
 // src/diff.ts
 var isEqual = (a, b, visited) => {
@@ -241,83 +222,69 @@ var diff = (oldObj, newObj) => {
 var TYPE_COMPUTED = "Computed";
 
 class Memo {
-  #watchers = new Set;
   #callback;
   #value;
   #error;
   #dirty = true;
   #computing = false;
   #watcher;
-  #watchHookCallbacks;
-  constructor(callback, initialValue = UNSET) {
+  constructor(callback, options) {
     validateCallback(this.constructor.name, callback, isMemoCallback);
-    validateSignalValue(this.constructor.name, initialValue);
+    const initialValue = options?.initialValue ?? UNSET;
+    validateSignalValue(this.constructor.name, initialValue, options?.guard);
     this.#callback = callback;
     this.#value = initialValue;
+    if (options?.watched)
+      registerWatchCallbacks(this, options.watched, options.unwatched);
   }
   #getWatcher() {
-    if (!this.#watcher) {
-      this.#watcher = createWatcher(() => {
-        this.#dirty = true;
-        if (!notifyWatchers(this.#watchers))
-          this.#watcher?.stop();
-      });
-      this.#watcher.on(HOOK_CLEANUP, () => {
-        this.#watcher = undefined;
-      });
-    }
+    this.#watcher ||= createWatcher(() => {
+      this.#dirty = true;
+      if (!notifyOf(this))
+        this.#watcher?.stop();
+    }, () => {
+      if (this.#computing)
+        throw new CircularDependencyError("memo");
+      let result;
+      this.#computing = true;
+      try {
+        result = this.#callback(this.#value);
+      } catch (e) {
+        this.#value = UNSET;
+        this.#error = createError(e);
+        this.#computing = false;
+        return;
+      }
+      if (result == null || UNSET === result) {
+        this.#value = UNSET;
+        this.#error = undefined;
+      } else {
+        this.#value = result;
+        this.#error = undefined;
+        this.#dirty = false;
+      }
+      this.#computing = false;
+    });
+    this.#watcher.onCleanup(() => {
+      this.#watcher = undefined;
+    });
     return this.#watcher;
   }
   get [Symbol.toStringTag]() {
     return TYPE_COMPUTED;
   }
   get() {
-    subscribeActiveWatcher(this.#watchers, this.#watchHookCallbacks);
-    flushPendingReactions();
-    if (this.#dirty) {
-      const watcher = this.#getWatcher();
-      trackSignalReads(watcher, () => {
-        if (this.#computing)
-          throw new CircularDependencyError("memo");
-        let result;
-        this.#computing = true;
-        try {
-          result = this.#callback(this.#value);
-        } catch (e) {
-          this.#value = UNSET;
-          this.#error = createError(e);
-          this.#computing = false;
-          return;
-        }
-        if (result == null || UNSET === result) {
-          this.#value = UNSET;
-          this.#error = undefined;
-        } else {
-          this.#value = result;
-          this.#error = undefined;
-          this.#dirty = false;
-        }
-        this.#computing = false;
-      });
-    }
+    subscribeTo(this);
+    flush();
+    if (this.#dirty)
+      this.#getWatcher().run();
     if (this.#error)
       throw this.#error;
     return this.#value;
   }
-  on(type, callback) {
-    if (type === HOOK_WATCH) {
-      this.#watchHookCallbacks ||= new Set;
-      this.#watchHookCallbacks.add(callback);
-      return () => {
-        this.#watchHookCallbacks?.delete(callback);
-      };
-    }
-    throw new InvalidHookError(this.constructor.name, type);
-  }
 }
 
 class Task {
-  #watchers = new Set;
   #callback;
   #value;
   #error;
@@ -326,22 +293,83 @@ class Task {
   #changed = false;
   #watcher;
   #controller;
-  #watchHookCallbacks;
-  constructor(callback, initialValue = UNSET) {
+  constructor(callback, options) {
     validateCallback(this.constructor.name, callback, isTaskCallback);
-    validateSignalValue(this.constructor.name, initialValue);
+    const initialValue = options?.initialValue ?? UNSET;
+    validateSignalValue(this.constructor.name, initialValue, options?.guard);
     this.#callback = callback;
     this.#value = initialValue;
+    if (options?.watched)
+      registerWatchCallbacks(this, options.watched, options.unwatched);
   }
   #getWatcher() {
     if (!this.#watcher) {
+      const ok = (v) => {
+        if (!isEqual(v, this.#value)) {
+          this.#value = v;
+          this.#changed = true;
+        }
+        this.#error = undefined;
+        this.#dirty = false;
+      };
+      const nil = () => {
+        this.#changed = UNSET !== this.#value;
+        this.#value = UNSET;
+        this.#error = undefined;
+      };
+      const err = (e) => {
+        const newError = createError(e);
+        this.#changed = !this.#error || newError.name !== this.#error.name || newError.message !== this.#error.message;
+        this.#value = UNSET;
+        this.#error = newError;
+      };
+      const settle = (fn) => (arg) => {
+        this.#computing = false;
+        this.#controller = undefined;
+        fn(arg);
+        if (this.#changed && !notifyOf(this))
+          this.#watcher?.stop();
+      };
       this.#watcher = createWatcher(() => {
         this.#dirty = true;
         this.#controller?.abort();
-        if (!notifyWatchers(this.#watchers))
+        if (!notifyOf(this))
           this.#watcher?.stop();
+      }, () => {
+        if (this.#computing)
+          throw new CircularDependencyError("task");
+        this.#changed = false;
+        if (this.#controller)
+          return this.#value;
+        this.#controller = new AbortController;
+        this.#controller.signal.addEventListener("abort", () => {
+          this.#computing = false;
+          this.#controller = undefined;
+          this.#getWatcher().run();
+        }, {
+          once: true
+        });
+        let result;
+        this.#computing = true;
+        try {
+          result = this.#callback(this.#value, this.#controller.signal);
+        } catch (e) {
+          if (isAbortError(e))
+            nil();
+          else
+            err(e);
+          this.#computing = false;
+          return;
+        }
+        if (result instanceof Promise)
+          result.then(settle(ok), settle(err));
+        else if (result == null || UNSET === result)
+          nil();
+        else
+          ok(result);
+        this.#computing = false;
       });
-      this.#watcher.on(HOOK_CLEANUP, () => {
+      this.#watcher.onCleanup(() => {
         this.#controller?.abort();
         this.#controller = undefined;
         this.#watcher = undefined;
@@ -353,221 +381,36 @@ class Task {
     return TYPE_COMPUTED;
   }
   get() {
-    subscribeActiveWatcher(this.#watchers, this.#watchHookCallbacks);
-    flushPendingReactions();
-    const ok = (v) => {
-      if (!isEqual(v, this.#value)) {
-        this.#value = v;
-        this.#changed = true;
-      }
-      this.#error = undefined;
-      this.#dirty = false;
-    };
-    const nil = () => {
-      this.#changed = UNSET !== this.#value;
-      this.#value = UNSET;
-      this.#error = undefined;
-    };
-    const err = (e) => {
-      const newError = createError(e);
-      this.#changed = !this.#error || newError.name !== this.#error.name || newError.message !== this.#error.message;
-      this.#value = UNSET;
-      this.#error = newError;
-    };
-    const settle = (fn) => (arg) => {
-      this.#computing = false;
-      this.#controller = undefined;
-      fn(arg);
-      if (this.#changed && !notifyWatchers(this.#watchers))
-        this.#watcher?.stop();
-    };
-    const compute = () => trackSignalReads(this.#getWatcher(), () => {
-      if (this.#computing)
-        throw new CircularDependencyError("task");
-      this.#changed = false;
-      if (this.#controller)
-        return this.#value;
-      this.#controller = new AbortController;
-      this.#controller.signal.addEventListener("abort", () => {
-        this.#computing = false;
-        this.#controller = undefined;
-        compute();
-      }, {
-        once: true
-      });
-      let result;
-      this.#computing = true;
-      try {
-        result = this.#callback(this.#value, this.#controller.signal);
-      } catch (e) {
-        if (isAbortError(e))
-          nil();
-        else
-          err(e);
-        this.#computing = false;
-        return;
-      }
-      if (result instanceof Promise)
-        result.then(settle(ok), settle(err));
-      else if (result == null || UNSET === result)
-        nil();
-      else
-        ok(result);
-      this.#computing = false;
-    });
+    subscribeTo(this);
+    flush();
     if (this.#dirty)
-      compute();
+      this.#getWatcher().run();
     if (this.#error)
       throw this.#error;
     return this.#value;
   }
-  on(type, callback) {
-    if (type === HOOK_WATCH) {
-      this.#watchHookCallbacks ||= new Set;
-      this.#watchHookCallbacks.add(callback);
-      return () => {
-        this.#watchHookCallbacks?.delete(callback);
-      };
-    }
-    throw new InvalidHookError(this.constructor.name, type);
-  }
 }
-var createComputed = (callback, initialValue = UNSET) => isAsyncFunction(callback) ? new Task(callback, initialValue) : new Memo(callback, initialValue);
+var createComputed = (callback, options) => isAsyncFunction(callback) ? new Task(callback, options) : new Memo(callback, options);
 var isComputed = (value) => isObjectOfType(value, TYPE_COMPUTED);
 var isMemoCallback = (value) => isSyncFunction(value) && value.length < 2;
 var isTaskCallback = (value) => isAsyncFunction(value) && value.length < 3;
-
-// src/classes/composite.ts
-class Composite {
-  signals = new Map;
-  #validate;
-  #create;
-  #watchers = new Map;
-  #hookCallbacks = {};
-  #batching = false;
-  constructor(values, validate, create) {
-    this.#validate = validate;
-    this.#create = create;
-    this.change({
-      add: values,
-      change: {},
-      remove: {},
-      changed: true
-    }, true);
-  }
-  #addWatcher(key) {
-    const watcher = createWatcher(() => {
-      trackSignalReads(watcher, () => {
-        this.signals.get(key)?.get();
-        if (!this.#batching)
-          triggerHook(this.#hookCallbacks.change, [key]);
-      });
-    });
-    this.#watchers.set(key, watcher);
-    watcher();
-  }
-  add(key, value) {
-    if (!this.#validate(key, value))
-      return false;
-    this.signals.set(key, this.#create(value));
-    if (this.#hookCallbacks.change?.size)
-      this.#addWatcher(key);
-    if (!this.#batching)
-      triggerHook(this.#hookCallbacks.add, [key]);
-    return true;
-  }
-  remove(key) {
-    const ok = this.signals.delete(key);
-    if (!ok)
-      return false;
-    const watcher = this.#watchers.get(key);
-    if (watcher) {
-      watcher.stop();
-      this.#watchers.delete(key);
-    }
-    if (!this.#batching)
-      triggerHook(this.#hookCallbacks.remove, [key]);
-    return true;
-  }
-  change(changes, initialRun) {
-    this.#batching = true;
-    if (Object.keys(changes.add).length) {
-      for (const key in changes.add)
-        this.add(key, changes.add[key]);
-      const notify = () => triggerHook(this.#hookCallbacks.add, Object.keys(changes.add));
-      if (initialRun)
-        setTimeout(notify, 0);
-      else
-        notify();
-    }
-    if (Object.keys(changes.change).length) {
-      batchSignalWrites(() => {
-        for (const key in changes.change) {
-          const value = changes.change[key];
-          if (!this.#validate(key, value))
-            continue;
-          const signal = this.signals.get(key);
-          if (guardMutableSignal(`list item "${key}"`, value, signal))
-            signal.set(value);
-        }
-      });
-      triggerHook(this.#hookCallbacks.change, Object.keys(changes.change));
-    }
-    if (Object.keys(changes.remove).length) {
-      for (const key in changes.remove)
-        this.remove(key);
-      triggerHook(this.#hookCallbacks.remove, Object.keys(changes.remove));
-    }
-    this.#batching = false;
-    return changes.changed;
-  }
-  clear() {
-    const keys = Array.from(this.signals.keys());
-    this.signals.clear();
-    this.#watchers.clear();
-    triggerHook(this.#hookCallbacks.remove, keys);
-    return true;
-  }
-  on(type, callback) {
-    if (!isHandledHook(type, [HOOK_ADD, HOOK_CHANGE, HOOK_REMOVE]))
-      throw new InvalidHookError("Composite", type);
-    this.#hookCallbacks[type] ||= new Set;
-    this.#hookCallbacks[type].add(callback);
-    if (type === HOOK_CHANGE && !this.#watchers.size) {
-      this.#batching = true;
-      for (const key of this.signals.keys())
-        this.#addWatcher(key);
-      this.#batching = false;
-    }
-    return () => {
-      this.#hookCallbacks[type]?.delete(callback);
-      if (type === HOOK_CHANGE && !this.#hookCallbacks.change?.size) {
-        if (this.#watchers.size) {
-          for (const watcher of this.#watchers.values())
-            watcher.stop();
-          this.#watchers.clear();
-        }
-      }
-    };
-  }
-}
 
 // src/classes/state.ts
 var TYPE_STATE = "State";
 
 class State {
-  #watchers = new Set;
   #value;
-  #watchHookCallbacks;
-  constructor(initialValue) {
-    validateSignalValue(TYPE_STATE, initialValue);
+  constructor(initialValue, options) {
+    validateSignalValue(TYPE_STATE, initialValue, options?.guard);
     this.#value = initialValue;
+    if (options?.watched)
+      registerWatchCallbacks(this, options.watched, options.unwatched);
   }
   get [Symbol.toStringTag]() {
     return TYPE_STATE;
   }
   get() {
-    subscribeActiveWatcher(this.#watchers, this.#watchHookCallbacks);
+    subscribeTo(this);
     return this.#value;
   }
   set(newValue) {
@@ -575,24 +418,13 @@ class State {
     if (isEqual(this.#value, newValue))
       return;
     this.#value = newValue;
-    if (this.#watchers.size)
-      notifyWatchers(this.#watchers);
+    notifyOf(this);
     if (UNSET === this.#value)
-      this.#watchers.clear();
+      unsubscribeAllFrom(this);
   }
   update(updater) {
     validateCallback(`${TYPE_STATE} update`, updater);
     this.set(updater(this.#value));
-  }
-  on(type, callback) {
-    if (type === HOOK_WATCH) {
-      this.#watchHookCallbacks ||= new Set;
-      this.#watchHookCallbacks.add(callback);
-      return () => {
-        this.#watchHookCallbacks?.delete(callback);
-      };
-    }
-    throw new InvalidHookError(this.constructor.name, type);
   }
 }
 var isState = (value) => isObjectOfType(value, TYPE_STATE);
@@ -601,19 +433,27 @@ var isState = (value) => isObjectOfType(value, TYPE_STATE);
 var TYPE_LIST = "List";
 
 class List {
-  #composite;
-  #watchers = new Set;
-  #hookCallbacks = {};
-  #order = [];
+  #signals = new Map;
+  #keys = [];
   #generateKey;
-  constructor(initialValue, keyConfig) {
+  #validate;
+  constructor(initialValue, options) {
     validateSignalValue(TYPE_LIST, initialValue, Array.isArray);
     let keyCounter = 0;
+    const keyConfig = options?.keyConfig;
     this.#generateKey = isString(keyConfig) ? () => `${keyConfig}${keyCounter++}` : isFunction(keyConfig) ? (item) => keyConfig(item) : () => String(keyCounter++);
-    this.#composite = new Composite(this.#toRecord(initialValue), (key, value) => {
-      validateSignalValue(`${TYPE_LIST} for key "${key}"`, value);
+    this.#validate = (key, value) => {
+      validateSignalValue(`${TYPE_LIST} item for key "${key}"`, value, options?.guard);
       return true;
-    }, (value) => new State(value));
+    };
+    this.#change({
+      add: this.#toRecord(initialValue),
+      change: {},
+      remove: {},
+      changed: true
+    });
+    if (options?.watched)
+      registerWatchCallbacks(this, options.watched, options.unwatched);
   }
   #toRecord(array) {
     const record = {};
@@ -621,17 +461,51 @@ class List {
       const value = array[i];
       if (value === undefined)
         continue;
-      let key = this.#order[i];
+      let key = this.#keys[i];
       if (!key) {
         key = this.#generateKey(value);
-        this.#order[i] = key;
+        this.#keys[i] = key;
       }
       record[key] = value;
     }
     return record;
   }
+  #add(key, value) {
+    if (!this.#validate(key, value))
+      return false;
+    this.#signals.set(key, new State(value));
+    return true;
+  }
+  #change(changes) {
+    if (Object.keys(changes.add).length) {
+      for (const key in changes.add)
+        this.#add(key, changes.add[key]);
+    }
+    if (Object.keys(changes.change).length) {
+      batch(() => {
+        for (const key in changes.change) {
+          const value = changes.change[key];
+          if (!this.#validate(key, value))
+            continue;
+          const signal = this.#signals.get(key);
+          if (guardMutableSignal(`${TYPE_LIST} item "${key}"`, value, signal))
+            signal.set(value);
+        }
+      });
+    }
+    if (Object.keys(changes.remove).length) {
+      for (const key in changes.remove) {
+        this.#signals.delete(key);
+        const index = this.#keys.indexOf(key);
+        if (index !== -1)
+          this.#keys.splice(index, 1);
+      }
+      this.#keys = this.#keys.filter(() => true);
+    }
+    return changes.changed;
+  }
   get #value() {
-    return this.#order.map((key) => this.#composite.signals.get(key)?.get()).filter((v) => v !== undefined);
+    return this.#keys.map((key) => this.#signals.get(key)?.get()).filter((v) => v !== undefined);
   }
   get [Symbol.toStringTag]() {
     return TYPE_LIST;
@@ -640,139 +514,117 @@ class List {
     return true;
   }
   *[Symbol.iterator]() {
-    for (const key of this.#order) {
-      const signal = this.#composite.signals.get(key);
+    for (const key of this.#keys) {
+      const signal = this.#signals.get(key);
       if (signal)
         yield signal;
     }
   }
   get length() {
-    subscribeActiveWatcher(this.#watchers, this.#hookCallbacks[HOOK_WATCH]);
-    return this.#order.length;
+    subscribeTo(this);
+    return this.#keys.length;
   }
   get() {
-    subscribeActiveWatcher(this.#watchers, this.#hookCallbacks[HOOK_WATCH]);
+    subscribeTo(this);
     return this.#value;
   }
   set(newValue) {
     if (UNSET === newValue) {
-      this.#composite.clear();
-      notifyWatchers(this.#watchers);
-      this.#watchers.clear();
+      this.#signals.clear();
+      notifyOf(this);
+      unsubscribeAllFrom(this);
       return;
     }
-    const oldValue = this.#value;
-    const changes = diff(this.#toRecord(oldValue), this.#toRecord(newValue));
-    const removedKeys = Object.keys(changes.remove);
-    const changed = this.#composite.change(changes);
-    if (changed) {
-      for (const key of removedKeys) {
-        const index = this.#order.indexOf(key);
-        if (index !== -1)
-          this.#order.splice(index, 1);
-      }
-      this.#order = this.#order.filter(() => true);
-      notifyWatchers(this.#watchers);
-    }
+    const changes = diff(this.#toRecord(this.#value), this.#toRecord(newValue));
+    if (this.#change(changes))
+      notifyOf(this);
   }
   update(fn) {
     this.set(fn(this.get()));
   }
   at(index) {
-    return this.#composite.signals.get(this.#order[index]);
+    return this.#signals.get(this.#keys[index]);
   }
   keys() {
-    return this.#order.values();
+    subscribeTo(this);
+    return this.#keys.values();
   }
   byKey(key) {
-    return this.#composite.signals.get(key);
+    return this.#signals.get(key);
   }
   keyAt(index) {
-    return this.#order[index];
+    return this.#keys[index];
   }
   indexOfKey(key) {
-    return this.#order.indexOf(key);
+    return this.#keys.indexOf(key);
   }
   add(value) {
     const key = this.#generateKey(value);
-    if (this.#composite.signals.has(key))
+    if (this.#signals.has(key))
       throw new DuplicateKeyError("store", key, value);
-    if (!this.#order.includes(key))
-      this.#order.push(key);
-    const ok = this.#composite.add(key, value);
+    if (!this.#keys.includes(key))
+      this.#keys.push(key);
+    const ok = this.#add(key, value);
     if (ok)
-      notifyWatchers(this.#watchers);
+      notifyOf(this);
     return key;
   }
   remove(keyOrIndex) {
-    const key = isNumber(keyOrIndex) ? this.#order[keyOrIndex] : keyOrIndex;
-    const ok = this.#composite.remove(key);
+    const key = isNumber(keyOrIndex) ? this.#keys[keyOrIndex] : keyOrIndex;
+    const ok = this.#signals.delete(key);
     if (ok) {
-      const index = isNumber(keyOrIndex) ? keyOrIndex : this.#order.indexOf(key);
+      const index = isNumber(keyOrIndex) ? keyOrIndex : this.#keys.indexOf(key);
       if (index >= 0)
-        this.#order.splice(index, 1);
-      this.#order = this.#order.filter(() => true);
-      notifyWatchers(this.#watchers);
+        this.#keys.splice(index, 1);
+      this.#keys = this.#keys.filter(() => true);
+      notifyOf(this);
     }
   }
   sort(compareFn) {
-    const entries = this.#order.map((key) => [key, this.#composite.signals.get(key)?.get()]).sort(isFunction(compareFn) ? (a, b) => compareFn(a[1], b[1]) : (a, b) => String(a[1]).localeCompare(String(b[1])));
+    const entries = this.#keys.map((key) => [key, this.#signals.get(key)?.get()]).sort(isFunction(compareFn) ? (a, b) => compareFn(a[1], b[1]) : (a, b) => String(a[1]).localeCompare(String(b[1])));
     const newOrder = entries.map(([key]) => key);
-    if (!isEqual(this.#order, newOrder)) {
-      this.#order = newOrder;
-      notifyWatchers(this.#watchers);
-      triggerHook(this.#hookCallbacks.sort, this.#order);
+    if (!isEqual(this.#keys, newOrder)) {
+      this.#keys = newOrder;
+      notifyOf(this);
     }
   }
   splice(start, deleteCount, ...items) {
-    const length = this.#order.length;
+    const length = this.#keys.length;
     const actualStart = start < 0 ? Math.max(0, length + start) : Math.min(start, length);
     const actualDeleteCount = Math.max(0, Math.min(deleteCount ?? Math.max(0, length - Math.max(0, actualStart)), length - actualStart));
     const add = {};
     const remove = {};
     for (let i = 0;i < actualDeleteCount; i++) {
       const index = actualStart + i;
-      const key = this.#order[index];
+      const key = this.#keys[index];
       if (key) {
-        const signal = this.#composite.signals.get(key);
+        const signal = this.#signals.get(key);
         if (signal)
           remove[key] = signal.get();
       }
     }
-    const newOrder = this.#order.slice(0, actualStart);
+    const newOrder = this.#keys.slice(0, actualStart);
     for (const item of items) {
       const key = this.#generateKey(item);
       newOrder.push(key);
       add[key] = item;
     }
-    newOrder.push(...this.#order.slice(actualStart + actualDeleteCount));
+    newOrder.push(...this.#keys.slice(actualStart + actualDeleteCount));
     const changed = !!(Object.keys(add).length || Object.keys(remove).length);
     if (changed) {
-      this.#composite.change({
+      this.#change({
         add,
         change: {},
         remove,
         changed
       });
-      this.#order = newOrder.filter(() => true);
-      notifyWatchers(this.#watchers);
+      this.#keys = newOrder.filter(() => true);
+      notifyOf(this);
     }
     return Object.values(remove);
   }
-  on(type, callback) {
-    if (isHandledHook(type, [HOOK_SORT, HOOK_WATCH])) {
-      this.#hookCallbacks[type] ||= new Set;
-      this.#hookCallbacks[type].add(callback);
-      return () => {
-        this.#hookCallbacks[type]?.delete(callback);
-      };
-    } else if (isHandledHook(type, [HOOK_ADD, HOOK_CHANGE, HOOK_REMOVE])) {
-      return this.#composite.on(type, callback);
-    }
-    throw new InvalidHookError(TYPE_LIST, type);
-  }
-  deriveCollection(callback) {
-    return new DerivedCollection(this, callback);
+  deriveCollection(callback, options) {
+    return new DerivedCollection(this, callback, options);
   }
 }
 var isList = (value) => isObjectOfType(value, TYPE_LIST);
@@ -781,21 +633,56 @@ var isList = (value) => isObjectOfType(value, TYPE_LIST);
 var TYPE_STORE = "Store";
 
 class BaseStore {
-  #composite;
-  #watchers = new Set;
-  #watchHookCallbacks;
-  constructor(initialValue) {
-    validateSignalValue(TYPE_STORE, initialValue, isRecord);
-    this.#composite = new Composite(initialValue, (key, value) => {
-      validateSignalValue(`${TYPE_STORE} for key "${key}"`, value);
-      return true;
-    }, (value) => createMutableSignal(value));
+  #signals = new Map;
+  constructor(initialValue, options) {
+    validateSignalValue(TYPE_STORE, initialValue, options?.guard ?? isRecord);
+    this.#change({
+      add: initialValue,
+      change: {},
+      remove: {},
+      changed: true
+    });
+    if (options?.watched)
+      registerWatchCallbacks(this, options.watched, options.unwatched);
   }
   get #value() {
     const record = {};
-    for (const [key, signal] of this.#composite.signals.entries())
+    for (const [key, signal] of this.#signals.entries())
       record[key] = signal.get();
     return record;
+  }
+  #validate(key, value) {
+    validateSignalValue(`${TYPE_STORE} for key "${key}"`, value);
+    return true;
+  }
+  #add(key, value) {
+    if (!this.#validate(key, value))
+      return false;
+    this.#signals.set(key, createMutableSignal(value));
+    return true;
+  }
+  #change(changes) {
+    if (Object.keys(changes.add).length) {
+      for (const key in changes.add)
+        this.#add(key, changes.add[key]);
+    }
+    if (Object.keys(changes.change).length) {
+      batch(() => {
+        for (const key in changes.change) {
+          const value = changes.change[key];
+          if (!this.#validate(key, value))
+            continue;
+          const signal = this.#signals.get(key);
+          if (guardMutableSignal(`list item "${key}"`, value, signal))
+            signal.set(value);
+        }
+      });
+    }
+    if (Object.keys(changes.remove).length) {
+      for (const key in changes.remove)
+        this.remove(key);
+    }
+    return changes.changed;
   }
   get [Symbol.toStringTag]() {
     return TYPE_STORE;
@@ -804,62 +691,50 @@ class BaseStore {
     return false;
   }
   *[Symbol.iterator]() {
-    for (const [key, signal] of this.#composite.signals.entries())
+    for (const [key, signal] of this.#signals.entries())
       yield [key, signal];
   }
   keys() {
-    return this.#composite.signals.keys();
+    subscribeTo(this);
+    return this.#signals.keys();
   }
   byKey(key) {
-    return this.#composite.signals.get(key);
+    return this.#signals.get(key);
   }
   get() {
-    subscribeActiveWatcher(this.#watchers, this.#watchHookCallbacks);
+    subscribeTo(this);
     return this.#value;
   }
   set(newValue) {
     if (UNSET === newValue) {
-      this.#composite.clear();
-      notifyWatchers(this.#watchers);
-      this.#watchers.clear();
+      this.#signals.clear();
+      notifyOf(this);
+      unsubscribeAllFrom(this);
       return;
     }
-    const oldValue = this.#value;
-    const changed = this.#composite.change(diff(oldValue, newValue));
+    const changed = this.#change(diff(this.#value, newValue));
     if (changed)
-      notifyWatchers(this.#watchers);
+      notifyOf(this);
   }
   update(fn) {
     this.set(fn(this.get()));
   }
   add(key, value) {
-    if (this.#composite.signals.has(key))
+    if (this.#signals.has(key))
       throw new DuplicateKeyError(TYPE_STORE, key, value);
-    const ok = this.#composite.add(key, value);
+    const ok = this.#add(key, value);
     if (ok)
-      notifyWatchers(this.#watchers);
+      notifyOf(this);
     return key;
   }
   remove(key) {
-    const ok = this.#composite.remove(key);
+    const ok = this.#signals.delete(key);
     if (ok)
-      notifyWatchers(this.#watchers);
-  }
-  on(type, callback) {
-    if (type === HOOK_WATCH) {
-      this.#watchHookCallbacks ||= new Set;
-      this.#watchHookCallbacks.add(callback);
-      return () => {
-        this.#watchHookCallbacks?.delete(callback);
-      };
-    } else if (isHandledHook(type, [HOOK_ADD, HOOK_CHANGE, HOOK_REMOVE])) {
-      return this.#composite.on(type, callback);
-    }
-    throw new InvalidHookError(TYPE_STORE, type);
+      notifyOf(this);
   }
 }
-var createStore = (initialValue) => {
-  const instance = new BaseStore(initialValue);
+var createStore = (initialValue, options) => {
+  const instance = new BaseStore(initialValue, options);
   return new Proxy(instance, {
     get(target, prop) {
       if (prop in target) {
@@ -931,6 +806,13 @@ class DuplicateKeyError extends Error {
   }
 }
 
+class FailedAssertionError extends Error {
+  constructor(message = "unexpected condition") {
+    super(`Assertion failed: ${message}`);
+    this.name = "FailedAssertionError";
+  }
+}
+
 class InvalidCallbackError extends TypeError {
   constructor(where, value) {
     super(`Invalid ${where} callback ${valueString(value)}`);
@@ -942,13 +824,6 @@ class InvalidCollectionSourceError extends TypeError {
   constructor(where, value) {
     super(`Invalid ${where} source ${valueString(value)}`);
     this.name = "InvalidCollectionSourceError";
-  }
-}
-
-class InvalidHookError extends TypeError {
-  constructor(where, type) {
-    super(`Invalid hook "${type}" in  ${where}`);
-    this.name = "InvalidHookError";
   }
 }
 
@@ -972,6 +847,10 @@ class ReadonlySignalError extends Error {
     this.name = "ReadonlySignalError";
   }
 }
+function assert(condition, msg) {
+  if (!condition)
+    throw new FailedAssertionError(msg);
+}
 var createError = (reason) => reason instanceof Error ? reason : Error(String(reason));
 var validateCallback = (where, value, guard = isFunction) => {
   if (!guard(value))
@@ -993,14 +872,13 @@ var guardMutableSignal = (what, value, signal) => {
 var TYPE_COLLECTION = "Collection";
 
 class DerivedCollection {
-  #watchers = new Set;
   #source;
   #callback;
   #signals = new Map;
-  #ownWatchers = new Map;
-  #hookCallbacks = {};
-  #order = [];
-  constructor(source, callback) {
+  #keys = [];
+  #dirty = true;
+  #watcher;
+  constructor(source, callback, options) {
     validateCallback(TYPE_COLLECTION, callback);
     if (isFunction(source))
       source = source();
@@ -1014,46 +892,38 @@ class DerivedCollection {
         continue;
       this.#add(key);
     }
-    this.#source.on(HOOK_ADD, (additions) => {
-      if (!additions)
-        return;
-      for (const key of additions) {
-        if (!this.#signals.has(key)) {
-          this.#add(key);
-          const signal = this.#signals.get(key);
-          if (signal && isAsyncCollectionCallback(this.#callback))
-            signal.get();
-        }
+    if (options?.watched)
+      registerWatchCallbacks(this, options.watched, options.unwatched);
+  }
+  #getWatcher() {
+    this.#watcher ||= createWatcher(() => {
+      this.#dirty = true;
+      if (!notifyOf(this))
+        this.#watcher?.stop();
+    }, () => {
+      const newKeys = Array.from(this.#source.keys());
+      const allKeys = new Set([...this.#keys, ...newKeys]);
+      const addedKeys = [];
+      const removedKeys = [];
+      for (const key of allKeys) {
+        const oldHas = this.#keys.includes(key);
+        const newHas = newKeys.includes(key);
+        if (!oldHas && newHas)
+          addedKeys.push(key);
+        else if (oldHas && !newHas)
+          removedKeys.push(key);
       }
-      notifyWatchers(this.#watchers);
-      triggerHook(this.#hookCallbacks.add, additions);
-    });
-    this.#source.on(HOOK_REMOVE, (removals) => {
-      if (!removals)
-        return;
-      for (const key of removals) {
-        if (!this.#signals.has(key))
-          continue;
+      for (const key of removedKeys)
         this.#signals.delete(key);
-        const index = this.#order.indexOf(key);
-        if (index >= 0)
-          this.#order.splice(index, 1);
-        const watcher = this.#ownWatchers.get(key);
-        if (watcher) {
-          watcher.stop();
-          this.#ownWatchers.delete(key);
-        }
-      }
-      this.#order = this.#order.filter(() => true);
-      notifyWatchers(this.#watchers);
-      triggerHook(this.#hookCallbacks.remove, removals);
+      for (const key of addedKeys)
+        this.#add(key);
+      this.#keys = newKeys;
+      this.#dirty = false;
     });
-    this.#source.on(HOOK_SORT, (newOrder) => {
-      if (newOrder)
-        this.#order = [...newOrder];
-      notifyWatchers(this.#watchers);
-      triggerHook(this.#hookCallbacks.sort, newOrder);
+    this.#watcher.onCleanup(() => {
+      this.#watcher = undefined;
     });
+    return this.#watcher;
   }
   #add(key) {
     const computedCallback = isAsyncCollectionCallback(this.#callback) ? async (_, abort) => {
@@ -1069,20 +939,9 @@ class DerivedCollection {
     };
     const signal = createComputed(computedCallback);
     this.#signals.set(key, signal);
-    if (!this.#order.includes(key))
-      this.#order.push(key);
-    if (this.#hookCallbacks.change?.size)
-      this.#addWatcher(key);
+    if (!this.#keys.includes(key))
+      this.#keys.push(key);
     return true;
-  }
-  #addWatcher(key) {
-    const watcher = createWatcher(() => {
-      trackSignalReads(watcher, () => {
-        this.#signals.get(key)?.get();
-      });
-    });
-    this.#ownWatchers.set(key, watcher);
-    watcher();
   }
   get [Symbol.toStringTag]() {
     return TYPE_COLLECTION;
@@ -1091,64 +950,44 @@ class DerivedCollection {
     return true;
   }
   *[Symbol.iterator]() {
-    for (const key of this.#order) {
+    for (const key of this.#keys) {
       const signal = this.#signals.get(key);
       if (signal)
         yield signal;
     }
   }
   keys() {
-    return this.#order.values();
+    subscribeTo(this);
+    if (this.#dirty)
+      this.#getWatcher().run();
+    return this.#keys.values();
   }
   get() {
-    subscribeActiveWatcher(this.#watchers, this.#hookCallbacks[HOOK_WATCH]);
-    return this.#order.map((key) => this.#signals.get(key)?.get()).filter((v) => v != null && v !== UNSET);
+    subscribeTo(this);
+    if (this.#dirty)
+      this.#getWatcher().run();
+    return this.#keys.map((key) => this.#signals.get(key)?.get()).filter((v) => v != null && v !== UNSET);
   }
   at(index) {
-    return this.#signals.get(this.#order[index]);
+    return this.#signals.get(this.#keys[index]);
   }
   byKey(key) {
     return this.#signals.get(key);
   }
   keyAt(index) {
-    return this.#order[index];
+    return this.#keys[index];
   }
   indexOfKey(key) {
-    return this.#order.indexOf(key);
+    return this.#keys.indexOf(key);
   }
-  on(type, callback) {
-    if (isHandledHook(type, [
-      HOOK_ADD,
-      HOOK_CHANGE,
-      HOOK_REMOVE,
-      HOOK_SORT,
-      HOOK_WATCH
-    ])) {
-      this.#hookCallbacks[type] ||= new Set;
-      this.#hookCallbacks[type].add(callback);
-      if (type === HOOK_CHANGE && !this.#ownWatchers.size) {
-        for (const key of this.#signals.keys())
-          this.#addWatcher(key);
-      }
-      return () => {
-        this.#hookCallbacks[type]?.delete(callback);
-        if (type === HOOK_CHANGE && !this.#hookCallbacks.change?.size) {
-          if (this.#ownWatchers.size) {
-            for (const watcher of this.#ownWatchers.values())
-              watcher.stop();
-            this.#ownWatchers.clear();
-          }
-        }
-      };
-    }
-    throw new InvalidHookError(TYPE_COLLECTION, type);
-  }
-  deriveCollection(callback) {
-    return new DerivedCollection(this, callback);
+  deriveCollection(callback, options) {
+    return new DerivedCollection(this, callback, options);
   }
   get length() {
-    subscribeActiveWatcher(this.#watchers, this.#hookCallbacks[HOOK_WATCH]);
-    return this.#order.length;
+    subscribeTo(this);
+    if (this.#dirty)
+      this.#getWatcher().run();
+    return this.#keys.length;
   }
 }
 var isCollection = (value) => isObjectOfType(value, TYPE_COLLECTION);
@@ -1158,32 +997,22 @@ var isAsyncCollectionCallback = (callback) => isAsyncFunction(callback);
 var TYPE_REF = "Ref";
 
 class Ref {
-  #watchers = new Set;
   #value;
-  #watchHookCallbacks;
-  constructor(value, guard) {
-    validateSignalValue(TYPE_REF, value, guard);
+  constructor(value, options) {
+    validateSignalValue(TYPE_REF, value, options?.guard);
     this.#value = value;
+    if (options?.watched)
+      registerWatchCallbacks(this, options.watched, options.unwatched);
   }
   get [Symbol.toStringTag]() {
     return TYPE_REF;
   }
   get() {
-    subscribeActiveWatcher(this.#watchers, this.#watchHookCallbacks);
+    subscribeTo(this);
     return this.#value;
   }
   notify() {
-    notifyWatchers(this.#watchers);
-  }
-  on(type, callback) {
-    if (type === HOOK_WATCH) {
-      this.#watchHookCallbacks ||= new Set;
-      this.#watchHookCallbacks.add(callback);
-      return () => {
-        this.#watchHookCallbacks?.delete(callback);
-      };
-    }
-    throw new InvalidHookError(TYPE_REF, type);
+    notifyOf(this);
   }
 }
 var isRef = (value) => isObjectOfType(value, TYPE_REF);
@@ -1194,7 +1023,9 @@ var createEffect = (callback) => {
   const isAsync = isAsyncFunction(callback);
   let running = false;
   let controller;
-  const watcher = createWatcher(() => trackSignalReads(watcher, () => {
+  const watcher = createWatcher(() => {
+    watcher.run();
+  }, () => {
     if (running)
       throw new CircularDependencyError("effect");
     running = true;
@@ -1207,7 +1038,7 @@ var createEffect = (callback) => {
         const currentController = controller;
         callback(controller.signal).then((cleanup2) => {
           if (isFunction(cleanup2) && controller === currentController)
-            watcher.on(HOOK_CLEANUP, cleanup2);
+            watcher.onCleanup(cleanup2);
         }).catch((error) => {
           if (!isAbortError(error))
             console.error("Error in async effect callback:", error);
@@ -1215,14 +1046,14 @@ var createEffect = (callback) => {
       } else {
         cleanup = callback();
         if (isFunction(cleanup))
-          watcher.on(HOOK_CLEANUP, cleanup);
+          watcher.onCleanup(cleanup);
       }
     } catch (error) {
       if (!isAbortError(error))
         console.error("Error in effect callback:", error);
     }
     running = false;
-  }));
+  });
   watcher();
   return () => {
     controller?.abort();
@@ -1276,11 +1107,11 @@ export {
   valueString,
   validateSignalValue,
   validateCallback,
-  triggerHook,
-  trackSignalReads,
-  subscribeActiveWatcher,
+  untrack,
+  track,
+  subscribeTo,
   resolve,
-  notifyWatchers,
+  notifyOf,
   match,
   isTaskCallback,
   isSymbol,
@@ -1296,7 +1127,6 @@ export {
   isMutableSignal,
   isMemoCallback,
   isList,
-  isHandledHook,
   isFunction,
   isEqual,
   isComputed,
@@ -1304,7 +1134,7 @@ export {
   isAsyncFunction,
   isAbortError,
   guardMutableSignal,
-  flushPendingReactions,
+  flush,
   diff,
   createWatcher,
   createStore,
@@ -1312,7 +1142,7 @@ export {
   createError,
   createEffect,
   createComputed,
-  batchSignalWrites,
+  batch,
   UNSET,
   Task,
   TYPE_STORE,
@@ -1328,15 +1158,8 @@ export {
   Memo,
   List,
   InvalidSignalValueError,
-  InvalidHookError,
   InvalidCollectionSourceError,
   InvalidCallbackError,
-  HOOK_WATCH,
-  HOOK_SORT,
-  HOOK_REMOVE,
-  HOOK_CLEANUP,
-  HOOK_CHANGE,
-  HOOK_ADD,
   DuplicateKeyError,
   DerivedCollection,
   CircularDependencyError,

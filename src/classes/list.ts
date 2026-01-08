@@ -1,29 +1,20 @@
-import { diff, isEqual, type UnknownArray } from '../diff'
+import { type DiffResult, diff, isEqual, type UnknownArray } from '../diff'
 import {
 	DuplicateKeyError,
-	InvalidHookError,
+	guardMutableSignal,
 	validateSignalValue,
 } from '../errors'
 import {
-	type Cleanup,
-	HOOK_ADD,
-	HOOK_CHANGE,
-	HOOK_REMOVE,
-	HOOK_SORT,
-	HOOK_WATCH,
-	type Hook,
-	type HookCallback,
-	type HookCallbacks,
-	isHandledHook,
-	notifyWatchers,
-	subscribeActiveWatcher,
-	triggerHook,
+	batch,
+	notifyOf,
+	registerWatchCallbacks,
+	type SignalOptions,
+	subscribeTo,
 	UNSET,
-	type Watcher,
+	unsubscribeAllFrom,
 } from '../system'
 import { isFunction, isNumber, isObjectOfType, isString } from '../util'
 import { type CollectionCallback, DerivedCollection } from './collection'
-import { Composite } from './composite'
 import { State } from './state'
 
 /* === Types === */
@@ -33,6 +24,9 @@ type ArrayToRecord<T extends UnknownArray> = {
 }
 
 type KeyConfig<T> = string | ((item: T) => string)
+type ListOptions<T extends {}> = SignalOptions<T> & {
+	keyConfig?: KeyConfig<T>
+}
 
 /* === Constants === */
 
@@ -41,30 +35,39 @@ const TYPE_LIST = 'List' as const
 /* === Class === */
 
 class List<T extends {}> {
-	#composite: Composite<Record<string, T>, State<T>>
-	#watchers = new Set<Watcher>()
-	#hookCallbacks: HookCallbacks = {}
-	#order: string[] = []
+	#signals = new Map<string, State<T>>()
+	#keys: string[] = []
 	#generateKey: (item: T) => string
+	#validate: (key: string, value: unknown) => value is T
 
-	constructor(initialValue: T[], keyConfig?: KeyConfig<T>) {
+	constructor(initialValue: T[], options?: ListOptions<T>) {
 		validateSignalValue(TYPE_LIST, initialValue, Array.isArray)
 
 		let keyCounter = 0
+		const keyConfig = options?.keyConfig
 		this.#generateKey = isString(keyConfig)
 			? () => `${keyConfig}${keyCounter++}`
 			: isFunction<string>(keyConfig)
 				? (item: T) => keyConfig(item)
 				: () => String(keyCounter++)
 
-		this.#composite = new Composite<ArrayToRecord<T[]>, State<T>>(
-			this.#toRecord(initialValue),
-			(key: string, value: unknown): value is T => {
-				validateSignalValue(`${TYPE_LIST} for key "${key}"`, value)
-				return true
-			},
-			value => new State(value),
-		)
+		this.#validate = (key: string, value: unknown): value is T => {
+			validateSignalValue(
+				`${TYPE_LIST} item for key "${key}"`,
+				value,
+				options?.guard,
+			)
+			return true
+		}
+
+		this.#change({
+			add: this.#toRecord(initialValue),
+			change: {},
+			remove: {},
+			changed: true,
+		})
+		if (options?.watched)
+			registerWatchCallbacks(this, options.watched, options.unwatched)
 	}
 
 	// Convert array to record with stable keys
@@ -75,19 +78,66 @@ class List<T extends {}> {
 			const value = array[i]
 			if (value === undefined) continue // Skip sparse array positions
 
-			let key = this.#order[i]
+			let key = this.#keys[i]
 			if (!key) {
 				key = this.#generateKey(value)
-				this.#order[i] = key
+				this.#keys[i] = key
 			}
 			record[key] = value
 		}
 		return record
 	}
 
+	#add(key: string, value: T) {
+		if (!this.#validate(key, value)) return false
+
+		this.#signals.set(key, new State(value))
+		return true
+	}
+
+	#change(changes: DiffResult) {
+		// Additions
+		if (Object.keys(changes.add).length) {
+			for (const key in changes.add) this.#add(key, changes.add[key] as T)
+		}
+
+		// Changes
+		if (Object.keys(changes.change).length) {
+			batch(() => {
+				for (const key in changes.change) {
+					const value = changes.change[key]
+					if (!this.#validate(key as keyof T & string, value))
+						continue
+
+					const signal = this.#signals.get(key)
+					if (
+						guardMutableSignal(
+							`${TYPE_LIST} item "${key}"`,
+							value,
+							signal,
+						)
+					)
+						signal.set(value)
+				}
+			})
+		}
+
+		// Removals
+		if (Object.keys(changes.remove).length) {
+			for (const key in changes.remove) {
+				this.#signals.delete(key)
+				const index = this.#keys.indexOf(key)
+				if (index !== -1) this.#keys.splice(index, 1)
+			}
+			this.#keys = this.#keys.filter(() => true)
+		}
+
+		return changes.changed
+	}
+
 	get #value(): T[] {
-		return this.#order
-			.map(key => this.#composite.signals.get(key)?.get())
+		return this.#keys
+			.map(key => this.#signals.get(key)?.get())
 			.filter(v => v !== undefined) as T[]
 	}
 
@@ -101,43 +151,35 @@ class List<T extends {}> {
 	}
 
 	*[Symbol.iterator](): IterableIterator<State<T>> {
-		for (const key of this.#order) {
-			const signal = this.#composite.signals.get(key)
+		for (const key of this.#keys) {
+			const signal = this.#signals.get(key)
 			if (signal) yield signal as State<T>
 		}
 	}
 
 	get length(): number {
-		subscribeActiveWatcher(this.#watchers, this.#hookCallbacks[HOOK_WATCH])
-		return this.#order.length
+		subscribeTo(this)
+		return this.#keys.length
 	}
 
 	get(): T[] {
-		subscribeActiveWatcher(this.#watchers, this.#hookCallbacks[HOOK_WATCH])
+		subscribeTo(this)
 		return this.#value
 	}
 
 	set(newValue: T[]): void {
 		if (UNSET === newValue) {
-			this.#composite.clear()
-			notifyWatchers(this.#watchers)
-			this.#watchers.clear()
+			this.#signals.clear()
+			notifyOf(this)
+			unsubscribeAllFrom(this)
 			return
 		}
 
-		const oldValue = this.#value
-		const changes = diff(this.#toRecord(oldValue), this.#toRecord(newValue))
-		const removedKeys = Object.keys(changes.remove)
-
-		const changed = this.#composite.change(changes)
-		if (changed) {
-			for (const key of removedKeys) {
-				const index = this.#order.indexOf(key)
-				if (index !== -1) this.#order.splice(index, 1)
-			}
-			this.#order = this.#order.filter(() => true)
-			notifyWatchers(this.#watchers)
-		}
+		const changes = diff(
+			this.#toRecord(this.#value),
+			this.#toRecord(newValue),
+		)
+		if (this.#change(changes)) notifyOf(this)
 	}
 
 	update(fn: (oldValue: T[]) => T[]): void {
@@ -145,58 +187,53 @@ class List<T extends {}> {
 	}
 
 	at(index: number): State<T> | undefined {
-		return this.#composite.signals.get(this.#order[index])
+		return this.#signals.get(this.#keys[index])
 	}
 
 	keys(): IterableIterator<string> {
-		return this.#order.values()
+		subscribeTo(this)
+		return this.#keys.values()
 	}
 
 	byKey(key: string): State<T> | undefined {
-		return this.#composite.signals.get(key)
+		return this.#signals.get(key)
 	}
 
 	keyAt(index: number): string | undefined {
-		return this.#order[index]
+		return this.#keys[index]
 	}
 
 	indexOfKey(key: string): number {
-		return this.#order.indexOf(key)
+		return this.#keys.indexOf(key)
 	}
 
 	add(value: T): string {
 		const key = this.#generateKey(value)
-		if (this.#composite.signals.has(key))
+		if (this.#signals.has(key))
 			throw new DuplicateKeyError('store', key, value)
 
-		if (!this.#order.includes(key)) this.#order.push(key)
-		const ok = this.#composite.add(key, value)
-		if (ok) notifyWatchers(this.#watchers)
+		if (!this.#keys.includes(key)) this.#keys.push(key)
+		const ok = this.#add(key, value)
+		if (ok) notifyOf(this)
 		return key
 	}
 
 	remove(keyOrIndex: string | number): void {
-		const key = isNumber(keyOrIndex) ? this.#order[keyOrIndex] : keyOrIndex
-		const ok = this.#composite.remove(key)
+		const key = isNumber(keyOrIndex) ? this.#keys[keyOrIndex] : keyOrIndex
+		const ok = this.#signals.delete(key)
 		if (ok) {
 			const index = isNumber(keyOrIndex)
 				? keyOrIndex
-				: this.#order.indexOf(key)
-			if (index >= 0) this.#order.splice(index, 1)
-			this.#order = this.#order.filter(() => true)
-			notifyWatchers(this.#watchers)
+				: this.#keys.indexOf(key)
+			if (index >= 0) this.#keys.splice(index, 1)
+			this.#keys = this.#keys.filter(() => true)
+			notifyOf(this)
 		}
 	}
 
 	sort(compareFn?: (a: T, b: T) => number): void {
-		const entries = this.#order
-			.map(
-				key =>
-					[key, this.#composite.signals.get(key)?.get()] as [
-						string,
-						T,
-					],
-			)
+		const entries = this.#keys
+			.map(key => [key, this.#signals.get(key)?.get()] as [string, T])
 			.sort(
 				isFunction(compareFn)
 					? (a, b) => compareFn(a[1], b[1])
@@ -204,15 +241,14 @@ class List<T extends {}> {
 			)
 		const newOrder = entries.map(([key]) => key)
 
-		if (!isEqual(this.#order, newOrder)) {
-			this.#order = newOrder
-			notifyWatchers(this.#watchers)
-			triggerHook(this.#hookCallbacks.sort, this.#order)
+		if (!isEqual(this.#keys, newOrder)) {
+			this.#keys = newOrder
+			notifyOf(this)
 		}
 	}
 
 	splice(start: number, deleteCount?: number, ...items: T[]): T[] {
-		const length = this.#order.length
+		const length = this.#keys.length
 		const actualStart =
 			start < 0 ? Math.max(0, length + start) : Math.min(start, length)
 		const actualDeleteCount = Math.max(
@@ -229,15 +265,15 @@ class List<T extends {}> {
 		// Collect items to delete and their keys
 		for (let i = 0; i < actualDeleteCount; i++) {
 			const index = actualStart + i
-			const key = this.#order[index]
+			const key = this.#keys[index]
 			if (key) {
-				const signal = this.#composite.signals.get(key)
+				const signal = this.#signals.get(key)
 				if (signal) remove[key] = signal.get() as T
 			}
 		}
 
 		// Build new order: items before splice point
-		const newOrder = this.#order.slice(0, actualStart)
+		const newOrder = this.#keys.slice(0, actualStart)
 
 		// Add new items
 		for (const item of items) {
@@ -247,49 +283,39 @@ class List<T extends {}> {
 		}
 
 		// Add items after splice point
-		newOrder.push(...this.#order.slice(actualStart + actualDeleteCount))
+		newOrder.push(...this.#keys.slice(actualStart + actualDeleteCount))
 
 		const changed = !!(
 			Object.keys(add).length || Object.keys(remove).length
 		)
 
 		if (changed) {
-			this.#composite.change({
+			this.#change({
 				add,
 				change: {} as Record<string, T>,
 				remove,
 				changed,
 			})
-			this.#order = newOrder.filter(() => true) // Update order array
-			notifyWatchers(this.#watchers)
+			this.#keys = newOrder.filter(() => true) // Update order array
+			notifyOf(this)
 		}
 
 		return Object.values(remove)
 	}
 
-	on(type: Hook, callback: HookCallback): Cleanup {
-		if (isHandledHook(type, [HOOK_SORT, HOOK_WATCH])) {
-			this.#hookCallbacks[type] ||= new Set<HookCallback>()
-			this.#hookCallbacks[type].add(callback)
-			return () => {
-				this.#hookCallbacks[type]?.delete(callback)
-			}
-		} else if (isHandledHook(type, [HOOK_ADD, HOOK_CHANGE, HOOK_REMOVE])) {
-			return this.#composite.on(type, callback)
-		}
-		throw new InvalidHookError(TYPE_LIST, type)
-	}
-
 	deriveCollection<R extends {}>(
 		callback: (sourceValue: T) => R,
+		options?: SignalOptions<R[]>,
 	): DerivedCollection<R, T>
 	deriveCollection<R extends {}>(
 		callback: (sourceValue: T, abort: AbortSignal) => Promise<R>,
+		options?: SignalOptions<R[]>,
 	): DerivedCollection<R, T>
 	deriveCollection<R extends {}>(
 		callback: CollectionCallback<R, T>,
+		options?: SignalOptions<R[]>,
 	): DerivedCollection<R, T> {
-		return new DerivedCollection(this, callback)
+		return new DerivedCollection(this, callback, options)
 	}
 }
 
@@ -307,4 +333,11 @@ const isList = <T extends {}>(value: unknown): value is List<T> =>
 
 /* === Exports === */
 
-export { isList, List, TYPE_LIST, type ArrayToRecord, type KeyConfig }
+export {
+	isList,
+	List,
+	TYPE_LIST,
+	type ArrayToRecord,
+	type KeyConfig,
+	type ListOptions,
+}

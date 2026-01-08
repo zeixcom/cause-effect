@@ -78,18 +78,13 @@ Key patterns:
 
 **Store signals** (`createStore`): Transform objects into reactive data structures
 - Each property becomes its own signal via Proxy
-- Built on `Composite` class for signal management
+- Lazy signal creation and automatic cleanup
 - Dynamic property addition/removal with proper reactivity
 
 **List signals** (`new List`): Arrays with stable keys and reactive items
-- Maintains stable keys that survive sorting and reordering
+- Maintains stable keys that survive sorting and splicing
 - Built on `Composite` class for consistent signal management
 - Provides `byKey()`, `keyAt()`, `indexOfKey()` for key-based access
-
-**Composite Architecture**: Shared foundation for Store and List
-- `Map<string, Signal>` for property/item signals
-- Hook system for granular add/change/remove notifications
-- Lazy signal creation and automatic cleanup
 
 ### Computed Signal Memoization Strategy
 
@@ -100,84 +95,29 @@ Computed signals implement smart memoization:
 - **Error Handling**: Preserves error states and prevents cascade failures
 - **Reducer Capabilities**: Access to previous value enables state accumulation and transitions
 
-## Resource Management with Watch Hooks
+## Resource Management with Watch Callbacks
 
-All signals support the `watch` hook for lazy resource management. Resources are allocated only when a signal is first accessed by an effect and automatically cleaned up when no effects are watching:
+All signals support the `watched` and `unwatched` callbacks for lazy resource management. Resources are allocated only when a signal is first accessed by an effect and automatically cleaned up when no effects are watching:
 
 ```typescript
-// Basic watch hook pattern
-const config = new State({ apiUrl: 'https://api.example.com' })
-
-config.on('watch', () => {
-  console.log('Setting up API client...')
-  const client = new ApiClient(config.get().apiUrl)
-  
-  return () => {
+// Basic watch callbacks pattern
+const config = new State({ apiUrl: 'https://api.example.com' }, {
+  watched: () => {
+    console.log('Setting up API client...')
+    const client = new ApiClient(config.get().apiUrl)
+  },
+  unwatched: () => {
     console.log('Cleaning up API client...')
     client.disconnect()
   }
 })
 
 // Resource is only created when effect runs
-createEffect(() => {
-  console.log('API URL:', config.get().apiUrl) // Triggers hook
-})
-```
-
-**Store Watch Hooks**: Monitor entire store or nested properties
-
-```typescript
-const database = createStore({ host: 'localhost', port: 5432 })
-
-// Watch entire store - triggers when any property accessed
-database.on('watch', () => {
-  console.log('Database connection needed')
-  const connection = connect(database.host.get(), database.port.get())
-  return () => connection.close()
+const cleanup = createEffect(() => {
+  console.log('API URL:', config.get().apiUrl) // Triggers watched callback
 })
 
-// Watch specific property
-database.host.on('watch', () => {
-  console.log('Host property being watched')
-  return () => console.log('Host watching stopped')
-})
-```
-
-**List Watch Hooks**: Two-tier system for collection and item resources
-
-```typescript
-const items = new List(['apple', 'banana'])
-
-// List-level resource (entire collection)
-items.on('watch', () => {
-  console.log('List observer started')
-  return () => console.log('List observer stopped')
-})
-
-// Item-level resource (individual items)
-const firstItem = items.at(0)
-firstItem.on('watch', () => {
-  console.log('First item being watched')
-  return () => console.log('First item watch stopped')
-})
-```
-
-**Collection Watch Hooks**: Propagate to source List items
-
-```typescript
-const numbers = new List([1, 2, 3])
-const doubled = numbers.deriveCollection(x => x * 2)
-
-// Set up source item hook
-numbers.at(0).on('watch', () => {
-  console.log('Source item accessed through collection')
-  return () => console.log('Source item no longer watched')
-})
-
-// Accessing collection item triggers source item hook
-createEffect(() => {
-  const value = doubled.at(0).get() // Triggers source item hook
-})
+cleanup() // Triggers unwatched callback
 ```
 
 **Practical Use Cases**:
@@ -187,11 +127,10 @@ createEffect(() => {
 - External subscriptions (WebSocket, Server-Sent Events)
 - Database connections tied to data access patterns
 
-**Hook Lifecycle**:
-1. First effect accesses signal → `watch` hook callback executed
-2. Hook callback can return cleanup function
-3. Last effect stops watching → cleanup function called
-4. New effect accesses signal → hook callback executed again
+**Watch Lifecycle**:
+1. First effect accesses signal → `watched` callback executed
+3. Last effect stops watching → `unwatched` callback executed
+4. New effect accesses signal → `watched` callback executed again
 
 This pattern enables **lazy resource allocation** - resources are only consumed when actually needed and automatically freed when no longer used.
 

@@ -1,12 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import {
-	batchSignalWrites,
-	createEffect,
-	Memo,
-	match,
-	resolve,
-	State,
-} from '../index.ts'
+import { batch, createEffect, Memo, match, resolve, State } from '../index.ts'
 
 /* === Tests === */
 
@@ -19,7 +12,7 @@ describe('Batch', () => {
 			result = cause.get()
 			count++
 		})
-		batchSignalWrites(() => {
+		batch(() => {
 			for (let i = 1; i <= 10; i++) cause.set(i)
 		})
 		expect(result).toBe(10)
@@ -43,7 +36,7 @@ describe('Batch', () => {
 				err: () => {},
 			})
 		})
-		batchSignalWrites(() => {
+		batch(() => {
 			a.set(6)
 			b.set(8)
 			c.set(10)
@@ -87,7 +80,7 @@ describe('Batch', () => {
 		expect(result).toBe(10)
 
 		// Batch: apply changes to all signals in a single transaction
-		batchSignalWrites(() => {
+		batch(() => {
 			signals.forEach(signal => signal.update(v => v * 2))
 		})
 

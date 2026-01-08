@@ -154,10 +154,8 @@ describe('State', () => {
 					expect(true).toBe(false) // Should not reach here
 				} catch (error) {
 					expect(error).toBeInstanceOf(TypeError)
-					expect(error.name).toBe('NullishSignalValueError')
-					expect(error.message).toBe(
-						'Nullish signal values are not allowed in State',
-					)
+					expect((error as Error).name).toBe('NullishSignalValueError')
+					expect((error as Error).message).toBe('Nullish signal values are not allowed in State')
 				}
 
 				const state = new State(42)
@@ -167,10 +165,8 @@ describe('State', () => {
 					expect(true).toBe(false) // Should not reach here
 				} catch (error) {
 					expect(error).toBeInstanceOf(TypeError)
-					expect(error.name).toBe('NullishSignalValueError')
-					expect(error.message).toBe(
-						'Nullish signal values are not allowed in State',
-					)
+					expect((error as Error).name).toBe('NullishSignalValueError')
+					expect((error as Error).message).toBe('Nullish signal values are not allowed in State')
 				}
 			})
 
@@ -240,10 +236,8 @@ describe('State', () => {
 					expect(true).toBe(false) // Should not reach here
 				} catch (error) {
 					expect(error).toBeInstanceOf(TypeError)
-					expect(error.name).toBe('InvalidCallbackError')
-					expect(error.message).toBe(
-						'Invalid State update callback null',
-					)
+					expect((error as Error).name).toBe('InvalidCallbackError')
+					expect((error as Error).message).toBe('Invalid State update callback null')
 				}
 			})
 

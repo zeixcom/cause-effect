@@ -7,18 +7,11 @@ import {
 } from '../src/errors'
 import { isMutableSignal, type MutableSignal } from '../src/signal'
 import {
-	batchSignalWrites,
-	type Cleanup,
-	createWatcher,
-	type HookCallback,
-	type HookCallbacks,
-	type Hook,
+	batch,
 	notifyWatchers,
 	subscribeActiveWatcher,
-	trackSignalReads,
-	type Watcher,
 	UNSET,
-	triggerHook,
+	type Watcher,
 } from '../src/system'
 import { isFunction, isObjectOfType, isRecord, isSymbol } from '../src/util'
 import { isComputed } from './computed'
@@ -57,7 +50,6 @@ type Store<T extends UnknownRecord> = {
 	sort<U = T[Extract<keyof T, string>]>(
 		compareFn?: (a: U, b: U) => number,
 	): void
-	on(type: Hook, callback: HookCallback): Cleanup
 	remove<K extends Extract<keyof T, string>>(key: K): void
 }
 
@@ -87,7 +79,6 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 	if (initialValue == null) throw new NullishSignalValueError('store')
 
 	const watchers = new Set<Watcher>()
-	const hookCallbacks: HookCallbacks = {}
 	const signals = new Map<
 		string,
 		MutableSignal<T[Extract<keyof T, string>] & {}>
@@ -114,20 +105,6 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 		return true
 	}
 
-	// Add own watcher for nested signal
-	const addOwnWatcher = <K extends keyof T & string>(
-		key: K,
-		signal: MutableSignal<T[K] & {}>,
-	) => {
-		const watcher = createWatcher(() => {
-			trackSignalReads(watcher, () => {
-				signal.get() // Subscribe to the signal
-				triggerHook(hookCallbacks.change, [key])
-			})
-		})
-		ownWatchers.set(key, watcher)
-	}
-
 	// Add nested signal and effect
 	const addProperty = <K extends keyof T & string>(
 		key: K,
@@ -150,11 +127,9 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 		// Set internal states
 		// @ts-expect-error non-matching signal types
 		signals.set(key, signal)
-		if (hookCallbacks.change?.size) addOwnWatcher(key, signal)
 
 		if (single) {
 			notifyWatchers(watchers)
-			triggerHook(hookCallbacks.add, [key])
 		}
 		return true
 	}
@@ -174,12 +149,11 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 
 		if (single) {
 			notifyWatchers(watchers)
-			triggerHook(hookCallbacks.remove, [key])
 		}
 	}
 
 	// Commit batched changes and emit notifications
-	const batchChanges = (changes: DiffResult, initialRun?: boolean) => {
+	const batchChanges = (changes: DiffResult) => {
 		// Additions
 		if (Object.keys(changes.add).length) {
 			for (const key in changes.add)
@@ -188,18 +162,11 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 					changes.add[key] as T[Extract<keyof T, string>] & {},
 					false,
 				)
-
-			// Queue initial additions event to allow listeners to be added first
-			if (initialRun)
-				setTimeout(() => {
-					triggerHook(hookCallbacks.add, Object.keys(changes.add))
-				}, 0)
-			else triggerHook(hookCallbacks.add, Object.keys(changes.add))
 		}
 
 		// Changes
 		if (Object.keys(changes.change).length) {
-			batchSignalWrites(() => {
+			batch(() => {
 				for (const key in changes.change) {
 					const value = changes.change[key] as T[Extract<
 						keyof T,
@@ -211,28 +178,23 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 					if (isMutableSignal(signal)) signal.set(value)
 					else throw new ReadonlySignalError(key, value)
 				}
-				triggerHook(hookCallbacks.change, Object.keys(changes.change))
 			})
 		}
 
 		// Removals
 		if (Object.keys(changes.remove).length) {
 			for (const key in changes.remove) removeProperty(key)
-			triggerHook(hookCallbacks.remove, Object.keys(changes.remove))
 		}
 
 		return changes.changed
 	}
 
 	// Reconcile data and dispatch events
-	const reconcile = (
-		oldValue: T,
-		newValue: T,
-		initialRun?: boolean,
-	): boolean => batchChanges(diff(oldValue, newValue), initialRun)
+	const reconcile = (oldValue: T, newValue: T): boolean =>
+		batchChanges(diff(oldValue, newValue))
 
 	// Initialize data
-	reconcile({} as T, initialValue, true)
+	reconcile({} as T, initialValue)
 
 	// Methods and Properties
 	const prototype: Record<PropertyKey, unknown> = {}
@@ -284,27 +246,6 @@ const createStore = <T extends UnknownRecord>(initialValue: T): Store<T> => {
 		update: {
 			value: (fn: (oldValue: T) => T): void => {
 				store.set(fn(current()))
-			},
-		},
-		on: {
-			value: (type: Hook, callback: HookCallback): Cleanup => {
-				hookCallbacks[type] ||= new Set()
-				hookCallbacks[type].add(callback)
-				if (type === 'change' && !ownWatchers.size) {
-					for (const [key, signal] of signals)
-						// @ts-expect-error ignore
-						addOwnWatcher(key, signal)
-				}
-				return () => {
-					hookCallbacks[type]?.delete(callback)
-					if (type === 'change' && !hookCallbacks.change?.size) {
-						if (ownWatchers.size) {
-							for (const watcher of ownWatchers.values())
-								watcher.stop()
-							ownWatchers.clear()
-						}
-					}
-				}
 			},
 		},
 	})

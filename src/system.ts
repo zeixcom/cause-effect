@@ -1,27 +1,24 @@
-/* === Types === */
+import { assert, type Guard } from './errors'
+import type { UnknownSignal } from './signal'
 
-import { createError, InvalidHookError } from './errors'
-import { isFunction } from './util'
+/* === Types === */
 
 type Cleanup = () => void
 
 // biome-ignore lint/suspicious/noConfusingVoidType: optional Cleanup return type
 type MaybeCleanup = Cleanup | undefined | void
 
-type Hook = 'add' | 'change' | 'cleanup' | 'remove' | 'sort' | 'watch'
-type CleanupHook = 'cleanup'
-type WatchHook = 'watch'
-
-type HookCallback = (payload?: readonly string[]) => MaybeCleanup
-
-type HookCallbacks = {
-	[K in Hook]?: Set<HookCallback>
-}
-
 type Watcher = {
 	(): void
-	on(type: CleanupHook, cleanup: Cleanup): void
+	run(): void
+	onCleanup(cleanup: Cleanup): void
 	stop(): void
+}
+
+type SignalOptions<T extends unknown & {}> = {
+	guard?: Guard<T>
+	watched?: () => void
+	unwatched?: () => void
 }
 
 /* === Internal === */
@@ -29,8 +26,9 @@ type Watcher = {
 // Currently active watcher
 let activeWatcher: Watcher | undefined
 
-// Map of signal watchers to their cleanup functions
-const unwatchMap = new WeakMap<Set<Watcher>, Set<Cleanup>>()
+const watchersMap = new WeakMap<UnknownSignal, Set<Watcher>>()
+const watchedCallbackMap = new WeakMap<object, () => void>()
+const unwatchedCallbackMap = new WeakMap<object, () => void>()
 
 // Queue of pending watcher reactions for batched change notifications
 const pendingReactions = new Set<() => void>()
@@ -41,30 +39,32 @@ let batchDepth = 0
 // biome-ignore lint/suspicious/noExplicitAny: Deliberately using any to be used as a placeholder value in any signal
 const UNSET: any = Symbol()
 
-const HOOK_ADD = 'add'
-const HOOK_CHANGE = 'change'
-const HOOK_CLEANUP = 'cleanup'
-const HOOK_REMOVE = 'remove'
-const HOOK_SORT = 'sort'
-const HOOK_WATCH = 'watch'
-
 /* === Functions === */
 
 /**
- * Create a watcher to observe changes to a signal.
+ * Create a watcher to observe changes in signals.
  *
- * A watcher is a reaction function with onCleanup and stop methods
+ * A watcher combines push and pull reaction functions with onCleanup and stop methods
  *
- * @since 0.14.1
- * @param {() => void} react - Function to be called when the state changes
+ * @since 0.17.3
+ * @param {() => void} push - Function to be called when the state changes (push)
+ * @param {() => void} pull - Function to be called on demand from consumers (pull)
  * @returns {Watcher} - Watcher object with off and cleanup methods
  */
-const createWatcher = (react: () => void): Watcher => {
+const createWatcher = (push: () => void, pull: () => void): Watcher => {
 	const cleanups = new Set<Cleanup>()
-	const watcher = react as Partial<Watcher>
-	watcher.on = (type: CleanupHook, cleanup: Cleanup) => {
-		if (type === HOOK_CLEANUP) cleanups.add(cleanup)
-		else throw new InvalidHookError('watcher', type)
+	const watcher = push as Partial<Watcher>
+	watcher.run = () => {
+		const prev = activeWatcher
+		activeWatcher = watcher as Watcher
+		try {
+			pull()
+		} finally {
+			activeWatcher = prev
+		}
+	}
+	watcher.onCleanup = (cleanup: Cleanup) => {
+		cleanups.add(cleanup)
 	}
 	watcher.stop = () => {
 		try {
@@ -77,62 +77,113 @@ const createWatcher = (react: () => void): Watcher => {
 }
 
 /**
- * Subscribe by adding active watcher to the Set of watchers of a signal.
+ * Run a function with signal reads in a non-tracking context.
  *
- * @param {Set<Watcher>} watchers - Watchers of the signal
- * @param {Set<HookCallback>} watchHookCallbacks - HOOK_WATCH callbacks of the signal
+ * @param {() => void} callback - Callback
  */
-const subscribeActiveWatcher = (
-	watchers: Set<Watcher>,
-	watchHookCallbacks?: Set<HookCallback>,
-): void => {
-	// Check if we need to trigger HOOK_WATCH callbacks
-	if (!watchers.size && watchHookCallbacks?.size) {
-		const unwatch = triggerHook(watchHookCallbacks)
-		if (unwatch) {
-			const unwatchCallbacks =
-				unwatchMap.get(watchers) ?? new Set<Cleanup>()
-			unwatchCallbacks.add(unwatch)
-			if (!unwatchMap.has(watchers))
-				unwatchMap.set(watchers, unwatchCallbacks)
+const untrack = (callback: () => void): void => {
+	const prev = activeWatcher
+	activeWatcher = undefined
+	try {
+		callback()
+	} finally {
+		activeWatcher = prev
+	}
+}
+
+const registerWatchCallbacks = (
+	signal: UnknownSignal,
+	watched: () => void,
+	unwatched?: () => void,
+) => {
+	watchedCallbackMap.set(signal, watched)
+	if (unwatched) unwatchedCallbackMap.set(signal, unwatched)
+}
+
+/**
+ * Subscribe active watcher to a signal.
+ *
+ * @param {UnknownSignal} signal - Signal to subscribe to
+ * @returns {boolean} - true if the active watcher was subscribed,
+ *                      false if the watcher was already subscribed or there was no active watcher
+ */
+const subscribeTo = (signal: UnknownSignal): boolean => {
+	if (!activeWatcher || watchersMap.get(signal)?.has(activeWatcher))
+		return false
+
+	const watcher = activeWatcher
+	if (!watchersMap.has(signal)) watchersMap.set(signal, new Set<Watcher>())
+
+	const watchers = watchersMap.get(signal)
+	assert(watchers)
+	if (!watchers.size) {
+		const watchedCallback = watchedCallbackMap.get(signal)
+		if (watchedCallback) untrack(watchedCallback)
+	}
+	watchers.add(watcher)
+	watcher.onCleanup(() => {
+		watchers.delete(watcher)
+		if (!watchers.size) {
+			const unwatchedCallback = unwatchedCallbackMap.get(signal)
+			if (unwatchedCallback) untrack(unwatchedCallback)
 		}
+	})
+	return true
+}
+
+const subscribeActiveWatcher = (watchers: Set<Watcher>) => {
+	if (!activeWatcher || watchers.has(activeWatcher)) return false
+
+	const watcher = activeWatcher
+	watchers.add(watcher)
+	if (!watchers.size) {
+		const watchedCallback = watchedCallbackMap.get(watchers)
+		if (watchedCallback) untrack(watchedCallback)
 	}
+	watcher.onCleanup(() => {
+		watchers.delete(watcher)
+		if (!watchers.size) {
+			const unwatchedCallback = unwatchedCallbackMap.get(watchers)
+			if (unwatchedCallback) untrack(unwatchedCallback)
+		}
+	})
+	return true
+}
 
-	// Only if active watcher is not already subscribed
-	if (activeWatcher && !watchers.has(activeWatcher)) {
-		const watcher = activeWatcher
+/**
+ * Unsubscribe all watchers from a signal so it can be garbage collected.
+ *
+ * @param {UnknownSignal} signal - Signal to unsubscribe from
+ * @returns {void}
+ */
+const unsubscribeAllFrom = (signal: UnknownSignal): void => {
+	const watchers = watchersMap.get(signal)
+	if (!watchers) return
 
-		watcher.on(HOOK_CLEANUP, () => {
-			// Remove the watcher from the Set of watchers
-			watchers.delete(watcher)
-
-			// If it was the last watcher, call unwatch callbacks
-			if (!watchers.size) {
-				const unwatchCallbacks = unwatchMap.get(watchers)
-				if (unwatchCallbacks) {
-					try {
-						for (const unwatch of unwatchCallbacks) unwatch()
-					} finally {
-						unwatchCallbacks.clear()
-						unwatchMap.delete(watchers)
-					}
-				}
-			}
-		})
-
-		// Here the active watcher is added to the Set of watchers
-		watchers.add(watcher)
-	}
+	for (const watcher of watchers) watcher.stop()
+	watchers.clear()
 }
 
 /**
  * Notify watchers of a signal change.
  *
- * @param {Set<Watcher>} watchers - Watchers of the signal
+ * @param {UnknownSignal} signal - Signal to notify watchers of
  * @returns {boolean} - Whether any watchers were notified
  */
+const notifyOf = (signal: UnknownSignal): boolean => {
+	const watchers = watchersMap.get(signal)
+	if (!watchers?.size) return false
+
+	for (const react of watchers) {
+		if (batchDepth) pendingReactions.add(react)
+		else react()
+	}
+	return true
+}
+
 const notifyWatchers = (watchers: Set<Watcher>): boolean => {
 	if (!watchers.size) return false
+
 	for (const react of watchers) {
 		if (batchDepth) pendingReactions.add(react)
 		else react()
@@ -143,11 +194,11 @@ const notifyWatchers = (watchers: Set<Watcher>): boolean => {
 /**
  * Flush all pending reactions of enqueued watchers.
  */
-const flushPendingReactions = () => {
+const flush = () => {
 	while (pendingReactions.size) {
 		const watchers = Array.from(pendingReactions)
 		pendingReactions.clear()
-		for (const watcher of watchers) watcher()
+		for (const react of watchers) react()
 	}
 }
 
@@ -156,12 +207,12 @@ const flushPendingReactions = () => {
  *
  * @param {() => void} callback - Function with multiple signal writes to be batched
  */
-const batchSignalWrites = (callback: () => void) => {
+const batch = (callback: () => void) => {
 	batchDepth++
 	try {
 		callback()
 	} finally {
-		flushPendingReactions()
+		flush()
 		batchDepth--
 	}
 }
@@ -174,7 +225,7 @@ const batchSignalWrites = (callback: () => void) => {
  *                                    that might read signals (e.g., Web Components)
  * @param {() => void} run - Function to run the computation or effect
  */
-const trackSignalReads = (watcher: Watcher | false, run: () => void): void => {
+const track = (watcher: Watcher | false, run: () => void): void => {
 	const prev = activeWatcher
 	activeWatcher = watcher || undefined
 	try {
@@ -184,92 +235,23 @@ const trackSignalReads = (watcher: Watcher | false, run: () => void): void => {
 	}
 }
 
-/**
- * Trigger a hook.
- *
- * @param {Set<HookCallback> | undefined} callbacks - Callbacks to be called when the hook is triggered
- * @param {readonly string[] | undefined} payload - Payload to be sent to listeners
- * @return {Cleanup | undefined} Cleanup function to be called when the hook is unmounted
- */
-const triggerHook = (
-	callbacks: Set<HookCallback> | undefined,
-	payload?: readonly string[],
-): Cleanup | undefined => {
-	if (!callbacks) return
-
-	const cleanups: Cleanup[] = []
-	const errors: Error[] = []
-
-	const throwError = (inCleanup?: boolean) => {
-		if (errors.length) {
-			if (errors.length === 1) throw errors[0]
-			throw new AggregateError(
-				errors,
-				`Errors in hook ${inCleanup ? 'cleanup' : 'callback'}:`,
-			)
-		}
-	}
-
-	for (const callback of callbacks) {
-		try {
-			const cleanup = callback(payload)
-			if (isFunction(cleanup)) cleanups.push(cleanup)
-		} catch (error) {
-			errors.push(createError(error))
-		}
-	}
-	throwError()
-
-	if (!cleanups.length) return
-	if (cleanups.length === 1) return cleanups[0]
-	return () => {
-		for (const cleanup of cleanups) {
-			try {
-				cleanup()
-			} catch (error) {
-				errors.push(createError(error))
-			}
-		}
-		throwError(true)
-	}
-}
-
-/**
- * Check whether a hook type is handled in a signal.
- *
- * @param {Hook} type - Type of hook to check
- * @param {T} handled - List of handled hook types
- * @returns {type is T[number]} - Whether the hook type is handled
- */
-const isHandledHook = <T extends readonly Hook[]>(
-	type: Hook,
-	handled: T,
-): type is T[number] => handled.includes(type)
-
 /* === Exports === */
 
 export {
 	type Cleanup,
 	type MaybeCleanup,
 	type Watcher,
-	type Hook,
-	type CleanupHook,
-	type WatchHook,
-	type HookCallback,
-	type HookCallbacks,
-	HOOK_ADD,
-	HOOK_CHANGE,
-	HOOK_CLEANUP,
-	HOOK_REMOVE,
-	HOOK_SORT,
-	HOOK_WATCH,
+	type SignalOptions,
 	UNSET,
 	createWatcher,
+	registerWatchCallbacks,
+	subscribeTo,
 	subscribeActiveWatcher,
+	unsubscribeAllFrom,
+	notifyOf,
 	notifyWatchers,
-	flushPendingReactions,
-	batchSignalWrites,
-	trackSignalReads,
-	triggerHook,
-	isHandledHook,
+	flush,
+	batch,
+	track,
+	untrack,
 }

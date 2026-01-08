@@ -159,7 +159,6 @@ const benchmarkFactory = async () => {
 	const memoryStores = await measureMemory('Factory Memory Usage', () => {
 		const tempStores = []
 		for (let i = 0; i < ITERATIONS; i++)
-			// @ts-expect-error ignore
 			tempStores.push(createFactoryStore({ ...testData, id: i }))
 		return tempStores
 	})
@@ -226,7 +225,6 @@ const benchmarkFactoryList = async () => {
 		const tempLists = []
 		for (let i = 0; i < ITERATIONS; i++) {
 			tempLists.push(
-				// @ts-expect-error ignore
 				createFactoryList([
 					...testListData.map(item => ({
 						...item,
@@ -305,7 +303,6 @@ const benchmarkDirectClassList = async () => {
 			const tempLists = []
 			for (let i = 0; i < ITERATIONS; i++) {
 				tempLists.push(
-					// @ts-expect-error ignore
 					new List([
 						...testListData.map(item => ({
 							...item,
@@ -375,7 +372,6 @@ const benchmarkClass = async () => {
 	const memoryStores = await measureMemory('Class Memory Usage', () => {
 		const tempStores = []
 		for (let i = 0; i < ITERATIONS; i++)
-			// @ts-expect-error ignore
 			tempStores.push(createClassStore({ ...testData, id: i }))
 		return tempStores
 	})
@@ -436,7 +432,6 @@ const benchmarkDirectClass = async () => {
 		() => {
 			const tempStores = []
 			for (let i = 0; i < ITERATIONS; i++)
-				// @ts-expect-error ignore
 				tempStores.push(new BaseStore({ ...testData, id: i }))
 			return tempStores
 		},
