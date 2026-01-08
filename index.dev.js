@@ -664,7 +664,7 @@ class BaseStore {
   #change(changes) {
     if (Object.keys(changes.add).length) {
       for (const key in changes.add)
-        this.add(key, changes.add[key]);
+        this.#add(key, changes.add[key]);
     }
     if (Object.keys(changes.change).length) {
       batch(() => {

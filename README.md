@@ -1,6 +1,6 @@
 # Cause & Effect
 
-Version 0.17.2
+Version 0.17.3
 
 **Cause & Effect** is a tiny (~5kB gzipped), dependency-free reactive state library for JavaScript. It uses fine-grained signals so derived values and side effects update automatically when their dependencies change.
 
