@@ -23,7 +23,8 @@ type UnknownSignal = Signal<any>
  * Runtime-wise, all of them are instances of the single `Signal` class.
  */
 type State<T extends {}> = Signal<T>
-type Computed<T extends {}> = Pick<Signal<T>, 'get'>
+type Memo<T extends {}> = Pick<Signal<T>, 'get'>
+type Computed<T extends Awaited<unknown & {}>> = Memo<T> | Task<T>
 type Effect = Pick<UnknownSignal, 'get' | 'dispose'>
 
 /**
@@ -47,6 +48,16 @@ type TaskCallback<T extends {}> = (
 
 type Disposer = () => void
 
+/**
+ * Effect callback.
+ *
+ * It may optionally return a cleanup function. Cleanup functions are executed:
+ * - before the next re-run of the same effect, and
+ * - when the effect is disposed.
+ */
+// biome-ignore lint/suspicious/noConfusingVoidType: optional dispose function
+type EffectCallback = () => Disposer | void
+
 export type Scope = {
 	/**
 	 * Run a function within this scope.
@@ -61,16 +72,6 @@ export type Scope = {
 	dispose(): void
 }
 
-/**
- * Effect callback.
- *
- * It may optionally return a cleanup function. Cleanup functions are executed:
- * - before the next re-run of the same effect, and
- * - when the effect is disposed.
- */
-// biome-ignore lint/suspicious/noConfusingVoidType: optional dispose function
-type EffectCallback = () => (() => void) | void
-
 type CacheFlag = typeof CACHE_CLEAN | typeof CACHE_CHECK | typeof CACHE_DIRTY
 type CacheStale = typeof CACHE_CHECK | typeof CACHE_DIRTY
 
@@ -79,6 +80,23 @@ type EffectStatus =
 	| typeof EFFECT_READY
 	| typeof EFFECT_QUEUED
 	| typeof EFFECT_DISPOSED
+
+type TaskState =
+	| typeof TASK_IDLE
+	| typeof TASK_PENDING
+	| typeof TASK_ABORTED
+	| typeof TASK_ERROR
+
+type Guard<T> = (value: unknown) => value is T
+
+type SignalOptions<T extends unknown & {}> = {
+	initialValue?: T
+	effect?: boolean
+	guard?: Guard<T>
+	equals?: (a: T, b: T) => boolean
+	watched?: () => void
+	unwatched?: () => void
+}
 
 /* === Constants === */
 
@@ -101,6 +119,11 @@ const EFFECT_NONE = 0
 const EFFECT_DISPOSED = 1
 const EFFECT_READY = 2
 const EFFECT_QUEUED = 3
+
+const TASK_IDLE = 0
+const TASK_PENDING = 1
+const TASK_ABORTED = 2
+const TASK_ERROR = 3
 
 /* === Internal === */
 
@@ -134,7 +157,7 @@ const signalCleanups = new WeakMap<UnknownSignal, Array<() => void>>()
 
 let batchDepth = 0
 
-/* === Class === */
+/* === Classes === */
 
 /**
  * Base `Signal` class.
@@ -153,25 +176,28 @@ let batchDepth = 0
  *
  * @since 0.17.4
  * @param {MemoCallback<T> | T} fnOrValue - Function or value to initialize the signal.
- * @param {boolean} effect - Whether this signal is an effect.
+ * @param {SignalOptions<T>} options - Optional configuration.
  */
 class Signal<T extends {}> {
 	protected value: T
 	protected callback?: MemoCallback<T> | TaskCallback<T>
 	protected equals = (a: T, b: T) => a === b
 
-	flag: CacheFlag
+	protected flag: CacheFlag
 	protected effect: EffectStatus = EFFECT_NONE
 	protected watchers: UnknownSignal[] | null = null // Nodes that have us as sources (down links)
 	protected sources: UnknownSignal[] | null = null // Sources in reference order, not deduplicated (up links)
 
-	constructor(fnOrValue: MemoCallback<T> | T, effect?: boolean) {
+	constructor(
+		fnOrValue: MemoCallback<T> | TaskCallback<T> | T,
+		options?: SignalOptions<T>,
+	) {
 		if (typeof fnOrValue === 'function') {
-			this.callback = fnOrValue as MemoCallback<T>
-			// biome-ignore lint/suspicious/noExplicitAny: temporarily undefined
-			this.value = undefined as any
+			this.callback = fnOrValue as MemoCallback<T> | TaskCallback<T>
+			// biome-ignore lint/suspicious/noExplicitAny: maybe temporarily undefined
+			this.value = options?.initialValue as any
 			this.flag = CACHE_DIRTY
-			if (effect) {
+			if (options?.effect) {
 				this.effect = EFFECT_QUEUED
 				pendingEffects.push(this)
 				onEffectQueued?.(this as unknown as Effect)
@@ -238,10 +264,7 @@ class Signal<T extends {}> {
 			const value = fnOrValue as T
 			if (!this.equals(this.value, value)) {
 				this.value = value
-				if (this.watchers?.length) {
-					for (let i = 0; i < this.watchers.length; i++)
-						this.watchers[i].markStale(CACHE_DIRTY)
-				}
+				this.notifyWatchers()
 			}
 		}
 	}
@@ -264,11 +287,7 @@ class Signal<T extends {}> {
 		this.effect = EFFECT_DISPOSED
 
 		// Run cleanup functions
-		const cleanups = signalCleanups.get(this)
-		if (cleanups?.length) {
-			for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]()
-			signalCleanups.delete(this)
-		}
+		runCleanups(this)
 
 		// Detach from all sources so this effect doesn't keep the graph alive
 		if (this.sources) {
@@ -310,11 +329,19 @@ class Signal<T extends {}> {
 			}
 
 			this.flag = flag
-			if (this.watchers?.length) {
-				for (let i = 0; i < this.watchers.length; i++)
-					this.watchers[i].markStale(CACHE_CHECK)
-			}
+			if (!this.watchers?.length) return
+			for (let i = 0; i < this.watchers.length; i++)
+				this.watchers[i].markStale(CACHE_CHECK)
 		}
+	}
+
+	/**
+	 * Notify watchers of a change in value.
+	 */
+	protected notifyWatchers(flag: CacheStale = CACHE_DIRTY): void {
+		if (!this.watchers?.length) return
+		for (let i = 0; i < this.watchers.length; i++)
+			this.watchers[i].markStale(flag)
 	}
 
 	/**
@@ -332,7 +359,7 @@ class Signal<T extends {}> {
 			// Remove from watchers array, swap with last element and pop
 			const watchers: UnknownSignal[] | null = this.sources[i].watchers
 			if (!watchers) continue
-			const swap = watchers.findIndex((v: UnknownSignal) => v === this)
+			const swap = watchers.findIndex(v => v === this)
 			if (swap === -1) continue
 			watchers[swap] = watchers[watchers.length - 1]
 			watchers.pop()
@@ -340,72 +367,38 @@ class Signal<T extends {}> {
 	}
 
 	/**
-	 * Run a function while tracking its dependencies.
+	 * Add ourselves to the end of the parent .watchers array (lazy init).
+	 *
+	 * @param {number} sourceCursor - The index of the source to link.
 	 */
-	protected track(fn: () => void): void {
-		if (!this.callback) return
+	protected reconcileLinks(
+		sourceCursor: number,
+		capturedSources: UnknownSignal[] | null,
+	): void {
+		if (capturedSources) {
+			// Remove all old sources' .watchers links to us
+			this.unlinkSourcesFrom(sourceCursor)
 
-		const oldValue = this.value
-
-		// Evalute the reactive function body, dynamically capturing any other signals used
-		const prevWatcher = activeWatcher
-		const prevSources = capturedSources
-		const prevCursor = sourceCursor
-
-		activeWatcher = this
-		// biome-ignore lint/suspicious/noExplicitAny: temporarily null
-		capturedSources = null as any // prevent TS from thinking capturedSources is null below
-		sourceCursor = 0
-
-		try {
-			// 1) Run and clear cleanup functions from WeakMap
-			const cleanups = signalCleanups.get(this)
-			if (cleanups?.length) {
-				for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]()
-				cleanups.length = 0
+			// Update source up links
+			if (sourceCursor && this.sources) {
+				this.sources.length = sourceCursor + capturedSources.length
+				for (let i = 0; i < capturedSources.length; i++)
+					this.sources[sourceCursor + i] = capturedSources[i]
+			} else {
+				this.sources = capturedSources
 			}
 
-			// 2) Execute under dependency tracking
-			fn()
-
-			// 3) Reconcile sources/watchers
-			if (capturedSources) {
-				// Remove all old sources' .watchers links to us
-				this.unlinkSourcesFrom(sourceCursor)
-				// Update source up links
-				if (sourceCursor && this.sources) {
-					this.sources.length = sourceCursor + capturedSources.length
-					for (let i = 0; i < capturedSources.length; i++)
-						this.sources[sourceCursor + i] = capturedSources[i]
-				} else {
-					this.sources = capturedSources
-				}
-
-				// Add ourselves to the end of the parent .watchers array (lazy init)
-				for (let i = sourceCursor; i < this.sources.length; i++) {
-					const source = this.sources[i]
-					if (source.watchers) source.watchers.push(this)
-					else source.watchers = [this]
-				}
-			} else if (this.sources && sourceCursor < this.sources.length) {
-				// Remove all old sources' .watchers links to us
-				this.unlinkSourcesFrom(sourceCursor)
-				this.sources.length = sourceCursor
+			// Add ourselves to the end of the parent .watchers array (lazy init).
+			for (let i = sourceCursor; i < this.sources.length; i++) {
+				const source = this.sources[i]
+				if (source.watchers) source.watchers.push(this)
+				else source.watchers = [this]
 			}
-		} finally {
-			capturedSources = prevSources
-			activeWatcher = prevWatcher
-			sourceCursor = prevCursor
+		} else if (this.sources && sourceCursor < this.sources.length) {
+			// Remove all old sources' .watchers links to us
+			this.unlinkSourcesFrom(sourceCursor)
+			this.sources.length = sourceCursor
 		}
-
-		// 4) Diamond: if value changed, force children DIRTY
-		if (this.watchers?.length && !this.equals(oldValue, this.value)) {
-			// We've changed value, so mark our children as dirty so they'll reevaluate
-			for (let i = 0; i < this.watchers.length; i++)
-				this.watchers[i].flag = CACHE_DIRTY
-		}
-
-		this.flag = CACHE_CLEAN
 	}
 
 	/**
@@ -428,39 +421,13 @@ class Signal<T extends {}> {
 
 		try {
 			// 1) Run and clear cleanup functions from WeakMap
-			const cleanups = signalCleanups.get(this)
-			if (cleanups?.length) {
-				for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]()
-				cleanups.length = 0
-			}
+			runCleanups(this)
 
 			// 2) Run the reactive function body
 			this.value = (this.callback as MemoCallback<T>)(this.value)
 
 			// 3) Reconcile sources/watchers
-			if (capturedSources) {
-				// Remove all old sources' .watchers links to us
-				this.unlinkSourcesFrom(sourceCursor)
-				// Update source up links
-				if (sourceCursor && this.sources) {
-					this.sources.length = sourceCursor + capturedSources.length
-					for (let i = 0; i < capturedSources.length; i++)
-						this.sources[sourceCursor + i] = capturedSources[i]
-				} else {
-					this.sources = capturedSources
-				}
-
-				// Add ourselves to the end of the parent .watchers array (lazy init)
-				for (let i = sourceCursor; i < this.sources.length; i++) {
-					const source = this.sources[i]
-					if (source.watchers) source.watchers.push(this)
-					else source.watchers = [this]
-				}
-			} else if (this.sources && sourceCursor < this.sources.length) {
-				// Remove all old sources' .watchers links to us
-				this.unlinkSourcesFrom(sourceCursor)
-				this.sources.length = sourceCursor
-			}
+			this.reconcileLinks(sourceCursor, capturedSources)
 		} finally {
 			capturedSources = prevSources
 			activeWatcher = prevWatcher
@@ -468,11 +435,7 @@ class Signal<T extends {}> {
 		}
 
 		// 4) Diamond: if value changed, force children DIRTY
-		if (this.watchers?.length && !this.equals(oldValue, this.value)) {
-			// We've changed value, so mark our children as dirty so they'll reevaluate
-			for (let i = 0; i < this.watchers.length; i++)
-				this.watchers[i].flag = CACHE_DIRTY
-		}
+		if (!this.equals(oldValue, this.value)) this.notifyWatchers()
 
 		this.flag = CACHE_CLEAN
 	}
@@ -494,6 +457,176 @@ class Signal<T extends {}> {
 
 		// By now, we're clean
 		this.flag = CACHE_CLEAN
+	}
+}
+
+/**
+ * Async computed signal built on top of the unified synchronous `Signal`.
+ *
+ * Key semantics (colorless async):
+ * - `get()` is synchronous and returns the latest *committed* value.
+ * - Dependency tracking happens synchronously when `get()` triggers `run()`.
+ *   (We call the user callback once to create the Promise, which performs `.get()` reads.)
+ * - When dependencies change while pending, we abort the in-flight run and start a new one on demand.
+ * - We only commit and propagate once the Promise resolves successfully.
+ * - Errors are captured, stored, and rethrown on subsequent `get()`.
+ *
+ * Notes / limitations:
+ * - This intentionally avoids changing the base `Signal` hot-path.
+ * - This class relies on base class internals (protected fields) but keeps that access localized.
+ */
+class Task<T extends {}> extends Signal<T> {
+	error: Error | undefined
+
+	protected state: TaskState = TASK_IDLE
+	protected controller: AbortController | undefined
+
+	/**
+	 * Return the latest committed value.
+	 *
+	 * If the last run produced an error, rethrow it (colorless error propagation).
+	 */
+	get(): T {
+		const v = super.get()
+		if (this.error) throw this.error
+		return v
+	}
+
+	/**
+	 * Return whether the task is currently running.
+	 */
+	get pending(): boolean {
+		return this.state === TASK_PENDING
+	}
+
+	/**
+	 * Abort the in-flight run, if any.
+	 */
+	abort(): void {
+		this.controller?.abort()
+		this.controller = undefined
+		if (this.state === TASK_PENDING) this.state = TASK_ABORTED
+	}
+
+	/**
+	 * Dispose this task.
+	 *
+	 * This is *not* the same as effect disposal in the base class. Task provides a useful teardown:
+	 * - abort in-flight work
+	 * - unlink from sources (detach from graph)
+	 */
+	dispose(): void {
+		this.abort()
+		if (this.sources) {
+			this.unlinkSourcesFrom(0)
+			this.sources = null
+		}
+		this.watchers = null
+		// Keep last committed value; clear error so it doesn't throw after disposal.
+		this.error = undefined
+		this.state = TASK_IDLE
+	}
+
+	/**
+	 * Override stale propagation for tasks.
+	 *
+	 * We need special behavior when pending:
+	 * - Abort the in-flight run immediately (so external work can be cancelled).
+	 * - Do NOT re-run immediately; re-run lazily on next `get()`.
+	 */
+	protected markStale(flag: CacheStale): void {
+		// If we are pending and dependencies change, abort and mark "needs restart".
+		if (this.state === TASK_PENDING) this.abort()
+		super.markStale(flag)
+	}
+
+	/**
+	 * Start/replace async computation.
+	 *
+	 * This method is called by base `updateIfNeeded()` when this signal is DIRTY.
+	 * It must:
+	 * - synchronously run the callback once to capture dependencies and obtain the Promise
+	 * - keep returning the last committed value while pending
+	 * - commit and propagate ONLY when the Promise resolves
+	 */
+	protected run(): void {
+		if (!this.callback) return
+		if (this.state === TASK_PENDING) return
+
+		// Abort any previous run.
+		this.controller?.abort()
+
+		const controller = new AbortController()
+		this.controller = controller
+
+		const oldValue = this.value
+
+		this.state = TASK_PENDING
+		this.error = undefined
+		// const token = ++this.token
+
+		// Evalute the reactive function body, dynamically capturing any other signals used
+		const prevWatcher = activeWatcher
+		const prevSources = capturedSources
+		const prevCursor = sourceCursor
+
+		activeWatcher = this
+		// biome-ignore lint/suspicious/noExplicitAny: temporarily null
+		capturedSources = null as any // prevent TS from thinking capturedSources is null below
+		sourceCursor = 0
+
+		let promise: Promise<T>
+		try {
+			// 1) Run and clear cleanup functions from WeakMap
+			runCleanups(this)
+
+			// 2) Execute under dependency tracking
+			promise = (this.callback as TaskCallback<T>)(
+				oldValue,
+				controller.signal,
+			)
+
+			// 3) Reconcile sources/watchers
+			this.reconcileLinks(0, capturedSources)
+		} catch (e) {
+			// Synchronous throw from callback: treat as immediate error, keep old committed value.
+			this.state = TASK_ERROR
+			this.controller = undefined
+			this.error = e instanceof Error ? e : new Error(String(e))
+			this.flag = CACHE_CLEAN
+			return
+		} finally {
+			capturedSources = prevSources
+			activeWatcher = prevWatcher
+			sourceCursor = prevCursor
+		}
+
+		promise.then(
+			(next: T) => {
+				if (controller.signal.aborted) return
+
+				this.value = next
+				this.controller = undefined
+				this.state = TASK_IDLE
+				this.error = undefined
+
+				// 4) Pull semantics: dependents update on next read.
+				if (!this.equals(oldValue, this.value)) this.notifyWatchers()
+			},
+			(err: unknown) => {
+				if (controller.signal.aborted) return
+
+				// On error: do not commit value; keep last committed.
+				this.controller = undefined
+				this.state = TASK_ERROR
+				this.error = err instanceof Error ? err : new Error(String(err))
+
+				// Still notify dependents so they can react/throw if they read.
+				this.markStale(CACHE_CHECK)
+
+				this.flag = CACHE_CLEAN
+			},
+		)
 	}
 }
 
@@ -537,6 +670,151 @@ const flush = (): void => {
 		if (effect.dequeue()) effect.get()
 	}
 	pendingEffects.length = 0
+}
+
+/**
+ * Batch multiple updates.
+ *
+ * @param {() => void} fn - Function to execute within the batch.
+ */
+const batch = (fn: () => void): void => {
+	batchDepth++
+	try {
+		fn()
+	} finally {
+		batchDepth--
+		if (batchDepth === 0) flush()
+	}
+}
+
+/**
+ * Set the effect scheduler hook.
+ *
+ * The scheduler is invoked when an effect is queued (i.e. transitions into `EFFECT_QUEUED`).
+ * The default scheduler (`microtaskScheduler`) batches effect execution into a microtask and calls `flush()`.
+ *
+ * @param {() => void} fn - Scheduler function to call when at least one effect is queued.
+ */
+const setEffectScheduler = (fn: () => void = microtaskScheduler): void => {
+	onEffectQueued = fn
+}
+
+/**
+ * Check if the provided value is a State instance
+ *
+ * @since 0.9.0
+ * @param {unknown} value - Value to check
+ * @returns {boolean} - True if the value is a State instance, false otherwise
+ */
+const isState = /*#__PURE__*/ <T extends {}>(
+	value: unknown,
+): value is State<T> =>
+	value instanceof Signal && value[Symbol.toStringTag] === TYPE_STATE
+
+/**
+ * Check if a value is a computed signal
+ *
+ * @since 0.9.0
+ * @param {unknown} value - Value to check
+ * @returns {boolean} - True if value is a computed signal, false otherwise
+ */
+const isComputed = /*#__PURE__*/ <T extends {}>(
+	value: unknown,
+): value is Computed<T> =>
+	value instanceof Signal && value[Symbol.toStringTag] === TYPE_COMPUTED
+
+/**
+ * Check if the provided fn is a sync callback
+ *
+ * @since 0.12.0
+ * @param {unknown} fn - Value to check
+ * @returns {boolean} - True if value is a sync callback, false otherwise
+ */
+const isMemoCallback = /*#__PURE__*/ <T extends {} & { then?: undefined }>(
+	fn: unknown,
+): fn is MemoCallback<T> =>
+	typeof fn === 'function' &&
+	fn.constructor.name !== 'AsyncFunction' &&
+	fn.length < 2
+
+/**
+ * Check if the provided value is an async callback
+ *
+ * @since 0.17.0
+ * @param {unknown} fn - Value to check
+ * @returns {boolean} - True if value is an async callback, false otherwise
+ */
+const isTaskCallback = /*#__PURE__*/ <T extends Awaited<unknown & {}>>(
+	fn: unknown,
+): fn is TaskCallback<T> =>
+	typeof fn === 'function' &&
+	fn.constructor.name === 'AsyncFunction' &&
+	fn.length < 3
+
+/**
+ * Create an effect.
+ *
+ * The callback runs immediately (via the effect queue) and re-runs whenever any of its
+ * tracked dependencies change.
+ *
+ * The callback may return a cleanup function. Cleanup functions are executed:
+ * - before the next re-run of the same effect, and
+ * - when the effect is disposed.
+ *
+ * @since 0.1.0
+ * @param {EffectCallback} fn - Effect callback.
+ * @returns {Disposer} - Dispose function for the effect.
+ */
+const createEffect = /*#__PURE__*/ (fn: EffectCallback): (() => void) => {
+	const effect = new Signal(fn, { effect: true })
+	const dispose = () => effect.dispose()
+	activeScope?.push(dispose)
+	return dispose
+}
+
+/**
+ * Check if a value is an effect
+ *
+ * @since 0.17.4
+ * @param {unknown} value - Value to check
+ * @returns {boolean} - True if value is an effect, false otherwise
+ */
+const isEffect = /*#__PURE__*/ (value: unknown): value is Effect =>
+	value instanceof Signal && value[Symbol.toStringTag] === TYPE_EFFECT
+
+/**
+ * Register a cleanup function for the currently executing computed/effect.
+ *
+ * Cleanup functions are executed:
+ * - before the next re-run of the same computed/effect, and
+ * - when an effect is disposed.
+ *
+ * This must be called from within a reactive execution context (while a computed/effect is running).
+ *
+ * @param {() => void} fn - Cleanup function to register.
+ */
+const onCleanup = (fn: () => void): void => {
+	if (!activeWatcher) {
+		throw new Error('onCleanup must be called within a reactive context')
+	}
+	let cleanups = signalCleanups.get(activeWatcher)
+	if (!cleanups) {
+		cleanups = []
+		signalCleanups.set(activeWatcher, cleanups)
+	}
+	cleanups.push(fn)
+}
+
+/**
+ * Run cleanup functions for the currently executing computed/effect.
+ *
+ * @param {UnknownSignal} signal - Signal to run cleanups for.
+ */
+const runCleanups = (signal: UnknownSignal): void => {
+	const cleanups = signalCleanups.get(signal)
+	if (!cleanups?.length) return
+	for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]()
+	cleanups.length = 0
 }
 
 /**
@@ -588,125 +866,6 @@ const effectScope = /*#__PURE__*/ (fn: () => void): (() => void) => {
 	return dispose
 }
 
-/**
- * Batch multiple updates.
- *
- * @param {() => void} fn - Function to execute within the batch.
- */
-const batch = (fn: () => void): void => {
-	batchDepth++
-	try {
-		fn()
-	} finally {
-		batchDepth--
-		if (batchDepth === 0) flush()
-	}
-}
-
-/**
- * Set the effect scheduler hook.
- *
- * The scheduler is invoked when an effect is queued (i.e. transitions into `EFFECT_QUEUED`).
- * The default scheduler (`enqueue`) batches effect execution into a microtask and calls `flush()`.
- *
- * @param {() => void} fn - Scheduler function to call when at least one effect is queued.
- */
-const setEffectScheduler = (fn: () => void = microtaskScheduler): void => {
-	onEffectQueued = fn
-}
-
-/**
- * Register a cleanup function for the currently executing computed/effect.
- *
- * Cleanup functions are executed:
- * - before the next re-run of the same computed/effect, and
- * - when an effect is disposed.
- *
- * This must be called from within a reactive execution context (while a computed/effect is running).
- *
- * @param {() => void} fn - Cleanup function to register.
- */
-const onCleanup = (fn: () => void): void => {
-	if (!activeWatcher) {
-		throw new Error('onCleanup must be called within a reactive context')
-	}
-	let cleanups = signalCleanups.get(activeWatcher)
-	if (!cleanups) {
-		cleanups = []
-		signalCleanups.set(activeWatcher, cleanups)
-	}
-	cleanups.push(fn)
-}
-
-/**
- * Check if the provided value is a State instance
- *
- * @since 0.9.0
- * @param {unknown} value - Value to check
- * @returns {boolean} - True if the value is a State instance, false otherwise
- */
-const isState = /*#__PURE__*/ <T extends {}>(
-	value: unknown,
-): value is State<T> =>
-	value instanceof Signal && value[Symbol.toStringTag] === TYPE_STATE
-
-/**
- * Check if a value is a computed signal
- *
- * @since 0.9.0
- * @param {unknown} value - Value to check
- * @returns {boolean} - True if value is a computed signal, false otherwise
- */
-const isComputed = /*#__PURE__*/ <T extends {}>(
-	value: unknown,
-): value is Computed<T> =>
-	value instanceof Signal && value[Symbol.toStringTag] === TYPE_COMPUTED
-
-/**
- * Check if the provided fn is a sync callback
- *
- * @since 0.12.0
- * @param {unknown} fn - Value to check
- * @returns {boolean} - True if value is a sync callback, false otherwise
- */
-const isMemoCallback = /*#__PURE__*/ <T extends {} & { then?: undefined }>(
-	fn: unknown,
-): fn is MemoCallback<T> =>
-	typeof fn === 'function' &&
-	fn.constructor.name !== 'AsyncFunction' &&
-	fn.length < 2
-
-/**
- * Create an effect.
- *
- * The callback runs immediately (via the effect queue) and re-runs whenever any of its
- * tracked dependencies change.
- *
- * The callback may return a cleanup function. Cleanup functions are executed:
- * - before the next re-run of the same effect, and
- * - when the effect is disposed.
- *
- * @since 0.1.0
- * @param {EffectCallback} fn - Effect callback.
- * @returns {() => void} - Dispose function for the effect.
- */
-const createEffect = /*#__PURE__*/ (fn: EffectCallback): (() => void) => {
-	const effect = new Signal(fn, true)
-	const dispose = () => effect.dispose()
-	activeScope?.push(dispose)
-	return dispose
-}
-
-/**
- * Check if a value is an effect
- *
- * @since 0.17.4
- * @param {unknown} value - Value to check
- * @returns {boolean} - True if value is an effect, false otherwise
- */
-const isEffect = /*#__PURE__*/ (value: unknown): value is Effect =>
-	value instanceof Signal && value[Symbol.toStringTag] === TYPE_EFFECT
-
 export {
 	type UnknownSignal,
 	type MemoCallback,
@@ -720,7 +879,16 @@ export {
 	CACHE_CLEAN,
 	CACHE_CHECK,
 	CACHE_DIRTY,
+	EFFECT_NONE,
+	EFFECT_DISPOSED,
+	EFFECT_READY,
+	EFFECT_QUEUED,
+	TASK_IDLE,
+	TASK_PENDING,
+	TASK_ABORTED,
+	TASK_ERROR,
 	Signal,
+	Task,
 	untrack,
 	flush,
 	batch,
@@ -729,8 +897,9 @@ export {
 	isState,
 	isComputed,
 	isMemoCallback,
+	isTaskCallback,
 	createEffect,
+	isEffect,
 	createScope,
 	effectScope,
-	isEffect,
 }

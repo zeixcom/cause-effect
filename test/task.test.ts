@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { batch, flush, Signal } from '../src/classes/signal'
-import { Task } from '../src/classes/task'
+import { batch, flush, Signal, Task } from '../src/classes/signal'
 
 const tick = async (): Promise<void> => {
 	// Allow pending promise continuations to run.
@@ -30,13 +29,16 @@ describe('Task (async signal)', () => {
 	test('pending is true while awaiting; value stays at last committed until settle', async () => {
 		const s = new Signal(1)
 
-		const task = new Task<number>(async (_old, abort) => {
-			// Capture dependency
-			const v = s.get()
-			await tick()
-			if (abort.aborted) throw new Error('aborted')
-			return v * 2
-		}, 0)
+		const task = new Task(
+			async (_old, abort) => {
+				// Capture dependency
+				const v = s.get()
+				await tick()
+				if (abort.aborted) throw new Error('aborted')
+				return v * 2
+			},
+			{ initialValue: 0 },
+		)
 
 		// First read starts the async run and returns initial committed value.
 		expect(task.get()).toBe(0)
@@ -54,47 +56,40 @@ describe('Task (async signal)', () => {
 	})
 
 	test('commit propagates to dependents only after settle', async () => {
-		const s = new Signal(2)
-		let resolve!: (v: number) => void
+		let shouldResolve = false
 
-		// (was used during development; keep the resolver only)
-		new Task<number>(
-			async (_old, _abort) =>
-				new Promise<number>(r => {
-					resolve = r
-				}),
-			0,
+		// Simple task that doesn't depend on anything, just waits
+		const task = new Task<number>(
+			async (_old, abort) => {
+				// Wait until we explicitly allow resolution
+				while (!shouldResolve) {
+					if (abort.aborted) throw new Error('aborted')
+					await tick()
+				}
+				return 42
+			},
+			{ initialValue: 0 },
 		)
 
-		// Ensure the task captures dependency during run
-		// (the callback will read s.get() synchronously before returning promise)
-		// We'll do that by wrapping callback: on initial read, capture s and then await external resolve.
-		const task2 = new Task<number>(async (_old, abort) => {
-			const v = s.get()
-			await new Promise<void>(r => {
-				// reuse resolve channel by coercion
-				resolve = (_n: number) => r()
-			})
-			if (abort.aborted) throw new Error('aborted')
-			return v
-		}, 0)
+		// Derived signal that depends on task
+		const derived = new Signal<number>((_old: number) => task.get() + 100)
 
-		const derived = new Signal<number>((_old: number) => task2.get() + 1)
+		// Initial read: task starts running but is pending, returns initial committed value
+		expect(derived.get()).toBe(100) // 0 + 100
+		expect(task.pending).toBe(true)
 
-		// Start task; derived reads old committed value.
-		expect(derived.get()).toBe(1)
-		expect(task2.pending).toBe(true)
+		// While task is pending, dependent still sees old committed value
+		expect(derived.get()).toBe(100)
+		expect(task.pending).toBe(true)
 
-		// Change source while task pending should not immediately change derived.
-		s.set(5)
-		expect(derived.get()).toBe(1)
+		// Now allow the task to resolve
+		shouldResolve = true
+		await waitFor(() => !task.pending)
 
-		// Resolve task and flush; now derived should update.
-		resolve(0)
-		await tick()
-		flush()
-		expect(task2.pending).toBe(false)
-		expect(derived.get()).toBe(6)
+		// After settle, task has committed new value and dependent sees it
+		expect(task.pending).toBe(false)
+		expect(task.get()).toBe(42)
+		expect(derived.get()).toBe(142) // 42 + 100
 	})
 
 	test('abort/restart: dependency change while pending aborts in-flight and next get starts a new run', async () => {
@@ -103,16 +98,19 @@ describe('Task (async signal)', () => {
 		let started = 0
 		let aborted = 0
 
-		const task = new Task<number>(async (_old, abort) => {
-			started++
-			const v = s.get()
-			await tick()
-			if (abort.aborted) {
-				aborted++
-				throw new Error('aborted')
-			}
-			return v
-		}, 0)
+		const task = new Task(
+			async (_old, abort) => {
+				started++
+				const v = s.get()
+				await tick()
+				if (abort.aborted) {
+					aborted++
+					throw new Error('aborted')
+				}
+				return v
+			},
+			{ initialValue: 0 },
+		)
 
 		// Start run #1
 		expect(task.get()).toBe(0)
@@ -140,13 +138,16 @@ describe('Task (async signal)', () => {
 
 		let shouldFail = true
 
-		const task = new Task<number>(async (_old, abort) => {
-			const v = s.get()
-			await tick()
-			if (abort.aborted) throw new Error('aborted')
-			if (shouldFail) throw new Error('boom')
-			return v * 10
-		}, 7)
+		const task = new Task(
+			async (_old, abort) => {
+				const v = s.get()
+				await tick()
+				if (abort.aborted) throw new Error('aborted')
+				if (shouldFail) throw new Error('boom')
+				return v * 10
+			},
+			{ initialValue: 7 },
+		)
 
 		// Start run; still returns committed value
 		expect(task.get()).toBe(7)
@@ -172,12 +173,15 @@ describe('Task (async signal)', () => {
 	test('dispose aborts and detaches from graph (no further updates)', async () => {
 		const s = new Signal(1)
 
-		const task = new Task<number>(async (_old, abort) => {
-			const v = s.get()
-			await tick()
-			if (abort.aborted) throw new Error('aborted')
-			return v
-		}, 0)
+		const task = new Task(
+			async (_old, abort) => {
+				const v = s.get()
+				await tick()
+				if (abort.aborted) throw new Error('aborted')
+				return v
+			},
+			{ initialValue: 0 },
+		)
 
 		// Start it
 		task.get()
