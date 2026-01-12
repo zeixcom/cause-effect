@@ -1,4 +1,4 @@
-import type { FrameworkInfo, TestConfig } from './framework-types'
+import type { FrameworkInfo, TestConfig } from './frameworkTypes'
 
 export interface TestResult {
 	sum: number
@@ -7,10 +7,6 @@ export interface TestResult {
 
 export interface TimingResult<T> {
 	result: T
-	timing: TestTiming
-}
-
-export interface TestTiming {
 	time: number
 }
 
@@ -29,11 +25,7 @@ export function verifyBenchResult(
 			`sum ${framework.name} ${config.name} result:${result.sum} expected:${expected.sum}`,
 		)
 	}
-	if (
-		expected.count &&
-		(config.readFraction === 1 || testPullCounts) &&
-		testPullCounts !== false
-	) {
+	if (expected.count && (config.readFraction === 1 || testPullCounts)) {
 		console.assert(
 			result.count === expected.count,
 			`count ${framework.name} ${config.name} result:${result.count} expected:${expected.count}`,

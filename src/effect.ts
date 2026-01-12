@@ -76,8 +76,8 @@ const createEffect = (callback: EffectCallback): Cleanup => {
 			running = false
 		},
 	)
+	watcher.run()
 
-	watcher()
 	return () => {
 		controller?.abort()
 		try {

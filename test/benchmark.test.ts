@@ -1,7 +1,9 @@
 import { describe, expect, mock, test } from 'bun:test'
-import { batch, createEffect, Memo, State } from '../index.ts'
-import { Counter, makeGraph, runGraph } from './util/dependency-graph'
-import type { Computed, ReactiveFramework } from './util/reactive-framework'
+import { batch, createEffect, createScope, Signal } from '../src/classes/signal'
+import { Counter } from './util/counter'
+import { makeGraph, runGraph } from './util/dependencyGraph'
+import type { TestConfig } from './util/frameworkTypes'
+import type { Computed, ReactiveFramework } from './util/reactiveFramework'
 
 /* === Utility Functions === */
 
@@ -12,36 +14,163 @@ const busy = () => {
 	}
 }
 
-const framework = {
+const cleanups = new Set<() => void>()
+let currentScope: ReturnType<typeof createScope> | null = null
+
+export const framework: ReactiveFramework = {
 	name: 'Cause & Effect',
+	// @ts-expect-error ReactiveFramework doesn't have non-nullable signals
 	signal: <T extends {}>(initialValue: T) => {
-		const s = new State<T>(initialValue)
+		const s = new Signal(initialValue)
 		return {
-			write: (v: T) => s.set(v),
+			// biome-ignore lint/suspicious/noExplicitAny: we suport updater functions in .set()
+			write: v => s.set(v as any),
 			read: () => s.get(),
 		}
 	},
+	// @ts-expect-error ReactiveFramework doesn't have non-nullable signals
 	computed: <T extends {}>(fn: () => T) => {
-		const c = new Memo(fn)
+		const c = new Signal<T>((_old: T) => fn())
 		return {
 			read: () => c.get(),
 		}
 	},
-	effect: (fn: () => undefined) => createEffect(fn),
-	withBatch: (fn: () => undefined) => batch(fn),
-	withBuild: <T>(fn: () => T) => fn(),
+	effect: fn => {
+		// biome-ignore lint/suspicious/noExplicitAny: we support returning a disposer
+		const dispose = createEffect(fn as any)
+		if (!currentScope) cleanups.add(dispose)
+	},
+	withBatch: fn => batch(fn),
+	withBuild: fn => {
+		const scope = createScope()
+		const prevScope = currentScope
+		currentScope = scope
+		try {
+			const result = scope.run(fn)
+			cleanups.add(() => scope.dispose())
+			return result
+		} finally {
+			currentScope = prevScope
+		}
+	},
+	cleanup: () => {
+		for (const dispose of cleanups) dispose()
+		cleanups.clear()
+	},
 }
+
 const testPullCounts = true
 
-function makeConfig() {
+function makeConfigs(): Record<string, TestConfig> {
 	return {
-		width: 3,
-		totalLayers: 3,
-		staticFraction: 1,
-		nSources: 2,
-		readFraction: 1,
-		expected: {},
-		iterations: 1,
+		'static graph': {
+			width: 3,
+			totalLayers: 3,
+			staticFraction: 1,
+			nSources: 2,
+			readFraction: 1,
+			iterations: 2,
+			expected: {
+				sum: 16,
+				count: 11,
+			},
+		},
+		'static graph, read 2/3 of leaves': {
+			width: 3,
+			totalLayers: 3,
+			staticFraction: 1,
+			nSources: 2,
+			readFraction: 2 / 3,
+			iterations: 10,
+			expected: {
+				sum: 72,
+				count: 41,
+			},
+		},
+		'dynamic graph': {
+			width: 4,
+			totalLayers: 2,
+			staticFraction: 0.5,
+			nSources: 2,
+			readFraction: 1,
+			iterations: 10,
+			expected: {
+				sum: 72,
+				count: 22,
+			},
+		},
+		'600000 iterations': {
+			width: 10, // can't change for decorator tests
+			staticFraction: 1, // can't change for decorator tests
+			nSources: 2, // can't change for decorator tests
+			totalLayers: 5,
+			readFraction: 0.2,
+			iterations: 600000,
+			expected: {
+				sum: 19199968,
+				count: 3480019,
+			},
+		},
+		'dynamic graph, read 3/4 of leaves': {
+			width: 10,
+			totalLayers: 10,
+			staticFraction: 3 / 4,
+			nSources: 6,
+			readFraction: 0.2,
+			iterations: 15000,
+			expected: {
+				sum: 302310782860,
+				count: 1155004,
+			},
+		},
+		'width 1000': {
+			width: 1000,
+			totalLayers: 12,
+			staticFraction: 0.95,
+			nSources: 4,
+			readFraction: 1,
+			iterations: 7000,
+			expected: {
+				sum: 29355933696000,
+				count: 1473791,
+			},
+		},
+		'25 sources': {
+			width: 1000,
+			totalLayers: 5,
+			staticFraction: 1,
+			nSources: 25,
+			readFraction: 1,
+			iterations: 3000,
+			expected: {
+				sum: 1171484375000,
+				count: 735756,
+			},
+		},
+		'500 layers deep': {
+			width: 5,
+			totalLayers: 500,
+			staticFraction: 1,
+			nSources: 3,
+			readFraction: 1,
+			iterations: 500,
+			expected: {
+				sum: 3.0239642676898464e241,
+				count: 1246502,
+			},
+		},
+		'100 x 15, read 1/2 of leaves': {
+			width: 100,
+			totalLayers: 15,
+			staticFraction: 0.5,
+			nSources: 6,
+			readFraction: 1,
+			iterations: 2000,
+			expected: {
+				sum: 15664996402790400,
+				count: 1078673, // 1078849,
+			},
+		},
 	}
 }
 
@@ -52,83 +181,28 @@ function makeConfig() {
  */
 describe('Basic test', () => {
 	const name = framework.name
-	test(`${name} | simple dependency executes`, () => {
-		framework.withBuild(() => {
-			const s = framework.signal(2)
-			const c = framework.computed(() => s.read() * 2)
+	test(`${framework.name} | simple dependency executes`, () => {
+		const s = framework.signal(2)
+		const c = framework.computed(() => s.read() * 2)
 
-			expect(c.read()).toEqual(4)
-		})
+		expect(c.read()).toEqual(4)
 	})
 
-	test(`${name} | simple write`, () => {
-		framework.withBuild(() => {
-			const s = framework.signal(2)
-			const c = framework.computed(() => s.read() * 2)
-			expect(s.read()).toEqual(2)
-			expect(c.read()).toEqual(4)
-
-			s.write(3)
-			expect(s.read()).toEqual(3)
-			expect(c.read()).toEqual(6)
-		})
-	})
-
-	test(`${name} | static graph`, () => {
-		const config = makeConfig()
-		const counter = new Counter()
-		// @ts-expect-error - Framework object has incompatible type constraints with ReactiveFramework
-		const graph = makeGraph(framework, config, counter)
-		// @ts-expect-error - Framework object has incompatible type constraints with ReactiveFramework
-		const sum = runGraph(graph, 2, 1, framework)
-		expect(sum).toEqual(16)
-		if (testPullCounts) {
-			expect(counter.count).toEqual(11)
-		} else {
-			expect(counter.count).toBeGreaterThanOrEqual(11)
-		}
-	})
-
-	test(`${name} | static graph, read 2/3 of leaves`, () => {
-		framework.withBuild(() => {
-			const config = makeConfig()
-			config.readFraction = 2 / 3
-			config.iterations = 10
-			const counter = new Counter()
-			// @ts-expect-error - Framework object has incompatible type constraints with ReactiveFramework
-			const graph = makeGraph(framework, config, counter)
-			// @ts-expect-error - Framework object has incompatible type constraints with ReactiveFramework
-			const sum = runGraph(graph, 10, 2 / 3, framework)
-
-			expect(sum).toEqual(71)
-			if (testPullCounts) {
-				expect(counter.count).toEqual(41)
-			} else {
-				expect(counter.count).toBeGreaterThanOrEqual(41)
+	const configs = makeConfigs()
+	for (const [testName, config] of Object.entries(configs)) {
+		test(`${framework.name} | ${testName}`, () => {
+			const { graph, counter } = makeGraph(
+				framework,
+				config.readFraction,
+				config,
+			)
+			const sum = runGraph(graph, config.iterations, framework)
+			if (config.expected.sum) expect(sum).toEqual(config.expected.sum)
+			if (testPullCounts && config.expected.count) {
+				expect(counter.count).toEqual(config.expected.count)
 			}
 		})
-	})
-
-	test(`${name} | dynamic graph`, () => {
-		framework.withBuild(() => {
-			const config = makeConfig()
-			config.staticFraction = 0.5
-			config.width = 4
-			config.totalLayers = 2
-			const counter = new Counter()
-			// @ts-expect-error - Framework object has incompatible type constraints with ReactiveFramework
-			const graph = makeGraph(framework, config, counter)
-			// @ts-expect-error - Framework object has incompatible type constraints with ReactiveFramework
-			const sum = runGraph(graph, 10, 1, framework)
-
-			expect(sum).toEqual(72)
-			if (testPullCounts) {
-				expect(counter.count).toEqual(22)
-			} else {
-				expect(counter.count).toBeGreaterThanOrEqual(22)
-			}
-		})
-	})
+	}
 
 	test(`${name} | withBuild`, () => {
 		const r = framework.withBuild(() => {

@@ -46,17 +46,23 @@ const UNSET: any = Symbol()
  *
  * A watcher combines push and pull reaction functions with onCleanup and stop methods
  *
- * @since 0.17.3
- * @param {() => void} push - Function to be called when the state changes (push)
+ * @since 0.17.4
  * @param {() => void} pull - Function to be called on demand from consumers (pull)
+ * @param {() => void} push - Function to be called when the state changes (push)
  * @returns {Watcher} - Watcher object with off and cleanup methods
  */
-const createWatcher = (push: () => void, pull: () => void): Watcher => {
+const createWatcher = (pull: () => void, push?: () => void): Watcher => {
 	const cleanups = new Set<Cleanup>()
-	const watcher = push as Partial<Watcher>
+	const watcher = (
+		push
+			? push
+			: () => {
+					watcher.run()
+				}
+	) as Watcher
 	watcher.run = () => {
 		const prev = activeWatcher
-		activeWatcher = watcher as Watcher
+		activeWatcher = watcher
 		try {
 			pull()
 		} finally {
@@ -73,7 +79,7 @@ const createWatcher = (push: () => void, pull: () => void): Watcher => {
 			cleanups.clear()
 		}
 	}
-	return watcher as Watcher
+	return watcher
 }
 
 /**
