@@ -29,6 +29,7 @@ export {
 	isList,
 	type KeyConfig,
 	List,
+	type ListOptions,
 	TYPE_LIST,
 } from './src/classes/list'
 export { isRef, Ref, TYPE_REF } from './src/classes/ref'

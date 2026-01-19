@@ -1,10 +1,17 @@
-import { Random } from 'random'
-import type { TestConfig } from './framework-types'
-import type { Computed, ReactiveFramework, Signal } from './reactive-framework'
+import { Counter } from './counter'
+import type { TestConfig } from './frameworkTypes'
+import { pseudoRandom } from './pseudoRandom'
+import type { Computed, ReactiveFramework, Signal } from './reactiveFramework'
 
 export interface Graph {
 	sources: Signal<number>[]
 	layers: Computed<number>[][]
+	readLeaves: Computed<number>[]
+}
+
+export interface GraphAndCounter {
+	graph: Graph
+	counter: Counter
 }
 
 /**
@@ -18,15 +25,16 @@ export interface Graph {
  */
 export function makeGraph(
 	framework: ReactiveFramework,
+	readFraction: number,
 	config: TestConfig,
-	counter: Counter,
-): Graph {
+): GraphAndCounter {
 	const { width, totalLayers, staticFraction, nSources } = config
 
 	return framework.withBuild(() => {
 		const sources = new Array(width)
 			.fill(0)
 			.map((_, i) => framework.signal(i))
+		const counter = new Counter()
 		const rows = makeDependentRows(
 			sources,
 			totalLayers - 1,
@@ -35,8 +43,19 @@ export function makeGraph(
 			nSources,
 			framework,
 		)
-		const graph = { sources, layers: rows }
-		return graph
+
+		const rand = pseudoRandom()
+		const leaves = rows[rows.length - 1]
+		const skipCount = Math.round(leaves.length * (1 - readFraction))
+		const readLeaves = removeElems(leaves, skipCount, rand)
+		framework.effect(() => {
+			for (const leaf of readLeaves) {
+				leaf.read()
+			}
+		})
+
+		const graph = { sources, layers: rows, readLeaves }
+		return { graph, counter }
 	})
 }
 
@@ -48,70 +67,31 @@ export function makeGraph(
 export function runGraph(
 	graph: Graph,
 	iterations: number,
-	readFraction: number,
 	framework: ReactiveFramework,
 ): number {
-	const rand = new Random('seed')
-	const { sources, layers } = graph
-	const leaves = layers[layers.length - 1]
-	const skipCount = Math.round(leaves.length * (1 - readFraction))
-	const readLeaves = removeElems(leaves, skipCount, rand)
-	const frameworkName = framework.name.toLowerCase()
-	// const start = Date.now();
-	let sum = 0
+	const { sources, readLeaves } = graph
 
-	if (frameworkName === 's-js' || frameworkName === 'solidjs') {
-		// [S.js freeze](https://github.com/adamhaile/S#sdatavalue) doesn't allow different values to be set during a single batch, so special case it.
-		for (let i = 0; i < iterations; i++) {
-			framework.withBatch(() => {
-				const sourceDex = i % sources.length
-				sources[sourceDex].write(i + sourceDex)
-			})
-
-			for (const leaf of readLeaves) {
-				leaf.read()
-			}
-		}
-
-		sum = readLeaves.reduce((total, leaf) => leaf.read() + total, 0)
-	} else {
+	for (let i = 0; i < iterations; i++) {
 		framework.withBatch(() => {
-			for (let i = 0; i < iterations; i++) {
-				// Useful for debugging edge cases for some frameworks that experience
-				// dramatic slow downs for certain test configurations. These are generally
-				// due to `computed` effects not being cached efficiently, and as the number
-				// of layers increases, the uncached `computed` effects are re-evaluated in
-				// an `O(n^2)` manner where `n` is the number of layers.
-				/* if (i % 100 === 0) {
-           console.log("iteration:", i, "delta:", Date.now() - start);
-        } */
-
-				const sourceDex = i % sources.length
-				sources[sourceDex].write(i + sourceDex)
-
-				for (const leaf of readLeaves) {
-					leaf.read()
-				}
-			}
-
-			sum = readLeaves.reduce((total, leaf) => leaf.read() + total, 0)
+			const sourceDex = i % sources.length
+			sources[sourceDex].write(i + sourceDex)
 		})
+		for (const leaf of readLeaves) {
+			leaf.read()
+		}
 	}
 
+	const sum = readLeaves.reduce((total, leaf) => leaf.read() + total, 0)
 	return sum
 }
 
-function removeElems<T>(src: T[], rmCount: number, rand: Random): T[] {
+function removeElems<T>(src: T[], rmCount: number, rand: () => number): T[] {
 	const copy = src.slice()
 	for (let i = 0; i < rmCount; i++) {
-		const rmDex = rand.int(0, copy.length - 1)
+		const rmDex = Math.floor(rand() * copy.length)
 		copy.splice(rmDex, 1)
 	}
 	return copy
-}
-
-export class Counter {
-	count = 0
 }
 
 function makeDependentRows(
@@ -123,8 +103,8 @@ function makeDependentRows(
 	framework: ReactiveFramework,
 ): Computed<number>[][] {
 	let prevRow = sources
-	const rand = new Random('seed')
-	const rows: Computed<number>[][] = []
+	const random = pseudoRandom()
+	const rows = []
 	for (let l = 0; l < numRows; l++) {
 		const row = makeRow(
 			prevRow,
@@ -133,7 +113,7 @@ function makeDependentRows(
 			nSources,
 			framework,
 			l,
-			rand,
+			random,
 		)
 		rows.push(row)
 		prevRow = row
@@ -148,7 +128,7 @@ function makeRow(
 	nSources: number,
 	framework: ReactiveFramework,
 	_layer: number,
-	random: Random,
+	random: () => number,
 ): Computed<number>[] {
 	return sources.map((_, myDex) => {
 		const mySources: Computed<number>[] = []
@@ -156,7 +136,7 @@ function makeRow(
 			mySources.push(sources[(myDex + sourceDex) % sources.length])
 		}
 
-		const staticNode = random.float() < staticFraction
+		const staticNode = random() < staticFraction
 		if (staticNode) {
 			// static node, always reference sources
 			return framework.computed(() => {
