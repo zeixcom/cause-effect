@@ -46,6 +46,10 @@ type TaskCallback<T extends {}> = (
 	abort: AbortSignal,
 ) => Promise<T>
 
+type ComputedCallback<T extends Awaited<unknown & {}>> =
+	| MemoCallback<T>
+	| TaskCallback<T>
+
 type Disposer = () => void
 
 /**
@@ -58,7 +62,7 @@ type Disposer = () => void
 // biome-ignore lint/suspicious/noConfusingVoidType: optional dispose function
 type EffectCallback = () => Disposer | void
 
-export type Scope = {
+type Scope = {
 	/**
 	 * Run a function within this scope.
 	 *
@@ -179,9 +183,11 @@ let batchDepth = 0
  * @param {SignalOptions<T>} options - Optional configuration.
  */
 class Signal<T extends {}> {
-	protected value: T
+	protected value: T = undefined as unknown as T
 	protected callback?: MemoCallback<T> | TaskCallback<T>
 	protected equals = (a: T, b: T) => a === b
+	protected type: string
+	protected guard: Guard<T> | undefined
 
 	protected flag: CacheFlag
 	protected effect: EffectStatus = EFFECT_NONE
@@ -194,30 +200,41 @@ class Signal<T extends {}> {
 	) {
 		if (typeof fnOrValue === 'function') {
 			this.callback = fnOrValue as MemoCallback<T> | TaskCallback<T>
-			// biome-ignore lint/suspicious/noExplicitAny: maybe temporarily undefined
-			this.value = options?.initialValue as any
+
+			if (options?.initialValue) {
+				validateSignalValue(
+					TYPE_COMPUTED,
+					options.initialValue,
+					options?.guard,
+				)
+				this.value = options.initialValue
+			}
 			this.flag = CACHE_DIRTY
+
 			if (options?.effect) {
+				this.type = TYPE_EFFECT
 				this.effect = EFFECT_QUEUED
 				pendingEffects.push(this)
 				onEffectQueued?.(this as unknown as Effect)
+			} else {
+				this.type = TYPE_COMPUTED
 			}
 		} else {
+			validateSignalValue(TYPE_STATE, fnOrValue, options?.guard)
+			this.type = TYPE_STATE
 			this.callback = undefined
 			this.value = fnOrValue
 			this.flag = CACHE_CLEAN
 		}
+		if (options?.equals) this.equals = options?.equals
+		this.guard = options?.guard
 	}
 
 	/**
 	 * Get the type of signal as a string tag.
 	 */
 	get [Symbol.toStringTag](): string {
-		return this.effect
-			? TYPE_EFFECT
-			: this.callback
-				? TYPE_COMPUTED
-				: TYPE_STATE
+		return this.type
 	}
 
 	/**
@@ -256,6 +273,7 @@ class Signal<T extends {}> {
 				this.markStale(CACHE_DIRTY)
 			}
 		} else {
+			validateSignalValue(TYPE_STATE, fnOrValue, this.guard)
 			if (this.callback) {
 				this.unlinkSourcesFrom(0)
 				this.sources = null
@@ -630,6 +648,33 @@ class Task<T extends {}> extends Signal<T> {
 	}
 }
 
+/**
+ * Create an error for nullish signal values.
+ *
+ * @param {string} where - The location where the error occurred.
+ * @returns {NullishSignalValueError} The error instance.
+ */
+class NullishSignalValueError extends TypeError {
+	constructor(where: string) {
+		super(`Nullish signal values are not allowed in ${where}`)
+		this.name = 'NullishSignalValueError'
+	}
+}
+
+/**
+ * Create an error for invalid signal values.
+ *
+ * @param {string} where - The location where the error occurred.
+ * @param {unknown} value - The invalid value.
+ * @returns {InvalidSignalValueError} The error instance.
+ */
+class InvalidSignalValueError extends TypeError {
+	constructor(where: string, value: unknown) {
+		super(`Invalid signal value ${valueString(value)} in ${where}`)
+		this.name = 'InvalidSignalValueError'
+	}
+}
+
 /* === Functions === */
 
 /**
@@ -866,13 +911,49 @@ const effectScope = /*#__PURE__*/ (fn: () => void): (() => void) => {
 	return dispose
 }
 
+/**
+ * Return a stringified representation of a value.
+ *
+ * @param {unknown} value - The value to stringify.
+ * @returns {string} - The stringified value.
+ */
+const valueString = /*#__PURE__*/ (value: unknown): string =>
+	typeof value === 'string'
+		? `"${value}"`
+		: !!value && typeof value === 'object'
+			? JSON.stringify(value)
+			: String(value)
+
+/**
+ * Validate a signal value.
+ *
+ * @param {string} where - The location where the validation is performed.
+ * @param {unknown} value - The value to validate.
+ * @param {(value: unknown) => boolean} guard - The validation function.
+ */
+const validateSignalValue = /*#__PURE__*/ (
+	where: string,
+	value: unknown,
+	guard: (value: unknown) => boolean = () =>
+		!(typeof value === 'symbol') || typeof value === 'function',
+): void => {
+	if (value == null) throw new NullishSignalValueError(where)
+	if (!guard(value)) throw new InvalidSignalValueError(where, value)
+}
+
 export {
 	type UnknownSignal,
 	type MemoCallback,
 	type TaskCallback,
+	type ComputedCallback,
+	type EffectCallback,
 	type CacheFlag,
 	type CacheStale,
 	type State,
+	type Computed,
+	type Effect,
+	type Scope,
+	type Guard,
 	TYPE_STATE,
 	TYPE_COMPUTED,
 	TYPE_EFFECT,
