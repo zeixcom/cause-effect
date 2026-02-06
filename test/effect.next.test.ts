@@ -405,7 +405,7 @@ describe('Effect - Race Conditions and Consistency', () => {
 
 		// Wait for computation to complete
 		await wait(50)
-		finalValue = comp.get()!
+		finalValue = comp.get()
 
 		// The abort listener allows immediate retry, so we should get the latest value
 		expect(finalValue).toBe(10) // 5 * 2

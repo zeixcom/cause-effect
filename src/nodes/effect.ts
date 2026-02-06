@@ -100,11 +100,12 @@ const match = <T extends Signal<unknown & {}>[]>(
 			if (value == null) pending = true
 			else values[i] = value
 		} catch (e) {
-			;(errors ??= []).push(e instanceof Error ? e : new Error(String(e)))
+			if (!errors) errors = []
+			errors.push(e instanceof Error ? e : new Error(String(e)))
 		}
 	}
 
-	let out
+	let out: MaybePromise<MaybeCleanup>
 	try {
 		if (pending) out = nil?.()
 		else if (errors) out = err(errors)
