@@ -1,6 +1,13 @@
 import { type Cleanup } from '../graph';
 import { type Collection } from './collection';
 import { type State } from './state';
+type UnknownRecord = Record<string, unknown>;
+type DiffResult = {
+    changed: boolean;
+    add: UnknownRecord;
+    change: UnknownRecord;
+    remove: UnknownRecord;
+};
 type KeyConfig<T> = string | ((item: T) => string);
 type ListOptions<T extends {}> = {
     keyConfig?: KeyConfig<T>;
@@ -27,6 +34,25 @@ type List<T extends {}> = {
     deriveCollection<R extends {}>(callback: (sourceValue: T, abort: AbortSignal) => Promise<R>): Collection<R>;
 };
 declare const TYPE_LIST: "List";
+/**
+ * Checks if two values are equal with cycle detection
+ *
+ * @since 0.15.0
+ * @param {T} a - First value to compare
+ * @param {T} b - Second value to compare
+ * @param {WeakSet<object>} visited - Set to track visited objects for cycle detection
+ * @returns {boolean} Whether the two values are equal
+ */
+declare const isEqual: <T>(a: T, b: T, visited?: WeakSet<object>) => boolean;
+/**
+ * Compares two records and returns a result object containing the differences.
+ *
+ * @since 0.15.0
+ * @param {T} oldObj - The old record to compare
+ * @param {T} newObj - The new record to compare
+ * @returns {DiffResult} The result of the comparison
+ */
+declare const diff: <T extends UnknownRecord>(oldObj: T, newObj: T) => DiffResult;
 declare const createList: <T extends {}>(initialValue: T[], options?: ListOptions<T>) => List<T>;
 declare const isList: <T extends {}>(value: unknown) => value is List<T>;
-export { createList, isList, TYPE_LIST, type KeyConfig, type List, type ListOptions, };
+export { type DiffResult, type KeyConfig, type List, type ListOptions, type UnknownRecord, createList, diff, isEqual, isList, TYPE_LIST, };

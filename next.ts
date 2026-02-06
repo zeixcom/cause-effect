@@ -5,34 +5,6 @@
  */
 
 /* export {
-	type ArrayToRecord,
-	isList,
-	type KeyConfig,
-	List,
-	TYPE_LIST,
-} from './src/classes/list' */
-// export { isRef, Ref, TYPE_REF } from './src/classes/ref'
-// export { isState, State, TYPE_STATE } from './src/classes/state'
-/* export {
-	BaseStore,
-	createStore,
-	isStore,
-	type Store,
-	TYPE_STORE,
-} from './src/classes/store' */
-/* export {
-	type DiffResult,
-	diff,
-	isEqual,
-	type UnknownArray,
-	type UnknownRecord,
-} from './src/diff' */
-/* export {
-	createEffect,
-	type EffectCallback,
-	type MaybeCleanup,
-} from './src/effect' */
-/* export {
 	CircularDependencyError,
 	createError,
 	// DuplicateKeyError,
@@ -46,19 +18,6 @@
 	validateCallback,
 	validateSignalValue,
 } from './src/errors' */
-/* export {
-	batch,
-	type Cleanup,
-	createWatcher,
-	flush,
-	notifyOf,
-	type SignalOptions,
-	subscribeTo,
-	track,
-	UNSET,
-	untrack,
-	type Watcher,
-} from './src/system' */
 export {
 	batch,
 	type Cleanup,
@@ -71,33 +30,30 @@ export {
 	type SignalOptions,
 	type TaskCallback,
 } from './src/graph'
-// export { type MatchHandlers, match } from './src/match'
 export {
-	createEffect,
-	match,
-	type MatchHandlers,
-	type MaybePromise,
-} from './src/nodes/effect'
-/* export {
 	type Collection,
 	type CollectionCallback,
 	type CollectionSource,
-	DerivedCollection,
+	createCollection,
 	isCollection,
-	TYPE_COLLECTION,
-} from './src/classes/collection' */
-/* export {
-	type Computed,
-	createComputed,
-	isComputed,
-	isMemoCallback,
-	isTaskCallback,
-	Memo,
-	type MemoCallback,
-	Task,
-	type TaskCallback,
-	TYPE_COMPUTED,
-} from './src/classes/computed' */
+} from './src/nodes/collection'
+export {
+	createEffect,
+	type MatchHandlers,
+	type MaybePromise,
+	match,
+} from './src/nodes/effect'
+export {
+	createList,
+	type DiffResult,
+	diff,
+	isEqual,
+	isList,
+	type KeyConfig,
+	type List,
+	type ListOptions,
+	type UnknownRecord,
+} from './src/nodes/list'
 export { createMemo, isMemo, type Memo } from './src/nodes/memo'
 export { createRef, type RefCallback } from './src/nodes/ref'
 export { createSensor, type SensorCallback } from './src/nodes/sensor'
@@ -107,28 +63,13 @@ export {
 	type State,
 	type UpdateCallback,
 } from './src/nodes/state'
-export { createTask, isTask, type Task } from './src/nodes/task'
-export {
-	createList,
-	isList,
-	type KeyConfig,
-	type List,
-	type ListOptions,
-} from './src/nodes/list'
 export {
 	createStore,
 	isStore,
 	type Store,
 	type StoreOptions,
 } from './src/nodes/store'
-export {
-	createCollection,
-	isCollection,
-	type Collection,
-	type CollectionCallback,
-	type CollectionSource,
-} from './src/nodes/collection'
-// export { type ResolveResult, resolve } from './src/resolve'
+export { createTask, isTask, type Task } from './src/nodes/task'
 /* export {
 	createSignal,
 	isMutableSignal,

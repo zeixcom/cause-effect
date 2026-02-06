@@ -319,73 +319,6 @@ class InvalidCallbackError extends TypeError {
     this.name = "InvalidCallbackError";
   }
 }
-// src/nodes/effect.ts
-var createEffect = (fn) => {
-  validateCallback("Effect", fn);
-  const node = {
-    fn,
-    flags: FLAG_DIRTY,
-    sources: null,
-    sourcesTail: null,
-    cleanup: null
-  };
-  const dispose = () => {
-    runCleanup(node);
-    node.fn = undefined;
-    node.flags = FLAG_CLEAN;
-    node.sourcesTail = null;
-    trimSources(node);
-  };
-  if (activeOwner)
-    registerCleanup(activeOwner, dispose);
-  runEffect(node);
-  return dispose;
-};
-var match = (signals, handlers) => {
-  if (!activeOwner)
-    throw new Error("match() must be called inside an effect");
-  const owner = activeOwner;
-  const { ok, err = console.error, nil } = handlers;
-  let errors;
-  let pending = false;
-  const values = new Array(signals.length);
-  for (let i = 0;i < signals.length; i++) {
-    try {
-      const value = signals[i].get();
-      if (value == null)
-        pending = true;
-      else
-        values[i] = value;
-    } catch (e) {
-      if (!errors)
-        errors = [];
-      errors.push(e instanceof Error ? e : new Error(String(e)));
-    }
-  }
-  let out;
-  try {
-    if (pending)
-      out = nil?.();
-    else if (errors)
-      out = err(errors);
-    else
-      out = ok(values);
-  } catch (e) {
-    err([e instanceof Error ? e : new Error(String(e))]);
-  }
-  if (typeof out === "function")
-    return out;
-  if (out instanceof Promise) {
-    const controller = new AbortController;
-    registerCleanup(owner, () => controller.abort());
-    out.then((cleanup) => {
-      if (!controller.signal.aborted && typeof cleanup === "function")
-        registerCleanup(owner, cleanup);
-    }).catch((e) => {
-      err([e instanceof Error ? e : new Error(String(e))]);
-    });
-  }
-};
 // src/util.ts
 var isString = (value) => typeof value === "string";
 var isNumber = (value) => typeof value === "number";
@@ -398,89 +331,6 @@ var isObjectOfType = (value, type) => Object.prototype.toString.call(value) === 
 var isRecord = (value) => isObjectOfType(value, "Object");
 var isRecordOrArray = (value) => isRecord(value) || Array.isArray(value);
 
-// src/nodes/memo.ts
-var createMemo = (fn, options) => {
-  validateCallback(TYPE_MEMO, fn, isSyncFunction);
-  if (options?.value !== undefined)
-    validateSignalValue(TYPE_MEMO, options.value, options?.guard);
-  const node = {
-    fn,
-    value: options?.value,
-    flags: FLAG_DIRTY,
-    sources: null,
-    sourcesTail: null,
-    sinks: null,
-    sinksTail: null,
-    equals: options?.equals ?? defaultEquals,
-    error: undefined
-  };
-  return {
-    [Symbol.toStringTag]: TYPE_MEMO,
-    get() {
-      if (activeSink)
-        link(node, activeSink);
-      refresh(node);
-      if (node.error)
-        throw node.error;
-      return node.value;
-    }
-  };
-};
-var isMemo = (value) => isObjectOfType(value, TYPE_MEMO);
-// src/nodes/ref.ts
-var createRef = (value, start) => {
-  const node = {
-    value,
-    sinks: null,
-    sinksTail: null,
-    stop: undefined
-  };
-  const notify = () => {
-    for (let e = node.sinks;e; e = e.nextSink)
-      propagate(e.sink);
-    if (batchDepth === 0)
-      flush();
-  };
-  const ref = {
-    [Symbol.toStringTag]: TYPE_MEMO,
-    get() {
-      if (activeSink) {
-        if (!node.sinks)
-          node.stop = start(notify);
-        link(node, activeSink);
-      }
-      return node.value;
-    }
-  };
-  return ref;
-};
-// src/nodes/sensor.ts
-var createSensor = (start, options) => {
-  const node = {
-    value: undefined,
-    sinks: null,
-    sinksTail: null,
-    equals: options?.equals ?? defaultEquals,
-    guard: options?.guard,
-    stop: undefined
-  };
-  const set = (next) => {
-    validateSignalValue("Sensor", next, node.guard);
-    setState(node, next);
-  };
-  const sensor = {
-    [Symbol.toStringTag]: TYPE_MEMO,
-    get() {
-      if (activeSink) {
-        if (!node.sinks)
-          node.stop = start(set);
-        link(node, activeSink);
-      }
-      return node.value;
-    }
-  };
-  return sensor;
-};
 // src/nodes/state.ts
 var createState = (value, options) => {
   validateSignalValue(TYPE_STATE, value, options?.guard);
@@ -512,6 +362,324 @@ var createState = (value, options) => {
   return state;
 };
 var isState = (value) => isObjectOfType(value, TYPE_STATE);
+
+// src/nodes/list.ts
+var TYPE_LIST = "List";
+
+class DuplicateKeyError extends Error {
+  constructor(where, key, value) {
+    super(`Could not add ${where} key "${key}"${value ? ` with value ${JSON.stringify(value)}` : ""} because it already exists`);
+    this.name = "DuplicateKeyError";
+  }
+}
+var isEqual = (a, b, visited) => {
+  if (Object.is(a, b))
+    return true;
+  if (typeof a !== typeof b)
+    return false;
+  if (!isNonNullObject(a) || !isNonNullObject(b))
+    return false;
+  if (!visited)
+    visited = new WeakSet;
+  if (visited.has(a) || visited.has(b))
+    throw new CircularDependencyError("isEqual");
+  visited.add(a);
+  visited.add(b);
+  try {
+    if (Array.isArray(a) && Array.isArray(b)) {
+      if (a.length !== b.length)
+        return false;
+      for (let i = 0;i < a.length; i++) {
+        if (!isEqual(a[i], b[i], visited))
+          return false;
+      }
+      return true;
+    }
+    if (Array.isArray(a) !== Array.isArray(b))
+      return false;
+    if (isRecord(a) && isRecord(b)) {
+      const aKeys = Object.keys(a);
+      const bKeys = Object.keys(b);
+      if (aKeys.length !== bKeys.length)
+        return false;
+      for (const key of aKeys) {
+        if (!(key in b))
+          return false;
+        if (!isEqual(a[key], b[key], visited))
+          return false;
+      }
+      return true;
+    }
+    return false;
+  } finally {
+    visited.delete(a);
+    visited.delete(b);
+  }
+};
+var diff = (oldObj, newObj) => {
+  const oldValid = isRecordOrArray(oldObj);
+  const newValid = isRecordOrArray(newObj);
+  if (!oldValid || !newValid) {
+    const changed = !Object.is(oldObj, newObj);
+    return {
+      changed,
+      add: changed && newValid ? newObj : {},
+      change: {},
+      remove: changed && oldValid ? oldObj : {}
+    };
+  }
+  const visited = new WeakSet;
+  const add = {};
+  const change = {};
+  const remove = {};
+  const oldKeys = Object.keys(oldObj);
+  const newKeys = Object.keys(newObj);
+  const allKeys = new Set([...oldKeys, ...newKeys]);
+  for (const key of allKeys) {
+    const oldHas = key in oldObj;
+    const newHas = key in newObj;
+    if (!oldHas && newHas) {
+      add[key] = newObj[key];
+      continue;
+    } else if (oldHas && !newHas) {
+      remove[key] = null;
+      continue;
+    }
+    const oldValue = oldObj[key];
+    const newValue = newObj[key];
+    if (!isEqual(oldValue, newValue, visited))
+      change[key] = newValue;
+  }
+  return {
+    add,
+    change,
+    remove,
+    changed: !!(Object.keys(add).length || Object.keys(change).length || Object.keys(remove).length)
+  };
+};
+var createList = (initialValue, options) => {
+  validateSignalValue(TYPE_LIST, initialValue, Array.isArray);
+  const signals = new Map;
+  let keys = [];
+  let keyCounter = 0;
+  const keyConfig = options?.keyConfig;
+  const generateKey = isString(keyConfig) ? () => `${keyConfig}${keyCounter++}` : isFunction2(keyConfig) ? (item) => keyConfig(item) : () => String(keyCounter++);
+  const node = {
+    value: initialValue,
+    sinks: null,
+    sinksTail: null,
+    stop: undefined
+  };
+  const notify = () => {
+    for (let e = node.sinks;e; e = e.nextSink)
+      propagate(e.sink);
+    if (batchDepth === 0)
+      flush();
+  };
+  const linkList = () => {
+    if (activeSink) {
+      if (!node.sinks && options?.watched)
+        node.stop = options.watched();
+      link(node, activeSink);
+    }
+  };
+  const addSignal = (key, value) => {
+    validateSignalValue(`${TYPE_LIST} item for key "${key}"`, value);
+    signals.set(key, createState(value));
+  };
+  const toRecord = (array) => {
+    const record = {};
+    for (let i = 0;i < array.length; i++) {
+      const value = array[i];
+      if (value === undefined)
+        continue;
+      let key = keys[i];
+      if (!key) {
+        key = generateKey(value);
+        keys[i] = key;
+      }
+      record[key] = value;
+    }
+    return record;
+  };
+  const assembleValue = () => {
+    return keys.map((key) => signals.get(key)?.get()).filter((v) => v !== undefined);
+  };
+  const applyChanges = (changes) => {
+    for (const key in changes.add) {
+      addSignal(key, changes.add[key]);
+    }
+    if (Object.keys(changes.change).length) {
+      batch(() => {
+        for (const key in changes.change) {
+          const value = changes.change[key];
+          validateSignalValue(`${TYPE_LIST} item for key "${key}"`, value);
+          const signal = signals.get(key);
+          if (signal)
+            signal.set(value);
+        }
+      });
+    }
+    for (const key in changes.remove) {
+      signals.delete(key);
+      const index = keys.indexOf(key);
+      if (index !== -1)
+        keys.splice(index, 1);
+    }
+    if (Object.keys(changes.remove).length) {
+      keys = keys.filter(() => true);
+    }
+    return changes.changed;
+  };
+  const initRecord = toRecord(initialValue);
+  for (const key in initRecord) {
+    addSignal(key, initRecord[key]);
+  }
+  const list = {
+    [Symbol.toStringTag]: TYPE_LIST,
+    [Symbol.isConcatSpreadable]: true,
+    *[Symbol.iterator]() {
+      for (const key of keys) {
+        const signal = signals.get(key);
+        if (signal)
+          yield signal;
+      }
+    },
+    get length() {
+      linkList();
+      return keys.length;
+    },
+    get() {
+      linkList();
+      return assembleValue();
+    },
+    set(newValue) {
+      const currentValue = assembleValue();
+      const changes = diff(toRecord(currentValue), toRecord(newValue));
+      if (applyChanges(changes))
+        notify();
+    },
+    update(fn) {
+      list.set(fn(list.get()));
+    },
+    at(index) {
+      return signals.get(keys[index]);
+    },
+    keys() {
+      linkList();
+      return keys.values();
+    },
+    byKey(key) {
+      return signals.get(key);
+    },
+    keyAt(index) {
+      return keys[index];
+    },
+    indexOfKey(key) {
+      return keys.indexOf(key);
+    },
+    add(value) {
+      const key = generateKey(value);
+      if (signals.has(key))
+        throw new DuplicateKeyError(TYPE_LIST, key, value);
+      if (!keys.includes(key))
+        keys.push(key);
+      addSignal(key, value);
+      notify();
+      return key;
+    },
+    remove(keyOrIndex) {
+      const key = isNumber(keyOrIndex) ? keys[keyOrIndex] : keyOrIndex;
+      const ok = signals.delete(key);
+      if (ok) {
+        const index = isNumber(keyOrIndex) ? keyOrIndex : keys.indexOf(key);
+        if (index >= 0)
+          keys.splice(index, 1);
+        keys = keys.filter(() => true);
+        notify();
+      }
+    },
+    sort(compareFn) {
+      const entries = keys.map((key) => [key, signals.get(key)?.get()]).sort(isFunction2(compareFn) ? (a, b) => compareFn(a[1], b[1]) : (a, b) => String(a[1]).localeCompare(String(b[1])));
+      const newOrder = entries.map(([key]) => key);
+      if (!isEqual(keys, newOrder)) {
+        keys = newOrder;
+        notify();
+      }
+    },
+    splice(start, deleteCount, ...items) {
+      const length = keys.length;
+      const actualStart = start < 0 ? Math.max(0, length + start) : Math.min(start, length);
+      const actualDeleteCount = Math.max(0, Math.min(deleteCount ?? Math.max(0, length - Math.max(0, actualStart)), length - actualStart));
+      const add = {};
+      const remove = {};
+      for (let i = 0;i < actualDeleteCount; i++) {
+        const index = actualStart + i;
+        const key = keys[index];
+        if (key) {
+          const signal = signals.get(key);
+          if (signal)
+            remove[key] = signal.get();
+        }
+      }
+      const newOrder = keys.slice(0, actualStart);
+      for (const item of items) {
+        const key = generateKey(item);
+        newOrder.push(key);
+        add[key] = item;
+      }
+      newOrder.push(...keys.slice(actualStart + actualDeleteCount));
+      const changed = !!(Object.keys(add).length || Object.keys(remove).length);
+      if (changed) {
+        applyChanges({
+          add,
+          change: {},
+          remove,
+          changed
+        });
+        keys = newOrder.filter(() => true);
+        notify();
+      }
+      return Object.values(remove);
+    },
+    deriveCollection(cb) {
+      return createCollection(list, cb);
+    }
+  };
+  return list;
+};
+var isList = (value) => isObjectOfType(value, TYPE_LIST);
+
+// src/nodes/memo.ts
+var createMemo = (fn, options) => {
+  validateCallback(TYPE_MEMO, fn, isSyncFunction);
+  if (options?.value !== undefined)
+    validateSignalValue(TYPE_MEMO, options.value, options?.guard);
+  const node = {
+    fn,
+    value: options?.value,
+    flags: FLAG_DIRTY,
+    sources: null,
+    sourcesTail: null,
+    sinks: null,
+    sinksTail: null,
+    equals: options?.equals ?? defaultEquals,
+    error: undefined
+  };
+  return {
+    [Symbol.toStringTag]: TYPE_MEMO,
+    get() {
+      if (activeSink)
+        link(node, activeSink);
+      refresh(node);
+      if (node.error)
+        throw node.error;
+      return node.value;
+    }
+  };
+};
+var isMemo = (value) => isObjectOfType(value, TYPE_MEMO);
+
 // src/nodes/task.ts
 var createTask = (fn, options) => {
   validateCallback(TYPE_TASK, fn, isAsyncFunction);
@@ -549,6 +717,7 @@ var createTask = (fn, options) => {
   };
 };
 var isTask = (value) => isObjectOfType(value, TYPE_TASK);
+
 // src/nodes/collection.ts
 var TYPE_COLLECTION = "Collection";
 function createCollection(source, callback) {
@@ -675,17 +844,137 @@ function createCollection(source, callback) {
 }
 var isCollection = (value) => isObjectOfType(value, TYPE_COLLECTION);
 var isCollectionSource = (value) => isList(value) || isCollection(value);
-
+// src/nodes/effect.ts
+var createEffect = (fn) => {
+  validateCallback("Effect", fn);
+  const node = {
+    fn,
+    flags: FLAG_DIRTY,
+    sources: null,
+    sourcesTail: null,
+    cleanup: null
+  };
+  const dispose = () => {
+    runCleanup(node);
+    node.fn = undefined;
+    node.flags = FLAG_CLEAN;
+    node.sourcesTail = null;
+    trimSources(node);
+  };
+  if (activeOwner)
+    registerCleanup(activeOwner, dispose);
+  runEffect(node);
+  return dispose;
+};
+var match = (signals, handlers) => {
+  if (!activeOwner)
+    throw new Error("match() must be called inside an effect");
+  const owner = activeOwner;
+  const { ok, err = console.error, nil } = handlers;
+  let errors;
+  let pending = false;
+  const values = new Array(signals.length);
+  for (let i = 0;i < signals.length; i++) {
+    try {
+      const value = signals[i].get();
+      if (value == null)
+        pending = true;
+      else
+        values[i] = value;
+    } catch (e) {
+      if (!errors)
+        errors = [];
+      errors.push(e instanceof Error ? e : new Error(String(e)));
+    }
+  }
+  let out;
+  try {
+    if (pending)
+      out = nil?.();
+    else if (errors)
+      out = err(errors);
+    else
+      out = ok(values);
+  } catch (e) {
+    err([e instanceof Error ? e : new Error(String(e))]);
+  }
+  if (typeof out === "function")
+    return out;
+  if (out instanceof Promise) {
+    const controller = new AbortController;
+    registerCleanup(owner, () => controller.abort());
+    out.then((cleanup) => {
+      if (!controller.signal.aborted && typeof cleanup === "function")
+        registerCleanup(owner, cleanup);
+    }).catch((e) => {
+      err([e instanceof Error ? e : new Error(String(e))]);
+    });
+  }
+};
+// src/nodes/ref.ts
+var createRef = (value, start) => {
+  const node = {
+    value,
+    sinks: null,
+    sinksTail: null,
+    stop: undefined
+  };
+  const notify = () => {
+    for (let e = node.sinks;e; e = e.nextSink)
+      propagate(e.sink);
+    if (batchDepth === 0)
+      flush();
+  };
+  const ref = {
+    [Symbol.toStringTag]: TYPE_MEMO,
+    get() {
+      if (activeSink) {
+        if (!node.sinks)
+          node.stop = start(notify);
+        link(node, activeSink);
+      }
+      return node.value;
+    }
+  };
+  return ref;
+};
+// src/nodes/sensor.ts
+var createSensor = (start, options) => {
+  const node = {
+    value: undefined,
+    sinks: null,
+    sinksTail: null,
+    equals: options?.equals ?? defaultEquals,
+    guard: options?.guard,
+    stop: undefined
+  };
+  const set = (next) => {
+    validateSignalValue("Sensor", next, node.guard);
+    setState(node, next);
+  };
+  const sensor = {
+    [Symbol.toStringTag]: TYPE_MEMO,
+    get() {
+      if (activeSink) {
+        if (!node.sinks)
+          node.stop = start(set);
+        link(node, activeSink);
+      }
+      return node.value;
+    }
+  };
+  return sensor;
+};
 // src/nodes/store.ts
 var TYPE_STORE = "Store";
 
-class DuplicateKeyError extends Error {
+class DuplicateKeyError2 extends Error {
   constructor(where, key, value) {
     super(`Could not add ${where} key "${key}"${value ? ` with value ${JSON.stringify(value)}` : ""} because it already exists`);
     this.name = "DuplicateKeyError";
   }
 }
-var isEqual = (a, b, visited) => {
+var isEqual2 = (a, b, visited) => {
   if (Object.is(a, b))
     return true;
   if (typeof a !== typeof b)
@@ -703,7 +992,7 @@ var isEqual = (a, b, visited) => {
       if (a.length !== b.length)
         return false;
       for (let i = 0;i < a.length; i++) {
-        if (!isEqual(a[i], b[i], visited))
+        if (!isEqual2(a[i], b[i], visited))
           return false;
       }
       return true;
@@ -718,7 +1007,7 @@ var isEqual = (a, b, visited) => {
       for (const key of aKeys) {
         if (!(key in b))
           return false;
-        if (!isEqual(a[key], b[key], visited))
+        if (!isEqual2(a[key], b[key], visited))
           return false;
       }
       return true;
@@ -729,7 +1018,7 @@ var isEqual = (a, b, visited) => {
     visited.delete(b);
   }
 };
-var diff = (oldObj, newObj) => {
+var diff2 = (oldObj, newObj) => {
   const oldValid = isRecordOrArray(oldObj);
   const newValid = isRecordOrArray(newObj);
   if (!oldValid || !newValid) {
@@ -760,7 +1049,7 @@ var diff = (oldObj, newObj) => {
     }
     const oldValue = oldObj[key];
     const newValue = newObj[key];
-    if (!isEqual(oldValue, newValue, visited))
+    if (!isEqual2(oldValue, newValue, visited))
       change[key] = newValue;
   }
   return {
@@ -794,11 +1083,12 @@ var createStore = (initialValue, options) => {
   };
   const addSignal = (key, value) => {
     validateSignalValue(`${TYPE_STORE} for key "${key}"`, value);
-    if (isRecord(value)) {
+    if (Array.isArray(value))
+      signals.set(key, createList(value));
+    else if (isRecord(value))
       signals.set(key, createStore(value));
-    } else {
+    else
       signals.set(key, createState(value));
-    }
   };
   const assembleValue = () => {
     const record = {};
@@ -858,7 +1148,7 @@ var createStore = (initialValue, options) => {
     },
     set(newValue) {
       const currentValue = assembleValue();
-      const changed = applyChanges(diff(currentValue, newValue));
+      const changed = applyChanges(diff2(currentValue, newValue));
       if (changed)
         notify();
     },
@@ -867,7 +1157,7 @@ var createStore = (initialValue, options) => {
     },
     add(key, value) {
       if (signals.has(key))
-        throw new DuplicateKeyError(TYPE_STORE, key, value);
+        throw new DuplicateKeyError2(TYPE_STORE, key, value);
       addSignal(key, value);
       notify();
       return key;
@@ -911,208 +1201,6 @@ var createStore = (initialValue, options) => {
   });
 };
 var isStore = (value) => isObjectOfType(value, TYPE_STORE);
-
-// src/nodes/list.ts
-var TYPE_LIST = "List";
-
-class DuplicateKeyError2 extends Error {
-  constructor(where, key, value) {
-    super(`Could not add ${where} key "${key}"${value ? ` with value ${JSON.stringify(value)}` : ""} because it already exists`);
-    this.name = "DuplicateKeyError";
-  }
-}
-var createList = (initialValue, options) => {
-  validateSignalValue(TYPE_LIST, initialValue, Array.isArray);
-  const signals = new Map;
-  let keys = [];
-  let keyCounter = 0;
-  const keyConfig = options?.keyConfig;
-  const generateKey = isString(keyConfig) ? () => `${keyConfig}${keyCounter++}` : isFunction2(keyConfig) ? (item) => keyConfig(item) : () => String(keyCounter++);
-  const node = {
-    value: initialValue,
-    sinks: null,
-    sinksTail: null,
-    stop: undefined
-  };
-  const notify = () => {
-    for (let e = node.sinks;e; e = e.nextSink)
-      propagate(e.sink);
-    if (batchDepth === 0)
-      flush();
-  };
-  const linkList = () => {
-    if (activeSink) {
-      if (!node.sinks && options?.watched)
-        node.stop = options.watched();
-      link(node, activeSink);
-    }
-  };
-  const addSignal = (key, value) => {
-    validateSignalValue(`${TYPE_LIST} item for key "${key}"`, value);
-    signals.set(key, createState(value));
-  };
-  const toRecord = (array) => {
-    const record = {};
-    for (let i = 0;i < array.length; i++) {
-      const value = array[i];
-      if (value === undefined)
-        continue;
-      let key = keys[i];
-      if (!key) {
-        key = generateKey(value);
-        keys[i] = key;
-      }
-      record[key] = value;
-    }
-    return record;
-  };
-  const assembleValue = () => {
-    return keys.map((key) => signals.get(key)?.get()).filter((v) => v !== undefined);
-  };
-  const applyChanges = (changes) => {
-    for (const key in changes.add) {
-      addSignal(key, changes.add[key]);
-    }
-    if (Object.keys(changes.change).length) {
-      batch(() => {
-        for (const key in changes.change) {
-          const value = changes.change[key];
-          validateSignalValue(`${TYPE_LIST} item for key "${key}"`, value);
-          const signal = signals.get(key);
-          if (signal)
-            signal.set(value);
-        }
-      });
-    }
-    for (const key in changes.remove) {
-      signals.delete(key);
-      const index = keys.indexOf(key);
-      if (index !== -1)
-        keys.splice(index, 1);
-    }
-    if (Object.keys(changes.remove).length) {
-      keys = keys.filter(() => true);
-    }
-    return changes.changed;
-  };
-  const initRecord = toRecord(initialValue);
-  for (const key in initRecord) {
-    addSignal(key, initRecord[key]);
-  }
-  const list = {
-    [Symbol.toStringTag]: TYPE_LIST,
-    [Symbol.isConcatSpreadable]: true,
-    *[Symbol.iterator]() {
-      for (const key of keys) {
-        const signal = signals.get(key);
-        if (signal)
-          yield signal;
-      }
-    },
-    get length() {
-      linkList();
-      return keys.length;
-    },
-    get() {
-      linkList();
-      return assembleValue();
-    },
-    set(newValue) {
-      const currentValue = assembleValue();
-      const changes = diff(toRecord(currentValue), toRecord(newValue));
-      if (applyChanges(changes))
-        notify();
-    },
-    update(fn) {
-      list.set(fn(list.get()));
-    },
-    at(index) {
-      return signals.get(keys[index]);
-    },
-    keys() {
-      linkList();
-      return keys.values();
-    },
-    byKey(key) {
-      return signals.get(key);
-    },
-    keyAt(index) {
-      return keys[index];
-    },
-    indexOfKey(key) {
-      return keys.indexOf(key);
-    },
-    add(value) {
-      const key = generateKey(value);
-      if (signals.has(key))
-        throw new DuplicateKeyError2(TYPE_LIST, key, value);
-      if (!keys.includes(key))
-        keys.push(key);
-      addSignal(key, value);
-      notify();
-      return key;
-    },
-    remove(keyOrIndex) {
-      const key = isNumber(keyOrIndex) ? keys[keyOrIndex] : keyOrIndex;
-      const ok = signals.delete(key);
-      if (ok) {
-        const index = isNumber(keyOrIndex) ? keyOrIndex : keys.indexOf(key);
-        if (index >= 0)
-          keys.splice(index, 1);
-        keys = keys.filter(() => true);
-        notify();
-      }
-    },
-    sort(compareFn) {
-      const entries = keys.map((key) => [key, signals.get(key)?.get()]).sort(isFunction2(compareFn) ? (a, b) => compareFn(a[1], b[1]) : (a, b) => String(a[1]).localeCompare(String(b[1])));
-      const newOrder = entries.map(([key]) => key);
-      if (!isEqual(keys, newOrder)) {
-        keys = newOrder;
-        notify();
-      }
-    },
-    splice(start, deleteCount, ...items) {
-      const length = keys.length;
-      const actualStart = start < 0 ? Math.max(0, length + start) : Math.min(start, length);
-      const actualDeleteCount = Math.max(0, Math.min(deleteCount ?? Math.max(0, length - Math.max(0, actualStart)), length - actualStart));
-      const add = {};
-      const remove = {};
-      for (let i = 0;i < actualDeleteCount; i++) {
-        const index = actualStart + i;
-        const key = keys[index];
-        if (key) {
-          const signal = signals.get(key);
-          if (signal)
-            remove[key] = signal.get();
-        }
-      }
-      const newOrder = keys.slice(0, actualStart);
-      for (const item of items) {
-        const key = generateKey(item);
-        newOrder.push(key);
-        add[key] = item;
-      }
-      newOrder.push(...keys.slice(actualStart + actualDeleteCount));
-      const changed = !!(Object.keys(add).length || Object.keys(remove).length);
-      if (changed) {
-        applyChanges({
-          add,
-          change: {},
-          remove,
-          changed
-        });
-        keys = newOrder.filter(() => true);
-        notify();
-      }
-      return Object.values(remove);
-    },
-    deriveCollection(cb) {
-      return createCollection(list, cb);
-    }
-  };
-  return list;
-};
-var isList = (value) => isObjectOfType(value, TYPE_LIST);
 export {
   match,
   isTask,
@@ -1120,7 +1208,9 @@ export {
   isState,
   isMemo,
   isList,
+  isEqual,
   isCollection,
+  diff,
   createTask,
   createStore,
   createState,

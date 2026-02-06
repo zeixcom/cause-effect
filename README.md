@@ -1,6 +1,6 @@
 # Cause & Effect
 
-Version 0.17.3
+Version 0.18.0
 
 **Cause & Effect** is a tiny (~5kB gzipped), dependency-free reactive state management library for JavaScript. It uses fine-grained signals so derived values and side effects update automatically when their dependencies change.
 
@@ -10,21 +10,22 @@ Version 0.17.3
 
 ### Core Concepts
 
-- **State**: mutable value (`new State()`)
-- **Memo**: derived & memoized value (`new Memo()`)
+- **State**: mutable value (`createState()`)
+- **Memo**: derived & memoized value (`createMemo()`)
 - **Effect**: runs when dependencies change (`createEffect()`)
-- **Task**: async derived value with cancellation (`new Task()`)
+- **Task**: async derived value with cancellation (`createTask()`)
 - **Store**: object with reactive nested props (`createStore()`)
-- **List**: mutable array with stable keys & reactive items (`new List()`)
-- **Collection**: read-only derived arrays from Lists (`new DerivedCollection()`)
-- **Ref**: external mutable objects + manual .notify() (`new Ref()`)
+- **List**: mutable array with stable keys & reactive items (`createList()`)
+- **Collection**: read-only derived arrays from Lists (`createCollection()`)
+- **Ref**: external objects with lazy observation (`createRef()`)
+- **Sensor**: external input tracking with automatic updates (`createSensor()`)
 
 ## Key Features
 
 - ⚡ **Fine-grained reactivity** with automatic dependency tracking
 - 🧩 **Composable signal graph** with a small API
-- ⏱️ **Async ready** (`Task`, `AbortController`, async `DerivedCollection`)
-- 🛡️ **Declarative error handling** (`resolve()` + `match()`)
+- ⏱️ **Async ready** (`createTask`, `AbortController`, async collections)
+- 🛡️ **Declarative error handling** (`match()`)
 - 🚀 **Batching** and efficient dependency tracking
 - 📦 **Tree-shakable**, zero dependencies
 
@@ -41,13 +42,13 @@ bun add @zeix/cause-effect
 ## Quick Start
 
 ```js
-import { createEffect, Memo, State } from '@zeix/cause-effect'
+import { createState, createMemo, createEffect } from '@zeix/cause-effect'
 
 // 1. Create state
-const user = new State({ name: 'Alice', age: 30 })
+const user = createState({ name: 'Alice', age: 30 })
 
 // 2. Create computed values
-const greeting = new Memo(() => `Hello ${user.get().name}!`)
+const greeting = createMemo(() => `Hello ${user.get().name}!`)
 
 // 3. React to changes
 createEffect(() => {
@@ -62,12 +63,12 @@ user.update(u => ({ ...u, age: 31 })) // Logs: "Hello Alice! You are 31 years ol
 
 ### State
 
-A `State` is a mutable signal. Every signal has a `.get()` method to access its current value. State signals also provide `.set()` to directly assign a new value and `.update()` to modify the value with a function.
+A `State` is a mutable signal created with `createState()`. Every signal has a `.get()` method to access its current value. State signals also provide `.set()` to directly assign a new value and `.update()` to modify the value with a function.
 
 ```js
-import { createEffect, State } from '@zeix/cause-effect'
+import { createState, createEffect } from '@zeix/cause-effect'
 
-const count = new State(42)
+const count = createState(42)
 
 createEffect(() => console.log(count.get()))
 count.set(24)
@@ -81,13 +82,13 @@ Use `State` for primitives or for objects you typically replace entirely.
 
 ### Memo
 
-A `Memo` is a memoized read-only signal that automatically tracks dependencies and updates only when those dependencies change.
+A `Memo` is a memoized read-only signal created with `createMemo()`. It automatically tracks dependencies and updates only when those dependencies change.
 
 ```js
-import { State, Memo, createEffect } from '@zeix/cause-effect'
+import { createState, createMemo, createEffect } from '@zeix/cause-effect'
 
-const count = new State(42)
-const isEven = new Memo(() => !(count.get() % 2))
+const count = createState(42)
+const isEven = createMemo(() => !(count.get() % 2))
 
 createEffect(() => console.log(isEven.get()))
 count.set(24) // no log; still even
@@ -99,32 +100,32 @@ count.set(24) // no log; still even
 const isEven = () => !(count.get() % 2)
 ```
 
-**Advanced**: Reducer-style memos:
+**Advanced**: Reducer-style memos with previous value access:
 
 ```js
-import { State, Memo } from '@zeix/cause-effect'
+import { createState, createMemo } from '@zeix/cause-effect'
 
-const actions = new State('reset')
-const counter = new Memo((prev) => {
+const actions = createState('reset')
+const counter = createMemo(prev => {
   switch (actions.get()) {
     case 'increment': return prev + 1
     case 'decrement': return prev - 1
     case 'reset': return 0
     default: return prev
   }
-}, 0)
+}, { value: 0 })
 ```
 
 ### Task
 
-A `Task` handles asynchronous computations with cancellation support:
+A `Task` handles asynchronous computations with cancellation support, created with `createTask()`:
 
 ```js
-import { State, Task } from '@zeix/cause-effect'
+import { createState, createTask } from '@zeix/cause-effect'
 
-const id = new State(1)
+const id = createState(1)
 
-const data = new Task(async (oldValue, abort) => {
+const data = createTask(async (oldValue, abort) => {
   const response = await fetch(`/api/users/${id.get()}`, { signal: abort })
   if (!response.ok) throw new Error('Failed to fetch')
   return response.json()
@@ -133,11 +134,13 @@ const data = new Task(async (oldValue, abort) => {
 id.set(2) // cancels previous fetch automatically
 ```
 
+Tasks also provide `.isPending()` to check if a computation is in progress and `.abort()` to manually cancel.
+
 **Note**: Use Task (not plain async functions) when you want memoization + cancellation + reactive pending/error states.
 
 ### Store
 
-A `Store` is a reactive object. Each property automatically becomes its own signal with `.get()`, `.set()`, and `.update()` methods. Nested objects recursively become nested stores.
+A `Store` is a reactive object created with `createStore()`. Each property automatically becomes its own signal with `.get()`, `.set()`, and `.update()` methods. Nested objects recursively become nested stores.
 
 ```js
 import { createStore, createEffect } from '@zeix/cause-effect'
@@ -159,7 +162,7 @@ user.preferences.theme.set('light')
 createEffect(() => console.log('User:', user.get()))
 ```
 
-Iterator for keys using reactive `.keys()` method to observe structural changes:
+Iterate keys using the reactive `.keys()` method to observe structural changes:
 
 ```js
 for (const key of user.keys()) {
@@ -180,14 +183,14 @@ settings.remove('timeout')
 
 ### List
 
-A `List` is a mutable signal for arrays with individually reactive items and stable keys. Each item becomes its own signal while maintaining persistent identity through sorting and reordering:
+A `List` is a mutable signal for arrays with individually reactive items and stable keys, created with `createList()`. Each item becomes its own signal while maintaining persistent identity through sorting and reordering:
 
 ```js
-import { List, createEffect } from '@zeix/cause-effect'
+import { createList, createEffect } from '@zeix/cause-effect'
 
-const items = new List(['banana', 'apple', 'cherry'])
+const items = createList(['banana', 'apple', 'cherry'])
 
-createEffect(() => console.log(`First: ${items[0].get()}`))
+createEffect(() => console.log(`First: ${items.at(0)?.get()}`))
 
 items.add('date')
 items.splice(1, 1, 'orange')
@@ -196,73 +199,113 @@ items.sort()
 
 Access items by key using `.byKey()` or by index using `.at()`. `.indexOfKey()` returns the current index of an item in the list, while `.keyAt()` returns the key of an item at a given position.
 
-Keys are stable across reordering:
+Keys are stable across reordering. Use `keyConfig` in options to control key generation:
 
 ```js
-const items = new List(['banana', 'apple'], 'item-')
-const key = items.add('orange')
+// String prefix keys
+const items = createList(['banana', 'apple'], { keyConfig: 'item-' })
+// Creates keys: 'item-0', 'item-1'
 
+// Function-based keys
+const users = createList(
+  [{ id: 'alice', name: 'Alice' }],
+  { keyConfig: user => user.id }
+)
+
+const key = items.add('orange')
 items.sort()
-console.log(items.byKey(key))     // 'orange'
-console.log(items.indexOfKey(key)) // current index
+console.log(items.byKey(key)?.get()) // 'orange'
+console.log(items.indexOfKey(key))   // current index
 ```
 
-Lists have `.keys()`, `.add()`, and `.remove()` methods like stores. Additionally, they have `.sort()`, `.splice()`, and a reactive `.length` property. But unlike stores, deeply nested properties in items are not converted to individual signals. Lists have no Proxy layer and don't support direct property access like `items[0].name`.
+Lists have `.keys()`, `.add()`, and `.remove()` methods like stores. Additionally, they have `.sort()`, `.splice()`, and a reactive `.length` property. But unlike stores, deeply nested properties in items are not converted to individual signals.
 
 ### Collection
 
-A `Collection` is a read-only derived reactive list from `List` or another `Collection`:
+A `Collection` is a read-only derived reactive list from a `List` or another `Collection`. Create one with `createCollection()` or via `.deriveCollection()`:
 
 ```js
-import { List, createEffect } from '@zeix/cause-effect'
+import { createList, createEffect } from '@zeix/cause-effect'
 
-const users = new List([
+const users = createList([
   { id: 1, name: 'Alice', role: 'admin' },
   { id: 2, name: 'Bob', role: 'user' }
-])
+], { keyConfig: u => String(u.id) })
+
 const profiles = users.deriveCollection(user => ({
   ...user,
   displayName: `${user.name} (${user.role})`
 }))
 
 createEffect(() => console.log('Profiles:', profiles.get()))
-console.log(userProfiles.at(0).get().displayName)
+console.log(profiles.at(0)?.get().displayName)
 ```
 
-Async mapping is supported: 
+Async mapping is supported:
 
 ```js
-const details = users.derivedCollection(async (user, abort) => {
+const details = users.deriveCollection(async (user, abort) => {
   const response = await fetch(`/users/${user.id}`, { signal: abort })
   return { ...user, details: await response.json() }
 })
 ```
 
-### Ref
-
-A `Ref` is a signal that holds a reference to an external object that can change outside the reactive system.
+Collections can be chained for data pipelines:
 
 ```js
-import { createEffect, Ref } from '@zeix/cause-effect'
-
-const elementRef = new Ref(document.getElementById('status'))
-
-createEffect(() => console.log(elementRef.get().className))
-
-// external mutation happened
-elementRef.notify()
+const processed = users
+  .deriveCollection(user => ({ ...user, active: user.lastLogin > threshold }))
+  .deriveCollection(user => user.active ? `Active: ${user.name}` : `Inactive: ${user.name}`)
 ```
 
-Use `Ref` for DOM nodes, Maps/Sets, sockets, third-party objects, etc.
+### Ref
+
+A `Ref` is a read-only signal that holds a reference to an external object, created with `createRef()`. The start callback sets up observation and returns a cleanup function. It activates lazily when first accessed by an effect:
+
+```js
+import { createRef, createEffect } from '@zeix/cause-effect'
+
+const el = document.getElementById('status')
+const elementRef = createRef(el, (notify) => {
+  const observer = new MutationObserver(() => notify())
+  observer.observe(el, { attributes: true, childList: true })
+  return () => observer.disconnect()
+})
+
+createEffect(() => console.log(elementRef.get().className))
+```
+
+Use `Ref` for DOM nodes, external resources that need observation setup/teardown, network connections, etc.
+
+### Sensor
+
+A `Sensor` tracks external input and updates a state value automatically, created with `createSensor()`. Like Ref, it activates lazily when first accessed:
+
+```js
+import { createSensor, createEffect } from '@zeix/cause-effect'
+
+const mousePos = createSensor((set) => {
+  const handler = (e) => set({ x: e.clientX, y: e.clientY })
+  window.addEventListener('mousemove', handler)
+  return () => window.removeEventListener('mousemove', handler)
+})
+
+createEffect(() => {
+  const pos = mousePos.get()
+  if (pos) console.log(`Mouse: ${pos.x}, ${pos.y}`)
+})
+```
+
+Use `Sensor` for mouse position, window size, media queries, geolocation, device orientation, etc.
 
 ## Effects
 
-The `createEffect()` callback runs whenever the signals it reads change. It supports sync or async callbacks and returns a cleanup function.
+The `createEffect()` callback runs whenever the signals it reads change. It returns a cleanup/dispose function.
 
 ```js
-import { State, createEffect } from '@zeix/cause-effect'
+import { createState, createEffect } from '@zeix/cause-effect'
 
-const count = new State(42)
+const count = createState(42)
 
 const cleanup = createEffect(() => {
   console.log(count.get())
@@ -272,32 +315,32 @@ const cleanup = createEffect(() => {
 cleanup()
 ```
 
-Async effects receive an AbortSignal that cancels on rerun or cleanup:
+Effect callbacks can return a cleanup function that runs before the effect re-runs or when disposed:
 
 ```js
-createEffect(async abort => {
-  const res = await fetch('/api', { signal: abort })
-  if (res.ok) console.log(await res.json())
+createEffect(() => {
+  const timer = setInterval(() => console.log(count.get()), 1000)
+  return () => clearInterval(timer)
 })
 ```
 
-### Error Handling: resolve() + match()
+### Error Handling: match()
 
-Use `resolve()` to extract values from signals (including pending/err states) and `match()` to handle them declaratively:
+Use `match()` inside effects to handle signal values declaratively, including pending and error states:
 
 ```js
-import { State, Task, createEffect, resolve, match } from '@zeix/cause-effect'
+import { createState, createTask, createEffect, match } from '@zeix/cause-effect'
 
-const userId = new State(1)
-const userData = new Task(async (_, abort) => {
+const userId = createState(1)
+const userData = createTask(async (_, abort) => {
   const res = await fetch(`/api/users/${userId.get()}`, { signal: abort })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return res.json()
 })
 
 createEffect(() => {
-  match(resolve({ userData }), {
-    ok: ({ userData: user }) => console.log('User:', user),
+  match([userData], {
+    ok: ([user]) => console.log('User:', user),
     nil: () => console.log('Loading...'),
     err: errors => console.error(errors[0])
   })
@@ -309,44 +352,48 @@ createEffect(() => {
 ```
 Is the value managed *inside* the reactive system?
 │
-├─ No → Use `Ref`
-│        (DOM nodes, Map/Set, Date, sockets, 3rd-party objects)
-│        Remember: call `.notify()` when it changes externally.
+├─ No → Does it need observation setup/teardown?
+│   │
+│   ├─ Yes, observe & notify → `createRef(value, notify => { ... })`
+│   │   (DOM nodes with MutationObserver, IntersectionObserver, etc.)
+│   │
+│   └─ Yes, push values in → `createSensor(set => { ... })`
+│       (mouse position, window resize, media queries, etc.)
 │
 └─ Yes? What kind of data is it?
     │
     ├─ *Primitive* (number/string/boolean)
     │   │
     │   ├─ Do you want to mutate it directly?
-    │   │     └─ Yes → `State`
+    │   │     └─ Yes → `createState()`
     │   │
     │   └─ Is it derived from other signals?
     │         │
     │         ├─ Sync derived
     │         │     ├─ Simple/cheap → plain function (preferred)
-    │         │     └─ Expensive/shared/stateful → `Memo`
-    │         │     
-    │         └─ Async derived → `Task`
+    │         │     └─ Expensive/shared/stateful → `createMemo()`
+    │         │
+    │         └─ Async derived → `createTask()`
     │            (cancellation + memoization + pending/error state)
     │
     ├─ *Plain Object*
     │   │
     │   ├─ Do you want to mutate individual properties?
-    │   │     ├─ Yes → `Store`
-    │   │     └─ No, whole object mutations only → `State`
+    │   │     ├─ Yes → `createStore()`
+    │   │     └─ No, whole object mutations only → `createState()`
     │   │
     │   └─ Is it derived from other signals?
-    │         ├─ Sync derived → plain function or `Memo`
-    │         └─ Async derived → `Task`
+    │         ├─ Sync derived → plain function or `createMemo()`
+    │         └─ Async derived → `createTask()`
     │
     └─ *Array*
         │
         ├─ Do you need to mutate it (add/remove/sort) with stable item identity?
-        │     ├─ Yes → `List`
-        │     └─ No, whole array mutations only → `State`
+        │     ├─ Yes → `createList()`
+        │     └─ No, whole array mutations only → `createState()`
         │
         └─ Is it derived / read-only transformation of a `List` or `Collection`?
-              └─ Yes → `Collection`
+              └─ Yes → `createCollection()` or `.deriveCollection()`
                  (memoized + supports async mapping + chaining)
 ```
 
@@ -357,12 +404,12 @@ Is the value managed *inside* the reactive system?
 Group multiple signal updates, ensuring effects run only once after all changes are applied:
 
 ```js
-import { batchSignalWrites, State } from '@zeix/cause-effect'
+import { batch, createState } from '@zeix/cause-effect'
 
-const a = new State(2)
-const b = new State(3)
+const a = createState(2)
+const b = createState(3)
 
-batchSignalWrites(() => {
+batch(() => {
   a.set(4)
   b.set(5)
 })
@@ -370,16 +417,16 @@ batchSignalWrites(() => {
 
 ### Cleanup
 
-Effects return a cleanup function. When executed, it will unsubscribe from signals and run cleanup functions returned by effect callbacks, for example to remove event listeners.
+Effects return a cleanup function. When executed, it will unsubscribe from signals and run cleanup functions returned by effect callbacks.
 
 ```js
-import { State, createEffect } from '@zeix/cause-effect'
+import { createState, createEffect } from '@zeix/cause-effect'
 
-const user = new State({ name: 'Alice', age: 30 })
+const user = createState({ name: 'Alice', age: 30 })
 const greeting = () => `Hello ${user.get().name}!`
 const cleanup = createEffect(() => {
-	console.log(`${greeting()} You are ${user.get().age} years old`)
-	return () => console.log('Cleanup') // Cleanup function
+  console.log(`${greeting()} You are ${user.get().age} years old`)
+  return () => console.log('Cleanup')
 })
 
 // When you no longer need the effect, execute the cleanup function
@@ -388,31 +435,71 @@ cleanup() // Logs: 'Cleanup' and unsubscribes from signal `user`
 user.set({ name: 'Bob', age: 28 }) // Won't trigger the effect anymore
 ```
 
-### Resource Management with Watch Callbacks
+### Scoped Cleanup
 
-All signals support a options object with `watched` and `unwatched` callbacks for lazy resource management. Resources are only allocated when the signal is first accessed by an effect, and automatically cleaned up when no effects are watching:
+Use `createScope()` for hierarchical cleanup of nested effects and resources:
 
 ```js
-import { State, createEffect } from '@zeix/cause-effect'
+import { createState, createEffect, createScope } from '@zeix/cause-effect'
 
-const config = new State({ apiUrl: 'https://api.example.com' }, {
-  watched: () => {
-    console.log('Setting up API client...')
-    const client = new ApiClient(config.get().apiUrl)
-  },
-  unwatched: () => {
-    console.log('Cleaning up API client...')
-    client.disconnect()
+const [result, dispose] = createScope((onCleanup) => {
+  const count = createState(0)
+
+  createEffect(() => console.log(count.get()))
+
+  onCleanup(() => console.log('Scope disposed'))
+  return count
+})
+
+dispose() // Cleans up the effect and runs onCleanup
+```
+
+### Resource Management with Watch Callbacks
+
+Ref and Sensor signals use a **start callback** for lazy resource management. The callback runs when the signal is first accessed by an effect and the returned cleanup function runs when no effects are watching:
+
+```js
+import { createRef, createSensor, createEffect } from '@zeix/cause-effect'
+
+// Ref: observe external object changes
+const el = document.getElementById('status')
+const elementRef = createRef(el, (notify) => {
+  console.log('Setting up observer...')
+  const observer = new MutationObserver(() => notify())
+  observer.observe(el, { attributes: true })
+  return () => {
+    console.log('Tearing down observer...')
+    observer.disconnect()
   }
+})
+
+// Sensor: track external input
+const windowSize = createSensor((set) => {
+  const update = () => set({ w: innerWidth, h: innerHeight })
+  update()
+  window.addEventListener('resize', update)
+  return () => window.removeEventListener('resize', update)
 })
 
 // Resource is created only when effect runs
 const cleanup = createEffect(() => {
-  console.log('API URL:', config.get().apiUrl)
+  console.log('Element class:', elementRef.get().className)
+  console.log('Window size:', windowSize.get())
 })
 
 // Resource is cleaned up when effect stops
 cleanup()
+```
+
+Store and List signals support an optional `watched` callback in their options that returns a cleanup function:
+
+```js
+const user = createStore({ name: 'Alice' }, {
+  watched: () => {
+    const ws = new WebSocket('/updates')
+    return () => ws.close()
+  }
+})
 ```
 
 This pattern is ideal for:
@@ -420,36 +507,6 @@ This pattern is ideal for:
 - Network connections that can be lazily established
 - Expensive computations that should pause when not needed
 - External subscriptions (WebSocket, Server-Sent Events, etc.)
-
-### resolve()
-
-Extract signal values:
-
-```js
-import { State, Memo, resolve } from '@zeix/cause-effect'
-
-const name = new State('Alice')
-const age = new Memo(() => 30)
-const result = resolve({ name, age })
-
-if (result.ok) console.log(result.values.name, result.values.age)
-else if (result.pending) console.log('Loading...')
-else console.error('Errors:', result.errors)
-```
-
-### match()
-
-Pattern matching on resolved results for side effects:
-
-```js
-import { resolve, match } from '@zeix/cause-effect'
-
-match(resolve({ name, age }), {
-  ok: ({ name, age }) => document.title = `${name} (${age})`,
-  nil: () => document.title = 'Loading...',
-  err: errors => document.title = `Error: ${errors[0].message}`
-})
-```
 
 ### diff()
 
@@ -465,7 +522,7 @@ const changes = diff(oldUser, newUser)
 console.log(changes.changed)  // true - something changed
 console.log(changes.add)      // { email: 'alice@example.com' }
 console.log(changes.change)   // { age: 31 }
-console.log(changes.remove)   // { city: UNSET }
+console.log(changes.remove)   // { city: null }
 ```
 
 ### isEqual()
