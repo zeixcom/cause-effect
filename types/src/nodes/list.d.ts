@@ -1,0 +1,32 @@
+import { type Cleanup } from '../graph';
+import { type Collection } from './collection';
+import { type State } from './state';
+type KeyConfig<T> = string | ((item: T) => string);
+type ListOptions<T extends {}> = {
+    keyConfig?: KeyConfig<T>;
+    watched?: () => Cleanup;
+};
+type List<T extends {}> = {
+    readonly [Symbol.toStringTag]: 'List';
+    readonly [Symbol.isConcatSpreadable]: true;
+    [Symbol.iterator](): IterableIterator<State<T>>;
+    readonly length: number;
+    get(): T[];
+    set(newValue: T[]): void;
+    update(fn: (oldValue: T[]) => T[]): void;
+    at(index: number): State<T> | undefined;
+    keys(): IterableIterator<string>;
+    byKey(key: string): State<T> | undefined;
+    keyAt(index: number): string | undefined;
+    indexOfKey(key: string): number;
+    add(value: T): string;
+    remove(keyOrIndex: string | number): void;
+    sort(compareFn?: (a: T, b: T) => number): void;
+    splice(start: number, deleteCount?: number, ...items: T[]): T[];
+    deriveCollection<R extends {}>(callback: (sourceValue: T) => R): Collection<R>;
+    deriveCollection<R extends {}>(callback: (sourceValue: T, abort: AbortSignal) => Promise<R>): Collection<R>;
+};
+declare const TYPE_LIST: "List";
+declare const createList: <T extends {}>(initialValue: T[], options?: ListOptions<T>) => List<T>;
+declare const isList: <T extends {}>(value: unknown) => value is List<T>;
+export { createList, isList, TYPE_LIST, type KeyConfig, type List, type ListOptions, };

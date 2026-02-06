@@ -1,0 +1,24 @@
+import { type Signal } from '../graph';
+import { type List } from './list';
+type CollectionSource<T extends {}> = List<T> | Collection<T>;
+type CollectionCallback<T extends {}, U extends {}> = ((sourceValue: U) => T) | ((sourceValue: U, abort: AbortSignal) => Promise<T>);
+type Collection<T extends {}> = {
+    readonly [Symbol.toStringTag]: 'Collection';
+    readonly [Symbol.isConcatSpreadable]: true;
+    [Symbol.iterator](): IterableIterator<Signal<T>>;
+    keys(): IterableIterator<string>;
+    get(): T[];
+    at(index: number): Signal<T> | undefined;
+    byKey(key: string): Signal<T> | undefined;
+    keyAt(index: number): string | undefined;
+    indexOfKey(key: string): number;
+    deriveCollection<R extends {}>(callback: (sourceValue: T) => R): Collection<R>;
+    deriveCollection<R extends {}>(callback: (sourceValue: T, abort: AbortSignal) => Promise<R>): Collection<R>;
+    readonly length: number;
+};
+declare const TYPE_COLLECTION: "Collection";
+declare function createCollection<T extends {}, U extends {}>(source: CollectionSource<U>, callback: (sourceValue: U) => T): Collection<T>;
+declare function createCollection<T extends {}, U extends {}>(source: CollectionSource<U>, callback: (sourceValue: U, abort: AbortSignal) => Promise<T>): Collection<T>;
+declare const isCollection: <T extends {}>(value: unknown) => value is Collection<T>;
+declare const isCollectionSource: <T extends {}>(value: unknown) => value is CollectionSource<T>;
+export { createCollection, isCollection, isCollectionSource, TYPE_COLLECTION, type Collection, type CollectionCallback, type CollectionSource, };
