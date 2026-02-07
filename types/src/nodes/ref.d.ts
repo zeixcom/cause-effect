@@ -1,5 +1,19 @@
 import { type Cleanup } from '../graph';
-import type { Memo } from './memo';
+/**
+ * A read-only signal that holds an external reference.
+ *
+ * @template T - The type of value produced by the sensor
+ */
+type Ref<T extends {}> = {
+    readonly [Symbol.toStringTag]: 'Ref';
+    /**
+     * Gets the reference.
+     * Notifies subscribers when the reference has updates.
+     * When called inside another reactive context, creates a dependency.
+     * @returns The reference value
+     */
+    get(): T;
+};
 /**
  * A callback function for refs when the reference starts being watched.
  *
@@ -19,5 +33,12 @@ type RefCallback = (notify: () => void) => Cleanup;
  *
  * @template T - The type of the referenced object
  */
-declare const createRef: <T extends {}>(value: T, start: RefCallback) => Memo<T>;
-export { createRef, type RefCallback };
+declare const createRef: <T extends {}>(value: T, start: RefCallback) => Ref<T>;
+/**
+ * Checks if a value is a Ref signal.
+ *
+ * @param value - The value to check
+ * @returns True if the value is a Ref
+ */
+declare const isRef: <T extends {} = {}>(value: unknown) => value is Ref<T>;
+export { createRef, isRef, type Ref, type RefCallback };

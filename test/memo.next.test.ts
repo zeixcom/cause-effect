@@ -242,7 +242,7 @@ describe('Memo', () => {
 
 	describe('Initial Value and Old Value', () => {
 		test('should use initialValue when provided', () => {
-			const computed = createMemo((oldValue: number) => oldValue + 1, {
+			const computed = createMemo(prev => (prev ?? 0) + 1, {
 				value: 10,
 			})
 			expect(computed.get()).toBe(11)
@@ -252,8 +252,8 @@ describe('Memo', () => {
 			const state = createState(5)
 			let receivedOldValue: number | undefined
 			const computed = createMemo(
-				(oldValue: number) => {
-					receivedOldValue = oldValue
+				prev => {
+					receivedOldValue = prev
 					return state.get() * 2
 				},
 				{ value: 0 },
@@ -270,8 +270,9 @@ describe('Memo', () => {
 		test('should work as reducer function with oldValue', () => {
 			const increment = createState(0)
 			const sum = createMemo(
-				(oldValue: number) => {
+				prev => {
 					const inc = increment.get()
+					const oldValue = prev ?? 0
 					return inc === 0 ? oldValue : oldValue + inc
 				},
 				{ value: 0 },
@@ -289,15 +290,13 @@ describe('Memo', () => {
 			expect(sum.get()).toBe(10)
 		})
 
-		test('should handle array accumulation with oldValue', () => {
+		test('should handle array accumulation with prev', () => {
 			const item = createState('')
-			const items = createMemo(
-				(oldValue: string[]) => {
-					const newItem = item.get()
-					return newItem === '' ? oldValue : [...oldValue, newItem]
-				},
-				{ value: [] as string[] },
-			)
+			const items = createMemo((prev: string[] | undefined) => {
+				const newItem = item.get()
+				const oldValue = prev ?? []
+				return newItem === '' ? oldValue : [...oldValue, newItem]
+			})
 
 			expect(items.get()).toEqual([])
 
@@ -311,19 +310,15 @@ describe('Memo', () => {
 			expect(items.get()).toEqual(['first', 'second', 'third'])
 		})
 
-		test('should handle counter with oldValue and multiple dependencies', () => {
+		test('should handle counter with prev and multiple dependencies', () => {
 			const reset = createState(false)
 			const add = createState(0)
-			const counter = createMemo(
-				(oldValue: number) => {
-					if (reset.get()) return 0
-					const increment = add.get()
-					return increment === 0 ? oldValue : oldValue + increment
-				},
-				{
-					value: 0,
-				},
-			)
+			const counter = createMemo<number>(prev => {
+				if (reset.get()) return 0
+				const oldValue = prev ?? 0
+				const increment = add.get()
+				return increment === 0 ? oldValue : oldValue + increment
+			})
 
 			expect(counter.get()).toBe(0)
 
@@ -341,11 +336,11 @@ describe('Memo', () => {
 			expect(counter.get()).toBe(2)
 		})
 
-		test('should pass UNSET as oldValue when no initialValue provided', () => {
+		test('should pass undefined as prev when no initial value provided', () => {
 			let receivedOldValue: number | undefined
 			const state = createState(42)
-			const computed = createMemo((oldValue: number) => {
-				receivedOldValue = oldValue
+			const computed = createMemo((prev: number | undefined) => {
+				receivedOldValue = prev
 				return state.get()
 			})
 
@@ -353,17 +348,17 @@ describe('Memo', () => {
 			expect(receivedOldValue).toBe(undefined)
 		})
 
-		test('should handle object updates with oldValue', () => {
+		test('should handle object updates with prev', () => {
 			const key = createState('')
 			const value = createState('')
 			const obj = createMemo(
-				(oldValue: Record<string, string>) => {
+				(prev: Record<string, string> | undefined) => {
 					const k = key.get()
 					const v = value.get()
+					const oldValue = prev ?? {}
 					if (k === '' || v === '') return oldValue
 					return { ...oldValue, [k]: v }
 				},
-				{ value: {} as Record<string, string> },
 			)
 
 			expect(obj.get()).toEqual({})
@@ -377,16 +372,14 @@ describe('Memo', () => {
 			expect(obj.get()).toEqual({ name: 'Alice', age: '30' })
 		})
 
-		test('should work with error handling and oldValue', () => {
+		test('should work with error handling and prev', () => {
 			const shouldError = createState(false)
 			const counter = createState(1)
 
 			const computed = createMemo(
-				(prev: number) => {
-					if (shouldError.get()) {
-						throw new Error('Computation failed')
-					}
-					return prev + counter.get()
+				(prev: number | undefined) => {
+					if (shouldError.get()) throw new Error('Computation failed')
+					return (prev ?? 0) + counter.get()
 				},
 				{
 					value: 10,
@@ -416,28 +409,24 @@ describe('Memo', () => {
 			>('increment')
 			const amount = createState(1)
 
-			const calculator = createMemo(
-				(oldValue: number) => {
-					const act = action.get()
-					const amt = amount.get()
+			const calculator = createMemo((prev: number | undefined) => {
+				const oldValue = prev ?? 0
+				const act = action.get()
+				const amt = amount.get()
 
-					switch (act) {
-						case 'increment':
-							return oldValue + amt
-						case 'decrement':
-							return oldValue - amt
-						case 'multiply':
-							return oldValue * amt
-						case 'reset':
-							return 0
-						default:
-							return oldValue
-					}
-				},
-				{
-					value: 0,
-				},
-			)
+				switch (act) {
+					case 'increment':
+						return oldValue + amt
+					case 'decrement':
+						return oldValue - amt
+					case 'multiply':
+						return oldValue * amt
+					case 'reset':
+						return 0
+					default:
+						return oldValue
+				}
+			})
 
 			expect(calculator.get()).toBe(1) // 0 + 1
 
@@ -472,19 +461,23 @@ describe('Memo', () => {
 				meta: { created: Date }
 			}
 
+			const fallback: StateObject = {
+				count: 0,
+				items: [] as string[],
+				meta: { created: new Date() },
+			}
 			const now = new Date()
 			const objectComputed = createMemo(
-				(oldValue: StateObject) => ({
-					...oldValue,
-					count: oldValue.count + 1,
-					items: [...oldValue.items, `item${oldValue.count + 1}`],
-				}),
+				(prev: StateObject | undefined) => {
+					const oldValue = prev ?? fallback
+					return {
+						...oldValue,
+						count: oldValue.count + 1,
+						items: [...oldValue.items, `item${oldValue.count + 1}`],
+					}
+				},
 				{
-					value: {
-						count: 0,
-						items: [] as string[],
-						meta: { created: now },
-					},
+					value: fallback,
 				},
 			)
 
@@ -494,12 +487,14 @@ describe('Memo', () => {
 			expect(result.meta.created).toBe(now)
 		})
 
-		test('should preserve initialValue type consistency', () => {
+		test('should preserve initial value type consistency', () => {
 			// Test that oldValue type is consistent with initialValue
 			const stringComputed = createMemo(
-				(oldValue: string) => {
-					expect(typeof oldValue).toBe('string')
-					return oldValue.toUpperCase()
+				(prev: string | undefined) => {
+					expect(typeof prev).toBe('string')
+
+					// biome-ignore lint/style/noNonNullAssertion: test
+					return prev!.toUpperCase()
 				},
 				{
 					value: 'hello',
@@ -509,10 +504,10 @@ describe('Memo', () => {
 			expect(stringComputed.get()).toBe('HELLO')
 
 			const numberComputed = createMemo(
-				(oldValue: number) => {
-					expect(typeof oldValue).toBe('number')
-					expect(Number.isFinite(oldValue)).toBe(true)
-					return oldValue * 2
+				(prev: number | undefined) => {
+					expect(typeof prev).toBe('number')
+					expect(Number.isFinite(prev)).toBe(true)
+					return (prev ?? 0) * 2
 				},
 				{
 					value: 5,
@@ -522,22 +517,16 @@ describe('Memo', () => {
 			expect(numberComputed.get()).toBe(10)
 		})
 
-		test('should work with chained computed using oldValue', () => {
+		test('should work with chained computed using prev value', () => {
 			const source = createState(1)
 
-			const first = createMemo(
-				(oldValue: number) => oldValue + source.get(),
-				{
-					value: 10,
-				},
-			)
+			const first = createMemo(prev => (prev ?? 0) + source.get(), {
+				value: 10,
+			})
 
-			const second = createMemo(
-				(oldValue: number) => oldValue + first.get(),
-				{
-					value: 20,
-				},
-			)
+			const second = createMemo(prev => (prev ?? 0) + first.get(), {
+				value: 20,
+			})
 
 			expect(first.get()).toBe(11) // 10 + 1
 			expect(second.get()).toBe(31) // 20 + 11
@@ -547,14 +536,14 @@ describe('Memo', () => {
 			expect(second.get()).toBe(47) // 31 + 16
 		})
 
-		test('should handle frequent updates with oldValue correctly', () => {
+		test('should handle frequent updates with prev value correctly', () => {
 			const trigger = createState(0)
 			let computationCount = 0
 
 			const accumulator = createMemo(
-				(oldValue: number) => {
+				(prev: number | undefined) => {
 					computationCount++
-					return oldValue + trigger.get()
+					return (prev ?? 0) + trigger.get()
 				},
 				{
 					value: 100,

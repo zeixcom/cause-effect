@@ -76,7 +76,7 @@ function createCollection<T extends {}, U extends {}>(
 		stop: undefined,
 	}
 
-	const notifyCollection = () => {
+	const notify = () => {
 		for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
 		if (batchDepth === 0) flush()
 	}
@@ -87,9 +87,9 @@ function createCollection<T extends {}, U extends {}>(
 
 	const addSignal = (key: string): void => {
 		const signal = isAsync
-			? createTask(async (_prev: T, abort: AbortSignal) => {
+			? createTask(async (prev: T | undefined, abort: AbortSignal) => {
 					const sourceValue = source.byKey(key)?.get() as U
-					if (sourceValue == null) return _prev
+					if (sourceValue == null) return prev as T
 					return (
 						callback as (
 							sourceValue: U,
@@ -116,6 +116,20 @@ function createCollection<T extends {}, U extends {}>(
 	// Sync collection signals with source keys — called lazily on access
 	const sync = () => {
 		const newKeys = sourceKeysMemo.get()
+
+		// Fast path: check for same length and order first (most common case)
+		if (keys.length === newKeys.length) {
+			let reordered = false
+			for (let i = 0; i < keys.length; i++) {
+				if (keys[i] !== newKeys[i]) {
+					reordered = true
+					break
+				}
+			}
+			if (!reordered) return // No changes at all
+		}
+
+		// Slow path: structural changes detected, use Sets for diff
 		const oldKeySet = new Set(keys)
 		const newKeySet = new Set(newKeys)
 
@@ -137,19 +151,11 @@ function createCollection<T extends {}, U extends {}>(
 			}
 		}
 
-		// Detect reordering
-		if (!changed && keys.length === newKeys.length) {
-			for (let i = 0; i < keys.length; i++) {
-				if (keys[i] !== newKeys[i]) {
-					changed = true
-					break
-				}
-			}
-		}
-
+		// If lengths differ but no additions/removals, it's a reordering
+		if (!changed) changed = true
 		keys = newKeys
 
-		if (changed) notifyCollection()
+		if (changed) notify()
 	}
 
 	// Initialize signals for current source keys

@@ -1,5 +1,20 @@
-import { type Cleanup, type SignalOptions } from '../graph';
-import type { Memo } from './memo';
+import { type Cleanup, type ComputedOptions } from '../graph';
+/**
+ * A read-only signal that tracks external input and updates a state value as long as it is active.
+ *
+ * @template T - The type of value produced by the sensor
+ */
+type Sensor<T extends {}> = {
+    readonly [Symbol.toStringTag]: 'Sensor';
+    /**
+     * Gets the current value of the sensor.
+     * Updates its state value if the sensor is active.
+     * When called inside another reactive context, creates a dependency.
+     * @returns The sensor value
+     * @throws UnsetSignalValueError If the sensor value is still unset when read.
+     */
+    get(): T;
+};
 /**
  * A callback function for sensors when the sensor starts being watched.
  *
@@ -31,5 +46,12 @@ type SensorCallback<T extends {}> = (set: (next: T) => void) => Cleanup;
  * });
  * ```
  */
-declare const createSensor: <T extends {}>(start: SensorCallback<T>, options?: SignalOptions<T>) => Memo<T>;
-export { createSensor, type SensorCallback };
+declare const createSensor: <T extends {}>(start: SensorCallback<T>, options?: ComputedOptions<T>) => Sensor<T>;
+/**
+ * Checks if a value is a Sensor signal.
+ *
+ * @param value - The value to check
+ * @returns True if the value is a Sensor
+ */
+declare const isSensor: <T extends {} = {}>(value: unknown) => value is Sensor<T>;
+export { createSensor, isSensor, type Sensor, type SensorCallback };

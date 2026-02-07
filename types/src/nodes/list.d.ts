@@ -44,15 +44,6 @@ declare const TYPE_LIST: "List";
  * @returns {boolean} Whether the two values are equal
  */
 declare const isEqual: <T>(a: T, b: T, visited?: WeakSet<object>) => boolean;
-/**
- * Compares two records and returns a result object containing the differences.
- *
- * @since 0.15.0
- * @param {T} oldObj - The old record to compare
- * @param {T} newObj - The new record to compare
- * @returns {DiffResult} The result of the comparison
- */
-declare const diff: <T extends UnknownRecord>(oldObj: T, newObj: T) => DiffResult;
 declare const createList: <T extends {}>(initialValue: T[], options?: ListOptions<T>) => List<T>;
 declare const isList: <T extends {}>(value: unknown) => value is List<T>;
-export { type DiffResult, type KeyConfig, type List, type ListOptions, type UnknownRecord, createList, diff, isEqual, isList, TYPE_LIST, };
+export { type DiffResult, type KeyConfig, type List, type ListOptions, type UnknownRecord, createList, isEqual, isList, TYPE_LIST, };

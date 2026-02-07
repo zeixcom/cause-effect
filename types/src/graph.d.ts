@@ -5,7 +5,7 @@ type SourceFields<T extends {}> = {
     stop?: Cleanup;
 };
 type OptionsFields<T extends {}> = {
-    equals: (a: unknown, b: unknown) => boolean;
+    equals: (a: T, b: T) => boolean;
     guard?: Guard<T>;
 };
 type SinkFields = {
@@ -77,7 +77,7 @@ type SignalOptions<T extends {}> = {
      * Used to determine if a new value is different from the old value.
      * Defaults to reference equality (===).
      */
-    equals?: (a: unknown, b: unknown) => boolean;
+    equals?: (a: T, b: T) => boolean;
 };
 type ComputedOptions<T extends {}> = SignalOptions<T> & {
     /**
@@ -93,7 +93,7 @@ type ComputedOptions<T extends {}> = SignalOptions<T> & {
  * @param prev - The previous computed value
  * @returns The new computed value
  */
-type MemoCallback<T extends {}> = (prev: T) => T;
+type MemoCallback<T extends {}> = (prev: T | undefined) => T;
 /**
  * A callback function for tasks that asynchronously computes a value.
  *
@@ -102,7 +102,7 @@ type MemoCallback<T extends {}> = (prev: T) => T;
  * @param signal - An AbortSignal that will be triggered if the task is aborted
  * @returns A promise that resolves to the new computed value
  */
-type TaskCallback<T extends {}> = (prev: T, signal: AbortSignal) => Promise<T>;
+type TaskCallback<T extends {}> = (prev: T | undefined, signal: AbortSignal) => Promise<T>;
 /**
  * A callback function for effects that can perform side effects.
  *
@@ -117,7 +117,7 @@ declare const FLAG_DIRTY: number;
 declare let activeSink: SinkNode | null;
 declare let activeOwner: OwnerNode | null;
 declare let batchDepth: number;
-declare const defaultEquals: (a: unknown, b: unknown) => boolean;
+declare const defaultEquals: <T extends {}>(a: T, b: T) => boolean;
 declare const link: (source: SourceNode, sink: SinkNode) => void;
 declare const unlink: (edge: Edge) => Edge | null;
 declare const trimSources: (node: SinkNode) => void;
@@ -154,22 +154,19 @@ declare const batch: (fn: () => void) => void;
  * All effects created within the scope will be automatically disposed when the scope is disposed.
  * Scopes can be nested - disposing a parent scope disposes all child scopes.
  *
- * @template T - The type of value returned by the scope function
- * @param fn - The function to execute within the scope, receives an onCleanup callback
- * @returns A tuple of [result, dispose] where result is the return value of fn and dispose cleans up the scope
+ * @param fn - The function to execute within the scope, may return a cleanup function
+ * @returns A dispose function that cleans up the scope
  *
  * @example
  * ```ts
- * const [value, dispose] = createScope((onCleanup) => {
+ * const dispose = createScope(() => {
  *   const count = createState(0);
  *
  *   createEffect(() => {
  *     console.log(count.get());
  *   });
  *
- *   onCleanup(() => console.log('Scope disposed'));
- *
- *   return count;
+ *   return () => console.log('Scope disposed');
  * });
  *
  * dispose(); // Cleans up the effect and runs cleanup callbacks
@@ -178,23 +175,48 @@ declare const batch: (fn: () => void) => void;
  * @example
  * ```ts
  * // Nested scopes
- * const [outer, disposeOuter] = createScope(() => {
- *   const [inner, disposeInner] = createScope(() => {
+ * const disposeOuter = createScope(() => {
+ *   const disposeInner = createScope(() => {
  *     // ...
  *   });
  *   // disposeOuter() will also dispose inner scope
+ *   return disposeInner;
  * });
  * ```
  */
-declare const createScope: <T>(fn: (onCleanup: (fn: Cleanup) => void) => T) => [T, Cleanup];
-declare const validateSignalValue: <T extends {}>(where: string, value: unknown, guard?: Guard<T>) => void;
-declare const validateCallback: (where: string, value: unknown, guard?: (value: unknown) => boolean) => void;
+declare const createScope: (fn: () => MaybeCleanup) => Cleanup;
+declare function validateSignalValue<T extends {}>(where: string, value: unknown, guard?: Guard<T>): asserts value is T;
+declare function validateReadValue<T extends {}>(where: string, value: T | null | undefined): asserts value is T;
+declare function validateCallback(where: string, value: unknown): asserts value is (...args: unknown[]) => unknown;
+declare function validateCallback<T>(where: string, value: unknown, guard: (value: unknown) => value is T): asserts value is T;
 /**
  * Error thrown on re-entrance on an already running function.
  */
 declare class CircularDependencyError extends Error {
     /**
      * Constructs a new CircularDependencyError.
+     *
+     * @param where - The location where the error occurred.
+     */
+    constructor(where: string);
+}
+/**
+ * Error thrown when a signal value is null or undefined.
+ */
+declare class NullishSignalValueError extends TypeError {
+    /**
+     * Constructs a new NullishSignalValueError.
+     *
+     * @param where - The location where the error occurred.
+     */
+    constructor(where: string);
+}
+/**
+ * Error thrown when a signal is read before it has a value.
+ */
+declare class UnsetSignalValueError extends Error {
+    /**
+     * Constructs a new UnsetSignalValueError.
      *
      * @param where - The location where the error occurred.
      */
@@ -224,4 +246,15 @@ declare class InvalidCallbackError extends TypeError {
      */
     constructor(where: string, value: unknown);
 }
-export { type Cleanup, type ComputedOptions, type EffectCallback, type EffectNode, type Guard, type MaybeCleanup, type MemoCallback, type MemoNode, type RefNode, type Scope, type Signal, type SignalOptions, type SinkNode, type StateNode, type TaskCallback, type TaskNode, activeOwner, activeSink, batch, batchDepth, CircularDependencyError, createScope, defaultEquals, FLAG_CLEAN, FLAG_DIRTY, flush, InvalidCallbackError, InvalidSignalValueError, link, propagate, refresh, registerCleanup, runCleanup, runEffect, setState, trimSources, TYPE_MEMO, TYPE_STATE, TYPE_TASK, unlink, validateSignalValue, validateCallback, };
+/**
+ * Error thrown when an API requiring an owner is called without one.
+ */
+declare class RequiredOwnerError extends Error {
+    /**
+     * Constructs a new RequiredOwnerError.
+     *
+     * @param where - The location where the error occurred.
+     */
+    constructor(where: string);
+}
+export { type Cleanup, type ComputedOptions, type EffectCallback, type EffectNode, type Guard, type MaybeCleanup, type MemoCallback, type MemoNode, type RefNode, type Scope, type Signal, type SignalOptions, type SinkNode, type StateNode, type TaskCallback, type TaskNode, activeOwner, activeSink, batch, batchDepth, CircularDependencyError, createScope, defaultEquals, FLAG_CLEAN, FLAG_DIRTY, flush, InvalidCallbackError, InvalidSignalValueError, link, NullishSignalValueError, propagate, refresh, registerCleanup, runCleanup, runEffect, setState, trimSources, TYPE_MEMO, TYPE_STATE, TYPE_TASK, RequiredOwnerError, UnsetSignalValueError, unlink, validateSignalValue, validateReadValue, validateCallback, };

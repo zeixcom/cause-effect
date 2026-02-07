@@ -267,7 +267,7 @@ describe('Task', () => {
 			}).not.toThrow()
 
 			expect(() => {
-				createTask(async prev => prev + 1, { value: 42 })
+				createTask(async prev => (prev ?? 0) + 1, { value: 42 })
 			}).not.toThrow()
 		})
 	})
@@ -277,10 +277,10 @@ describe('Task', () => {
 			let receivedOldValue: number | undefined
 
 			const asyncComputed = createTask(
-				async (oldValue: number) => {
-					receivedOldValue = oldValue
+				async (next: number | undefined) => {
+					receivedOldValue = next
 					await wait(50)
-					return oldValue + 5
+					return (next ?? 0) + 5
 				},
 				{
 					value: 10,
@@ -302,17 +302,16 @@ describe('Task', () => {
 			const receivedOldValues: number[] = []
 
 			const asyncComputed = createTask(
-				async (oldValue: number, abort: AbortSignal) => {
+				async (prev: number | undefined, abort: AbortSignal) => {
 					computationCount++
+					const oldValue = prev ?? 0
 					receivedOldValues.push(oldValue)
 
 					// Simulate async work
 					await wait(100)
 
 					// Check if computation was aborted
-					if (abort.aborted) {
-						return oldValue
-					}
+					if (abort.aborted) return oldValue
 
 					return source.get() + oldValue
 				},

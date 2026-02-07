@@ -13,6 +13,7 @@ type Task<T extends {}> = {
      * Returns the last resolved value, even while a new computation is pending.
      * When called inside another reactive context, creates a dependency.
      * @returns The current value
+     * @throws UnsetSignalValueError If the task value is still unset when read.
      */
     get(): T;
     /**
@@ -34,7 +35,7 @@ type Task<T extends {}> = {
  * @template T - The type of value resolved by the task
  * @param fn - The async computation function that receives the previous value and an AbortSignal
  * @param options - Optional configuration for the task
- * @returns A Task object with get(), isPending(), abort(), and stop() methods
+ * @returns A Task object with get(), isPending(), and abort() methods
  *
  * @example
  * ```ts

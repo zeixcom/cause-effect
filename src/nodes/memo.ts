@@ -10,6 +10,7 @@ import {
 	type SinkNode,
 	TYPE_MEMO,
 	validateCallback,
+	validateReadValue,
 	validateSignalValue,
 } from '../graph'
 import { isObjectOfType, isSyncFunction } from '../util'
@@ -30,6 +31,7 @@ type Memo<T extends {}> = {
 	 * Recomputes if dependencies have changed since last access.
 	 * When called inside another reactive context, creates a dependency.
 	 * @returns The computed value
+	 * @throws UnsetSignalValueError If the memo value is still unset when read.
 	 */
 	get(): T
 }
@@ -87,6 +89,7 @@ const createMemo = <T extends {}>(
 			if (activeSink) link(node, activeSink)
 			refresh(node as unknown as SinkNode)
 			if (node.error) throw node.error
+			validateReadValue(TYPE_MEMO, node.value)
 			return node.value
 		},
 	}
@@ -97,14 +100,6 @@ const createMemo = <T extends {}>(
  *
  * @param value - The value to check
  * @returns True if the value is a Memo
- *
- * @example
- * ```ts
- * const memo = createMemo(() => 42);
- * if (isMemo(memo)) {
- *   console.log(memo.get()); // TypeScript knows this is a Memo
- * }
- * ```
  */
 const isMemo = <T extends {} = unknown & {}>(
 	value: unknown,

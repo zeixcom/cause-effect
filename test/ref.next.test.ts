@@ -8,7 +8,7 @@ test('Ref - basic functionality', () => {
 	})
 
 	// Ref returns Memo type
-	expect(ref[Symbol.toStringTag]).toBe('Memo')
+	expect(ref[Symbol.toStringTag]).toBe('Ref')
 
 	// Value accessible inside an effect (which triggers start)
 	let received: typeof obj | undefined

@@ -29,12 +29,18 @@ type MatchHandlers<T extends Signal<unknown & {}>[]> = {
  * @example
  * ```ts
  * // With cleanup
- * createEffect((onCleanup) => {
+ * createEffect(() => {
  *   const timer = setInterval(() => console.log(count.get()), 1000);
- *   onCleanup(() => clearInterval(timer));
+ *   return () => clearInterval(timer);
  * });
  * ```
  */
 declare const createEffect: (fn: EffectCallback) => Cleanup;
+/**
+ * Runs handlers based on the current values of signals.
+ * Must be called within an active owner (effect or scope) so async cleanup can be registered.
+ *
+ * @throws RequiredOwnerError If called without an active owner.
+ */
 declare const match: <T extends Signal<unknown & {}>[]>(signals: T, handlers: MatchHandlers<T>) => MaybeCleanup;
 export { type MaybePromise, type MatchHandlers, createEffect, match };

@@ -6,11 +6,13 @@ import {
 	FLAG_CLEAN,
 	FLAG_DIRTY,
 	type MaybeCleanup,
+	RequiredOwnerError,
 	registerCleanup,
 	runCleanup,
 	runEffect,
 	type Signal,
 	trimSources,
+	UnsetSignalValueError,
 	validateCallback,
 } from '../graph'
 
@@ -50,9 +52,9 @@ type MatchHandlers<T extends Signal<unknown & {}>[]> = {
  * @example
  * ```ts
  * // With cleanup
- * createEffect((onCleanup) => {
+ * createEffect(() => {
  *   const timer = setInterval(() => console.log(count.get()), 1000);
- *   onCleanup(() => clearInterval(timer));
+ *   return () => clearInterval(timer);
  * });
  * ```
  */
@@ -82,13 +84,17 @@ const createEffect = (fn: EffectCallback): Cleanup => {
 	return dispose
 }
 
+/**
+ * Runs handlers based on the current values of signals.
+ * Must be called within an active owner (effect or scope) so async cleanup can be registered.
+ *
+ * @throws RequiredOwnerError If called without an active owner.
+ */
 const match = <T extends Signal<unknown & {}>[]>(
 	signals: T,
 	handlers: MatchHandlers<T>,
 ): MaybeCleanup => {
-	if (!activeOwner) throw new Error('match() must be called inside an effect')
-
-	const owner = activeOwner
+	if (!activeOwner) throw new RequiredOwnerError('match')
 	const { ok, err = console.error, nil } = handlers
 	let errors: Error[] | undefined
 	let pending = false
@@ -100,6 +106,10 @@ const match = <T extends Signal<unknown & {}>[]>(
 			if (value == null) pending = true
 			else values[i] = value
 		} catch (e) {
+			if (e instanceof UnsetSignalValueError) {
+				pending = true
+				continue
+			}
 			if (!errors) errors = []
 			errors.push(e instanceof Error ? e : new Error(String(e)))
 		}
@@ -122,6 +132,7 @@ const match = <T extends Signal<unknown & {}>[]>(
 	if (typeof out === 'function') return out
 
 	if (out instanceof Promise) {
+		const owner = activeOwner
 		const controller = new AbortController()
 		registerCleanup(owner, () => controller.abort())
 		out.then(cleanup => {

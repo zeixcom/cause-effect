@@ -110,7 +110,11 @@ describe('collection', () => {
 
 			// Access each computed signal to trigger computation
 			for (let i = 0; i < asyncDoubled.length; i++) {
-				asyncDoubled.at(i)?.get()
+				try {
+					asyncDoubled.at(i)?.get()
+				} catch {
+					// Tasks may throw UnsetSignalValueError before they resolve
+				}
 			}
 
 			// Allow async operations to complete

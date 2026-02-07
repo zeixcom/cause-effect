@@ -12,6 +12,7 @@ type Memo<T extends {}> = {
      * Recomputes if dependencies have changed since last access.
      * When called inside another reactive context, creates a dependency.
      * @returns The computed value
+     * @throws UnsetSignalValueError If the memo value is still unset when read.
      */
     get(): T;
 };
@@ -46,14 +47,6 @@ declare const createMemo: <T extends {}>(fn: MemoCallback<T>, options?: Computed
  *
  * @param value - The value to check
  * @returns True if the value is a Memo
- *
- * @example
- * ```ts
- * const memo = createMemo(() => 42);
- * if (isMemo(memo)) {
- *   console.log(memo.get()); // TypeScript knows this is a Memo
- * }
- * ```
  */
 declare const isMemo: <T extends {} = {}>(value: unknown) => value is Memo<T>;
 export { createMemo, isMemo, type Memo };

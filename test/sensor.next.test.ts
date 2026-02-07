@@ -1,9 +1,9 @@
 import { expect, mock, test } from 'bun:test'
 import { createEffect, createSensor } from '../next.ts'
 
-test('Sensor - returns Memo type', () => {
+test('Sensor - returns Sensor type', () => {
 	const sensor = createSensor<{ x: number }>(() => () => {})
-	expect(sensor[Symbol.toStringTag]).toBe('Memo')
+	expect(sensor[Symbol.toStringTag]).toBe('Sensor')
 })
 
 test('Sensor - value is undefined before activation', () => {

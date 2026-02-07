@@ -16,7 +16,6 @@ import {
 	isNumber,
 	isObjectOfType,
 	isRecord,
-	isRecordOrArray,
 	isString,
 } from '../util'
 import {
@@ -144,60 +143,71 @@ const isEqual = <T>(a: T, b: T, visited?: WeakSet<object>): boolean => {
 }
 
 /**
- * Compares two records and returns a result object containing the differences.
+ * Compares two arrays using existing keys and returns differences as a DiffResult.
+ * Avoids object conversion by working directly with arrays and keys.
  *
  * @since 0.15.0
- * @param {T} oldObj - The old record to compare
- * @param {T} newObj - The new record to compare
- * @returns {DiffResult} The result of the comparison
+ * @param {T[]} oldArray - The old array
+ * @param {T[]} newArray - The new array
+ * @param {string[]} currentKeys - Current keys array (may be sparse or shorter than oldArray)
+ * @param {(item: T) => string} generateKey - Function to generate keys for new items
+ * @returns {DiffResult & { newKeys: string[] }} The differences in DiffResult format plus updated keys array
  */
-const diff = <T extends UnknownRecord>(oldObj: T, newObj: T): DiffResult => {
-	// Guard against non-objects that can't be diffed properly with Object.keys and 'in' operator
-	const oldValid = isRecordOrArray(oldObj)
-	const newValid = isRecordOrArray(newObj)
-	if (!oldValid || !newValid) {
-		// For non-objects or non-plain objects, treat as complete change if different
-		const changed = !Object.is(oldObj, newObj)
-		return {
-			changed,
-			add: changed && newValid ? newObj : {},
-			change: {},
-			remove: changed && oldValid ? oldObj : {},
-		}
-	}
-
+const diffArrays = <T>(
+	oldArray: T[],
+	newArray: T[],
+	currentKeys: string[],
+	generateKey: (item: T) => string,
+): DiffResult & { newKeys: string[] } => {
 	const visited = new WeakSet()
-
 	const add = {} as UnknownRecord
 	const change = {} as UnknownRecord
 	const remove = {} as UnknownRecord
+	const newKeys: string[] = []
 
-	const oldKeys = Object.keys(oldObj)
-	const newKeys = Object.keys(newObj)
-	const allKeys = new Set([...oldKeys, ...newKeys])
+	// Build a map of old values by key for quick lookup
+	const oldByKey = new Map<string, T>()
+	for (let i = 0; i < oldArray.length; i++) {
+		const key = currentKeys[i]
+		if (key && oldArray[i]) oldByKey.set(key, oldArray[i])
+	}
 
-	for (const key of allKeys) {
-		const oldHas = key in oldObj
-		const newHas = key in newObj
+	// Track which old keys we've seen
+	const seenKeys = new Set<string>()
 
-		if (!oldHas && newHas) {
-			add[key] = newObj[key]
-			continue
-		} else if (oldHas && !newHas) {
-			remove[key] = null
-			continue
+	// Process new array and build new keys array
+	for (let i = 0; i < newArray.length; i++) {
+		const newValue = newArray[i]
+		if (newValue === undefined) continue
+
+		// Get or generate key for this position
+		let key = currentKeys[i]
+		if (!key) key = generateKey(newValue)
+
+		newKeys.push(key)
+		seenKeys.add(key)
+
+		// Check if this key existed before
+		if (!oldByKey.has(key)) {
+			add[key] = newValue
+		} else {
+			const oldValue = oldByKey.get(key)
+			if (!isEqual(oldValue, newValue, visited)) change[key] = newValue
 		}
+	}
 
-		const oldValue = oldObj[key]
-		const newValue = newObj[key]
-
-		if (!isEqual(oldValue, newValue, visited)) change[key] = newValue
+	// Find removed keys (existed in old but not in new)
+	for (const [key] of oldByKey) {
+		if (!seenKeys.has(key)) {
+			remove[key] = null
+		}
 	}
 
 	return {
 		add,
 		change,
 		remove,
+		newKeys,
 		changed: !!(
 			Object.keys(add).length ||
 			Object.keys(change).length ||
@@ -297,9 +307,6 @@ const createList = <T extends {}>(
 			const index = keys.indexOf(key)
 			if (index !== -1) keys.splice(index, 1)
 		}
-		if (Object.keys(changes.remove).length) {
-			keys = keys.filter(() => true)
-		}
 
 		return changes.changed
 	}
@@ -334,8 +341,17 @@ const createList = <T extends {}>(
 
 		set(newValue: T[]) {
 			const currentValue = assembleValue()
-			const changes = diff(toRecord(currentValue), toRecord(newValue))
-			if (applyChanges(changes)) notify()
+			const changes = diffArrays(
+				currentValue,
+				newValue,
+				keys,
+				generateKey,
+			)
+			if (changes.changed) {
+				keys = changes.newKeys
+				applyChanges(changes)
+				notify()
+			}
 		},
 
 		update(fn: (oldValue: T[]) => T[]) {
@@ -381,7 +397,6 @@ const createList = <T extends {}>(
 					? keyOrIndex
 					: keys.indexOf(key)
 				if (index >= 0) keys.splice(index, 1)
-				keys = keys.filter(() => true)
 				notify()
 			}
 		},
@@ -486,7 +501,6 @@ export {
 	type ListOptions,
 	type UnknownRecord,
 	createList,
-	diff,
 	isEqual,
 	isList,
 	TYPE_LIST,

@@ -4,31 +4,23 @@
  * @author Esther Brunner
  */
 
-/* export {
-	CircularDependencyError,
-	createError,
-	// DuplicateKeyError,
-	// type Guard,
-	// guardMutableSignal,
-	InvalidCallbackError,
-	// InvalidCollectionSourceError,
-	InvalidSignalValueError,
-	NullishSignalValueError,
-	// ReadonlySignalError,
-	validateCallback,
-	validateSignalValue,
-} from './src/errors' */
 export {
 	batch,
+	CircularDependencyError,
 	type Cleanup,
 	type ComputedOptions,
 	createScope,
 	type EffectCallback,
 	type Guard,
+	InvalidCallbackError,
+	InvalidSignalValueError,
 	type MemoCallback,
+	NullishSignalValueError,
+	RequiredOwnerError,
 	type Signal,
 	type SignalOptions,
 	type TaskCallback,
+	UnsetSignalValueError,
 } from './src/graph'
 export {
 	type Collection,
@@ -45,18 +37,19 @@ export {
 } from './src/nodes/effect'
 export {
 	createList,
-	type DiffResult,
-	diff,
-	isEqual,
 	isList,
 	type KeyConfig,
 	type List,
 	type ListOptions,
-	type UnknownRecord,
 } from './src/nodes/list'
 export { createMemo, isMemo, type Memo } from './src/nodes/memo'
-export { createRef, type RefCallback } from './src/nodes/ref'
-export { createSensor, type SensorCallback } from './src/nodes/sensor'
+export { createRef, isRef, type Ref, type RefCallback } from './src/nodes/ref'
+export {
+	createSensor,
+	isSensor,
+	type Sensor,
+	type SensorCallback,
+} from './src/nodes/sensor'
 export {
 	createState,
 	isState,

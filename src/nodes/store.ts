@@ -1,4 +1,3 @@
-import { diff } from '../diff'
 import {
 	activeSink,
 	batch,
@@ -10,10 +9,17 @@ import {
 	type RefNode,
 	validateSignalValue,
 } from '../graph'
-import { isFunction, isObjectOfType, isRecord, isSymbol } from '../util'
+import {
+	isFunction,
+	isObjectOfType,
+	isRecord,
+	isRecordOrArray,
+	isSymbol,
+} from '../util'
 import {
 	createList,
 	type DiffResult,
+	isEqual,
 	type List,
 	type UnknownRecord,
 } from './list'
@@ -75,6 +81,72 @@ class DuplicateKeyError extends Error {
 
 /* === Functions === */
 
+/**
+ * Compares two records and returns a result object containing the differences.
+ *
+ * @since 0.15.0
+ * @param {T} oldObj - The old record to compare
+ * @param {T} newObj - The new record to compare
+ * @returns {DiffResult} The result of the comparison
+ */
+const diffRecords = <T extends UnknownRecord>(
+	oldObj: T,
+	newObj: T,
+): DiffResult => {
+	// Guard against non-objects that can't be diffed properly with Object.keys and 'in' operator
+	const oldValid = isRecordOrArray(oldObj)
+	const newValid = isRecordOrArray(newObj)
+	if (!oldValid || !newValid) {
+		// For non-objects or non-plain objects, treat as complete change if different
+		const changed = !Object.is(oldObj, newObj)
+		return {
+			changed,
+			add: changed && newValid ? newObj : {},
+			change: {},
+			remove: changed && oldValid ? oldObj : {},
+		}
+	}
+
+	const visited = new WeakSet()
+
+	const add = {} as UnknownRecord
+	const change = {} as UnknownRecord
+	const remove = {} as UnknownRecord
+
+	const oldKeys = Object.keys(oldObj)
+	const newKeys = Object.keys(newObj)
+	const allKeys = new Set([...oldKeys, ...newKeys])
+
+	for (const key of allKeys) {
+		const oldHas = key in oldObj
+		const newHas = key in newObj
+
+		if (!oldHas && newHas) {
+			add[key] = newObj[key]
+			continue
+		} else if (oldHas && !newHas) {
+			remove[key] = undefined
+			continue
+		}
+
+		const oldValue = oldObj[key]
+		const newValue = newObj[key]
+
+		if (!isEqual(oldValue, newValue, visited)) change[key] = newValue
+	}
+
+	return {
+		add,
+		change,
+		remove,
+		changed: !!(
+			Object.keys(add).length ||
+			Object.keys(change).length ||
+			Object.keys(remove).length
+		),
+	}
+}
+
 const createStore = <T extends UnknownRecord>(
 	initialValue: T,
 	options?: StoreOptions,
@@ -124,9 +196,7 @@ const createStore = <T extends UnknownRecord>(
 
 	const applyChanges = (changes: DiffResult): boolean => {
 		// Additions
-		for (const key in changes.add) {
-			addSignal(key, changes.add[key])
-		}
+		for (const key in changes.add) addSignal(key, changes.add[key])
 
 		// Changes
 		if (Object.keys(changes.change).length) {
@@ -148,17 +218,14 @@ const createStore = <T extends UnknownRecord>(
 		}
 
 		// Removals
-		for (const key in changes.remove) {
-			signals.delete(key)
-		}
+		for (const key in changes.remove) signals.delete(key)
 
 		return changes.changed
 	}
 
 	// --- Initialize ---
-	for (const key of Object.keys(initialValue)) {
+	for (const key of Object.keys(initialValue))
 		addSignal(key, initialValue[key])
-	}
 
 	// --- Store object ---
 	const store: BaseStore<T> = {
@@ -196,7 +263,7 @@ const createStore = <T extends UnknownRecord>(
 
 		set(newValue: T) {
 			const currentValue = assembleValue()
-			const changed = applyChanges(diff(currentValue, newValue))
+			const changed = applyChanges(diffRecords(currentValue, newValue))
 			if (changed) notify()
 		},
 

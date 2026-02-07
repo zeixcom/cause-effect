@@ -8,7 +8,7 @@ type SourceFields<T extends {}> = {
 }
 
 type OptionsFields<T extends {}> = {
-	equals: (a: unknown, b: unknown) => boolean
+	equals: (a: T, b: T) => boolean
 	guard?: Guard<T>
 }
 
@@ -106,7 +106,7 @@ type SignalOptions<T extends {}> = {
 	 * Used to determine if a new value is different from the old value.
 	 * Defaults to reference equality (===).
 	 */
-	equals?: (a: unknown, b: unknown) => boolean
+	equals?: (a: T, b: T) => boolean
 }
 
 type ComputedOptions<T extends {}> = SignalOptions<T> & {
@@ -124,7 +124,7 @@ type ComputedOptions<T extends {}> = SignalOptions<T> & {
  * @param prev - The previous computed value
  * @returns The new computed value
  */
-type MemoCallback<T extends {}> = (prev: T) => T
+type MemoCallback<T extends {}> = (prev: T | undefined) => T
 
 /**
  * A callback function for tasks that asynchronously computes a value.
@@ -134,7 +134,10 @@ type MemoCallback<T extends {}> = (prev: T) => T
  * @param signal - An AbortSignal that will be triggered if the task is aborted
  * @returns A promise that resolves to the new computed value
  */
-type TaskCallback<T extends {}> = (prev: T, signal: AbortSignal) => Promise<T>
+type TaskCallback<T extends {}> = (
+	prev: T | undefined,
+	signal: AbortSignal,
+) => Promise<T>
 
 /**
  * A callback function for effects that can perform side effects.
@@ -164,7 +167,7 @@ let flushing = false
 
 /* === Utility Functions === */
 
-const defaultEquals = /*#__PURE__*/ (a: unknown, b: unknown) => a === b
+const defaultEquals = /*#__PURE__*/ <T extends {}>(a: T, b: T) => a === b
 
 const isFunction = /*#__PURE__*/ <T>(
 	fn: unknown,
@@ -482,22 +485,19 @@ const batch = (fn: () => void): void => {
  * All effects created within the scope will be automatically disposed when the scope is disposed.
  * Scopes can be nested - disposing a parent scope disposes all child scopes.
  *
- * @template T - The type of value returned by the scope function
- * @param fn - The function to execute within the scope, receives an onCleanup callback
- * @returns A tuple of [result, dispose] where result is the return value of fn and dispose cleans up the scope
+ * @param fn - The function to execute within the scope, may return a cleanup function
+ * @returns A dispose function that cleans up the scope
  *
  * @example
  * ```ts
- * const [value, dispose] = createScope((onCleanup) => {
+ * const dispose = createScope(() => {
  *   const count = createState(0);
  *
  *   createEffect(() => {
  *     console.log(count.get());
  *   });
  *
- *   onCleanup(() => console.log('Scope disposed'));
- *
- *   return count;
+ *   return () => console.log('Scope disposed');
  * });
  *
  * dispose(); // Cleans up the effect and runs cleanup callbacks
@@ -506,26 +506,26 @@ const batch = (fn: () => void): void => {
  * @example
  * ```ts
  * // Nested scopes
- * const [outer, disposeOuter] = createScope(() => {
- *   const [inner, disposeInner] = createScope(() => {
+ * const disposeOuter = createScope(() => {
+ *   const disposeInner = createScope(() => {
  *     // ...
  *   });
  *   // disposeOuter() will also dispose inner scope
+ *   return disposeInner;
  * });
  * ```
  */
-const createScope = <T>(
-	fn: (onCleanup: (fn: Cleanup) => void) => T,
-): [T, Cleanup] => {
+const createScope = (fn: () => MaybeCleanup): Cleanup => {
 	const prevOwner = activeOwner
 	const scope: Scope = { cleanup: null }
 	activeOwner = scope
 
 	try {
-		const result = fn(cleanupFn => registerCleanup(scope, cleanupFn))
+		const out = fn()
+		if (typeof out === 'function') registerCleanup(scope, out)
 		const dispose = () => runCleanup(scope)
 		if (prevOwner) registerCleanup(prevOwner, dispose)
-		return [result, dispose]
+		return dispose
 	} finally {
 		activeOwner = prevOwner
 	}
@@ -540,20 +540,36 @@ const valueString = (value: unknown): string =>
 			? JSON.stringify(value)
 			: String(value)
 
-const validateSignalValue = <T extends {}>(
+function validateSignalValue<T extends {}>(
 	where: string,
 	value: unknown,
 	guard?: Guard<T>,
-): void => {
+): asserts value is T {
 	if (value == null) throw new NullishSignalValueError(where)
 	if (guard && !guard(value)) throw new InvalidSignalValueError(where, value)
 }
 
-const validateCallback = (
+function validateReadValue<T extends {}>(
+	where: string,
+	value: T | null | undefined,
+): asserts value is T {
+	if (value == null) throw new UnsetSignalValueError(where)
+}
+
+function validateCallback(
+	where: string,
+	value: unknown,
+): asserts value is (...args: unknown[]) => unknown
+function validateCallback<T>(
+	where: string,
+	value: unknown,
+	guard: (value: unknown) => value is T,
+): asserts value is T
+function validateCallback(
 	where: string,
 	value: unknown,
 	guard: (value: unknown) => boolean = isFunction,
-): void => {
+): void {
 	if (!guard(value)) throw new InvalidCallbackError(where, value)
 }
 
@@ -584,6 +600,21 @@ class NullishSignalValueError extends TypeError {
 	constructor(where: string) {
 		super(`[${where}] Signal value cannot be null or undefined`)
 		this.name = 'NullishSignalValueError'
+	}
+}
+
+/**
+ * Error thrown when a signal is read before it has a value.
+ */
+class UnsetSignalValueError extends Error {
+	/**
+	 * Constructs a new UnsetSignalValueError.
+	 *
+	 * @param where - The location where the error occurred.
+	 */
+	constructor(where: string) {
+		super(`[${where}] Signal value is unset`)
+		this.name = 'UnsetSignalValueError'
 	}
 }
 
@@ -619,6 +650,21 @@ class InvalidCallbackError extends TypeError {
 	}
 }
 
+/**
+ * Error thrown when an API requiring an owner is called without one.
+ */
+class RequiredOwnerError extends Error {
+	/**
+	 * Constructs a new RequiredOwnerError.
+	 *
+	 * @param where - The location where the error occurred.
+	 */
+	constructor(where: string) {
+		super(`[${where}] Active owner is required`)
+		this.name = 'RequiredOwnerError'
+	}
+}
+
 export {
 	type Cleanup,
 	type ComputedOptions,
@@ -649,6 +695,7 @@ export {
 	InvalidCallbackError,
 	InvalidSignalValueError,
 	link,
+	NullishSignalValueError,
 	propagate,
 	refresh,
 	registerCleanup,
@@ -659,7 +706,10 @@ export {
 	TYPE_MEMO,
 	TYPE_STATE,
 	TYPE_TASK,
+	RequiredOwnerError,
+	UnsetSignalValueError,
 	unlink,
 	validateSignalValue,
+	validateReadValue,
 	validateCallback,
 }

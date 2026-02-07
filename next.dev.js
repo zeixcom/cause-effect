@@ -271,26 +271,32 @@ var createScope = (fn) => {
   const scope = { cleanup: null };
   activeOwner = scope;
   try {
-    const result = fn((cleanupFn) => registerCleanup(scope, cleanupFn));
+    const out = fn();
+    if (typeof out === "function")
+      registerCleanup(scope, out);
     const dispose = () => runCleanup(scope);
     if (prevOwner)
       registerCleanup(prevOwner, dispose);
-    return [result, dispose];
+    return dispose;
   } finally {
     activeOwner = prevOwner;
   }
 };
 var valueString = (value) => typeof value === "string" ? `"${value}"` : !!value && typeof value === "object" ? JSON.stringify(value) : String(value);
-var validateSignalValue = (where, value, guard) => {
+function validateSignalValue(where, value, guard) {
   if (value == null)
     throw new NullishSignalValueError(where);
   if (guard && !guard(value))
     throw new InvalidSignalValueError(where, value);
-};
-var validateCallback = (where, value, guard = isFunction) => {
+}
+function validateReadValue(where, value) {
+  if (value == null)
+    throw new UnsetSignalValueError(where);
+}
+function validateCallback(where, value, guard = isFunction) {
   if (!guard(value))
     throw new InvalidCallbackError(where, value);
-};
+}
 
 class CircularDependencyError extends Error {
   constructor(where) {
@@ -306,6 +312,13 @@ class NullishSignalValueError extends TypeError {
   }
 }
 
+class UnsetSignalValueError extends Error {
+  constructor(where) {
+    super(`[${where}] Signal value is unset`);
+    this.name = "UnsetSignalValueError";
+  }
+}
+
 class InvalidSignalValueError extends TypeError {
   constructor(where, value) {
     super(`[${where}] Signal value ${valueString(value)} is invalid`);
@@ -317,6 +330,13 @@ class InvalidCallbackError extends TypeError {
   constructor(where, value) {
     super(`[${where}] Callback ${valueString(value)} is invalid`);
     this.name = "InvalidCallbackError";
+  }
+}
+
+class RequiredOwnerError extends Error {
+  constructor(where) {
+    super(`[${where}] Active owner is required`);
+    this.name = "RequiredOwnerError";
   }
 }
 // src/util.ts
@@ -416,44 +436,46 @@ var isEqual = (a, b, visited) => {
     visited.delete(b);
   }
 };
-var diff = (oldObj, newObj) => {
-  const oldValid = isRecordOrArray(oldObj);
-  const newValid = isRecordOrArray(newObj);
-  if (!oldValid || !newValid) {
-    const changed = !Object.is(oldObj, newObj);
-    return {
-      changed,
-      add: changed && newValid ? newObj : {},
-      change: {},
-      remove: changed && oldValid ? oldObj : {}
-    };
-  }
+var diffArrays = (oldArray, newArray, currentKeys, generateKey) => {
   const visited = new WeakSet;
   const add = {};
   const change = {};
   const remove = {};
-  const oldKeys = Object.keys(oldObj);
-  const newKeys = Object.keys(newObj);
-  const allKeys = new Set([...oldKeys, ...newKeys]);
-  for (const key of allKeys) {
-    const oldHas = key in oldObj;
-    const newHas = key in newObj;
-    if (!oldHas && newHas) {
-      add[key] = newObj[key];
+  const newKeys = [];
+  const oldByKey = new Map;
+  for (let i = 0;i < oldArray.length; i++) {
+    const key = currentKeys[i];
+    if (key && oldArray[i])
+      oldByKey.set(key, oldArray[i]);
+  }
+  const seenKeys = new Set;
+  for (let i = 0;i < newArray.length; i++) {
+    const newValue = newArray[i];
+    if (newValue === undefined)
       continue;
-    } else if (oldHas && !newHas) {
-      remove[key] = null;
-      continue;
+    let key = currentKeys[i];
+    if (!key)
+      key = generateKey(newValue);
+    newKeys.push(key);
+    seenKeys.add(key);
+    if (!oldByKey.has(key)) {
+      add[key] = newValue;
+    } else {
+      const oldValue = oldByKey.get(key);
+      if (!isEqual(oldValue, newValue, visited))
+        change[key] = newValue;
     }
-    const oldValue = oldObj[key];
-    const newValue = newObj[key];
-    if (!isEqual(oldValue, newValue, visited))
-      change[key] = newValue;
+  }
+  for (const [key] of oldByKey) {
+    if (!seenKeys.has(key)) {
+      remove[key] = null;
+    }
   }
   return {
     add,
     change,
     remove,
+    newKeys,
     changed: !!(Object.keys(add).length || Object.keys(change).length || Object.keys(remove).length)
   };
 };
@@ -526,9 +548,6 @@ var createList = (initialValue, options) => {
       if (index !== -1)
         keys.splice(index, 1);
     }
-    if (Object.keys(changes.remove).length) {
-      keys = keys.filter(() => true);
-    }
     return changes.changed;
   };
   const initRecord = toRecord(initialValue);
@@ -555,9 +574,12 @@ var createList = (initialValue, options) => {
     },
     set(newValue) {
       const currentValue = assembleValue();
-      const changes = diff(toRecord(currentValue), toRecord(newValue));
-      if (applyChanges(changes))
+      const changes = diffArrays(currentValue, newValue, keys, generateKey);
+      if (changes.changed) {
+        keys = changes.newKeys;
+        applyChanges(changes);
         notify();
+      }
     },
     update(fn) {
       list.set(fn(list.get()));
@@ -595,7 +617,6 @@ var createList = (initialValue, options) => {
         const index = isNumber(keyOrIndex) ? keyOrIndex : keys.indexOf(key);
         if (index >= 0)
           keys.splice(index, 1);
-        keys = keys.filter(() => true);
         notify();
       }
     },
@@ -674,6 +695,7 @@ var createMemo = (fn, options) => {
       refresh(node);
       if (node.error)
         throw node.error;
+      validateReadValue(TYPE_MEMO, node.value);
       return node.value;
     }
   };
@@ -705,10 +727,11 @@ var createTask = (fn, options) => {
       refresh(node);
       if (node.error)
         throw node.error;
+      validateReadValue(TYPE_TASK, node.value);
       return node.value;
     },
     isPending() {
-      return !node.controller;
+      return !!node.controller;
     },
     abort() {
       node.controller?.abort();
@@ -733,7 +756,7 @@ function createCollection(source, callback) {
     sinksTail: null,
     stop: undefined
   };
-  const notifyCollection = () => {
+  const notify = () => {
     for (let e = node.sinks;e; e = e.nextSink)
       propagate(e.sink);
     if (batchDepth === 0)
@@ -744,10 +767,10 @@ function createCollection(source, callback) {
       link(node, activeSink);
   };
   const addSignal = (key) => {
-    const signal = isAsync ? createTask(async (_prev, abort) => {
+    const signal = isAsync ? createTask(async (prev, abort) => {
       const sourceValue = source.byKey(key)?.get();
       if (sourceValue == null)
-        return _prev;
+        return prev;
       return callback(sourceValue, abort);
     }) : createMemo(() => {
       const sourceValue = source.byKey(key)?.get();
@@ -762,6 +785,17 @@ function createCollection(source, callback) {
   });
   const sync = () => {
     const newKeys = sourceKeysMemo.get();
+    if (keys.length === newKeys.length) {
+      let reordered = false;
+      for (let i = 0;i < keys.length; i++) {
+        if (keys[i] !== newKeys[i]) {
+          reordered = true;
+          break;
+        }
+      }
+      if (!reordered)
+        return;
+    }
     const oldKeySet = new Set(keys);
     const newKeySet = new Set(newKeys);
     let changed = false;
@@ -777,17 +811,11 @@ function createCollection(source, callback) {
         changed = true;
       }
     }
-    if (!changed && keys.length === newKeys.length) {
-      for (let i = 0;i < keys.length; i++) {
-        if (keys[i] !== newKeys[i]) {
-          changed = true;
-          break;
-        }
-      }
-    }
+    if (!changed)
+      changed = true;
     keys = newKeys;
     if (changed)
-      notifyCollection();
+      notify();
   };
   for (const key of Array.from(source.keys())) {
     addSignal(key);
@@ -868,8 +896,7 @@ var createEffect = (fn) => {
 };
 var match = (signals, handlers) => {
   if (!activeOwner)
-    throw new Error("match() must be called inside an effect");
-  const owner = activeOwner;
+    throw new RequiredOwnerError("match");
   const { ok, err = console.error, nil } = handlers;
   let errors;
   let pending = false;
@@ -882,6 +909,10 @@ var match = (signals, handlers) => {
       else
         values[i] = value;
     } catch (e) {
+      if (e instanceof UnsetSignalValueError) {
+        pending = true;
+        continue;
+      }
       if (!errors)
         errors = [];
       errors.push(e instanceof Error ? e : new Error(String(e)));
@@ -901,6 +932,7 @@ var match = (signals, handlers) => {
   if (typeof out === "function")
     return out;
   if (out instanceof Promise) {
+    const owner = activeOwner;
     const controller = new AbortController;
     registerCleanup(owner, () => controller.abort());
     out.then((cleanup) => {
@@ -912,59 +944,65 @@ var match = (signals, handlers) => {
   }
 };
 // src/nodes/ref.ts
+var TYPE_REF = "Ref";
 var createRef = (value, start) => {
+  validateSignalValue("Ref", value);
+  validateCallback("Ref", start, isSyncFunction);
   const node = {
     value,
     sinks: null,
     sinksTail: null,
     stop: undefined
   };
-  const notify = () => {
-    for (let e = node.sinks;e; e = e.nextSink)
-      propagate(e.sink);
-    if (batchDepth === 0)
-      flush();
-  };
-  const ref = {
-    [Symbol.toStringTag]: TYPE_MEMO,
+  return {
+    [Symbol.toStringTag]: TYPE_REF,
     get() {
       if (activeSink) {
         if (!node.sinks)
-          node.stop = start(notify);
+          node.stop = start(() => {
+            for (let e = node.sinks;e; e = e.nextSink)
+              propagate(e.sink);
+            if (batchDepth === 0)
+              flush();
+          });
         link(node, activeSink);
       }
       return node.value;
     }
   };
-  return ref;
 };
+var isRef = (value) => isObjectOfType(value, TYPE_REF);
 // src/nodes/sensor.ts
+var TYPE_SENSOR = "Sensor";
 var createSensor = (start, options) => {
+  validateCallback(TYPE_SENSOR, start, isSyncFunction);
+  if (options?.value !== undefined)
+    validateSignalValue(TYPE_SENSOR, options.value, options?.guard);
   const node = {
-    value: undefined,
+    value: options?.value,
     sinks: null,
     sinksTail: null,
     equals: options?.equals ?? defaultEquals,
     guard: options?.guard,
     stop: undefined
   };
-  const set = (next) => {
-    validateSignalValue("Sensor", next, node.guard);
-    setState(node, next);
-  };
-  const sensor = {
-    [Symbol.toStringTag]: TYPE_MEMO,
+  return {
+    [Symbol.toStringTag]: TYPE_SENSOR,
     get() {
       if (activeSink) {
         if (!node.sinks)
-          node.stop = start(set);
+          node.stop = start((next) => {
+            validateSignalValue("Sensor", next, node.guard);
+            setState(node, next);
+          });
         link(node, activeSink);
       }
+      validateReadValue(TYPE_SENSOR, node.value);
       return node.value;
     }
   };
-  return sensor;
 };
+var isSensor = (value) => isObjectOfType(value, TYPE_SENSOR);
 // src/nodes/store.ts
 var TYPE_STORE = "Store";
 
@@ -974,51 +1012,7 @@ class DuplicateKeyError2 extends Error {
     this.name = "DuplicateKeyError";
   }
 }
-var isEqual2 = (a, b, visited) => {
-  if (Object.is(a, b))
-    return true;
-  if (typeof a !== typeof b)
-    return false;
-  if (!isNonNullObject(a) || !isNonNullObject(b))
-    return false;
-  if (!visited)
-    visited = new WeakSet;
-  if (visited.has(a) || visited.has(b))
-    throw new CircularDependencyError("isEqual");
-  visited.add(a);
-  visited.add(b);
-  try {
-    if (Array.isArray(a) && Array.isArray(b)) {
-      if (a.length !== b.length)
-        return false;
-      for (let i = 0;i < a.length; i++) {
-        if (!isEqual2(a[i], b[i], visited))
-          return false;
-      }
-      return true;
-    }
-    if (Array.isArray(a) !== Array.isArray(b))
-      return false;
-    if (isRecord(a) && isRecord(b)) {
-      const aKeys = Object.keys(a);
-      const bKeys = Object.keys(b);
-      if (aKeys.length !== bKeys.length)
-        return false;
-      for (const key of aKeys) {
-        if (!(key in b))
-          return false;
-        if (!isEqual2(a[key], b[key], visited))
-          return false;
-      }
-      return true;
-    }
-    return false;
-  } finally {
-    visited.delete(a);
-    visited.delete(b);
-  }
-};
-var diff2 = (oldObj, newObj) => {
+var diffRecords = (oldObj, newObj) => {
   const oldValid = isRecordOrArray(oldObj);
   const newValid = isRecordOrArray(newObj);
   if (!oldValid || !newValid) {
@@ -1044,12 +1038,12 @@ var diff2 = (oldObj, newObj) => {
       add[key] = newObj[key];
       continue;
     } else if (oldHas && !newHas) {
-      remove[key] = null;
+      remove[key] = undefined;
       continue;
     }
     const oldValue = oldObj[key];
     const newValue = newObj[key];
-    if (!isEqual2(oldValue, newValue, visited))
+    if (!isEqual(oldValue, newValue, visited))
       change[key] = newValue;
   }
   return {
@@ -1098,9 +1092,8 @@ var createStore = (initialValue, options) => {
     return record;
   };
   const applyChanges = (changes) => {
-    for (const key in changes.add) {
+    for (const key in changes.add)
       addSignal(key, changes.add[key]);
-    }
     if (Object.keys(changes.change).length) {
       batch(() => {
         for (const key in changes.change) {
@@ -1117,14 +1110,12 @@ var createStore = (initialValue, options) => {
         }
       });
     }
-    for (const key in changes.remove) {
+    for (const key in changes.remove)
       signals.delete(key);
-    }
     return changes.changed;
   };
-  for (const key of Object.keys(initialValue)) {
+  for (const key of Object.keys(initialValue))
     addSignal(key, initialValue[key]);
-  }
   const store = {
     [Symbol.toStringTag]: TYPE_STORE,
     [Symbol.isConcatSpreadable]: false,
@@ -1148,7 +1139,7 @@ var createStore = (initialValue, options) => {
     },
     set(newValue) {
       const currentValue = assembleValue();
-      const changed = applyChanges(diff2(currentValue, newValue));
+      const changed = applyChanges(diffRecords(currentValue, newValue));
       if (changed)
         notify();
     },
@@ -1206,11 +1197,11 @@ export {
   isTask,
   isStore,
   isState,
+  isSensor,
+  isRef,
   isMemo,
   isList,
-  isEqual,
   isCollection,
-  diff,
   createTask,
   createStore,
   createState,
@@ -1221,5 +1212,11 @@ export {
   createList,
   createEffect,
   createCollection,
-  batch
+  batch,
+  UnsetSignalValueError,
+  RequiredOwnerError,
+  NullishSignalValueError,
+  InvalidSignalValueError,
+  InvalidCallbackError,
+  CircularDependencyError
 };
