@@ -3,10 +3,13 @@ import {
 	batch,
 	batchDepth,
 	type Cleanup,
+	FLAG_DIRTY,
 	flush,
 	link,
+	type MemoNode,
 	propagate,
-	type RefNode,
+	refresh,
+	type SinkNode,
 	validateSignalValue,
 } from '../graph'
 import {
@@ -158,26 +161,7 @@ const createStore = <T extends UnknownRecord>(
 		State<unknown & {}> | Store<UnknownRecord> | List<unknown & {}>
 	>()
 
-	const node: RefNode<T> = {
-		value: initialValue,
-		sinks: null,
-		sinksTail: null,
-		stop: undefined,
-	}
-
 	// --- Internal helpers ---
-
-	const notify = () => {
-		for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
-		if (batchDepth === 0) flush()
-	}
-
-	const linkStore = () => {
-		if (activeSink) {
-			if (!node.sinks && options?.watched) node.stop = options.watched()
-			link(node, activeSink)
-		}
-	}
 
 	const addSignal = (key: string, value: unknown): void => {
 		validateSignalValue(`${TYPE_STORE} for key "${key}"`, value)
@@ -186,12 +170,22 @@ const createStore = <T extends UnknownRecord>(
 		else signals.set(key, createState(value as unknown & {}))
 	}
 
-	const assembleValue = (): T => {
-		const record = {} as UnknownRecord
-		signals.forEach((signal, key) => {
-			record[key] = signal.get()
-		})
-		return record as T
+	const node: MemoNode<T> = {
+		fn: (): T => {
+			const record = {} as UnknownRecord
+			signals.forEach((signal, key) => {
+				record[key] = signal.get()
+			})
+			return record as T
+		},
+		value: initialValue,
+		flags: FLAG_DIRTY,
+		sources: null,
+		sourcesTail: null,
+		sinks: null,
+		sinksTail: null,
+		equals: isEqual,
+		error: undefined,
 	}
 
 	const applyChanges = (changes: DiffResult): boolean => {
@@ -207,11 +201,9 @@ const createStore = <T extends UnknownRecord>(
 					const signal = signals.get(key)
 					if (signal) {
 						// Type changed (e.g. primitive → object or vice versa): replace signal
-						if (isRecord(value) !== isStore(signal)) {
+						if (isRecord(value) !== isStore(signal))
 							addSignal(key, value)
-						} else {
-							signal.set(value as never)
-						}
+						else signal.set(value as never)
 					}
 				}
 			})
@@ -241,7 +233,11 @@ const createStore = <T extends UnknownRecord>(
 		},
 
 		keys() {
-			linkStore()
+			if (activeSink) {
+				if (!node.sinks && options?.watched)
+					node.stop = options.watched()
+				link(node, activeSink)
+			}
 			return signals.keys()
 		},
 
@@ -257,17 +253,31 @@ const createStore = <T extends UnknownRecord>(
 		},
 
 		get() {
-			linkStore()
-			return assembleValue()
+			if (activeSink) {
+				if (!node.sinks && options?.watched)
+					node.stop = options.watched()
+				link(node, activeSink)
+			}
+			refresh(node as unknown as SinkNode)
+			if (node.error) throw node.error
+			return node.value
 		},
 
 		set(newValue: T) {
-			const currentValue = assembleValue()
-			const changed = applyChanges(diffRecords(currentValue, newValue))
-			if (changed) notify()
+			// Use cached value if clean, recompute if dirty
+			const currentValue =
+				node.flags & FLAG_DIRTY ? node.fn(node.value) : node.value
+
+			const changes = diffRecords(currentValue, newValue)
+			if (applyChanges(changes)) {
+				// Call propagate BEFORE marking dirty to ensure it doesn't early-return
+				propagate(node as unknown as SinkNode)
+				node.flags |= FLAG_DIRTY
+				if (batchDepth === 0) flush()
+			}
 		},
 
-		update(fn: (oldValue: T) => T) {
+		update(fn: (prev: T) => T) {
 			store.set(fn(store.get()))
 		},
 
@@ -275,13 +285,19 @@ const createStore = <T extends UnknownRecord>(
 			if (signals.has(key))
 				throw new DuplicateKeyError(TYPE_STORE, key, value)
 			addSignal(key, value)
-			notify()
+			propagate(node as unknown as SinkNode)
+			node.flags |= FLAG_DIRTY
+			if (batchDepth === 0) flush()
 			return key
 		},
 
 		remove(key: string) {
 			const ok = signals.delete(key)
-			if (ok) notify()
+			if (ok) {
+				propagate(node as unknown as SinkNode)
+				node.flags |= FLAG_DIRTY
+				if (batchDepth === 0) flush()
+			}
 		},
 	}
 

@@ -4,10 +4,13 @@ import {
 	batchDepth,
 	CircularDependencyError,
 	type Cleanup,
+	FLAG_DIRTY,
 	flush,
 	link,
+	type MemoNode,
 	propagate,
-	type RefNode,
+	refresh,
+	type SinkNode,
 	validateSignalValue,
 } from '../graph'
 import {
@@ -233,25 +236,21 @@ const createList = <T extends {}>(
 			? (item: T) => keyConfig(item)
 			: () => String(keyCounter++)
 
-	const node: RefNode<T[]> = {
-		value: initialValue,
-		sinks: null,
-		sinksTail: null,
-		stop: undefined,
-	}
-
 	// --- Internal helpers ---
 
-	const notify = () => {
-		for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
-		if (batchDepth === 0) flush()
-	}
-
-	const linkList = () => {
-		if (activeSink) {
-			if (!node.sinks && options?.watched) node.stop = options.watched()
-			link(node, activeSink)
-		}
+	const node: MemoNode<T[]> = {
+		fn: () =>
+			keys
+				.map(key => signals.get(key)?.get())
+				.filter(v => v !== undefined) as T[],
+		value: initialValue,
+		flags: FLAG_DIRTY,
+		sources: null,
+		sourcesTail: null,
+		sinks: null,
+		sinksTail: null,
+		equals: isEqual,
+		error: undefined,
 	}
 
 	const addSignal = (key: string, value: T): void => {
@@ -272,12 +271,6 @@ const createList = <T extends {}>(
 			record[key] = value
 		}
 		return record
-	}
-
-	const assembleValue = (): T[] => {
-		return keys
-			.map(key => signals.get(key)?.get())
-			.filter(v => v !== undefined) as T[]
 	}
 
 	const applyChanges = (changes: DiffResult): boolean => {
@@ -317,6 +310,10 @@ const createList = <T extends {}>(
 		addSignal(key, initRecord[key])
 	}
 
+	// Clear dirty flag after initialization - initial value is correct
+	node.value = initialValue
+	node.flags = 0
+
 	// --- List object ---
 	const list: List<T> = {
 		[Symbol.toStringTag]: TYPE_LIST,
@@ -330,17 +327,28 @@ const createList = <T extends {}>(
 		},
 
 		get length() {
-			linkList()
+			if (activeSink) {
+				if (!node.sinks && options?.watched)
+					node.stop = options.watched()
+				link(node, activeSink)
+			}
 			return keys.length
 		},
 
 		get() {
-			linkList()
-			return assembleValue()
+			if (activeSink) {
+				if (!node.sinks && options?.watched)
+					node.stop = options.watched()
+				link(node, activeSink)
+			}
+			refresh(node as unknown as SinkNode)
+			if (node.error) throw node.error
+			return node.value
 		},
 
 		set(newValue: T[]) {
-			const currentValue = assembleValue()
+			const currentValue =
+				node.flags & FLAG_DIRTY ? node.fn(node.value) : node.value
 			const changes = diffArrays(
 				currentValue,
 				newValue,
@@ -350,7 +358,9 @@ const createList = <T extends {}>(
 			if (changes.changed) {
 				keys = changes.newKeys
 				applyChanges(changes)
-				notify()
+				propagate(node as unknown as SinkNode)
+				node.flags |= FLAG_DIRTY
+				if (batchDepth === 0) flush()
 			}
 		},
 
@@ -363,7 +373,11 @@ const createList = <T extends {}>(
 		},
 
 		keys() {
-			linkList()
+			if (activeSink) {
+				if (!node.sinks && options?.watched)
+					node.stop = options.watched()
+				link(node, activeSink)
+			}
 			return keys.values()
 		},
 
@@ -385,7 +399,10 @@ const createList = <T extends {}>(
 				throw new DuplicateKeyError(TYPE_LIST, key, value)
 			if (!keys.includes(key)) keys.push(key)
 			addSignal(key, value)
-			notify()
+			// No need to manually link - next refresh() will establish the edge
+			propagate(node as unknown as SinkNode)
+			node.flags |= FLAG_DIRTY
+			if (batchDepth === 0) flush()
 			return key
 		},
 
@@ -397,7 +414,10 @@ const createList = <T extends {}>(
 					? keyOrIndex
 					: keys.indexOf(key)
 				if (index >= 0) keys.splice(index, 1)
-				notify()
+				// trimSources() will remove the stale edge on next refresh()
+				propagate(node as unknown as SinkNode)
+				node.flags |= FLAG_DIRTY
+				if (batchDepth === 0) flush()
 			}
 		},
 
@@ -413,7 +433,9 @@ const createList = <T extends {}>(
 
 			if (!isEqual(keys, newOrder)) {
 				keys = newOrder
-				notify()
+				propagate(node as unknown as SinkNode)
+				node.flags |= FLAG_DIRTY
+				if (batchDepth === 0) flush()
 			}
 		},
 
@@ -467,8 +489,10 @@ const createList = <T extends {}>(
 					remove,
 					changed,
 				})
-				keys = newOrder.filter(() => true)
-				notify()
+				keys = newOrder
+				propagate(node as unknown as SinkNode)
+				node.flags |= FLAG_DIRTY
+				if (batchDepth === 0) flush()
 			}
 
 			return Object.values(remove)
