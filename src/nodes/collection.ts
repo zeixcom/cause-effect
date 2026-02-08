@@ -133,13 +133,10 @@ function createCollection<T extends {}, U extends {}>(
 		const oldKeySet = new Set(keys)
 		const newKeySet = new Set(newKeys)
 
-		let changed = false
-
 		// Remove signals for deleted keys
 		for (const key of keys) {
 			if (!newKeySet.has(key)) {
 				signals.delete(key)
-				changed = true
 			}
 		}
 
@@ -147,15 +144,12 @@ function createCollection<T extends {}, U extends {}>(
 		for (const key of newKeys) {
 			if (!oldKeySet.has(key)) {
 				addSignal(key)
-				changed = true
 			}
 		}
 
-		// If lengths differ but no additions/removals, it's a reordering
-		if (!changed) changed = true
 		keys = newKeys
 
-		if (changed) notify()
+		notify()
 	}
 
 	// Initialize signals for current source keys
