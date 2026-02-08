@@ -3,7 +3,10 @@
     "allow": [
       "mcp__acp__Edit",
       "mcp__acp__Bash",
-      "mcp__acp__Write"
+      "mcp__acp__Write",
+      "WebFetch(domain:github.com)",
+      "mcp__mcp-server-github__get_file_contents",
+      "WebFetch(domain:bun.com)"
     ]
   }
 }

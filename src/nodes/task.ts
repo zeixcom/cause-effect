@@ -81,10 +81,18 @@ type Task<T extends {}> = {
  * }
  * ```
  */
-const createTask = <T extends {}>(
+function createTask<T extends {}>(
+	fn: (prev: T, signal: AbortSignal) => Promise<T>,
+	options: ComputedOptions<T> & { value: T },
+): Task<T>
+function createTask<T extends {}>(
 	fn: TaskCallback<T>,
 	options?: ComputedOptions<T>,
-): Task<T> => {
+): Task<T>
+function createTask<T extends {}>(
+	fn: TaskCallback<T>,
+	options?: ComputedOptions<T>,
+): Task<T> {
 	validateCallback(TYPE_TASK, fn, isAsyncFunction)
 	if (options?.value !== undefined)
 		validateSignalValue(TYPE_TASK, options.value, options?.guard)

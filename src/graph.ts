@@ -478,6 +478,20 @@ const batch = (fn: () => void): void => {
 	}
 }
 
+/**
+ * Runs a callback without tracking dependencies.
+ * Any signal reads inside the callback will not create edges to the current active sink.
+ */
+const untrack = <T>(fn: () => T): T => {
+	const prev = activeSink
+	activeSink = null
+	try {
+		return fn()
+	} finally {
+		activeSink = prev
+	}
+}
+
 /* === Scope Management === */
 
 /**
@@ -709,6 +723,7 @@ export {
 	RequiredOwnerError,
 	UnsetSignalValueError,
 	unlink,
+	untrack,
 	validateSignalValue,
 	validateReadValue,
 	validateCallback,

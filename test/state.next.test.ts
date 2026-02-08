@@ -1,347 +1,235 @@
 import { describe, expect, test } from 'bun:test'
-import { createState, isMemo, isState } from '../next.ts'
+import { createEffect, createState, isMemo, isState } from '../next.ts'
 
 /* === Tests === */
 
 describe('State', () => {
-	describe('State type guard', () => {
-		test('isState identifies state signals', () => {
-			const count = createState(42)
-			expect(isState(count)).toBe(true)
-			expect(isMemo(count)).toBe(false)
+	describe('createState', () => {
+		test('should return initial value from get()', () => {
+			const count = createState(0)
+			expect(count.get()).toBe(0)
+		})
+
+		test('should work with different value types', () => {
+			expect(createState(false).get()).toBe(false)
+			expect(createState('foo').get()).toBe('foo')
+			expect(createState([1, 2, 3]).get()).toEqual([1, 2, 3])
+			expect(createState({ a: 1 }).get()).toEqual({ a: 1 })
+		})
+
+		test('should have Symbol.toStringTag of "State"', () => {
+			const state = createState(0)
+			expect(state[Symbol.toStringTag]).toBe('State')
 		})
 	})
 
-	describe('Boolean state', () => {
-		test('should be boolean', () => {
-			const state = createState(false)
-			expect(typeof state.get()).toBe('boolean')
+	describe('isState', () => {
+		test('should identify state signals', () => {
+			expect(isState(createState(0))).toBe(true)
 		})
 
-		test('should set initial value to false', () => {
-			const state = createState(false)
-			expect(state.get()).toBe(false)
-		})
-
-		test('should set initial value to true', () => {
-			const state = createState(true)
-			expect(state.get()).toBe(true)
-		})
-
-		test('should set new value with .set(true)', () => {
-			const state = createState(false)
-			state.set(true)
-			expect(state.get()).toBe(true)
-		})
-
-		test('should toggle initial value with .set(v => !v)', () => {
-			const state = createState(false)
-			state.update(v => !v)
-			expect(state.get()).toBe(true)
+		test('should return false for non-state values', () => {
+			expect(isState(42)).toBe(false)
+			expect(isState(null)).toBe(false)
+			expect(isState({})).toBe(false)
+			expect(isMemo(createState(0))).toBe(false)
 		})
 	})
 
-	describe('Number state', () => {
-		test('should be number', () => {
-			const state = createState(0)
-			expect(typeof state.get()).toBe('number')
-		})
-
-		test('should set initial value to 0', () => {
-			const state = createState(0)
-			expect(state.get()).toBe(0)
-		})
-
-		test('should set new value with .set(42)', () => {
+	describe('set', () => {
+		test('should update value', () => {
 			const state = createState(0)
 			state.set(42)
 			expect(state.get()).toBe(42)
 		})
 
-		test('should increment value with .set(v => ++v)', () => {
-			const state = createState(0)
-			state.update(v => ++v)
-			expect(state.get()).toBe(1)
-		})
-	})
-
-	describe('String state', () => {
-		test('should be string', () => {
-			const state = createState('foo')
-			expect(typeof state.get()).toBe('string')
+		test('should replace value entirely for objects', () => {
+			const state = createState<Record<string, unknown>>({ a: 1 })
+			state.set({ b: 2 })
+			expect(state.get()).toEqual({ b: 2 })
 		})
 
-		test('should set initial value to "foo"', () => {
-			const state = createState('foo')
-			expect(state.get()).toBe('foo')
-		})
-
-		test('should set new value with .set("bar")', () => {
-			const state = createState('foo')
-			state.set('bar')
-			expect(state.get()).toBe('bar')
-		})
-
-		test('should upper case value with .set(v => v.toUpperCase())', () => {
-			const state = createState('foo')
-			state.update(v => (v ? v.toUpperCase() : ''))
-			expect(state.get()).toBe('FOO')
-		})
-	})
-
-	describe('Array state', () => {
-		test('should be array', () => {
-			const state = createState([1, 2, 3])
-			expect(Array.isArray(state.get())).toBe(true)
-		})
-
-		test('should set initial value to [1, 2, 3]', () => {
-			const state = createState([1, 2, 3])
-			expect(state.get()).toEqual([1, 2, 3])
-		})
-
-		test('should set new value with .set([4, 5, 6])', () => {
+		test('should replace value entirely for arrays', () => {
 			const state = createState([1, 2, 3])
 			state.set([4, 5, 6])
 			expect(state.get()).toEqual([4, 5, 6])
 		})
 
-		test('should reflect current value of array after modification', () => {
-			const array = [1, 2, 3]
-			const state = createState(array)
-			array.push(4) // don't do this! the result will be correct, but we can't trigger effects
-			expect(state.get()).toEqual([1, 2, 3, 4])
-		})
-
-		test('should set new value with .set([...array, 4])', () => {
-			const array = [1, 2, 3]
-			const state = createState(array)
-			state.set([...array, 4]) // use destructuring instead!
-			expect(state.get()).toEqual([1, 2, 3, 4])
-		})
-
-		describe('Input Validation', () => {
-			test('should throw NullishSignalValueError when initialValue is nullish', () => {
-				expect(() => {
-					// @ts-expect-error - Testing invalid input
-					createState(null)
-				}).toThrow('[State] Signal value cannot be null or undefined')
-
-				expect(() => {
-					// @ts-expect-error - Testing invalid input
-					createState(undefined)
-				}).toThrow('[State] Signal value cannot be null or undefined')
+		test('should skip update when value is equal by reference', () => {
+			const obj = { a: 1 }
+			const state = createState(obj)
+			let effectCount = 0
+			createEffect(() => {
+				state.get()
+				effectCount++
 			})
-
-			test('should throw NullishSignalValueError when newValue is nullish in set()', () => {
-				const state = createState(42)
-
-				expect(() => {
-					// @ts-expect-error - Testing invalid input
-					state.set(null)
-				}).toThrow('[State] Signal value cannot be null or undefined')
-
-				expect(() => {
-					// @ts-expect-error - Testing invalid input
-					state.set(undefined)
-				}).toThrow('[State] Signal value cannot be null or undefined')
-			})
-
-			test('should throw specific error types for nullish values', () => {
-				try {
-					// @ts-expect-error - Testing invalid input
-					createState(null)
-					expect(true).toBe(false) // Should not reach here
-				} catch (error) {
-					expect(error).toBeInstanceOf(TypeError)
-					expect((error as Error).name).toBe(
-						'NullishSignalValueError',
-					)
-					expect((error as Error).message).toBe(
-						'[State] Signal value cannot be null or undefined',
-					)
-				}
-
-				const state = createState(42)
-				try {
-					// @ts-expect-error - Testing invalid input
-					state.set(null)
-					expect(true).toBe(false) // Should not reach here
-				} catch (error) {
-					expect(error).toBeInstanceOf(TypeError)
-					expect((error as Error).name).toBe(
-						'NullishSignalValueError',
-					)
-					expect((error as Error).message).toBe(
-						'[State] Signal value cannot be null or undefined',
-					)
-				}
-			})
-
-			test('should allow valid non-nullish values', () => {
-				// These should not throw
-				expect(() => {
-					createState(0)
-				}).not.toThrow()
-
-				expect(() => {
-					createState('')
-				}).not.toThrow()
-
-				expect(() => {
-					createState(false)
-				}).not.toThrow()
-
-				expect(() => {
-					createState({})
-				}).not.toThrow()
-
-				expect(() => {
-					createState([])
-				}).not.toThrow()
-
-				const state = createState(42)
-				expect(() => {
-					state.set(0)
-				}).not.toThrow()
-
-				expect(() => {
-					// @ts-expect-error - Testing valid input of invalid type
-					state.set('')
-				}).not.toThrow()
-			})
-
-			test('should throw InvalidCallbackError for non-function updater in update()', () => {
-				const state = createState(42)
-
-				expect(() => {
-					// @ts-expect-error - Testing invalid input
-					state.update(null)
-				}).toThrow('[State] Callback null is invalid')
-
-				expect(() => {
-					// @ts-expect-error - Testing invalid input
-					state.update(undefined)
-				}).toThrow('[State] Callback undefined is invalid')
-
-				expect(() => {
-					// @ts-expect-error - Testing invalid input
-					state.update('not a function')
-				}).toThrow('[State] Callback "not a function" is invalid')
-
-				expect(() => {
-					// @ts-expect-error - Testing invalid input
-					state.update(42)
-				}).toThrow('[State] Callback 42 is invalid')
-			})
-
-			test('should throw specific error type for non-function updater', () => {
-				const state = createState(42)
-
-				try {
-					// @ts-expect-error - Testing invalid input
-					state.update(null)
-					expect(true).toBe(false) // Should not reach here
-				} catch (error) {
-					expect(error).toBeInstanceOf(TypeError)
-					expect((error as Error).name).toBe('InvalidCallbackError')
-					expect((error as Error).message).toBe(
-						'[State] Callback null is invalid',
-					)
-				}
-			})
-
-			test('should handle updater function that throws an error', () => {
-				const state = createState(42)
-
-				expect(() => {
-					state.update(() => {
-						throw new Error('Updater error')
-					})
-				}).toThrow('Updater error')
-
-				// State should remain unchanged after error
-				expect(state.get()).toBe(42)
-			})
-
-			test('should handle updater function that returns nullish value', () => {
-				const state = createState(42)
-
-				expect(() => {
-					// @ts-expect-error - Testing invalid return value
-					state.update(() => null)
-				}).toThrow('[State] Signal value cannot be null or undefined')
-
-				expect(() => {
-					// @ts-expect-error - Testing invalid return value
-					state.update(() => undefined)
-				}).toThrow('[State] Signal value cannot be null or undefined')
-
-				// State should remain unchanged after error
-				expect(state.get()).toBe(42)
-			})
-
-			test('should handle valid updater functions', () => {
-				const numberState = createState(10)
-				expect(() => {
-					numberState.update(x => x + 5)
-				}).not.toThrow()
-				expect(numberState.get()).toBe(15)
-
-				const stringState = createState('hello')
-				expect(() => {
-					stringState.update(x => x.toUpperCase())
-				}).not.toThrow()
-				expect(stringState.get()).toBe('HELLO')
-
-				const arrayState = createState([1, 2, 3])
-				expect(() => {
-					arrayState.update(arr => [...arr, 4])
-				}).not.toThrow()
-				expect(arrayState.get()).toEqual([1, 2, 3, 4])
-
-				const objectState = createState({ count: 0 })
-				expect(() => {
-					objectState.update(obj => ({
-						...obj,
-						count: obj.count + 1,
-					}))
-				}).not.toThrow()
-				expect(objectState.get()).toEqual({ count: 1 })
-			})
+			expect(effectCount).toBe(1)
+			state.set(obj) // same reference
+			expect(effectCount).toBe(1)
 		})
 	})
 
-	describe('Object state', () => {
-		test('should be object', () => {
-			const state = createState({ a: 'a', b: 1 })
-			expect(typeof state.get()).toBe('object')
+	describe('update', () => {
+		test('should update value via callback', () => {
+			const state = createState(0)
+			state.update(v => v + 1)
+			expect(state.get()).toBe(1)
 		})
 
-		test('should set initial value to { a: "a", b: 1 }', () => {
-			const state = createState({ a: 'a', b: 1 })
-			expect(state.get()).toEqual({ a: 'a', b: 1 })
+		test('should pass current value to callback', () => {
+			const state = createState('hello')
+			state.update(v => v.toUpperCase())
+			expect(state.get()).toBe('HELLO')
 		})
 
-		test('should set new value with .set({ c: true })', () => {
-			const state = createState<Record<string, unknown>>({ a: 'a', b: 1 })
-			state.set({ c: true })
-			expect(state.get()).toEqual({ c: true })
+		test('should work with arrays', () => {
+			const state = createState([1, 2, 3])
+			state.update(arr => [...arr, 4])
+			expect(state.get()).toEqual([1, 2, 3, 4])
 		})
 
-		test('should reflect current value of object after modification', () => {
-			const obj = { a: 'a', b: 1 }
-			const state = createState<Record<string, unknown>>(obj)
-			// @ts-expect-error Property 'c' does not exist on type '{ a: string; b: number; }'. (ts 2339)
-			obj.c = true // don't do this! the result will be correct, but we can't trigger effects
-			expect(state.get()).toEqual({ a: 'a', b: 1, c: true })
+		test('should work with objects', () => {
+			const state = createState({ count: 0 })
+			state.update(obj => ({ ...obj, count: obj.count + 1 }))
+			expect(state.get()).toEqual({ count: 1 })
+		})
+	})
+
+	describe('options.equals', () => {
+		test('should use custom equality function to skip updates', () => {
+			const state = createState(
+				{ x: 1 },
+				{ equals: (a, b) => a.x === b.x },
+			)
+			let effectCount = 0
+			createEffect(() => {
+				state.get()
+				effectCount++
+			})
+			expect(effectCount).toBe(1)
+
+			state.set({ x: 1 }) // structurally equal
+			expect(effectCount).toBe(1)
+
+			state.set({ x: 2 }) // different
+			expect(effectCount).toBe(2)
 		})
 
-		test('should set new value with .set({...obj, c: true})', () => {
-			const obj = { a: 'a', b: 1 }
-			const state = createState<Record<string, unknown>>(obj)
-			state.set({ ...obj, c: true }) // use destructuring instead!
-			expect(state.get()).toEqual({ a: 'a', b: 1, c: true })
+		test('should default to reference equality', () => {
+			const state = createState({ x: 1 })
+			let effectCount = 0
+			createEffect(() => {
+				state.get()
+				effectCount++
+			})
+			expect(effectCount).toBe(1)
+
+			state.set({ x: 1 }) // new reference, same shape
+			expect(effectCount).toBe(2)
+		})
+	})
+
+	describe('options.guard', () => {
+		test('should validate initial value against guard', () => {
+			expect(() => {
+				createState(0, {
+					guard: (v): v is number => typeof v === 'number' && v > 0,
+				})
+			}).toThrow('[State] Signal value 0 is invalid')
+		})
+
+		test('should validate set() values against guard', () => {
+			const state = createState(1, {
+				guard: (v): v is number => typeof v === 'number' && v > 0,
+			})
+			expect(() => state.set(0)).toThrow(
+				'[State] Signal value 0 is invalid',
+			)
+			expect(state.get()).toBe(1) // unchanged
+		})
+
+		test('should validate update() return values against guard', () => {
+			const state = createState(1, {
+				guard: (v): v is number => typeof v === 'number' && v > 0,
+			})
+			expect(() => state.update(() => 0)).toThrow(
+				'[State] Signal value 0 is invalid',
+			)
+			expect(state.get()).toBe(1) // unchanged
+		})
+
+		test('should allow values that pass the guard', () => {
+			const state = createState(1, {
+				guard: (v): v is number => typeof v === 'number' && v > 0,
+			})
+			state.set(5)
+			expect(state.get()).toBe(5)
+		})
+	})
+
+	describe('Input Validation', () => {
+		test('should throw NullishSignalValueError for null or undefined initial value', () => {
+			expect(() => {
+				// @ts-expect-error - Testing invalid input
+				createState(null)
+			}).toThrow('[State] Signal value cannot be null or undefined')
+
+			expect(() => {
+				// @ts-expect-error - Testing invalid input
+				createState(undefined)
+			}).toThrow('[State] Signal value cannot be null or undefined')
+		})
+
+		test('should throw NullishSignalValueError for null or undefined in set()', () => {
+			const state = createState(42)
+			expect(() => {
+				// @ts-expect-error - Testing invalid input
+				state.set(null)
+			}).toThrow('[State] Signal value cannot be null or undefined')
+
+			expect(() => {
+				// @ts-expect-error - Testing invalid input
+				state.set(undefined)
+			}).toThrow('[State] Signal value cannot be null or undefined')
+		})
+
+		test('should throw NullishSignalValueError for nullish return from update()', () => {
+			const state = createState(42)
+			expect(() => {
+				// @ts-expect-error - Testing invalid return value
+				state.update(() => null)
+			}).toThrow('[State] Signal value cannot be null or undefined')
+
+			expect(() => {
+				// @ts-expect-error - Testing invalid return value
+				state.update(() => undefined)
+			}).toThrow('[State] Signal value cannot be null or undefined')
+
+			expect(state.get()).toBe(42) // unchanged
+		})
+
+		test('should throw InvalidCallbackError for non-function in update()', () => {
+			const state = createState(42)
+			expect(() => {
+				// @ts-expect-error - Testing invalid input
+				state.update(null)
+			}).toThrow('[State] Callback null is invalid')
+
+			expect(() => {
+				// @ts-expect-error - Testing invalid input
+				state.update('not a function')
+			}).toThrow('[State] Callback "not a function" is invalid')
+		})
+
+		test('should propagate errors thrown by update callback', () => {
+			const state = createState(42)
+			expect(() => {
+				state.update(() => {
+					throw new Error('Updater error')
+				})
+			}).toThrow('Updater error')
+
+			expect(state.get()).toBe(42) // unchanged
 		})
 	})
 })

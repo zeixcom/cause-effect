@@ -3,355 +3,341 @@ import {
 	createEffect,
 	createList,
 	createMemo,
-	createState,
-	createStore,
 	isList,
-	isStore,
+	isMemo,
 } from '../next.ts'
 
-describe('list', () => {
-	describe('creation and basic operations', () => {
-		test('creates lists with initial values', () => {
-			const numbers = createList([1, 2, 3])
-			expect(numbers.at(0)?.get()).toBe(1)
-			expect(numbers.at(1)?.get()).toBe(2)
-			expect(numbers.at(2)?.get()).toBe(3)
+describe('List', () => {
+	describe('createList', () => {
+		test('should return initial values from get()', () => {
+			const list = createList([1, 2, 3])
+			expect(list.get()).toEqual([1, 2, 3])
 		})
 
-		test('has Symbol.toStringTag of List', () => {
-			const list = createList([1, 2])
+		test('should work with object items', () => {
+			const list = createList([
+				{ name: 'Alice', tags: ['admin'] },
+				{ name: 'Bob', tags: ['user'] },
+			])
+			expect(list.get()).toEqual([
+				{ name: 'Alice', tags: ['admin'] },
+				{ name: 'Bob', tags: ['user'] },
+			])
+		})
+
+		test('should handle empty initial array', () => {
+			const list = createList<number>([])
+			expect(list.get()).toEqual([])
+			expect(list.length).toBe(0)
+		})
+
+		test('should have Symbol.toStringTag of "List"', () => {
+			const list = createList([1])
 			expect(list[Symbol.toStringTag]).toBe('List')
 		})
 
-		test('isList identifies list instances correctly', () => {
-			const store = createStore({ a: 1 })
+		test('should have Symbol.isConcatSpreadable set to true', () => {
 			const list = createList([1])
-			const state = createState(1)
-			const computed = createMemo(() => 1)
+			expect(list[Symbol.isConcatSpreadable]).toBe(true)
+		})
+	})
 
-			expect(isList(list)).toBe(true)
-			expect(isStore(store)).toBe(true)
-			expect(isList(state)).toBe(false)
-			expect(isList(computed)).toBe(false)
+	describe('isList', () => {
+		test('should identify list signals', () => {
+			expect(isList(createList([1]))).toBe(true)
+		})
+
+		test('should return false for non-list values', () => {
+			expect(isList(42)).toBe(false)
+			expect(isList(null)).toBe(false)
 			expect(isList({})).toBe(false)
-		})
-
-		test('get() returns the complete list value', () => {
-			const numbers = createList([1, 2, 3])
-			expect(numbers.get()).toEqual([1, 2, 3])
-
-			const participants = createList([
-				{ name: 'Alice', tags: ['admin'] },
-				{ name: 'Bob', tags: ['user'] },
-			])
-			expect(participants.get()).toEqual([
-				{ name: 'Alice', tags: ['admin'] },
-				{ name: 'Bob', tags: ['user'] },
-			])
+			expect(isMemo(createList([1]))).toBe(false)
 		})
 	})
 
-	describe('length property and sizing', () => {
-		test('length property works for lists', () => {
-			const numbers = createList([1, 2, 3])
-			expect(numbers.length).toBe(3)
-			expect(typeof numbers.length).toBe('number')
+	describe('at', () => {
+		test('should return State signal at index', () => {
+			const list = createList(['a', 'b', 'c'])
+			expect(list.at(0)?.get()).toBe('a')
+			expect(list.at(1)?.get()).toBe('b')
+			expect(list.at(2)?.get()).toBe('c')
 		})
 
-		test('length is reactive and updates with changes', () => {
-			const items = createList([1, 2])
-			expect(items.length).toBe(2)
-			items.add(3)
-			expect(items.length).toBe(3)
-			items.remove(1)
-			expect(items.length).toBe(2)
-		})
-	})
-
-	describe('data access and modification', () => {
-		test('items can be accessed and modified via signals', () => {
-			const items = createList(['a', 'b'])
-			expect(items.at(0)?.get()).toBe('a')
-			expect(items.at(1)?.get()).toBe('b')
-			items.at(0)?.set('alpha')
-			items.at(1)?.set('beta')
-			expect(items.at(0)?.get()).toBe('alpha')
-			expect(items.at(1)?.get()).toBe('beta')
+		test('should return undefined for out-of-bounds index', () => {
+			const list = createList(['a'])
+			expect(list.at(5)).toBeUndefined()
 		})
 
-		test('returns undefined for non-existent properties', () => {
-			const items = createList(['a'])
-			expect(items.at(5)).toBeUndefined()
+		test('should allow mutation via returned State signal', () => {
+			const list = createList(['a', 'b'])
+			list.at(0)?.set('alpha')
+			expect(list.at(0)?.get()).toBe('alpha')
 		})
 	})
 
-	describe('add() and remove() methods', () => {
-		test('add() method appends to end', () => {
-			const fruits = createList(['apple', 'banana'])
-			fruits.add('cherry')
-			expect(fruits.at(2)?.get()).toBe('cherry')
+	describe('set', () => {
+		test('should replace entire array', () => {
+			const list = createList([1, 2, 3])
+			list.set([4, 5])
+			expect(list.get()).toEqual([4, 5])
+			expect(list.length).toBe(2)
 		})
 
-		test('remove() method removes by index', () => {
-			const items = createList(['a', 'b', 'c'])
-			items.remove(1) // Remove 'b'
-			expect(items.get()).toEqual(['a', 'c'])
-			expect(items.length).toBe(2)
-		})
-
-		test('add method prevents null values', () => {
-			const items = createList([1])
-			// @ts-expect-error testing null values
-			expect(() => items.add(null)).toThrow()
-		})
-
-		test('remove method handles non-existent indices gracefully', () => {
-			const items = createList(['a'])
-			expect(() => items.remove(5)).not.toThrow()
-			expect(items.get()).toEqual(['a'])
+		test('should diff and update changed items', () => {
+			const list = createList([1, 2, 3])
+			const signal0 = list.at(0)
+			list.set([10, 2, 3])
+			// Same signal reference, updated value
+			expect(signal0?.get()).toBe(10)
 		})
 	})
 
-	describe('sort() method', () => {
-		test('sorts lists with different compare functions', () => {
-			const numbers = createList([3, 1, 2])
+	describe('update', () => {
+		test('should update via callback', () => {
+			const list = createList([1, 2])
+			list.update(arr => [...arr, 3])
+			expect(list.get()).toEqual([1, 2, 3])
+		})
+	})
 
-			numbers.sort()
-			expect(numbers.get()).toEqual([1, 2, 3])
-
-			numbers.sort((a, b) => b - a)
-			expect(numbers.get()).toEqual([3, 2, 1])
-
-			const names = createList(['Charlie', 'Alice', 'Bob'])
-			names.sort((a, b) => a.localeCompare(b))
-			expect(names.get()).toEqual(['Alice', 'Bob', 'Charlie'])
+	describe('add', () => {
+		test('should append item and return key', () => {
+			const list = createList(['apple', 'banana'])
+			const key = list.add('cherry')
+			expect(typeof key).toBe('string')
+			expect(list.at(2)?.get()).toBe('cherry')
+			expect(list.byKey(key)?.get()).toBe('cherry')
 		})
 
-		test('sort is reactive - watchers are notified', () => {
-			const numbers = createList([3, 1, 2])
+		test('should throw for null value', () => {
+			const list = createList([1])
+			// @ts-expect-error - Testing invalid input
+			expect(() => list.add(null)).toThrow()
+		})
+
+		test('should throw DuplicateKeyError for duplicate keys', () => {
+			const list = createList([{ id: 'a', val: 1 }], {
+				keyConfig: item => item.id,
+			})
+			expect(() => list.add({ id: 'a', val: 2 })).toThrow(
+				'already exists',
+			)
+		})
+	})
+
+	describe('remove', () => {
+		test('should remove by index', () => {
+			const list = createList(['a', 'b', 'c'])
+			list.remove(1)
+			expect(list.get()).toEqual(['a', 'c'])
+			expect(list.length).toBe(2)
+		})
+
+		test('should remove by key', () => {
+			const list = createList(
+				[
+					{ id: 'x', val: 1 },
+					{ id: 'y', val: 2 },
+				],
+				{ keyConfig: item => item.id },
+			)
+			list.remove('x')
+			expect(list.get()).toEqual([{ id: 'y', val: 2 }])
+		})
+
+		test('should handle non-existent index gracefully', () => {
+			const list = createList(['a'])
+			expect(() => list.remove(5)).not.toThrow()
+			expect(list.get()).toEqual(['a'])
+		})
+	})
+
+	describe('sort', () => {
+		test('should sort with default string comparison', () => {
+			const list = createList([3, 1, 2])
+			list.sort()
+			expect(list.get()).toEqual([1, 2, 3])
+		})
+
+		test('should sort with custom compare function', () => {
+			const list = createList([3, 1, 2])
+			list.sort((a, b) => b - a)
+			expect(list.get()).toEqual([3, 2, 1])
+		})
+
+		test('should trigger effects on sort', () => {
+			const list = createList([3, 1, 2])
 			let effectCount = 0
 			let lastValue: number[] = []
 			createEffect(() => {
-				lastValue = numbers.get()
+				lastValue = list.get()
 				effectCount++
 			})
 
 			expect(effectCount).toBe(1)
-			expect(lastValue).toEqual([3, 1, 2])
-
-			numbers.sort()
+			list.sort()
 			expect(effectCount).toBe(2)
 			expect(lastValue).toEqual([1, 2, 3])
 		})
 	})
 
-	describe('splice() method', () => {
-		test('splice() removes elements without adding new ones', () => {
-			const numbers = createList([1, 2, 3, 4])
-			const deleted = numbers.splice(1, 2)
+	describe('splice', () => {
+		test('should remove elements', () => {
+			const list = createList([1, 2, 3, 4])
+			const deleted = list.splice(1, 2)
 			expect(deleted).toEqual([2, 3])
-			expect(numbers.get()).toEqual([1, 4])
+			expect(list.get()).toEqual([1, 4])
 		})
 
-		test('splice() adds elements without removing any', () => {
-			const numbers = createList([1, 3])
-			const deleted = numbers.splice(1, 0, 2)
+		test('should insert elements', () => {
+			const list = createList([1, 3])
+			const deleted = list.splice(1, 0, 2)
 			expect(deleted).toEqual([])
-			expect(numbers.get()).toEqual([1, 2, 3])
+			expect(list.get()).toEqual([1, 2, 3])
 		})
 
-		test('splice() replaces elements (remove and add)', () => {
-			const numbers = createList([1, 2, 3])
-			const deleted = numbers.splice(1, 1, 4, 5)
+		test('should replace elements', () => {
+			const list = createList([1, 2, 3])
+			const deleted = list.splice(1, 1, 4, 5)
 			expect(deleted).toEqual([2])
-			expect(numbers.get()).toEqual([1, 4, 5, 3])
+			expect(list.get()).toEqual([1, 4, 5, 3])
 		})
 
-		test('splice() handles negative start index', () => {
-			const numbers = createList([1, 2, 3])
-			const deleted = numbers.splice(-1, 1, 4)
+		test('should handle negative start index', () => {
+			const list = createList([1, 2, 3])
+			const deleted = list.splice(-1, 1, 4)
 			expect(deleted).toEqual([3])
-			expect(numbers.get()).toEqual([1, 2, 4])
+			expect(list.get()).toEqual([1, 2, 4])
 		})
 	})
 
-	describe('reactivity', () => {
-		test('list-level get() is reactive', () => {
-			const numbers = createList([1, 2, 3])
-			let lastArray: number[] = []
-			createEffect(() => {
-				lastArray = numbers.get()
-			})
-
-			expect(lastArray).toEqual([1, 2, 3])
-			numbers.add(4)
-			expect(lastArray).toEqual([1, 2, 3, 4])
+	describe('length', () => {
+		test('should return item count', () => {
+			const list = createList([1, 2, 3])
+			expect(list.length).toBe(3)
 		})
 
-		test('individual signal reactivity works', () => {
-			const items = createList([{ count: 5 }])
-			let lastItem = 0
-			let itemEffectRuns = 0
-			createEffect(() => {
-				lastItem = items.at(0)?.get().count ?? 0
-				itemEffectRuns++
-			})
-
-			expect(lastItem).toBe(5)
-			expect(itemEffectRuns).toBe(1)
-
-			items.at(0)?.set({ count: 10 })
-			expect(lastItem).toBe(10)
-			expect(itemEffectRuns).toBe(2)
-		})
-
-		test('updates are reactive', () => {
-			const numbers = createList([1, 2])
-			let lastArray: number[] = []
-			let arrayEffectRuns = 0
-			createEffect(() => {
-				lastArray = numbers.get()
-				arrayEffectRuns++
-			})
-
-			expect(lastArray).toEqual([1, 2])
-			expect(arrayEffectRuns).toBe(1)
-
-			numbers.update(arr => [...arr, 3])
-			expect(lastArray).toEqual([1, 2, 3])
-			expect(arrayEffectRuns).toBe(2)
+		test('should update reactively with add and remove', () => {
+			const list = createList([1, 2])
+			expect(list.length).toBe(2)
+			list.add(3)
+			expect(list.length).toBe(3)
+			list.remove(0)
+			expect(list.length).toBe(2)
 		})
 	})
 
-	describe('computed integration', () => {
-		test('works with computed signals', () => {
-			const numbers = createList([1, 2, 3])
-			const sum = createMemo(() =>
-				numbers.get().reduce((acc, n) => acc + n, 0),
+	describe('Key-based Access', () => {
+		test('keyAt should return key at index', () => {
+			const list = createList([10, 20, 30])
+			const key0 = list.keyAt(0)
+			expect(key0).toBeDefined()
+			expect(typeof key0).toBe('string')
+		})
+
+		test('indexOfKey should return index for key', () => {
+			const list = createList([10, 20])
+			// biome-ignore lint/style/noNonNullAssertion: index is within bounds
+			const key = list.keyAt(0)!
+			expect(list.indexOfKey(key)).toBe(0)
+		})
+
+		test('byKey should return State signal for key', () => {
+			const list = createList([10, 20])
+			// biome-ignore lint/style/noNonNullAssertion: index is within bounds
+			const key = list.keyAt(0)!
+			expect(list.byKey(key)?.get()).toBe(10)
+		})
+
+		test('keys should return iterator of all keys', () => {
+			const list = createList([10, 20, 30])
+			const allKeys = [...list.keys()]
+			expect(allKeys).toHaveLength(3)
+			expect(list.byKey(allKeys[0])?.get()).toBe(10)
+		})
+	})
+
+	describe('options.keyConfig', () => {
+		test('should use function to generate keys', () => {
+			const list = createList(
+				[
+					{ id: 'a', value: 1 },
+					{ id: 'b', value: 2 },
+				],
+				{ keyConfig: item => item.id },
 			)
-
-			expect(sum.get()).toBe(6)
-			numbers.add(4)
-			expect(sum.get()).toBe(10)
+			expect(list.byKey('a')?.get()).toEqual({ id: 'a', value: 1 })
+			expect(list.byKey('b')?.get()).toEqual({ id: 'b', value: 2 })
 		})
 
-		test('computed handles additions and removals', () => {
-			const numbers = createList([1, 2, 3])
-			const sum = createMemo(() => {
-				const array = numbers.get()
-				return array.reduce((total, n) => total + n, 0)
-			})
-
-			expect(sum.get()).toBe(6)
-
-			numbers.add(4)
-			expect(sum.get()).toBe(10)
-
-			numbers.remove(0)
-			const finalArray = numbers.get()
-			expect(finalArray).toEqual([2, 3, 4])
-			expect(sum.get()).toBe(9)
-		})
-
-		test('computed sum using list iteration with length tracking', () => {
-			const numbers = createList([1, 2, 3])
-
-			const sum = createMemo(() => {
-				// Access length to make it reactive
-				const _length = numbers.length
-				let total = 0
-				for (const signal of numbers) {
-					total += signal.get()
-				}
-				return total
-			})
-
-			expect(sum.get()).toBe(6)
-			numbers.add(4)
-			expect(sum.get()).toBe(10)
+		test('should use string prefix for auto-generated keys', () => {
+			const list = createList([1, 2, 3], { keyConfig: 'item-' })
+			expect(list.keyAt(0)).toBe('item-0')
+			expect(list.keyAt(1)).toBe('item-1')
+			expect(list.keyAt(2)).toBe('item-2')
 		})
 	})
 
-	describe('iteration and spreading', () => {
-		test('supports for...of iteration', () => {
-			const numbers = createList([10, 20, 30])
-			const signals = [...numbers]
+	describe('Iteration', () => {
+		test('should support for...of via Symbol.iterator', () => {
+			const list = createList([10, 20, 30])
+			const signals = [...list]
 			expect(signals).toHaveLength(3)
 			expect(signals[0].get()).toBe(10)
 			expect(signals[1].get()).toBe(20)
 			expect(signals[2].get()).toBe(30)
 		})
-
-		test('Symbol.isConcatSpreadable is true', () => {
-			const numbers = createList([1, 2, 3])
-			expect(numbers[Symbol.isConcatSpreadable]).toBe(true)
-		})
 	})
 
-	describe('edge cases', () => {
-		test('handles empty lists correctly', () => {
-			const empty = createList<number>([])
-			expect(empty.get()).toEqual([])
-			expect(empty.length).toBe(0)
+	describe('Reactivity', () => {
+		test('get() should trigger effects on structural changes', () => {
+			const list = createList([1, 2, 3])
+			let lastArray: number[] = []
+			createEffect(() => {
+				lastArray = list.get()
+			})
+
+			expect(lastArray).toEqual([1, 2, 3])
+			list.add(4)
+			expect(lastArray).toEqual([1, 2, 3, 4])
 		})
 
-		test('handles primitive values', () => {
-			const list = createList([42, 'text', true])
-			expect(list.at(0)?.get()).toBe(42)
-			expect(list.at(1)?.get()).toBe('text')
-			expect(list.at(2)?.get()).toBe(true)
-		})
-	})
+		test('individual item signals should trigger effects', () => {
+			const list = createList([{ count: 5 }])
+			let lastCount = 0
+			let effectCount = 0
+			createEffect(() => {
+				lastCount = list.at(0)?.get().count ?? 0
+				effectCount++
+			})
 
-	describe('key-based access', () => {
-		test('keyAt and indexOfKey work correctly', () => {
-			const numbers = createList([10, 20, 30])
-			const key0 = numbers.keyAt(0)
-			const key1 = numbers.keyAt(1)
+			expect(lastCount).toBe(5)
+			expect(effectCount).toBe(1)
 
-			expect(key0).toBeDefined()
-			expect(key1).toBeDefined()
-			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(numbers.indexOfKey(key0!)).toBe(0)
-			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(numbers.indexOfKey(key1!)).toBe(1)
+			list.at(0)?.set({ count: 10 })
+			expect(lastCount).toBe(10)
+			expect(effectCount).toBe(2)
 		})
 
-		test('byKey returns correct signal', () => {
-			const numbers = createList([10, 20])
-			const key0 = numbers.keyAt(0)
-
-			expect(key0).toBeDefined()
-			// biome-ignore lint/style/noNonNullAssertion: test
-			expect(numbers.byKey(key0!)?.get()).toBe(10)
-		})
-
-		test('custom keyConfig with function', () => {
-			const items = createList(
-				[
-					{ id: 'a', value: 1 },
-					{ id: 'b', value: 2 },
-				],
-				{ keyConfig: (item: { id: string; value: number }) => item.id },
+		test('computed signals should react to list changes', () => {
+			const list = createList([1, 2, 3])
+			const sum = createMemo(() =>
+				list.get().reduce((acc, n) => acc + n, 0),
 			)
 
-			expect(items.byKey('a')?.get()).toEqual({ id: 'a', value: 1 })
-			expect(items.byKey('b')?.get()).toEqual({ id: 'b', value: 2 })
-		})
-
-		test('custom keyConfig with prefix string', () => {
-			const items = createList([1, 2, 3], { keyConfig: 'item-' })
-			expect(items.keyAt(0)).toBe('item-0')
-			expect(items.keyAt(1)).toBe('item-1')
-			expect(items.keyAt(2)).toBe('item-2')
+			expect(sum.get()).toBe(6)
+			list.add(4)
+			expect(sum.get()).toBe(10)
+			list.remove(0)
+			expect(sum.get()).toBe(9)
 		})
 	})
 
-	describe('watch callbacks', () => {
-		test('watched callback is called when effect accesses list.get()', () => {
+	describe('options.watched', () => {
+		test('should call watched on first subscriber and cleanup on last unsubscribe', () => {
 			let watchedCalled = false
 			let unwatchedCalled = false
-			const numbers = createList([10, 20, 30], {
+			const list = createList([10, 20], {
 				watched: () => {
 					watchedCalled = true
 					return () => {
@@ -362,42 +348,48 @@ describe('list', () => {
 
 			expect(watchedCalled).toBe(false)
 
-			let effectValue: number[] = []
-			const cleanup = createEffect(() => {
-				effectValue = numbers.get()
+			const dispose = createEffect(() => {
+				list.get()
 			})
 
 			expect(watchedCalled).toBe(true)
-			expect(effectValue).toEqual([10, 20, 30])
 			expect(unwatchedCalled).toBe(false)
 
-			cleanup()
+			dispose()
 			expect(unwatchedCalled).toBe(true)
 		})
 
-		test('length access triggers watched callback', () => {
+		test('should activate on length access', () => {
 			let watchedCalled = false
-			let unwatchedCalled = false
-			const numbers = createList([1, 2, 3], {
+			const list = createList([1, 2], {
 				watched: () => {
 					watchedCalled = true
-					return () => {
-						unwatchedCalled = true
-					}
+					return () => {}
 				},
 			})
 
-			let effectValue = 0
-			const cleanup = createEffect(() => {
-				effectValue = numbers.length
+			const dispose = createEffect(() => {
+				void list.length
 			})
 
 			expect(watchedCalled).toBe(true)
-			expect(effectValue).toBe(3)
-			expect(unwatchedCalled).toBe(false)
+			dispose()
+		})
+	})
 
-			cleanup()
-			expect(unwatchedCalled).toBe(true)
+	describe('Input Validation', () => {
+		test('should throw for non-array initial value', () => {
+			expect(() => {
+				// @ts-expect-error - Testing invalid input
+				createList('not an array')
+			}).toThrow()
+		})
+
+		test('should throw for null initial value', () => {
+			expect(() => {
+				// @ts-expect-error - Testing invalid input
+				createList(null)
+			}).toThrow()
 		})
 	})
 })

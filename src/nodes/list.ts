@@ -4,6 +4,7 @@ import {
 	batchDepth,
 	CircularDependencyError,
 	type Cleanup,
+	FLAG_CLEAN,
 	FLAG_DIRTY,
 	flush,
 	link,
@@ -11,6 +12,7 @@ import {
 	propagate,
 	refresh,
 	type SinkNode,
+	untrack,
 	validateSignalValue,
 } from '../graph'
 import {
@@ -106,7 +108,7 @@ const isEqual = <T>(a: T, b: T, visited?: WeakSet<object>): boolean => {
 	if (typeof a !== typeof b) return false
 	if (!isNonNullObject(a) || !isNonNullObject(b)) return false
 
-	// Cycle detection
+	// Cycle detection (only allocate WeakSet when both values are objects)
 	if (!visited) visited = new WeakSet()
 	if (visited.has(a as object) || visited.has(b as object))
 		throw new CircularDependencyError('isEqual')
@@ -114,15 +116,18 @@ const isEqual = <T>(a: T, b: T, visited?: WeakSet<object>): boolean => {
 	visited.add(b)
 
 	try {
-		if (Array.isArray(a) && Array.isArray(b)) {
-			if (a.length !== b.length) return false
-			for (let i = 0; i < a.length; i++) {
-				if (!isEqual(a[i], b[i], visited)) return false
+		const aIsArray = Array.isArray(a)
+		if (aIsArray !== Array.isArray(b)) return false
+
+		if (aIsArray) {
+			const aa = a as unknown[]
+			const ba = b as unknown[]
+			if (aa.length !== ba.length) return false
+			for (let i = 0; i < aa.length; i++) {
+				if (!isEqual(aa[i], ba[i], visited)) return false
 			}
 			return true
 		}
-
-		if (Array.isArray(a) !== Array.isArray(b)) return false
 
 		if (isRecord(a) && isRecord(b)) {
 			const aKeys = Object.keys(a)
@@ -167,6 +172,7 @@ const diffArrays = <T>(
 	const change = {} as UnknownRecord
 	const remove = {} as UnknownRecord
 	const newKeys: string[] = []
+	let changed = false
 
 	// Build a map of old values by key for quick lookup
 	const oldByKey = new Map<string, T>()
@@ -193,9 +199,13 @@ const diffArrays = <T>(
 		// Check if this key existed before
 		if (!oldByKey.has(key)) {
 			add[key] = newValue
+			changed = true
 		} else {
 			const oldValue = oldByKey.get(key)
-			if (!isEqual(oldValue, newValue, visited)) change[key] = newValue
+			if (!isEqual(oldValue, newValue, visited)) {
+				change[key] = newValue
+				changed = true
+			}
 		}
 	}
 
@@ -203,20 +213,11 @@ const diffArrays = <T>(
 	for (const [key] of oldByKey) {
 		if (!seenKeys.has(key)) {
 			remove[key] = null
+			changed = true
 		}
 	}
 
-	return {
-		add,
-		change,
-		remove,
-		newKeys,
-		changed: !!(
-			Object.keys(add).length ||
-			Object.keys(change).length ||
-			Object.keys(remove).length
-		),
-	}
+	return { add, change, remove, newKeys, changed }
 }
 
 const createList = <T extends {}>(
@@ -238,11 +239,14 @@ const createList = <T extends {}>(
 
 	// --- Internal helpers ---
 
+	// Build current value from child signals
+	const buildValue = (): T[] =>
+		keys
+			.map(key => signals.get(key)?.get())
+			.filter(v => v !== undefined) as T[]
+
 	const node: MemoNode<T[]> = {
-		fn: () =>
-			keys
-				.map(key => signals.get(key)?.get())
-				.filter(v => v !== undefined) as T[],
+		fn: buildValue,
 		value: initialValue,
 		flags: FLAG_DIRTY,
 		sources: null,
@@ -251,6 +255,12 @@ const createList = <T extends {}>(
 		sinksTail: null,
 		equals: isEqual,
 		error: undefined,
+	}
+
+	// Force edge re-establishment on next get() after structural changes
+	const invalidateEdges = () => {
+		node.sources = null
+		node.sourcesTail = null
 	}
 
 	const addSignal = (key: string, value: T): void => {
@@ -274,9 +284,12 @@ const createList = <T extends {}>(
 	}
 
 	const applyChanges = (changes: DiffResult): boolean => {
+		let structural = false
+
 		// Additions
 		for (const key in changes.add) {
 			addSignal(key, changes.add[key] as T)
+			structural = true
 		}
 
 		// Changes
@@ -299,7 +312,10 @@ const createList = <T extends {}>(
 			signals.delete(key)
 			const index = keys.indexOf(key)
 			if (index !== -1) keys.splice(index, 1)
+			structural = true
 		}
+
+		if (structural) invalidateEdges()
 
 		return changes.changed
 	}
@@ -341,14 +357,23 @@ const createList = <T extends {}>(
 					node.stop = options.watched()
 				link(node, activeSink)
 			}
-			refresh(node as unknown as SinkNode)
-			if (node.error) throw node.error
+			if (node.sources) {
+				// Fast path: edges already established, rebuild value directly
+				if (node.flags) {
+					node.value = untrack(buildValue)
+					node.flags = FLAG_CLEAN
+				}
+			} else {
+				// First access: use refresh() to establish child → list edges
+				refresh(node as unknown as SinkNode)
+				if (node.error) throw node.error
+			}
 			return node.value
 		},
 
 		set(newValue: T[]) {
 			const currentValue =
-				node.flags & FLAG_DIRTY ? node.fn(node.value) : node.value
+				node.flags & FLAG_DIRTY ? buildValue() : node.value
 			const changes = diffArrays(
 				currentValue,
 				newValue,
@@ -399,7 +424,7 @@ const createList = <T extends {}>(
 				throw new DuplicateKeyError(TYPE_LIST, key, value)
 			if (!keys.includes(key)) keys.push(key)
 			addSignal(key, value)
-			// No need to manually link - next refresh() will establish the edge
+			invalidateEdges()
 			propagate(node as unknown as SinkNode)
 			node.flags |= FLAG_DIRTY
 			if (batchDepth === 0) flush()
@@ -414,7 +439,7 @@ const createList = <T extends {}>(
 					? keyOrIndex
 					: keys.indexOf(key)
 				if (index >= 0) keys.splice(index, 1)
-				// trimSources() will remove the stale edge on next refresh()
+				invalidateEdges()
 				propagate(node as unknown as SinkNode)
 				node.flags |= FLAG_DIRTY
 				if (batchDepth === 0) flush()

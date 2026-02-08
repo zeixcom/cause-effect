@@ -63,10 +63,18 @@ type Memo<T extends {}> = {
  * const sum = createMemo((prev) => prev + count.get(), { value: 0, equals: Object.is });
  * ```
  */
-const createMemo = <T extends {}>(
+function createMemo<T extends {}>(
+	fn: (prev: T) => T,
+	options: ComputedOptions<T> & { value: T },
+): Memo<T>
+function createMemo<T extends {}>(
 	fn: MemoCallback<T>,
 	options?: ComputedOptions<T>,
-): Memo<T> => {
+): Memo<T>
+function createMemo<T extends {}>(
+	fn: MemoCallback<T>,
+	options?: ComputedOptions<T>,
+): Memo<T> {
 	validateCallback(TYPE_MEMO, fn, isSyncFunction)
 	if (options?.value !== undefined)
 		validateSignalValue(TYPE_MEMO, options.value, options?.guard)

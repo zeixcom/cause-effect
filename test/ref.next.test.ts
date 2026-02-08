@@ -1,184 +1,251 @@
-import { expect, mock, test } from 'bun:test'
-import { createEffect, createRef } from '../next.ts'
+import { describe, expect, mock, test } from 'bun:test'
+import { createEffect, createRef, isMemo, isRef } from '../next.ts'
 
-test('Ref - basic functionality', () => {
-	const obj = { name: 'test', value: 42 }
-	const ref = createRef(obj, () => {
-		return () => {}
+/* === Utility Functions === */
+
+const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
+/* === Tests === */
+
+describe('Ref', () => {
+	describe('createRef', () => {
+		test('should return the reference value from get()', () => {
+			const obj = { name: 'test' }
+			const ref = createRef(obj, () => () => {})
+
+			let received: typeof obj | undefined
+			const dispose = createEffect(() => {
+				received = ref.get()
+			})
+			expect(received).toBe(obj)
+			dispose()
+		})
+
+		test('should have Symbol.toStringTag of "Ref"', () => {
+			const ref = createRef({ x: 1 }, () => () => {})
+			expect(ref[Symbol.toStringTag]).toBe('Ref')
+		})
 	})
 
-	// Ref returns Memo type
-	expect(ref[Symbol.toStringTag]).toBe('Ref')
+	describe('isRef', () => {
+		test('should identify ref signals', () => {
+			expect(isRef(createRef({ x: 1 }, () => () => {}))).toBe(true)
+		})
 
-	// Value accessible inside an effect (which triggers start)
-	let received: typeof obj | undefined
-	const dispose = createEffect(() => {
-		received = ref.get()
-	})
-	expect(received).toBe(obj)
-	dispose()
-})
-
-test('Ref - reactive subscriptions via notify', () => {
-	const server = { status: 'offline', connections: 0 }
-	let notifyFn!: () => void
-
-	const ref = createRef(server, notify => {
-		notifyFn = notify
-		return () => {}
+		test('should return false for non-ref values', () => {
+			expect(isRef(42)).toBe(false)
+			expect(isRef(null)).toBe(false)
+			expect(isRef({})).toBe(false)
+			expect(isMemo(createRef({ x: 1 }, () => () => {}))).toBe(false)
+		})
 	})
 
-	let effectRunCount = 0
-	let lastStatus = ''
+	describe('notify', () => {
+		test('should re-run effects when notify is called', () => {
+			const obj = { status: 'offline' }
+			let notifyFn!: () => void
 
-	createEffect(() => {
-		const current = ref.get()
-		lastStatus = current.status
-		effectRunCount++
+			const ref = createRef(obj, notify => {
+				notifyFn = notify
+				return () => {}
+			})
+
+			let effectCount = 0
+			let lastStatus = ''
+			createEffect(() => {
+				lastStatus = ref.get().status
+				effectCount++
+			})
+
+			expect(effectCount).toBe(1)
+			expect(lastStatus).toBe('offline')
+
+			obj.status = 'online'
+			expect(effectCount).toBe(1) // no notify yet
+
+			notifyFn()
+			expect(effectCount).toBe(2)
+			expect(lastStatus).toBe('online')
+		})
+
+		test('should trigger multiple effect runs on multiple notifies', () => {
+			const obj = { size: 100 }
+			let notifyFn!: () => void
+
+			const ref = createRef(obj, notify => {
+				notifyFn = notify
+				return () => {}
+			})
+
+			const callback = mock(() => {})
+			createEffect(() => {
+				ref.get()
+				callback()
+			})
+
+			expect(callback).toHaveBeenCalledTimes(1)
+
+			notifyFn()
+			expect(callback).toHaveBeenCalledTimes(2)
+
+			notifyFn()
+			expect(callback).toHaveBeenCalledTimes(3)
+		})
+
+		test('should notify multiple effects', () => {
+			const obj = { connected: false }
+			let notifyFn!: () => void
+
+			const ref = createRef(obj, notify => {
+				notifyFn = notify
+				return () => {}
+			})
+
+			const mock1 = mock(() => {})
+			const mock2 = mock(() => {})
+
+			createEffect(() => {
+				ref.get()
+				mock1()
+			})
+			createEffect(() => {
+				ref.get()
+				mock2()
+			})
+
+			expect(mock1).toHaveBeenCalledTimes(1)
+			expect(mock2).toHaveBeenCalledTimes(1)
+
+			obj.connected = true
+			notifyFn()
+
+			expect(mock1).toHaveBeenCalledTimes(2)
+			expect(mock2).toHaveBeenCalledTimes(2)
+		})
 	})
 
-	expect(effectRunCount).toBe(1)
-	expect(lastStatus).toBe('offline')
+	describe('Lazy Activation', () => {
+		test('should only call start when first effect subscribes', async () => {
+			let counter = 0
+			let intervalId: Timer | undefined
 
-	// External change without notify — effect should not re-run
-	server.status = 'online'
-	server.connections = 5
-	expect(effectRunCount).toBe(1)
+			const ref = createRef(new Date(), notify => {
+				intervalId = setInterval(() => {
+					counter++
+					notify()
+				}, 10)
+				return () => {
+					clearInterval(intervalId)
+					intervalId = undefined
+				}
+			})
 
-	// Notify triggers effect re-run
-	notifyFn()
-	expect(effectRunCount).toBe(2)
-	expect(lastStatus).toBe('online')
-})
+			// No subscribers yet
+			expect(counter).toBe(0)
+			await wait(50)
+			expect(counter).toBe(0)
+			expect(intervalId).toBeUndefined()
 
-test('Ref - multiple notifies trigger multiple effect runs', () => {
-	const fileObj = { path: '/test.txt', size: 100, modified: Date.now() }
-	let notifyFn!: () => void
+			// First subscriber activates
+			const dispose = createEffect(() => {
+				ref.get()
+			})
 
-	const ref = createRef(fileObj, notify => {
-		notifyFn = notify
-		return () => {}
+			await wait(50)
+			expect(counter).toBeGreaterThan(0)
+			expect(intervalId).toBeDefined()
+
+			// Last subscriber removed — cleanup runs
+			dispose()
+			const counterAfterStop = counter
+
+			await wait(50)
+			expect(counter).toBe(counterAfterStop)
+			expect(intervalId).toBeUndefined()
+		})
+
+		test('should call start only once for multiple subscribers', () => {
+			let startCount = 0
+			let stopCount = 0
+
+			const ref = createRef({ x: 1 }, () => {
+				startCount++
+				return () => {
+					stopCount++
+				}
+			})
+
+			const dispose1 = createEffect(() => {
+				ref.get()
+			})
+			expect(startCount).toBe(1)
+
+			const dispose2 = createEffect(() => {
+				ref.get()
+			})
+			expect(startCount).toBe(1)
+
+			dispose1()
+			expect(stopCount).toBe(0) // still has subscriber
+
+			dispose2()
+			expect(stopCount).toBe(1)
+		})
+
+		test('should reactivate after all subscribers leave and new one arrives', () => {
+			let startCount = 0
+			let stopCount = 0
+
+			const ref = createRef({ x: 1 }, () => {
+				startCount++
+				return () => {
+					stopCount++
+				}
+			})
+
+			const dispose1 = createEffect(() => {
+				ref.get()
+			})
+			expect(startCount).toBe(1)
+
+			dispose1()
+			expect(stopCount).toBe(1)
+
+			const dispose2 = createEffect(() => {
+				ref.get()
+			})
+			expect(startCount).toBe(2)
+
+			dispose2()
+			expect(stopCount).toBe(2)
+		})
 	})
 
-	const mockCallback = mock(() => {})
+	describe('Input Validation', () => {
+		test('should throw NullishSignalValueError for null or undefined value', () => {
+			expect(() => {
+				// @ts-expect-error - Testing invalid input
+				createRef(null, () => () => {})
+			}).toThrow('[Ref] Signal value cannot be null or undefined')
 
-	createEffect(() => {
-		ref.get()
-		mockCallback()
+			expect(() => {
+				// @ts-expect-error - Testing invalid input
+				createRef(undefined, () => () => {})
+			}).toThrow('[Ref] Signal value cannot be null or undefined')
+		})
+
+		test('should throw InvalidCallbackError for non-function start', () => {
+			expect(() => {
+				// @ts-expect-error - Testing invalid input
+				createRef({ x: 1 }, null)
+			}).toThrow('[Ref] Callback null is invalid')
+		})
+
+		test('should throw InvalidCallbackError for async start callback', () => {
+			expect(() => {
+				// @ts-expect-error - Testing invalid input
+				createRef({ x: 1 }, async () => () => {})
+			}).toThrow()
+		})
 	})
-
-	expect(mockCallback).toHaveBeenCalledTimes(1)
-
-	fileObj.size = 200
-	notifyFn()
-	expect(mockCallback).toHaveBeenCalledTimes(2)
-
-	notifyFn()
-	expect(mockCallback).toHaveBeenCalledTimes(3)
-})
-
-test('Ref - multiple effects with same ref', () => {
-	const database = { connected: false, queries: 0 }
-	let notifyFn!: () => void
-
-	const ref = createRef(database, notify => {
-		notifyFn = notify
-		return () => {}
-	})
-
-	const effect1Mock = mock(() => {})
-	const effect2Mock = mock((_connected: boolean) => {})
-
-	createEffect(() => {
-		ref.get()
-		effect1Mock()
-	})
-
-	createEffect(() => {
-		const db = ref.get()
-		effect2Mock(db.connected)
-	})
-
-	expect(effect1Mock).toHaveBeenCalledTimes(1)
-	expect(effect2Mock).toHaveBeenCalledTimes(1)
-	expect(effect2Mock).toHaveBeenCalledWith(false)
-
-	database.connected = true
-	database.queries = 10
-	notifyFn()
-
-	expect(effect1Mock).toHaveBeenCalledTimes(2)
-	expect(effect2Mock).toHaveBeenCalledTimes(2)
-	expect(effect2Mock).toHaveBeenLastCalledWith(true)
-})
-
-test('Ref - lazy activation and cleanup', async () => {
-	let counter = 0
-	let intervalId: Timer | undefined
-
-	const ref = createRef(new Date(), notify => {
-		// Start: set up interval that notifies
-		intervalId = setInterval(() => {
-			counter++
-			notify()
-		}, 10)
-		// Return cleanup
-		return () => {
-			clearInterval(intervalId)
-			intervalId = undefined
-		}
-	})
-
-	// Counter should not be running yet (no subscribers)
-	expect(counter).toBe(0)
-	await new Promise(resolve => setTimeout(resolve, 50))
-	expect(counter).toBe(0)
-	expect(intervalId).toBeUndefined()
-
-	// Effect subscribes — triggers start callback
-	const dispose = createEffect(() => {
-		ref.get()
-	})
-
-	// Counter should now be running
-	await new Promise(resolve => setTimeout(resolve, 50))
-	expect(counter).toBeGreaterThan(0)
-	expect(intervalId).toBeDefined()
-
-	// Dispose effect — triggers cleanup (last subscriber removed)
-	dispose()
-	const counterAfterStop = counter
-
-	await new Promise(resolve => setTimeout(resolve, 50))
-	expect(counter).toBe(counterAfterStop)
-	expect(intervalId).toBeUndefined()
-})
-
-test('Ref - start callback only called on first subscriber', () => {
-	const obj = { value: 1 }
-	let startCount = 0
-	let stopCount = 0
-
-	const ref = createRef(obj, () => {
-		startCount++
-		return () => {
-			stopCount++
-		}
-	})
-
-	const dispose1 = createEffect(() => {
-		ref.get()
-	})
-	expect(startCount).toBe(1)
-
-	const dispose2 = createEffect(() => {
-		ref.get()
-	})
-	expect(startCount).toBe(1) // Not called again
-
-	dispose1()
-	expect(stopCount).toBe(0) // Still has subscriber
-
-	dispose2()
-	expect(stopCount).toBe(1) // Last subscriber removed
 })

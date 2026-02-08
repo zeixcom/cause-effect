@@ -3,6 +3,7 @@ import {
 	batch,
 	batchDepth,
 	type Cleanup,
+	FLAG_CLEAN,
 	FLAG_DIRTY,
 	flush,
 	link,
@@ -10,6 +11,7 @@ import {
 	propagate,
 	refresh,
 	type SinkNode,
+	untrack,
 	validateSignalValue,
 } from '../graph'
 import {
@@ -115,39 +117,33 @@ const diffRecords = <T extends UnknownRecord>(
 	const add = {} as UnknownRecord
 	const change = {} as UnknownRecord
 	const remove = {} as UnknownRecord
+	let changed = false
 
 	const oldKeys = Object.keys(oldObj)
 	const newKeys = Object.keys(newObj)
-	const allKeys = new Set([...oldKeys, ...newKeys])
 
-	for (const key of allKeys) {
-		const oldHas = key in oldObj
-		const newHas = key in newObj
-
-		if (!oldHas && newHas) {
+	// Pass 1: iterate new keys — find additions and changes
+	for (const key of newKeys) {
+		if (key in oldObj) {
+			if (!isEqual(oldObj[key], newObj[key], visited)) {
+				change[key] = newObj[key]
+				changed = true
+			}
+		} else {
 			add[key] = newObj[key]
-			continue
-		} else if (oldHas && !newHas) {
-			remove[key] = undefined
-			continue
+			changed = true
 		}
-
-		const oldValue = oldObj[key]
-		const newValue = newObj[key]
-
-		if (!isEqual(oldValue, newValue, visited)) change[key] = newValue
 	}
 
-	return {
-		add,
-		change,
-		remove,
-		changed: !!(
-			Object.keys(add).length ||
-			Object.keys(change).length ||
-			Object.keys(remove).length
-		),
+	// Pass 2: iterate old keys — find removals
+	for (const key of oldKeys) {
+		if (!(key in newObj)) {
+			remove[key] = undefined
+			changed = true
+		}
 	}
+
+	return { add, change, remove, changed }
 }
 
 const createStore = <T extends UnknownRecord>(
@@ -170,14 +166,19 @@ const createStore = <T extends UnknownRecord>(
 		else signals.set(key, createState(value as unknown & {}))
 	}
 
+	// Build current value from child signals
+	const buildValue = (): T => {
+		const record = {} as UnknownRecord
+		signals.forEach((signal, key) => {
+			record[key] = signal.get()
+		})
+		return record as T
+	}
+
+	// MemoNode for graph edge tracking (child signals → store → store sinks)
+	// The fn() is used by recomputeMemo when refresh() is called from external consumers.
 	const node: MemoNode<T> = {
-		fn: (): T => {
-			const record = {} as UnknownRecord
-			signals.forEach((signal, key) => {
-				record[key] = signal.get()
-			})
-			return record as T
-		},
+		fn: buildValue,
 		value: initialValue,
 		flags: FLAG_DIRTY,
 		sources: null,
@@ -188,9 +189,20 @@ const createStore = <T extends UnknownRecord>(
 		error: undefined,
 	}
 
+	// Force edge re-establishment on next get() after structural changes
+	const invalidateEdges = () => {
+		node.sources = null
+		node.sourcesTail = null
+	}
+
 	const applyChanges = (changes: DiffResult): boolean => {
+		let structural = false
+
 		// Additions
-		for (const key in changes.add) addSignal(key, changes.add[key])
+		for (const key in changes.add) {
+			addSignal(key, changes.add[key])
+			structural = true
+		}
 
 		// Changes
 		if (Object.keys(changes.change).length) {
@@ -201,16 +213,22 @@ const createStore = <T extends UnknownRecord>(
 					const signal = signals.get(key)
 					if (signal) {
 						// Type changed (e.g. primitive → object or vice versa): replace signal
-						if (isRecord(value) !== isStore(signal))
+						if (isRecord(value) !== isStore(signal)) {
 							addSignal(key, value)
-						else signal.set(value as never)
+							structural = true
+						} else signal.set(value as never)
 					}
 				}
 			})
 		}
 
 		// Removals
-		for (const key in changes.remove) signals.delete(key)
+		for (const key in changes.remove) {
+			signals.delete(key)
+			structural = true
+		}
+
+		if (structural) invalidateEdges()
 
 		return changes.changed
 	}
@@ -258,15 +276,26 @@ const createStore = <T extends UnknownRecord>(
 					node.stop = options.watched()
 				link(node, activeSink)
 			}
-			refresh(node as unknown as SinkNode)
-			if (node.error) throw node.error
+			if (node.sources) {
+				// Fast path: edges already established, rebuild value directly
+				// from child signals using untrack to avoid creating spurious
+				// edges to the current effect/memo consumer
+				if (node.flags) {
+					node.value = untrack(buildValue)
+					node.flags = FLAG_CLEAN
+				}
+			} else {
+				// First access: use refresh() to establish child → store edges
+				refresh(node as unknown as SinkNode)
+				if (node.error) throw node.error
+			}
 			return node.value
 		},
 
 		set(newValue: T) {
 			// Use cached value if clean, recompute if dirty
 			const currentValue =
-				node.flags & FLAG_DIRTY ? node.fn(node.value) : node.value
+				node.flags & FLAG_DIRTY ? buildValue() : node.value
 
 			const changes = diffRecords(currentValue, newValue)
 			if (applyChanges(changes)) {
@@ -285,6 +314,7 @@ const createStore = <T extends UnknownRecord>(
 			if (signals.has(key))
 				throw new DuplicateKeyError(TYPE_STORE, key, value)
 			addSignal(key, value)
+			invalidateEdges()
 			propagate(node as unknown as SinkNode)
 			node.flags |= FLAG_DIRTY
 			if (batchDepth === 0) flush()
@@ -294,6 +324,7 @@ const createStore = <T extends UnknownRecord>(
 		remove(key: string) {
 			const ok = signals.delete(key)
 			if (ok) {
+				invalidateEdges()
 				propagate(node as unknown as SinkNode)
 				node.flags |= FLAG_DIRTY
 				if (batchDepth === 0) flush()

@@ -9,6 +9,7 @@
 	"devDependencies": {
 		"@biomejs/biome": "2.1.4",
 		"@types/bun": "latest",
+		"mitata": "^1.0.34",
 		"random": "^5.4.1"
 	},
 	"peerDependencies": {
@@ -28,6 +29,7 @@
 	"scripts": {
 		"build": "bunx tsc --project tsconfig.build.json && bun build index.ts --outdir ./ --minify && bun build index.ts --outfile index.dev.js",
 		"build:next": "bunx tsc --project tsconfig.build.next.json && bun build next.ts --outdir ./ --minify && bun build next.ts --outfile next.dev.js",
+		"bench": "bun run bench/reactivity.bench.ts",
 		"test": "bun test",
 		"lint": "bunx biome lint --write"
 	}
