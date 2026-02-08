@@ -57,7 +57,10 @@ type Task<T extends {}> = {
  * }
  * ```
  */
-declare const createTask: <T extends {}>(fn: TaskCallback<T>, options?: ComputedOptions<T>) => Task<T>;
+declare function createTask<T extends {}>(fn: (prev: T, signal: AbortSignal) => Promise<T>, options: ComputedOptions<T> & {
+    value: T;
+}): Task<T>;
+declare function createTask<T extends {}>(fn: TaskCallback<T>, options?: ComputedOptions<T>): Task<T>;
 /**
  * Checks if a value is a Task signal.
  *

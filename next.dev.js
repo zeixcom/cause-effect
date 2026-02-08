@@ -266,6 +266,15 @@ var batch = (fn) => {
       flush();
   }
 };
+var untrack = (fn) => {
+  const prev = activeSink;
+  activeSink = null;
+  try {
+    return fn();
+  } finally {
+    activeSink = prev;
+  }
+};
 var createScope = (fn) => {
   const prevOwner = activeOwner;
   const scope = { cleanup: null };
@@ -406,17 +415,20 @@ var isEqual = (a, b, visited) => {
   visited.add(a);
   visited.add(b);
   try {
-    if (Array.isArray(a) && Array.isArray(b)) {
-      if (a.length !== b.length)
+    const aIsArray = Array.isArray(a);
+    if (aIsArray !== Array.isArray(b))
+      return false;
+    if (aIsArray) {
+      const aa = a;
+      const ba = b;
+      if (aa.length !== ba.length)
         return false;
-      for (let i = 0;i < a.length; i++) {
-        if (!isEqual(a[i], b[i], visited))
+      for (let i = 0;i < aa.length; i++) {
+        if (!isEqual(aa[i], ba[i], visited))
           return false;
       }
       return true;
     }
-    if (Array.isArray(a) !== Array.isArray(b))
-      return false;
     if (isRecord(a) && isRecord(b)) {
       const aKeys = Object.keys(a);
       const bKeys = Object.keys(b);
@@ -442,6 +454,7 @@ var diffArrays = (oldArray, newArray, currentKeys, generateKey) => {
   const change = {};
   const remove = {};
   const newKeys = [];
+  let changed = false;
   const oldByKey = new Map;
   for (let i = 0;i < oldArray.length; i++) {
     const key = currentKeys[i];
@@ -460,24 +473,22 @@ var diffArrays = (oldArray, newArray, currentKeys, generateKey) => {
     seenKeys.add(key);
     if (!oldByKey.has(key)) {
       add[key] = newValue;
+      changed = true;
     } else {
       const oldValue = oldByKey.get(key);
-      if (!isEqual(oldValue, newValue, visited))
+      if (!isEqual(oldValue, newValue, visited)) {
         change[key] = newValue;
+        changed = true;
+      }
     }
   }
   for (const [key] of oldByKey) {
     if (!seenKeys.has(key)) {
       remove[key] = null;
+      changed = true;
     }
   }
-  return {
-    add,
-    change,
-    remove,
-    newKeys,
-    changed: !!(Object.keys(add).length || Object.keys(change).length || Object.keys(remove).length)
-  };
+  return { add, change, remove, newKeys, changed };
 };
 var createList = (initialValue, options) => {
   validateSignalValue(TYPE_LIST, initialValue, Array.isArray);
@@ -486,24 +497,21 @@ var createList = (initialValue, options) => {
   let keyCounter = 0;
   const keyConfig = options?.keyConfig;
   const generateKey = isString(keyConfig) ? () => `${keyConfig}${keyCounter++}` : isFunction2(keyConfig) ? (item) => keyConfig(item) : () => String(keyCounter++);
+  const buildValue = () => keys.map((key) => signals.get(key)?.get()).filter((v) => v !== undefined);
   const node = {
+    fn: buildValue,
     value: initialValue,
+    flags: FLAG_DIRTY,
+    sources: null,
+    sourcesTail: null,
     sinks: null,
     sinksTail: null,
-    stop: undefined
+    equals: isEqual,
+    error: undefined
   };
-  const notify = () => {
-    for (let e = node.sinks;e; e = e.nextSink)
-      propagate(e.sink);
-    if (batchDepth === 0)
-      flush();
-  };
-  const linkList = () => {
-    if (activeSink) {
-      if (!node.sinks && options?.watched)
-        node.stop = options.watched();
-      link(node, activeSink);
-    }
+  const invalidateEdges = () => {
+    node.sources = null;
+    node.sourcesTail = null;
   };
   const addSignal = (key, value) => {
     validateSignalValue(`${TYPE_LIST} item for key "${key}"`, value);
@@ -524,12 +532,11 @@ var createList = (initialValue, options) => {
     }
     return record;
   };
-  const assembleValue = () => {
-    return keys.map((key) => signals.get(key)?.get()).filter((v) => v !== undefined);
-  };
   const applyChanges = (changes) => {
+    let structural = false;
     for (const key in changes.add) {
       addSignal(key, changes.add[key]);
+      structural = true;
     }
     if (Object.keys(changes.change).length) {
       batch(() => {
@@ -547,13 +554,18 @@ var createList = (initialValue, options) => {
       const index = keys.indexOf(key);
       if (index !== -1)
         keys.splice(index, 1);
+      structural = true;
     }
+    if (structural)
+      invalidateEdges();
     return changes.changed;
   };
   const initRecord = toRecord(initialValue);
   for (const key in initRecord) {
     addSignal(key, initRecord[key]);
   }
+  node.value = initialValue;
+  node.flags = 0;
   const list = {
     [Symbol.toStringTag]: TYPE_LIST,
     [Symbol.isConcatSpreadable]: true,
@@ -565,20 +577,41 @@ var createList = (initialValue, options) => {
       }
     },
     get length() {
-      linkList();
+      if (activeSink) {
+        if (!node.sinks && options?.watched)
+          node.stop = options.watched();
+        link(node, activeSink);
+      }
       return keys.length;
     },
     get() {
-      linkList();
-      return assembleValue();
+      if (activeSink) {
+        if (!node.sinks && options?.watched)
+          node.stop = options.watched();
+        link(node, activeSink);
+      }
+      if (node.sources) {
+        if (node.flags) {
+          node.value = untrack(buildValue);
+          node.flags = FLAG_CLEAN;
+        }
+      } else {
+        refresh(node);
+        if (node.error)
+          throw node.error;
+      }
+      return node.value;
     },
     set(newValue) {
-      const currentValue = assembleValue();
+      const currentValue = node.flags & FLAG_DIRTY ? buildValue() : node.value;
       const changes = diffArrays(currentValue, newValue, keys, generateKey);
       if (changes.changed) {
         keys = changes.newKeys;
         applyChanges(changes);
-        notify();
+        propagate(node);
+        node.flags |= FLAG_DIRTY;
+        if (batchDepth === 0)
+          flush();
       }
     },
     update(fn) {
@@ -588,7 +621,11 @@ var createList = (initialValue, options) => {
       return signals.get(keys[index]);
     },
     keys() {
-      linkList();
+      if (activeSink) {
+        if (!node.sinks && options?.watched)
+          node.stop = options.watched();
+        link(node, activeSink);
+      }
       return keys.values();
     },
     byKey(key) {
@@ -607,7 +644,11 @@ var createList = (initialValue, options) => {
       if (!keys.includes(key))
         keys.push(key);
       addSignal(key, value);
-      notify();
+      invalidateEdges();
+      propagate(node);
+      node.flags |= FLAG_DIRTY;
+      if (batchDepth === 0)
+        flush();
       return key;
     },
     remove(keyOrIndex) {
@@ -617,7 +658,11 @@ var createList = (initialValue, options) => {
         const index = isNumber(keyOrIndex) ? keyOrIndex : keys.indexOf(key);
         if (index >= 0)
           keys.splice(index, 1);
-        notify();
+        invalidateEdges();
+        propagate(node);
+        node.flags |= FLAG_DIRTY;
+        if (batchDepth === 0)
+          flush();
       }
     },
     sort(compareFn) {
@@ -625,7 +670,10 @@ var createList = (initialValue, options) => {
       const newOrder = entries.map(([key]) => key);
       if (!isEqual(keys, newOrder)) {
         keys = newOrder;
-        notify();
+        propagate(node);
+        node.flags |= FLAG_DIRTY;
+        if (batchDepth === 0)
+          flush();
       }
     },
     splice(start, deleteCount, ...items) {
@@ -658,8 +706,11 @@ var createList = (initialValue, options) => {
           remove,
           changed
         });
-        keys = newOrder.filter(() => true);
-        notify();
+        keys = newOrder;
+        propagate(node);
+        node.flags |= FLAG_DIRTY;
+        if (batchDepth === 0)
+          flush();
       }
       return Object.values(remove);
     },
@@ -672,7 +723,7 @@ var createList = (initialValue, options) => {
 var isList = (value) => isObjectOfType(value, TYPE_LIST);
 
 // src/nodes/memo.ts
-var createMemo = (fn, options) => {
+function createMemo(fn, options) {
   validateCallback(TYPE_MEMO, fn, isSyncFunction);
   if (options?.value !== undefined)
     validateSignalValue(TYPE_MEMO, options.value, options?.guard);
@@ -699,11 +750,11 @@ var createMemo = (fn, options) => {
       return node.value;
     }
   };
-};
+}
 var isMemo = (value) => isObjectOfType(value, TYPE_MEMO);
 
 // src/nodes/task.ts
-var createTask = (fn, options) => {
+function createTask(fn, options) {
   validateCallback(TYPE_TASK, fn, isAsyncFunction);
   if (options?.value !== undefined)
     validateSignalValue(TYPE_TASK, options.value, options?.guard);
@@ -738,7 +789,7 @@ var createTask = (fn, options) => {
       node.controller = undefined;
     }
   };
-};
+}
 var isTask = (value) => isObjectOfType(value, TYPE_TASK);
 
 // src/nodes/collection.ts
@@ -798,24 +849,18 @@ function createCollection(source, callback) {
     }
     const oldKeySet = new Set(keys);
     const newKeySet = new Set(newKeys);
-    let changed = false;
     for (const key of keys) {
       if (!newKeySet.has(key)) {
         signals.delete(key);
-        changed = true;
       }
     }
     for (const key of newKeys) {
       if (!oldKeySet.has(key)) {
         addSignal(key);
-        changed = true;
       }
     }
-    if (!changed)
-      changed = true;
     keys = newKeys;
-    if (changed)
-      notify();
+    notify();
   };
   for (const key of Array.from(source.keys())) {
     addSignal(key);
@@ -1016,65 +1061,43 @@ var diffRecords = (oldObj, newObj) => {
   const oldValid = isRecordOrArray(oldObj);
   const newValid = isRecordOrArray(newObj);
   if (!oldValid || !newValid) {
-    const changed = !Object.is(oldObj, newObj);
+    const changed2 = !Object.is(oldObj, newObj);
     return {
-      changed,
-      add: changed && newValid ? newObj : {},
+      changed: changed2,
+      add: changed2 && newValid ? newObj : {},
       change: {},
-      remove: changed && oldValid ? oldObj : {}
+      remove: changed2 && oldValid ? oldObj : {}
     };
   }
   const visited = new WeakSet;
   const add = {};
   const change = {};
   const remove = {};
+  let changed = false;
   const oldKeys = Object.keys(oldObj);
   const newKeys = Object.keys(newObj);
-  const allKeys = new Set([...oldKeys, ...newKeys]);
-  for (const key of allKeys) {
-    const oldHas = key in oldObj;
-    const newHas = key in newObj;
-    if (!oldHas && newHas) {
+  for (const key of newKeys) {
+    if (key in oldObj) {
+      if (!isEqual(oldObj[key], newObj[key], visited)) {
+        change[key] = newObj[key];
+        changed = true;
+      }
+    } else {
       add[key] = newObj[key];
-      continue;
-    } else if (oldHas && !newHas) {
-      remove[key] = undefined;
-      continue;
+      changed = true;
     }
-    const oldValue = oldObj[key];
-    const newValue = newObj[key];
-    if (!isEqual(oldValue, newValue, visited))
-      change[key] = newValue;
   }
-  return {
-    add,
-    change,
-    remove,
-    changed: !!(Object.keys(add).length || Object.keys(change).length || Object.keys(remove).length)
-  };
+  for (const key of oldKeys) {
+    if (!(key in newObj)) {
+      remove[key] = undefined;
+      changed = true;
+    }
+  }
+  return { add, change, remove, changed };
 };
 var createStore = (initialValue, options) => {
   validateSignalValue(TYPE_STORE, initialValue, isRecord);
   const signals = new Map;
-  const node = {
-    value: initialValue,
-    sinks: null,
-    sinksTail: null,
-    stop: undefined
-  };
-  const notify = () => {
-    for (let e = node.sinks;e; e = e.nextSink)
-      propagate(e.sink);
-    if (batchDepth === 0)
-      flush();
-  };
-  const linkStore = () => {
-    if (activeSink) {
-      if (!node.sinks && options?.watched)
-        node.stop = options.watched();
-      link(node, activeSink);
-    }
-  };
   const addSignal = (key, value) => {
     validateSignalValue(`${TYPE_STORE} for key "${key}"`, value);
     if (Array.isArray(value))
@@ -1084,16 +1107,34 @@ var createStore = (initialValue, options) => {
     else
       signals.set(key, createState(value));
   };
-  const assembleValue = () => {
+  const buildValue = () => {
     const record = {};
     signals.forEach((signal, key) => {
       record[key] = signal.get();
     });
     return record;
   };
+  const node = {
+    fn: buildValue,
+    value: initialValue,
+    flags: FLAG_DIRTY,
+    sources: null,
+    sourcesTail: null,
+    sinks: null,
+    sinksTail: null,
+    equals: isEqual,
+    error: undefined
+  };
+  const invalidateEdges = () => {
+    node.sources = null;
+    node.sourcesTail = null;
+  };
   const applyChanges = (changes) => {
-    for (const key in changes.add)
+    let structural = false;
+    for (const key in changes.add) {
       addSignal(key, changes.add[key]);
+      structural = true;
+    }
     if (Object.keys(changes.change).length) {
       batch(() => {
         for (const key in changes.change) {
@@ -1103,15 +1144,19 @@ var createStore = (initialValue, options) => {
           if (signal) {
             if (isRecord(value) !== isStore(signal)) {
               addSignal(key, value);
-            } else {
+              structural = true;
+            } else
               signal.set(value);
-            }
           }
         }
       });
     }
-    for (const key in changes.remove)
+    for (const key in changes.remove) {
       signals.delete(key);
+      structural = true;
+    }
+    if (structural)
+      invalidateEdges();
     return changes.changed;
   };
   for (const key of Object.keys(initialValue))
@@ -1127,21 +1172,43 @@ var createStore = (initialValue, options) => {
       }
     },
     keys() {
-      linkStore();
+      if (activeSink) {
+        if (!node.sinks && options?.watched)
+          node.stop = options.watched();
+        link(node, activeSink);
+      }
       return signals.keys();
     },
     byKey(key) {
       return signals.get(key);
     },
     get() {
-      linkStore();
-      return assembleValue();
+      if (activeSink) {
+        if (!node.sinks && options?.watched)
+          node.stop = options.watched();
+        link(node, activeSink);
+      }
+      if (node.sources) {
+        if (node.flags) {
+          node.value = untrack(buildValue);
+          node.flags = FLAG_CLEAN;
+        }
+      } else {
+        refresh(node);
+        if (node.error)
+          throw node.error;
+      }
+      return node.value;
     },
     set(newValue) {
-      const currentValue = assembleValue();
-      const changed = applyChanges(diffRecords(currentValue, newValue));
-      if (changed)
-        notify();
+      const currentValue = node.flags & FLAG_DIRTY ? buildValue() : node.value;
+      const changes = diffRecords(currentValue, newValue);
+      if (applyChanges(changes)) {
+        propagate(node);
+        node.flags |= FLAG_DIRTY;
+        if (batchDepth === 0)
+          flush();
+      }
     },
     update(fn) {
       store.set(fn(store.get()));
@@ -1150,13 +1217,22 @@ var createStore = (initialValue, options) => {
       if (signals.has(key))
         throw new DuplicateKeyError2(TYPE_STORE, key, value);
       addSignal(key, value);
-      notify();
+      invalidateEdges();
+      propagate(node);
+      node.flags |= FLAG_DIRTY;
+      if (batchDepth === 0)
+        flush();
       return key;
     },
     remove(key) {
       const ok = signals.delete(key);
-      if (ok)
-        notify();
+      if (ok) {
+        invalidateEdges();
+        propagate(node);
+        node.flags |= FLAG_DIRTY;
+        if (batchDepth === 0)
+          flush();
+      }
     }
   };
   return new Proxy(store, {

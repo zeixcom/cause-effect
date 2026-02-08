@@ -41,7 +41,10 @@ type Memo<T extends {}> = {
  * const sum = createMemo((prev) => prev + count.get(), { value: 0, equals: Object.is });
  * ```
  */
-declare const createMemo: <T extends {}>(fn: MemoCallback<T>, options?: ComputedOptions<T>) => Memo<T>;
+declare function createMemo<T extends {}>(fn: (prev: T) => T, options: ComputedOptions<T> & {
+    value: T;
+}): Memo<T>;
+declare function createMemo<T extends {}>(fn: MemoCallback<T>, options?: ComputedOptions<T>): Memo<T>;
 /**
  * Checks if a value is a Memo signal.
  *

@@ -150,6 +150,11 @@ declare const flush: () => void;
  */
 declare const batch: (fn: () => void) => void;
 /**
+ * Runs a callback without tracking dependencies.
+ * Any signal reads inside the callback will not create edges to the current active sink.
+ */
+declare const untrack: <T>(fn: () => T) => T;
+/**
  * Creates a new ownership scope for managing cleanup of nested effects and resources.
  * All effects created within the scope will be automatically disposed when the scope is disposed.
  * Scopes can be nested - disposing a parent scope disposes all child scopes.
@@ -257,4 +262,4 @@ declare class RequiredOwnerError extends Error {
      */
     constructor(where: string);
 }
-export { type Cleanup, type ComputedOptions, type EffectCallback, type EffectNode, type Guard, type MaybeCleanup, type MemoCallback, type MemoNode, type RefNode, type Scope, type Signal, type SignalOptions, type SinkNode, type StateNode, type TaskCallback, type TaskNode, activeOwner, activeSink, batch, batchDepth, CircularDependencyError, createScope, defaultEquals, FLAG_CLEAN, FLAG_DIRTY, flush, InvalidCallbackError, InvalidSignalValueError, link, NullishSignalValueError, propagate, refresh, registerCleanup, runCleanup, runEffect, setState, trimSources, TYPE_MEMO, TYPE_STATE, TYPE_TASK, RequiredOwnerError, UnsetSignalValueError, unlink, validateSignalValue, validateReadValue, validateCallback, };
+export { type Cleanup, type ComputedOptions, type EffectCallback, type EffectNode, type Guard, type MaybeCleanup, type MemoCallback, type MemoNode, type RefNode, type Scope, type Signal, type SignalOptions, type SinkNode, type StateNode, type TaskCallback, type TaskNode, activeOwner, activeSink, batch, batchDepth, CircularDependencyError, createScope, defaultEquals, FLAG_CLEAN, FLAG_DIRTY, flush, InvalidCallbackError, InvalidSignalValueError, link, NullishSignalValueError, propagate, refresh, registerCleanup, runCleanup, runEffect, setState, trimSources, TYPE_MEMO, TYPE_STATE, TYPE_TASK, RequiredOwnerError, UnsetSignalValueError, unlink, untrack, validateSignalValue, validateReadValue, validateCallback, };
