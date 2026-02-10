@@ -1,8 +1,5 @@
-import { List } from '../src/classes/list'
-import {
-	BaseStore,
-	createStore as createClassStore,
-} from '../src/classes/store'
+import { List } from './classes/list'
+import { BaseStore, createStore as createClassStore } from './classes/store'
 import { createList as createFactoryList } from './list'
 import { createStore as createFactoryStore } from './store'
 

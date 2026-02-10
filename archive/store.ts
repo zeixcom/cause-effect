@@ -1,18 +1,18 @@
-import { type DiffResult, diff, type UnknownRecord } from '../src/diff'
+import { type DiffResult, diff, type UnknownRecord } from './diff'
 import {
 	DuplicateKeyError,
 	InvalidSignalValueError,
 	NullishSignalValueError,
 	ReadonlySignalError,
-} from '../src/errors'
-import { isMutableSignal, type MutableSignal } from '../src/signal'
+} from './errors'
+import { isMutableSignal, type MutableSignal } from './signal'
 import {
 	batch,
 	notifyWatchers,
 	subscribeActiveWatcher,
 	UNSET,
 	type Watcher,
-} from '../src/system'
+} from './system'
 import { isFunction, isObjectOfType, isRecord, isSymbol } from '../src/util'
 import { isComputed } from './computed'
 import { createList, isList, type List } from './list'

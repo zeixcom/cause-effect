@@ -1,3 +1,4 @@
+import { DuplicateKeyError, validateSignalValue } from '../errors'
 import {
 	activeSink,
 	batch,
@@ -11,8 +12,8 @@ import {
 	propagate,
 	refresh,
 	type SinkNode,
+	TYPE_STORE,
 	untrack,
-	validateSignalValue,
 } from '../graph'
 import {
 	isFunction,
@@ -67,37 +68,13 @@ type Store<T extends UnknownRecord> = BaseStore<T> & {
 				: State<T[K] & {}> | undefined
 }
 
-/* === Constants === */
-
-const TYPE_STORE = 'Store' as const
-
-/* === Errors === */
-
-class DuplicateKeyError extends Error {
-	constructor(where: string, key: string, value?: unknown) {
-		super(
-			`Could not add ${where} key "${key}"${
-				value ? ` with value ${JSON.stringify(value)}` : ''
-			} because it already exists`,
-		)
-		this.name = 'DuplicateKeyError'
-	}
-}
-
 /* === Functions === */
 
-/**
- * Compares two records and returns a result object containing the differences.
- *
- * @since 0.15.0
- * @param {T} oldObj - The old record to compare
- * @param {T} newObj - The new record to compare
- * @returns {DiffResult} The result of the comparison
- */
-const diffRecords = <T extends UnknownRecord>(
+/** Diff two records and return granular changes */
+function diffRecords<T extends UnknownRecord>(
 	oldObj: T,
 	newObj: T,
-): DiffResult => {
+): DiffResult {
 	// Guard against non-objects that can't be diffed properly with Object.keys and 'in' operator
 	const oldValid = isRecordOrArray(oldObj)
 	const newValid = isRecordOrArray(newObj)
@@ -146,10 +123,27 @@ const diffRecords = <T extends UnknownRecord>(
 	return { add, change, remove, changed }
 }
 
-const createStore = <T extends UnknownRecord>(
+/**
+ * Creates a reactive store with deeply nested reactive properties.
+ * Each property becomes its own signal (State for primitives, nested Store for objects, List for arrays).
+ * Properties are accessible directly via proxy.
+ *
+ * @since 0.15.0
+ * @param initialValue - Initial object value of the store
+ * @param options - Optional configuration for watch lifecycle
+ * @returns A Store with reactive properties
+ *
+ * @example
+ * ```ts
+ * const user = createStore({ name: 'Alice', age: 30 });
+ * user.name.set('Bob'); // Only name subscribers react
+ * console.log(user.get()); // { name: 'Bob', age: 30 }
+ * ```
+ */
+function createStore<T extends UnknownRecord>(
 	initialValue: T,
 	options?: StoreOptions,
-): Store<T> => {
+): Store<T> {
 	validateSignalValue(TYPE_STORE, initialValue, isRecord)
 
 	const signals = new Map<
@@ -176,7 +170,6 @@ const createStore = <T extends UnknownRecord>(
 	}
 
 	// MemoNode for graph edge tracking (child signals → store → store sinks)
-	// The fn() is used by recomputeMemo when refresh() is called from external consumers.
 	const node: MemoNode<T> = {
 		fn: buildValue,
 		value: initialValue,
@@ -365,8 +358,16 @@ const createStore = <T extends UnknownRecord>(
 	}) as Store<T>
 }
 
-const isStore = <T extends UnknownRecord>(value: unknown): value is Store<T> =>
-	isObjectOfType(value, TYPE_STORE)
+/**
+ * Checks if a value is a Store signal.
+ *
+ * @since 0.15.0
+ * @param value - The value to check
+ * @returns True if the value is a Store
+ */
+function isStore<T extends UnknownRecord>(value: unknown): value is Store<T> {
+	return isObjectOfType(value, TYPE_STORE)
+}
 
 /* === Exports === */
 

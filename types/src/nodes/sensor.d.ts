@@ -27,6 +27,7 @@ type SensorCallback<T extends {}> = (set: (next: T) => void) => Cleanup;
  * Creates a sensor that tracks external input and updates a state value as long as it is active.
  * Sensors get activated when they are first accessed and deactivated when they are no longer needed.
  *
+ * @since 0.18.0
  * @template T - The type of value stored in the state
  * @param start - The callback function that starts the sensor and returns a cleanup function.
  * @param options - Optional options for the sensor.
@@ -46,12 +47,13 @@ type SensorCallback<T extends {}> = (set: (next: T) => void) => Cleanup;
  * });
  * ```
  */
-declare const createSensor: <T extends {}>(start: SensorCallback<T>, options?: ComputedOptions<T>) => Sensor<T>;
+declare function createSensor<T extends {}>(start: SensorCallback<T>, options?: ComputedOptions<T>): Sensor<T>;
 /**
  * Checks if a value is a Sensor signal.
  *
+ * @since 0.18.0
  * @param value - The value to check
  * @returns True if the value is a Sensor
  */
-declare const isSensor: <T extends {} = {}>(value: unknown) => value is Sensor<T>;
+declare function isSensor<T extends {} = unknown & {}>(value: unknown): value is Sensor<T>;
 export { createSensor, isSensor, type Sensor, type SensorCallback };

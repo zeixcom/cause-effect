@@ -1,4 +1,9 @@
 import {
+	validateCallback,
+	validateReadValue,
+	validateSignalValue,
+} from '../errors'
+import {
 	activeSink,
 	type Cleanup,
 	type ComputedOptions,
@@ -6,9 +11,7 @@ import {
 	link,
 	type StateNode,
 	setState,
-	validateCallback,
-	validateReadValue,
-	validateSignalValue,
+	TYPE_SENSOR,
 } from '../graph'
 import { isObjectOfType, isSyncFunction } from '../util'
 
@@ -41,16 +44,13 @@ type Sensor<T extends {}> = {
  */
 type SensorCallback<T extends {}> = (set: (next: T) => void) => Cleanup
 
-/* === Constants === */
-
-const TYPE_SENSOR = 'Sensor'
-
 /* === Exported Functions === */
 
 /**
  * Creates a sensor that tracks external input and updates a state value as long as it is active.
  * Sensors get activated when they are first accessed and deactivated when they are no longer needed.
  *
+ * @since 0.18.0
  * @template T - The type of value stored in the state
  * @param start - The callback function that starts the sensor and returns a cleanup function.
  * @param options - Optional options for the sensor.
@@ -70,10 +70,10 @@ const TYPE_SENSOR = 'Sensor'
  * });
  * ```
  */
-const createSensor = <T extends {}>(
+function createSensor<T extends {}>(
 	start: SensorCallback<T>,
 	options?: ComputedOptions<T>,
-): Sensor<T> => {
+): Sensor<T> {
 	validateCallback(TYPE_SENSOR, start, isSyncFunction)
 	if (options?.value !== undefined)
 		validateSignalValue(TYPE_SENSOR, options.value, options?.guard)
@@ -107,11 +107,14 @@ const createSensor = <T extends {}>(
 /**
  * Checks if a value is a Sensor signal.
  *
+ * @since 0.18.0
  * @param value - The value to check
  * @returns True if the value is a Sensor
  */
-const isSensor = <T extends {} = unknown & {}>(
+function isSensor<T extends {} = unknown & {}>(
 	value: unknown,
-): value is Sensor<T> => isObjectOfType(value, TYPE_SENSOR)
+): value is Sensor<T> {
+	return isObjectOfType(value, TYPE_SENSOR)
+}
 
 export { createSensor, isSensor, type Sensor, type SensorCallback }

@@ -1,4 +1,9 @@
 import {
+	RequiredOwnerError,
+	UnsetSignalValueError,
+	validateCallback,
+} from '../errors'
+import {
 	activeOwner,
 	type Cleanup,
 	type EffectCallback,
@@ -6,14 +11,11 @@ import {
 	FLAG_CLEAN,
 	FLAG_DIRTY,
 	type MaybeCleanup,
-	RequiredOwnerError,
 	registerCleanup,
 	runCleanup,
 	runEffect,
 	type Signal,
 	trimSources,
-	UnsetSignalValueError,
-	validateCallback,
 } from '../graph'
 
 /* === Types === */
@@ -35,6 +37,7 @@ type MatchHandlers<T extends Signal<unknown & {}>[]> = {
  * Effects run immediately upon creation and re-run when any tracked signal changes.
  * Effects are executed during the flush phase, after all updates have been batched.
  *
+ * @since 0.1.0
  * @param fn - The effect function that can track dependencies and register cleanup callbacks
  * @returns A cleanup function that can be called to dispose of the effect
  *
@@ -58,7 +61,7 @@ type MatchHandlers<T extends Signal<unknown & {}>[]> = {
  * });
  * ```
  */
-const createEffect = (fn: EffectCallback): Cleanup => {
+function createEffect(fn: EffectCallback): Cleanup {
 	validateCallback('Effect', fn)
 
 	const node: EffectNode = {
@@ -88,12 +91,13 @@ const createEffect = (fn: EffectCallback): Cleanup => {
  * Runs handlers based on the current values of signals.
  * Must be called within an active owner (effect or scope) so async cleanup can be registered.
  *
+ * @since 0.15.0
  * @throws RequiredOwnerError If called without an active owner.
  */
-const match = <T extends Signal<unknown & {}>[]>(
+function match<T extends Signal<unknown & {}>[]>(
 	signals: T,
 	handlers: MatchHandlers<T>,
-): MaybeCleanup => {
+): MaybeCleanup {
 	if (!activeOwner) throw new RequiredOwnerError('match')
 	const { ok, err = console.error, nil } = handlers
 	let errors: Error[] | undefined
@@ -102,9 +106,7 @@ const match = <T extends Signal<unknown & {}>[]>(
 
 	for (let i = 0; i < signals.length; i++) {
 		try {
-			const value = signals[i].get()
-			if (value == null) pending = true
-			else values[i] = value
+			values[i] = signals[i].get()
 		} catch (e) {
 			if (e instanceof UnsetSignalValueError) {
 				pending = true

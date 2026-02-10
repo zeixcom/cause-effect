@@ -1,3 +1,4 @@
+import { validateCallback, validateSignalValue } from '../errors'
 import {
 	activeSink,
 	batchDepth,
@@ -6,8 +7,7 @@ import {
 	link,
 	propagate,
 	type RefNode,
-	validateCallback,
-	validateSignalValue,
+	TYPE_REF,
 } from '../graph'
 import { isObjectOfType, isSyncFunction } from '../util'
 
@@ -38,10 +38,6 @@ type Ref<T extends {}> = {
  */
 type RefCallback = (notify: () => void) => Cleanup
 
-/* === Constants === */
-
-const TYPE_REF = 'Ref'
-
 /* === Exported Functions === */
 
 /**
@@ -54,11 +50,12 @@ const TYPE_REF = 'Ref'
  * - Network connections (notify on status changes)
  * - External resources that need observation setup/teardown
  *
+ * @since 0.18.0
  * @template T - The type of the referenced object
  */
-const createRef = <T extends {}>(value: T, start: RefCallback): Ref<T> => {
-	validateSignalValue('Ref', value)
-	validateCallback('Ref', start, isSyncFunction)
+function createRef<T extends {}>(value: T, start: RefCallback): Ref<T> {
+	validateSignalValue(TYPE_REF, value)
+	validateCallback(TYPE_REF, start, isSyncFunction)
 
 	const node: RefNode<T> = {
 		value,
@@ -87,10 +84,12 @@ const createRef = <T extends {}>(value: T, start: RefCallback): Ref<T> => {
 /**
  * Checks if a value is a Ref signal.
  *
+ * @since 0.18.0
  * @param value - The value to check
  * @returns True if the value is a Ref
  */
-const isRef = <T extends {} = unknown & {}>(value: unknown): value is Ref<T> =>
-	isObjectOfType(value, TYPE_REF)
+function isRef<T extends {} = unknown & {}>(value: unknown): value is Ref<T> {
+	return isObjectOfType(value, TYPE_REF)
+}
 
 export { createRef, isRef, type Ref, type RefCallback }

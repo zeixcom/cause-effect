@@ -1,14 +1,14 @@
+import { isObjectOfType } from '../../src/util'
 import { isEqual } from '../diff'
 import { validateCallback, validateSignalValue } from '../errors'
 import {
-	type SignalOptions,
-	registerWatchCallbacks,
 	notifyOf,
+	registerWatchCallbacks,
+	type SignalOptions,
 	subscribeTo,
 	UNSET,
 	unsubscribeAllFrom,
 } from '../system'
-import { isObjectOfType } from '../util'
 
 /* === Constants === */
 

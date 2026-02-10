@@ -1,7 +1,7 @@
-import type { DiffResult, UnknownRecord } from '../src/diff'
-import { guardMutableSignal } from '../src/errors'
-import type { Signal } from '../src/signal'
-import { batch } from '../src/system'
+import type { DiffResult, UnknownRecord } from './diff'
+import { guardMutableSignal } from './errors'
+import type { Signal } from './signal'
+import { batch } from './system'
 
 /* === Class Definitions === */
 

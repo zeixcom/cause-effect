@@ -1,3 +1,4 @@
+import { validateCallback, validateSignalValue } from '../errors'
 import {
 	activeSink,
 	defaultEquals,
@@ -6,8 +7,6 @@ import {
 	type StateNode,
 	setState,
 	TYPE_STATE,
-	validateCallback,
-	validateSignalValue,
 } from '../graph'
 import { isObjectOfType } from '../util'
 
@@ -58,6 +57,7 @@ type State<T extends {}> = {
 /**
  * Creates a mutable reactive state container.
  *
+ * @since 0.9.0
  * @template T - The type of value stored in the state
  * @param value - The initial value
  * @param options - Optional configuration for the state
@@ -78,10 +78,10 @@ type State<T extends {}> = {
  * });
  * ```
  */
-const createState = <T extends {}>(
+function createState<T extends {}>(
 	value: T,
 	options?: SignalOptions<T>,
-): State<T> => {
+): State<T> {
 	validateSignalValue(TYPE_STATE, value, options?.guard)
 
 	const node: StateNode<T> = {
@@ -92,7 +92,7 @@ const createState = <T extends {}>(
 		guard: options?.guard,
 	}
 
-	const state: State<T> = {
+	return {
 		[Symbol.toStringTag]: TYPE_STATE,
 		get(): T {
 			if (activeSink) link(node, activeSink)
@@ -109,13 +109,12 @@ const createState = <T extends {}>(
 			setState(node, next)
 		},
 	}
-
-	return state
 }
 
 /**
  * Checks if a value is a State signal.
  *
+ * @since 0.9.0
  * @param value - The value to check
  * @returns True if the value is a State
  *
@@ -127,8 +126,10 @@ const createState = <T extends {}>(
  * }
  * ```
  */
-const isState = <T extends {} = unknown & {}>(
+function isState<T extends {} = unknown & {}>(
 	value: unknown,
-): value is State<T> => isObjectOfType(value, TYPE_STATE)
+): value is State<T> {
+	return isObjectOfType(value, TYPE_STATE)
+}
 
 export { createState, isState, type State, type UpdateCallback }

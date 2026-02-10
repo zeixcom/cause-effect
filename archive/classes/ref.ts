@@ -5,7 +5,7 @@ import {
 	type SignalOptions,
 	subscribeTo,
 } from '../system'
-import { isObjectOfType } from '../util'
+import { isObjectOfType } from '../../src/util'
 
 /* === Constants === */
 

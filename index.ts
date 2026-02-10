@@ -11,7 +11,7 @@ export {
 	DerivedCollection,
 	isCollection,
 	TYPE_COLLECTION,
-} from './src/classes/collection'
+} from './archive/classes/collection'
 export {
 	type Computed,
 	createComputed,
@@ -23,35 +23,35 @@ export {
 	Task,
 	type TaskCallback,
 	TYPE_COMPUTED,
-} from './src/classes/computed'
+} from './archive/classes/computed'
 export {
 	type ArrayToRecord,
 	isList,
 	type KeyConfig,
 	List,
 	TYPE_LIST,
-} from './src/classes/list'
-export { isRef, Ref, TYPE_REF } from './src/classes/ref'
-export { isState, State, TYPE_STATE } from './src/classes/state'
+} from './archive/classes/list'
+export { isRef, Ref, TYPE_REF } from './archive/classes/ref'
+export { isState, State, TYPE_STATE } from './archive/classes/state'
 export {
 	BaseStore,
 	createStore,
 	isStore,
 	type Store,
 	TYPE_STORE,
-} from './src/classes/store'
+} from './archive/classes/store'
 export {
 	type DiffResult,
 	diff,
 	isEqual,
 	type UnknownArray,
 	type UnknownRecord,
-} from './src/diff'
+} from './archive/diff'
 export {
 	createEffect,
 	type EffectCallback,
 	type MaybeCleanup,
-} from './src/effect'
+} from './archive/effect'
 export {
 	CircularDependencyError,
 	createError,
@@ -65,9 +65,9 @@ export {
 	ReadonlySignalError,
 	validateCallback,
 	validateSignalValue,
-} from './src/errors'
-export { type MatchHandlers, match } from './src/match'
-export { type ResolveResult, resolve } from './src/resolve'
+} from './archive/errors'
+export { type MatchHandlers, match } from './archive/match'
+export { type ResolveResult, resolve } from './archive/resolve'
 export {
 	createSignal,
 	isMutableSignal,
@@ -75,7 +75,7 @@ export {
 	type Signal,
 	type SignalValues,
 	type UnknownSignalRecord,
-} from './src/signal'
+} from './archive/signal'
 export {
 	batch,
 	type Cleanup,
@@ -88,7 +88,7 @@ export {
 	UNSET,
 	untrack,
 	type Watcher,
-} from './src/system'
+} from './archive/system'
 export {
 	isAbortError,
 	isAsyncFunction,

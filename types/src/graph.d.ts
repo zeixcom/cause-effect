@@ -1,3 +1,4 @@
+import { type Guard } from './errors';
 type SourceFields<T extends {}> = {
     value: T;
     sinks: Edge | null;
@@ -53,15 +54,6 @@ type Signal<T extends {}> = {
 type Cleanup = () => void;
 type MaybeCleanup = Cleanup | undefined | void;
 /**
- * A type guard function that validates whether an unknown value is of type T.
- * Used to ensure type safety when updating signals.
- *
- * @template T - The type to guard against
- * @param value - The value to check
- * @returns True if the value is of type T
- */
-type Guard<T extends {}> = (value: unknown) => value is T;
-/**
  * Options for configuring signal behavior.
  *
  * @template T - The type of value in the signal
@@ -112,22 +104,27 @@ type EffectCallback = () => MaybeCleanup;
 declare const TYPE_STATE = "State";
 declare const TYPE_MEMO = "Memo";
 declare const TYPE_TASK = "Task";
+declare const TYPE_REF = "Ref";
+declare const TYPE_SENSOR = "Sensor";
+declare const TYPE_LIST = "List";
+declare const TYPE_COLLECTION = "Collection";
+declare const TYPE_STORE = "Store";
 declare const FLAG_CLEAN = 0;
 declare const FLAG_DIRTY: number;
 declare let activeSink: SinkNode | null;
 declare let activeOwner: OwnerNode | null;
 declare let batchDepth: number;
-declare const defaultEquals: <T extends {}>(a: T, b: T) => boolean;
-declare const link: (source: SourceNode, sink: SinkNode) => void;
-declare const unlink: (edge: Edge) => Edge | null;
-declare const trimSources: (node: SinkNode) => void;
-declare const propagate: (node: SinkNode, newFlag?: number) => void;
-declare const setState: <T extends {}>(node: StateNode<T>, next: T) => void;
-declare const registerCleanup: (owner: OwnerNode, fn: Cleanup) => void;
-declare const runCleanup: (owner: OwnerNode) => void;
-declare const runEffect: (node: EffectNode) => void;
-declare const refresh: (node: SinkNode) => void;
-declare const flush: () => void;
+declare function defaultEquals<T extends {}>(a: T, b: T): boolean;
+declare function link(source: SourceNode, sink: SinkNode): void;
+declare function unlink(edge: Edge): Edge | null;
+declare function trimSources(node: SinkNode): void;
+declare function propagate(node: SinkNode, newFlag?: number): void;
+declare function setState<T extends {}>(node: StateNode<T>, next: T): void;
+declare function registerCleanup(owner: OwnerNode, fn: Cleanup): void;
+declare function runCleanup(owner: OwnerNode): void;
+declare function runEffect(node: EffectNode): void;
+declare function refresh(node: SinkNode): void;
+declare function flush(): void;
 /**
  * Batches multiple signal updates together.
  * Effects will not run until the batch completes.
@@ -148,12 +145,27 @@ declare const flush: () => void;
  * });
  * ```
  */
-declare const batch: (fn: () => void) => void;
+declare function batch(fn: () => void): void;
 /**
  * Runs a callback without tracking dependencies.
  * Any signal reads inside the callback will not create edges to the current active sink.
+ *
+ * @param fn - The function to execute without tracking
+ * @returns The return value of the function
+ *
+ * @example
+ * ```ts
+ * const count = createState(0);
+ * const label = createState('Count');
+ *
+ * createEffect(() => {
+ *   // Only re-runs when count changes, not when label changes
+ *   const name = untrack(() => label.get());
+ *   console.log(`${name}: ${count.get()}`);
+ * });
+ * ```
  */
-declare const untrack: <T>(fn: () => T) => T;
+declare function untrack<T>(fn: () => T): T;
 /**
  * Creates a new ownership scope for managing cleanup of nested effects and resources.
  * All effects created within the scope will be automatically disposed when the scope is disposed.
@@ -176,90 +188,6 @@ declare const untrack: <T>(fn: () => T) => T;
  *
  * dispose(); // Cleans up the effect and runs cleanup callbacks
  * ```
- *
- * @example
- * ```ts
- * // Nested scopes
- * const disposeOuter = createScope(() => {
- *   const disposeInner = createScope(() => {
- *     // ...
- *   });
- *   // disposeOuter() will also dispose inner scope
- *   return disposeInner;
- * });
- * ```
  */
-declare const createScope: (fn: () => MaybeCleanup) => Cleanup;
-declare function validateSignalValue<T extends {}>(where: string, value: unknown, guard?: Guard<T>): asserts value is T;
-declare function validateReadValue<T extends {}>(where: string, value: T | null | undefined): asserts value is T;
-declare function validateCallback(where: string, value: unknown): asserts value is (...args: unknown[]) => unknown;
-declare function validateCallback<T>(where: string, value: unknown, guard: (value: unknown) => value is T): asserts value is T;
-/**
- * Error thrown on re-entrance on an already running function.
- */
-declare class CircularDependencyError extends Error {
-    /**
-     * Constructs a new CircularDependencyError.
-     *
-     * @param where - The location where the error occurred.
-     */
-    constructor(where: string);
-}
-/**
- * Error thrown when a signal value is null or undefined.
- */
-declare class NullishSignalValueError extends TypeError {
-    /**
-     * Constructs a new NullishSignalValueError.
-     *
-     * @param where - The location where the error occurred.
-     */
-    constructor(where: string);
-}
-/**
- * Error thrown when a signal is read before it has a value.
- */
-declare class UnsetSignalValueError extends Error {
-    /**
-     * Constructs a new UnsetSignalValueError.
-     *
-     * @param where - The location where the error occurred.
-     */
-    constructor(where: string);
-}
-/**
- * Error thrown when a signal value is invalid.
- */
-declare class InvalidSignalValueError extends TypeError {
-    /**
-     * Constructs a new InvalidSignalValueError.
-     *
-     * @param where - The location where the error occurred.
-     * @param value - The invalid value.
-     */
-    constructor(where: string, value: unknown);
-}
-/**
- * Error thrown when a callback is invalid.
- */
-declare class InvalidCallbackError extends TypeError {
-    /**
-     * Constructs a new InvalidCallbackError.
-     *
-     * @param where - The location where the error occurred.
-     * @param value - The invalid value.
-     */
-    constructor(where: string, value: unknown);
-}
-/**
- * Error thrown when an API requiring an owner is called without one.
- */
-declare class RequiredOwnerError extends Error {
-    /**
-     * Constructs a new RequiredOwnerError.
-     *
-     * @param where - The location where the error occurred.
-     */
-    constructor(where: string);
-}
-export { type Cleanup, type ComputedOptions, type EffectCallback, type EffectNode, type Guard, type MaybeCleanup, type MemoCallback, type MemoNode, type RefNode, type Scope, type Signal, type SignalOptions, type SinkNode, type StateNode, type TaskCallback, type TaskNode, activeOwner, activeSink, batch, batchDepth, CircularDependencyError, createScope, defaultEquals, FLAG_CLEAN, FLAG_DIRTY, flush, InvalidCallbackError, InvalidSignalValueError, link, NullishSignalValueError, propagate, refresh, registerCleanup, runCleanup, runEffect, setState, trimSources, TYPE_MEMO, TYPE_STATE, TYPE_TASK, RequiredOwnerError, UnsetSignalValueError, unlink, untrack, validateSignalValue, validateReadValue, validateCallback, };
+declare function createScope(fn: () => MaybeCleanup): Cleanup;
+export { type Cleanup, type ComputedOptions, type EffectCallback, type EffectNode, type MaybeCleanup, type MemoCallback, type MemoNode, type RefNode, type Scope, type Signal, type SignalOptions, type SinkNode, type StateNode, type TaskCallback, type TaskNode, activeOwner, activeSink, batch, batchDepth, createScope, defaultEquals, FLAG_CLEAN, FLAG_DIRTY, flush, link, propagate, refresh, registerCleanup, runCleanup, runEffect, setState, trimSources, TYPE_COLLECTION, TYPE_LIST, TYPE_MEMO, TYPE_REF, TYPE_SENSOR, TYPE_STATE, TYPE_STORE, TYPE_TASK, unlink, untrack, };

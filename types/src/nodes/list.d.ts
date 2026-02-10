@@ -1,4 +1,4 @@
-import { type Cleanup } from '../graph';
+import { type Cleanup, TYPE_LIST } from '../graph';
 import { type Collection } from './collection';
 import { type State } from './state';
 type UnknownRecord = Record<string, unknown>;
@@ -33,7 +33,6 @@ type List<T extends {}> = {
     deriveCollection<R extends {}>(callback: (sourceValue: T) => R): Collection<R>;
     deriveCollection<R extends {}>(callback: (sourceValue: T, abort: AbortSignal) => Promise<R>): Collection<R>;
 };
-declare const TYPE_LIST: "List";
 /**
  * Checks if two values are equal with cycle detection
  *
@@ -43,7 +42,22 @@ declare const TYPE_LIST: "List";
  * @param {WeakSet<object>} visited - Set to track visited objects for cycle detection
  * @returns {boolean} Whether the two values are equal
  */
-declare const isEqual: <T>(a: T, b: T, visited?: WeakSet<object>) => boolean;
-declare const createList: <T extends {}>(initialValue: T[], options?: ListOptions<T>) => List<T>;
-declare const isList: <T extends {}>(value: unknown) => value is List<T>;
+declare function isEqual<T>(a: T, b: T, visited?: WeakSet<object>): boolean;
+/**
+ * Creates a reactive list with stable keys and per-item reactivity.
+ *
+ * @since 0.18.0
+ * @param initialValue - Initial array of items
+ * @param options - Optional configuration for key generation and watch lifecycle
+ * @returns A List signal
+ */
+declare function createList<T extends {}>(initialValue: T[], options?: ListOptions<T>): List<T>;
+/**
+ * Checks if a value is a List signal.
+ *
+ * @since 0.15.0
+ * @param value - The value to check
+ * @returns True if the value is a List
+ */
+declare function isList<T extends {}>(value: unknown): value is List<T>;
 export { type DiffResult, type KeyConfig, type List, type ListOptions, type UnknownRecord, createList, isEqual, isList, TYPE_LIST, };

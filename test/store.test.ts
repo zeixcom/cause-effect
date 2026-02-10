@@ -1,26 +1,16 @@
 import { describe, expect, test } from 'bun:test'
 import {
-	BaseStore,
 	createEffect,
+	createMemo,
+	createState,
 	createStore,
+	isList,
 	isStore,
-	Memo,
-	State,
-	UNSET,
-} from '../index.ts'
+} from '../next.ts'
 
-describe('store', () => {
-	describe('creation and basic operations', () => {
-		test('creates BaseStore with initial values', () => {
-			const user = new BaseStore({
-				name: 'Hannah',
-				email: 'hannah@example.com',
-			})
-			expect(user.byKey('name').get()).toBe('Hannah')
-			expect(user.byKey('email').get()).toBe('hannah@example.com')
-		})
-
-		test('creates stores with initial values', () => {
+describe('Store', () => {
+	describe('createStore', () => {
+		test('should create a store with initial values', () => {
 			const user = createStore({
 				name: 'Hannah',
 				email: 'hannah@example.com',
@@ -29,23 +19,63 @@ describe('store', () => {
 			expect(user.email.get()).toBe('hannah@example.com')
 		})
 
-		test('has Symbol.toStringTag of Store', () => {
+		test('should create nested stores for object properties', () => {
+			const user = createStore({
+				name: 'Alice',
+				preferences: { theme: 'light', notifications: true },
+			})
+			expect(isStore(user.preferences)).toBe(true)
+			expect(user.preferences.theme.get()).toBe('light')
+			expect(user.preferences.notifications.get()).toBe(true)
+		})
+
+		test('should create lists for array properties', () => {
+			const data = createStore({ tags: ['a', 'b', 'c'] })
+			expect(isList(data.tags)).toBe(true)
+			expect(data.tags.get()).toEqual(['a', 'b', 'c'])
+		})
+
+		test('should handle deeply nested objects', () => {
+			const config = createStore({
+				ui: { theme: { colors: { primary: '#007acc' } } },
+			})
+			expect(config.ui.theme.colors.primary.get()).toBe('#007acc')
+			config.ui.theme.colors.primary.set('#ff6600')
+			expect(config.ui.theme.colors.primary.get()).toBe('#ff6600')
+		})
+
+		test('should handle empty initial value', () => {
+			const empty = createStore({})
+			expect(empty.get()).toEqual({})
+		})
+
+		test('should have Symbol.toStringTag of "Store"', () => {
 			const store = createStore({ a: 1 })
 			expect(store[Symbol.toStringTag]).toBe('Store')
 		})
 
-		test('isStore identifies store instances correctly', () => {
+		test('should have Symbol.isConcatSpreadable set to false', () => {
 			const store = createStore({ a: 1 })
-			const state = new State(1)
-			const computed = new Memo(() => 1)
+			expect(store[Symbol.isConcatSpreadable]).toBe(false)
+		})
+	})
 
+	describe('isStore', () => {
+		test('should return true for store instances', () => {
+			const store = createStore({ a: 1 })
 			expect(isStore(store)).toBe(true)
-			expect(isStore(state)).toBe(false)
-			expect(isStore(computed)).toBe(false)
-			expect(isStore({})).toBe(false)
 		})
 
-		test('get() returns the complete store value', () => {
+		test('should return false for non-store values', () => {
+			expect(isStore(createState(1))).toBe(false)
+			expect(isStore(createMemo(() => 1))).toBe(false)
+			expect(isStore({})).toBe(false)
+			expect(isStore(null)).toBe(false)
+		})
+	})
+
+	describe('get', () => {
+		test('should return the complete store value', () => {
 			const user = createStore({
 				name: 'Alice',
 				email: 'alice@example.com',
@@ -55,127 +85,16 @@ describe('store', () => {
 				email: 'alice@example.com',
 			})
 		})
-	})
 
-	describe('proxy data access and modification', () => {
-		test('properties can be accessed and modified via signals', () => {
-			const user = createStore({ name: 'John', age: 30 })
-			expect(user.name.get()).toBe('John')
-			expect(user.age.get()).toBe(30)
-
-			user.name.set('Alicia')
-			user.age.set(31)
-			expect(user.name.get()).toBe('Alicia')
-			expect(user.age.get()).toBe(31)
-		})
-
-		test('returns undefined for non-existent properties', () => {
-			const user = createStore({ name: 'Alice' })
-			// @ts-expect-error accessing non-existent property
-			expect(user.nonexistent).toBeUndefined()
-		})
-
-		test('supports string key access', () => {
-			const items = createStore({ first: 'alpha', second: 'beta' })
-			expect(items.first.get()).toBe('alpha')
-			expect(items.second.get()).toBe('beta')
+		test('should return updated value after property changes', () => {
+			const user = createStore({ name: 'Alice', age: 30 })
+			user.name.set('Bob')
+			expect(user.get()).toEqual({ name: 'Bob', age: 30 })
 		})
 	})
 
-	describe('add() and remove() methods', () => {
-		test('add() method adds new properties', () => {
-			const user = createStore<{ name: string; email?: string }>({
-				name: 'John',
-			})
-			user.add('email', 'john@example.com')
-			expect(user.byKey('email')?.get()).toBe('john@example.com')
-			expect(user.email?.get()).toBe('john@example.com')
-		})
-
-		test('remove() method removes properties', () => {
-			const user = createStore<{ name: string; email?: string }>({
-				name: 'John',
-				email: 'john@example.com',
-			})
-			user.remove('email')
-			expect(user.byKey('email')).toBeUndefined()
-			// expect(user.byKey('name').get()).toBe('John')
-			expect(user.email).toBeUndefined()
-			// expect(user.name.get()).toBe('John')
-		})
-
-		test('add method prevents null values', () => {
-			const user = createStore<{ name: string; email?: string }>({
-				name: 'John',
-			})
-			// @ts-expect-error testing null values
-			expect(() => user.add('email', null)).toThrow()
-		})
-
-		test('add method prevents overwriting existing properties', () => {
-			const user = createStore({
-				name: 'John',
-				email: 'john@example.com',
-			})
-			expect(() => user.add('name', 'Jane')).toThrow()
-		})
-
-		test('remove method handles non-existent properties gracefully', () => {
-			const user = createStore({ name: 'John' })
-			expect(() => user.remove('nonexistent')).not.toThrow()
-		})
-	})
-
-	describe('nested stores', () => {
-		test('creates nested stores for object properties', () => {
-			const user = createStore({
-				name: 'Alice',
-				preferences: {
-					theme: 'light',
-					notifications: true,
-				},
-			})
-
-			expect(user.name.get()).toBe('Alice')
-			expect(user.preferences.theme.get()).toBe('light')
-			expect(user.preferences.notifications.get()).toBe(true)
-		})
-
-		test('nested properties are reactive', () => {
-			const user = createStore({
-				preferences: {
-					theme: 'light',
-				},
-			})
-			let lastTheme = ''
-			createEffect(() => {
-				lastTheme = user.preferences.theme.get()
-			})
-
-			expect(lastTheme).toBe('light')
-			user.preferences.theme.set('dark')
-			expect(lastTheme).toBe('dark')
-		})
-
-		test('deeply nested stores work correctly', () => {
-			const config = createStore({
-				ui: {
-					theme: {
-						colors: {
-							primary: '#007acc',
-						},
-					},
-				},
-			})
-
-			expect(config.ui.theme.colors.primary.get()).toBe('#007acc')
-			config.ui.theme.colors.primary.set('#ff6600')
-			expect(config.ui.theme.colors.primary.get()).toBe('#ff6600')
-		})
-	})
-
-	describe('set() and update() methods', () => {
-		test('set() replaces entire store value', () => {
+	describe('set', () => {
+		test('should replace entire store value', () => {
 			const user = createStore({
 				name: 'John',
 				email: 'john@example.com',
@@ -185,7 +104,43 @@ describe('store', () => {
 			expect(user.email.get()).toBe('jane@example.com')
 		})
 
-		test('update() modifies store using function', () => {
+		test('should diff and apply granular changes', () => {
+			const user = createStore({ name: 'John', age: 25 })
+			let nameRuns = 0
+			let ageRuns = 0
+			createEffect(() => {
+				user.name.get()
+				nameRuns++
+			})
+			createEffect(() => {
+				user.age.get()
+				ageRuns++
+			})
+			expect(nameRuns).toBe(1)
+			expect(ageRuns).toBe(1)
+
+			// Only change age — name effect should not re-run
+			user.set({ name: 'John', age: 26 })
+			expect(nameRuns).toBe(1)
+			expect(ageRuns).toBe(2)
+		})
+
+		test('should not propagate when value is identical', () => {
+			const store = createStore({ x: 1 })
+			let runs = 0
+			createEffect(() => {
+				store.get()
+				runs++
+			})
+			expect(runs).toBe(1)
+
+			store.set({ x: 1 })
+			expect(runs).toBe(1)
+		})
+	})
+
+	describe('update', () => {
+		test('should modify store using callback', () => {
 			const user = createStore({ name: 'John', age: 25 })
 			user.update(u => ({ ...u, age: u.age + 1 }))
 			expect(user.name.get()).toBe('John')
@@ -193,8 +148,177 @@ describe('store', () => {
 		})
 	})
 
-	describe('iteration protocol', () => {
-		test('supports for...of iteration', () => {
+	describe('add', () => {
+		test('should add a new property', () => {
+			const user = createStore<{ name: string; email?: string }>({
+				name: 'John',
+			})
+			user.add('email', 'john@example.com')
+			expect(user.email?.get()).toBe('john@example.com')
+			expect(user.byKey('email')?.get()).toBe('john@example.com')
+		})
+
+		test('should throw DuplicateKeyError for existing key', () => {
+			const user = createStore({ name: 'John' })
+			expect(() => user.add('name', 'Jane')).toThrow()
+		})
+
+		test('should be reactive', () => {
+			const store = createStore<{ name: string; email?: string }>({
+				name: 'John',
+			})
+			let lastValue: { name: string; email?: string } = { name: '' }
+			createEffect(() => {
+				lastValue = store.get()
+			})
+			expect(lastValue).toEqual({ name: 'John' })
+
+			store.add('email', 'john@example.com')
+			expect(lastValue).toEqual({
+				name: 'John',
+				email: 'john@example.com',
+			})
+		})
+	})
+
+	describe('remove', () => {
+		test('should remove an existing property', () => {
+			const user = createStore<{ name: string; email?: string }>({
+				name: 'John',
+				email: 'john@example.com',
+			})
+			user.remove('email')
+			expect(user.byKey('email')).toBeUndefined()
+			expect(user.email).toBeUndefined()
+		})
+
+		test('should handle non-existent key gracefully', () => {
+			const store = createStore({ name: 'John' })
+			expect(() => store.remove('nonexistent')).not.toThrow()
+		})
+
+		test('should be reactive', () => {
+			const store = createStore({
+				name: 'John',
+				email: 'john@example.com',
+			})
+			let lastValue: { name: string; email?: string } = {
+				name: '',
+				email: '',
+			}
+			let runs = 0
+			createEffect(() => {
+				lastValue = store.get()
+				runs++
+			})
+			expect(runs).toBe(1)
+
+			store.remove('email')
+			expect(lastValue).toEqual({ name: 'John' })
+			expect(runs).toBe(2)
+		})
+	})
+
+	describe('byKey', () => {
+		test('should return the signal for a property', () => {
+			const user = createStore({ name: 'Alice', age: 30 })
+			const nameSignal = user.byKey('name')
+			expect(nameSignal?.get()).toBe('Alice')
+			expect(nameSignal).toBe(user.name)
+		})
+
+		test('should return nested store for object property', () => {
+			const app = createStore({ config: { version: '1.0.0' } })
+			const configStore = app.byKey('config')
+			expect(isStore(configStore)).toBe(true)
+			expect(configStore).toBe(app.config)
+		})
+
+		test('should return undefined for non-existent key', () => {
+			const store = createStore({ name: 'Alice' })
+			// @ts-expect-error deliberate access for nonexistent key
+			expect(store.byKey('nonexistent')).toBeUndefined()
+		})
+	})
+
+	describe('keys', () => {
+		test('should return an iterator of property keys', () => {
+			const store = createStore({ alpha: 1, beta: 2, gamma: 3 })
+			expect(Array.from(store.keys())).toEqual(['alpha', 'beta', 'gamma'])
+		})
+
+		test('should reflect additions and removals', () => {
+			const store = createStore<{ a: number; b?: number }>({ a: 1 })
+			expect(Array.from(store.keys())).toEqual(['a'])
+
+			store.add('b', 2)
+			expect(Array.from(store.keys())).toEqual(['a', 'b'])
+
+			store.remove('b')
+			expect(Array.from(store.keys())).toEqual(['a'])
+		})
+	})
+
+	describe('Proxy Behavior', () => {
+		test('should access properties directly as signals', () => {
+			const user = createStore({ name: 'John', age: 30 })
+			expect(user.name.get()).toBe('John')
+			expect(user.age.get()).toBe(30)
+
+			user.name.set('Alicia')
+			expect(user.name.get()).toBe('Alicia')
+		})
+
+		test('should return undefined for non-existent properties', () => {
+			const user = createStore({ name: 'Alice' })
+			// @ts-expect-error accessing non-existent property
+			expect(user.nonexistent).toBeUndefined()
+		})
+
+		test('should support "in" operator', () => {
+			const user = createStore({ name: 'Alice' })
+			expect('name' in user).toBe(true)
+			expect('email' in user).toBe(false)
+		})
+
+		test('should support Object.keys()', () => {
+			const user = createStore({
+				name: 'Alice',
+				email: 'alice@example.com',
+			})
+			expect(Object.keys(user).sort()).toEqual(['email', 'name'])
+		})
+
+		test('should support for...in enumeration', () => {
+			const user = createStore({
+				name: 'Alice',
+				email: 'alice@example.com',
+			})
+			const keys: string[] = []
+			for (const key in user) keys.push(key)
+			expect(keys.sort()).toEqual(['email', 'name'])
+		})
+
+		test('should support Object.getOwnPropertyDescriptor', () => {
+			const user = createStore({ name: 'Alice' })
+			expect(Object.getOwnPropertyDescriptor(user, 'name')).toEqual({
+				enumerable: true,
+				configurable: true,
+				writable: true,
+				value: user.name,
+			})
+		})
+
+		test('should return undefined descriptor for Symbol properties', () => {
+			const store = createStore({ a: 1 })
+			expect(
+				Object.getOwnPropertyDescriptor(store, Symbol('test')),
+			).toBeUndefined()
+		})
+	})
+
+	describe('Iteration', () => {
+		test('should support spread operator', () => {
 			const user = createStore({ name: 'John', age: 25 })
 			const entries = [...user]
 			expect(entries).toHaveLength(2)
@@ -204,16 +328,8 @@ describe('store', () => {
 			expect(entries[1][1].get()).toBe(25)
 		})
 
-		test('Symbol.isConcatSpreadable is false', () => {
-			const user = createStore({ name: 'John', age: 25 })
-			expect(user[Symbol.isConcatSpreadable]).toBe(false)
-		})
-
-		test('maintains property key ordering', () => {
+		test('should maintain property key ordering', () => {
 			const config = createStore({ alpha: 1, beta: 2, gamma: 3 })
-			const keys = Object.keys(config)
-			expect(keys).toEqual(['alpha', 'beta', 'gamma'])
-
 			const entries = [...config]
 			expect(entries.map(([key, signal]) => [key, signal.get()])).toEqual(
 				[
@@ -225,8 +341,8 @@ describe('store', () => {
 		})
 	})
 
-	describe('reactivity', () => {
-		test('store-level get() is reactive', () => {
+	describe('Reactivity', () => {
+		test('should react to property changes via get()', () => {
 			const user = createStore({
 				name: 'John',
 				email: 'john@example.com',
@@ -235,422 +351,206 @@ describe('store', () => {
 			createEffect(() => {
 				lastValue = user.get()
 			})
-
 			expect(lastValue).toEqual({
 				name: 'John',
 				email: 'john@example.com',
 			})
 
 			user.name.set('Jane')
-			user.email.set('jane@example.com')
-
 			expect(lastValue).toEqual({
 				name: 'Jane',
-				email: 'jane@example.com',
+				email: 'john@example.com',
 			})
 		})
 
-		test('individual signal reactivity works', () => {
+		test('should support granular property-level subscriptions', () => {
 			const user = createStore({
 				name: 'John',
 				email: 'john@example.com',
 			})
-			let lastName = ''
-			let nameEffectRuns = 0
+			let nameRuns = 0
 			createEffect(() => {
-				lastName = user.name.get()
-				nameEffectRuns++
+				user.name.get()
+				nameRuns++
 			})
+			expect(nameRuns).toBe(1)
 
-			expect(lastName).toBe('John')
-			expect(nameEffectRuns).toBe(1)
+			user.email.set('new@example.com')
+			expect(nameRuns).toBe(1) // name effect not triggered
 
 			user.name.set('Jane')
-			expect(lastName).toBe('Jane')
-			expect(nameEffectRuns).toBe(2)
+			expect(nameRuns).toBe(2)
 		})
 
-		test('nested store changes propagate to parent', () => {
+		test('should propagate nested store changes to parent', () => {
 			const user = createStore({
-				preferences: {
-					theme: 'light',
-				},
+				preferences: { theme: 'light' },
 			})
-			let effectRuns = 0
+			let runs = 0
 			createEffect(() => {
 				user.get()
-				effectRuns++
+				runs++
 			})
+			expect(runs).toBe(1)
 
-			expect(effectRuns).toBe(1)
 			user.preferences.theme.set('dark')
-			expect(effectRuns).toBe(2)
+			expect(runs).toBe(2)
 		})
 
-		test('updates are reactive', () => {
-			const user = createStore({
-				name: 'John',
-			})
-			let lastValue: {
-				name: string
-				email?: string
-			} = { name: '' }
-			let effectRuns = 0
+		test('should react to update()', () => {
+			const user = createStore({ name: 'John' })
+			let lastValue: { name: string; email?: string } = { name: '' }
+			let runs = 0
 			createEffect(() => {
 				lastValue = user.get()
-				effectRuns++
+				runs++
 			})
-
-			expect(lastValue).toEqual({ name: 'John' })
-			expect(effectRuns).toBe(1)
+			expect(runs).toBe(1)
 
 			user.update(u => ({ ...u, email: 'john@example.com' }))
 			expect(lastValue).toEqual({
 				name: 'John',
 				email: 'john@example.com',
 			})
-			expect(effectRuns).toBe(2)
+			expect(runs).toBe(2)
 		})
 
-		test('remove method is reactive', () => {
-			const user = createStore({
-				name: 'John',
-				email: 'john@example.com',
-				age: 30,
-			})
-			let lastValue: {
-				name: string
-				email?: string
-				age?: number
-			} = { name: '', email: '', age: 0 }
-			let effectRuns = 0
-			createEffect(() => {
-				lastValue = user.get()
-				effectRuns++
-			})
-
-			expect(lastValue).toEqual({
-				name: 'John',
-				email: 'john@example.com',
-				age: 30,
-			})
-			expect(effectRuns).toBe(1)
-
-			user.remove('email')
-			expect(lastValue).toEqual({ name: 'John', age: 30 })
-			expect(effectRuns).toBe(2)
-		})
-	})
-
-	describe('computed integration', () => {
-		test('works with computed signals', () => {
-			const user = createStore({
-				firstName: 'John',
-				lastName: 'Doe',
-			})
-			const fullName = new Memo(
+		test('should work with createMemo', () => {
+			const user = createStore({ firstName: 'John', lastName: 'Doe' })
+			const fullName = createMemo(
 				() => `${user.firstName.get()} ${user.lastName.get()}`,
 			)
-
 			expect(fullName.get()).toBe('John Doe')
+
 			user.firstName.set('Jane')
 			expect(fullName.get()).toBe('Jane Doe')
 		})
 
-		test('computed reacts to nested store changes', () => {
-			const config = createStore({
-				ui: {
-					theme: 'light',
-				},
-			})
-			const themeDisplay = new Memo(
-				() => `Theme: ${config.ui.theme.get()}`,
-			)
+		test('should work with createMemo on nested stores', () => {
+			const config = createStore({ ui: { theme: 'light' } })
+			const display = createMemo(() => `Theme: ${config.ui.theme.get()}`)
+			expect(display.get()).toBe('Theme: light')
 
-			expect(themeDisplay.get()).toBe('Theme: light')
 			config.ui.theme.set('dark')
-			expect(themeDisplay.get()).toBe('Theme: dark')
+			expect(display.get()).toBe('Theme: dark')
 		})
 	})
 
-	describe('proxy behavior and enumeration', () => {
-		test('Object.keys returns property keys', () => {
-			const user = createStore({
-				name: 'Alice',
-				email: 'alice@example.com',
-			})
-			const userKeys = Object.keys(user)
-			expect(userKeys.sort()).toEqual(['email', 'name'])
-		})
-
-		test('property enumeration works', () => {
-			const user = createStore({
-				name: 'Alice',
-				email: 'alice@example.com',
-			})
-			const userKeys: string[] = []
-			for (const key in user) {
-				userKeys.push(key)
-			}
-			expect(userKeys.sort()).toEqual(['email', 'name'])
-		})
-
-		test('in operator works', () => {
-			const user = createStore({ name: 'Alice' })
-			expect('name' in user).toBe(true)
-			expect('email' in user).toBe(false)
-		})
-
-		test('Object.getOwnPropertyDescriptor works', () => {
-			const user = createStore({ name: 'Alice' })
-			const nameDescriptor = Object.getOwnPropertyDescriptor(user, 'name')
-			expect(nameDescriptor).toEqual({
-				enumerable: true,
-				configurable: true,
-				writable: true,
-				value: user.name,
-			})
-		})
-	})
-
-	describe('byKey() method', () => {
-		test('works with property keys', () => {
-			const user = createStore({
-				name: 'Alice',
-				email: 'alice@example.com',
-				age: 30,
-			})
-
-			const nameSignal = user.byKey('name')
-			const emailSignal = user.byKey('email')
-			const ageSignal = user.byKey('age')
-			// @ts-expect-error deliberate access for nonexistent key
-			const nonexistentSignal = user.byKey('nonexistent')
-
-			expect(nameSignal?.get()).toBe('Alice')
-			expect(emailSignal?.get()).toBe('alice@example.com')
-			expect(ageSignal?.get()).toBe(30)
-			expect(nonexistentSignal).toBeUndefined()
-
-			// Verify these are the same signals as property access
-			expect(nameSignal).toBe(user.name)
-			expect(emailSignal).toBe(user.email)
-			expect(ageSignal).toBe(user.age)
-		})
-
-		test('works with nested stores', () => {
-			const app = createStore({
-				config: {
-					version: '1.0.0',
-				},
-			})
-
-			const configStore = app.byKey('config')
-			expect(configStore?.get()).toEqual({ version: '1.0.0' })
-			expect(configStore).toBe(app.config)
-		})
-
-		test('is reactive and works with computed signals', () => {
-			const user = createStore<{
-				name: string
-				age: number
-			}>({
-				name: 'Alice',
-				age: 30,
-			})
-
-			const nameSignal = user.byKey('name')
-			const displayName = new Memo(() =>
-				nameSignal ? `Hello, ${nameSignal.get()}!` : 'Unknown',
-			)
-
-			expect(displayName.get()).toBe('Hello, Alice!')
-			nameSignal?.set('Bob')
-			expect(displayName.get()).toBe('Hello, Bob!')
-		})
-	})
-
-	describe('UNSET and edge cases', () => {
-		test('handles UNSET values', () => {
-			const store = createStore({ value: UNSET })
-			expect(store.get()).toEqual({ value: UNSET })
-		})
-
-		test('handles primitive values', () => {
-			const store = createStore({
-				str: 'hello',
-				num: 42,
-				bool: true,
-			})
-			expect(store.str.get()).toBe('hello')
-			expect(store.num.get()).toBe(42)
-			expect(store.bool.get()).toBe(true)
-		})
-
-		test('handles empty stores correctly', () => {
-			const empty = createStore({})
-			expect(empty.get()).toEqual({})
-		})
-	})
-
-	describe('JSON integration and serialization', () => {
-		test('seamless JSON integration', () => {
-			const jsonData = {
+	describe('Serialization', () => {
+		test('should round-trip through JSON', () => {
+			const data = {
 				user: { name: 'Alice', preferences: { theme: 'dark' } },
 				settings: { timeout: 5000 },
 			}
-			const store = createStore(jsonData)
-
-			expect(store.user.name.get()).toBe('Alice')
-			expect(store.user.preferences.theme.get()).toBe('dark')
-			expect(store.settings.timeout.get()).toBe(5000)
-
-			const serialized = JSON.stringify(store.get())
-			const parsed = JSON.parse(serialized)
-			expect(parsed).toEqual(jsonData)
-		})
-
-		test('handles complex nested structures from JSON', () => {
-			type Dashboard = {
-				dashboard: {
-					widgets: Array<{
-						id: string
-						type: string
-						config: { color?: string; rows?: number }
-					}>
-				}
-			}
-
-			const complexData: Dashboard = {
-				dashboard: {
-					widgets: [
-						{ id: '1', type: 'chart', config: { color: 'blue' } },
-						{ id: '2', type: 'table', config: { rows: 10 } },
-					],
-				},
-			}
-
-			const store = createStore(complexData)
-			expect(store.dashboard.widgets.at(0)?.get().config.color).toBe(
-				'blue',
-			)
-			expect(store.dashboard.widgets.at(1)?.get().config.rows).toBe(10)
+			const store = createStore(data)
+			const parsed = JSON.parse(JSON.stringify(store.get()))
+			expect(parsed).toEqual(data)
 		})
 	})
 
-	describe('type conversion and nested stores', () => {
-		test('nested objects become nested stores', () => {
-			const config = createStore({
-				database: {
-					host: 'localhost',
-					port: 5432,
-				},
-			})
-
-			expect(isStore(config.database)).toBe(true)
-			expect(config.database.host.get()).toBe('localhost')
-			expect(config.database.port.get()).toBe(5432)
-		})
-	})
-
-	describe('Watch Callbacks', () => {
-		test('Root store watched callback triggered only by direct store access', async () => {
-			let rootStoreCounter = 0
-			let intervalId: Timer | undefined
+	describe('options.watched', () => {
+		test('should activate on first effect and clean up on last', () => {
+			let watchCount = 0
 			const store = createStore(
-				{
-					user: {
-						name: 'John',
-						profile: {
-							email: 'john@example.com',
-						},
-					},
-				},
+				{ users: {} as Record<string, { name: string }> },
 				{
 					watched: () => {
-						intervalId = setInterval(() => {
-							rootStoreCounter++
-						}, 10)
+						watchCount++
+						return () => {
+							watchCount--
+						}
 					},
-					unwatched: () => {
-						if (intervalId) {
-							clearInterval(intervalId)
-							intervalId = undefined
+				},
+			)
+			expect(watchCount).toBe(0)
+
+			const cleanup1 = createEffect(() => {
+				store.get()
+			})
+			expect(watchCount).toBe(1)
+
+			const cleanup2 = createEffect(() => {
+				store.get()
+			})
+			expect(watchCount).toBe(1) // still 1
+
+			cleanup2()
+			expect(watchCount).toBe(1) // still active
+
+			cleanup1()
+			expect(watchCount).toBe(0) // cleaned up
+		})
+
+		test('should not activate for nested property access only', async () => {
+			let activated = false
+			const store = createStore(
+				{ user: { name: 'John' } },
+				{
+					watched: () => {
+						activated = true
+						return () => {
+							activated = false
 						}
 					},
 				},
 			)
 
-			expect(rootStoreCounter).toBe(0)
-			await new Promise(resolve => setTimeout(resolve, 50))
-			expect(rootStoreCounter).toBe(0)
-
-			// Access nested property directly - should NOT trigger root watched callback
-			const nestedEffectCleanup = createEffect(() => {
+			const cleanup = createEffect(() => {
 				store.user.name.get()
 			})
+			await new Promise(resolve => setTimeout(resolve, 10))
+			expect(activated).toBe(false)
 
-			await new Promise(resolve => setTimeout(resolve, 50))
-			expect(rootStoreCounter).toBe(0) // Still 0 - nested access doesn't trigger root
-			expect(intervalId).toBeUndefined()
-
-			// Access root store directly - should trigger watched callback
-			const rootEffectCleanup = createEffect(() => {
-				store.get()
-			})
-
-			await new Promise(resolve => setTimeout(resolve, 50))
-			expect(rootStoreCounter).toBeGreaterThan(0) // Now triggered
-			expect(intervalId).toBeDefined()
-
-			// Cleanup
-			rootEffectCleanup()
-			nestedEffectCleanup()
-			await new Promise(resolve => setTimeout(resolve, 50))
-			expect(intervalId).toBeUndefined()
+			cleanup()
 		})
 
-		test('Store property addition/removal affects store watched callback', async () => {
-			let usersStoreCounter = 0
-			const store = createStore(
-				{
-					users: {} as Record<string, { name: string }>,
-				},
+		test('should activate when keys() is called in an effect', () => {
+			let watchCount = 0
+			const store = createStore<{ a: number; b?: number }>(
+				{ a: 1 },
 				{
 					watched: () => {
-						usersStoreCounter++
-					},
-					unwatched: () => {
-						usersStoreCounter--
+						watchCount++
+						return () => {
+							watchCount--
+						}
 					},
 				},
 			)
+			expect(watchCount).toBe(0)
 
-			expect(usersStoreCounter).toBe(0)
-
-			// Watch the entire store
-			const usersEffect = createEffect(() => {
-				store.get()
+			const cleanup = createEffect(() => {
+				Array.from(store.keys()).forEach(() => {})
 			})
-			expect(usersStoreCounter).toBe(1)
+			expect(watchCount).toBe(1)
 
-			// Add a user - this modifies the users store content but doesn't affect watched callback
-			store.users.add('user1', { name: 'Alice' })
-			expect(usersStoreCounter).toBe(1) // Still 1
+			cleanup()
+			expect(watchCount).toBe(0)
+		})
+	})
 
-			// Watch a specific user property - this doesn't trigger users store watched callback
-			const userEffect = createEffect(() => {
-				store.users.user1?.name.get()
+	describe('Input Validation', () => {
+		test('should throw for null initial value', () => {
+			// @ts-expect-error testing null
+			expect(() => createStore(null)).toThrow()
+		})
+
+		test('should throw for undefined initial value', () => {
+			// @ts-expect-error testing undefined
+			expect(() => createStore(undefined)).toThrow()
+		})
+
+		test('should throw for non-object initial value', () => {
+			// @ts-expect-error testing primitive
+			expect(() => createStore('hello')).toThrow()
+		})
+
+		test('should throw for null value in add()', () => {
+			const store = createStore<{ name: string; email?: string }>({
+				name: 'John',
 			})
-			expect(usersStoreCounter).toBe(1) // Still 1
-
-			// Cleanup user effect
-			userEffect()
-			expect(usersStoreCounter).toBe(1) // Still active due to usersEffect
-
-			// Cleanup users effect
-			usersEffect()
-			expect(usersStoreCounter).toBe(0) // Now cleaned up
+			// @ts-expect-error testing null
+			expect(() => store.add('email', null)).toThrow()
 		})
 	})
 })

@@ -3,7 +3,7 @@ import {
 	createError,
 	InvalidCallbackError,
 	NullishSignalValueError,
-} from '../src/errors'
+} from './errors'
 import {
 	createWatcher,
 	flush,
@@ -11,7 +11,7 @@ import {
 	subscribeActiveWatcher,
 	UNSET,
 	type Watcher,
-} from '../src/system'
+} from './system'
 import { isObjectOfType, isSyncFunction } from '../src/util'
 
 /* === Types === */

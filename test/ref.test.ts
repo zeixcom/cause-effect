@@ -1,353 +1,251 @@
-import { expect, mock, test } from 'bun:test'
-import { isRef, Ref } from '../src/classes/ref'
-import { createEffect } from '../src/effect'
+import { describe, expect, mock, test } from 'bun:test'
+import { createEffect, createRef, isMemo, isRef } from '../next.ts'
 
-test('Ref - basic functionality', () => {
-	const obj = { name: 'test', value: 42 }
-	const ref = new Ref(obj)
+/* === Utility Functions === */
 
-	expect(ref.get()).toBe(obj)
-	expect(ref[Symbol.toStringTag]).toBe('Ref')
-})
+const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
-test('Ref - isRef type guard', () => {
-	const ref = new Ref({ test: true })
-	const notRef = { test: true }
+/* === Tests === */
 
-	expect(isRef(ref)).toBe(true)
-	expect(isRef(notRef)).toBe(false)
-	expect(isRef(null)).toBe(false)
-	expect(isRef(undefined)).toBe(false)
-})
+describe('Ref', () => {
+	describe('createRef', () => {
+		test('should return the reference value from get()', () => {
+			const obj = { name: 'test' }
+			const ref = createRef(obj, () => () => {})
 
-test('Ref - validation with guard function', () => {
-	const isConfig = (
-		value: unknown,
-	): value is { host: string; port: number } =>
-		typeof value === 'object' &&
-		value !== null &&
-		'host' in value &&
-		'port' in value &&
-		typeof value.host === 'string' &&
-		typeof value.port === 'number'
+			let received: typeof obj | undefined
+			const dispose = createEffect(() => {
+				received = ref.get()
+			})
+			expect(received).toBe(obj)
+			dispose()
+		})
 
-	const validConfig = { host: 'localhost', port: 3000 }
-	const invalidConfig = { host: 'localhost' } // missing port
-
-	expect(() => new Ref(validConfig, { guard: isConfig })).not.toThrow()
-	expect(() => new Ref(invalidConfig, { guard: isConfig })).toThrow()
-})
-
-test('Ref - reactive subscriptions', () => {
-	const server = { status: 'offline', connections: 0 }
-	const ref = new Ref(server)
-
-	let effectRunCount = 0
-	let lastStatus: string = ''
-
-	createEffect(() => {
-		const current = ref.get()
-		lastStatus = current.status
-		effectRunCount++
+		test('should have Symbol.toStringTag of "Ref"', () => {
+			const ref = createRef({ x: 1 }, () => () => {})
+			expect(ref[Symbol.toStringTag]).toBe('Ref')
+		})
 	})
 
-	expect(effectRunCount).toBe(1)
-	expect(lastStatus).toBe('offline')
+	describe('isRef', () => {
+		test('should identify ref signals', () => {
+			expect(isRef(createRef({ x: 1 }, () => () => {}))).toBe(true)
+		})
 
-	// Simulate external change without going through reactive system
-	server.status = 'online'
-	server.connections = 5
-
-	// Effect shouldn't re-run yet (reference hasn't changed)
-	expect(effectRunCount).toBe(1)
-
-	// Notify that the external object has changed
-	ref.notify()
-
-	expect(effectRunCount).toBe(2)
-	expect(lastStatus).toBe('online')
-})
-
-test('Ref - notify triggers watchers even with same reference', () => {
-	const fileObj = { path: '/test.txt', size: 100, modified: Date.now() }
-	const ref = new Ref(fileObj)
-
-	const mockCallback = mock(() => {})
-
-	createEffect(() => {
-		ref.get()
-		mockCallback()
+		test('should return false for non-ref values', () => {
+			expect(isRef(42)).toBe(false)
+			expect(isRef(null)).toBe(false)
+			expect(isRef({})).toBe(false)
+			expect(isMemo(createRef({ x: 1 }, () => () => {}))).toBe(false)
+		})
 	})
 
-	expect(mockCallback).toHaveBeenCalledTimes(1)
+	describe('notify', () => {
+		test('should re-run effects when notify is called', () => {
+			const obj = { status: 'offline' }
+			let notifyFn!: () => void
 
-	// Simulate file modification (same object reference, different content)
-	fileObj.size = 200
-	fileObj.modified = Date.now()
+			const ref = createRef(obj, notify => {
+				notifyFn = notify
+				return () => {}
+			})
 
-	// Notify about external change
-	ref.notify()
+			let effectCount = 0
+			let lastStatus = ''
+			createEffect(() => {
+				lastStatus = ref.get().status
+				effectCount++
+			})
 
-	expect(mockCallback).toHaveBeenCalledTimes(2)
+			expect(effectCount).toBe(1)
+			expect(lastStatus).toBe('offline')
 
-	// Multiple notifies should trigger multiple times
-	ref.notify()
-	expect(mockCallback).toHaveBeenCalledTimes(3)
-})
+			obj.status = 'online'
+			expect(effectCount).toBe(1) // no notify yet
 
-test('Ref - multiple effects with same ref', () => {
-	const database = { connected: false, queries: 0 }
-	const ref = new Ref(database)
+			notifyFn()
+			expect(effectCount).toBe(2)
+			expect(lastStatus).toBe('online')
+		})
 
-	const effect1Mock = mock(() => {})
-	const effect2Mock = mock((_connected: boolean) => {})
+		test('should trigger multiple effect runs on multiple notifies', () => {
+			const obj = { size: 100 }
+			let notifyFn!: () => void
 
-	createEffect(() => {
-		ref.get()
-		effect1Mock()
+			const ref = createRef(obj, notify => {
+				notifyFn = notify
+				return () => {}
+			})
+
+			const callback = mock(() => {})
+			createEffect(() => {
+				ref.get()
+				callback()
+			})
+
+			expect(callback).toHaveBeenCalledTimes(1)
+
+			notifyFn()
+			expect(callback).toHaveBeenCalledTimes(2)
+
+			notifyFn()
+			expect(callback).toHaveBeenCalledTimes(3)
+		})
+
+		test('should notify multiple effects', () => {
+			const obj = { connected: false }
+			let notifyFn!: () => void
+
+			const ref = createRef(obj, notify => {
+				notifyFn = notify
+				return () => {}
+			})
+
+			const mock1 = mock(() => {})
+			const mock2 = mock(() => {})
+
+			createEffect(() => {
+				ref.get()
+				mock1()
+			})
+			createEffect(() => {
+				ref.get()
+				mock2()
+			})
+
+			expect(mock1).toHaveBeenCalledTimes(1)
+			expect(mock2).toHaveBeenCalledTimes(1)
+
+			obj.connected = true
+			notifyFn()
+
+			expect(mock1).toHaveBeenCalledTimes(2)
+			expect(mock2).toHaveBeenCalledTimes(2)
+		})
 	})
 
-	createEffect(() => {
-		const db = ref.get()
-		effect2Mock(db.connected)
+	describe('Lazy Activation', () => {
+		test('should only call start when first effect subscribes', async () => {
+			let counter = 0
+			let intervalId: Timer | undefined
+
+			const ref = createRef(new Date(), notify => {
+				intervalId = setInterval(() => {
+					counter++
+					notify()
+				}, 10)
+				return () => {
+					clearInterval(intervalId)
+					intervalId = undefined
+				}
+			})
+
+			// No subscribers yet
+			expect(counter).toBe(0)
+			await wait(50)
+			expect(counter).toBe(0)
+			expect(intervalId).toBeUndefined()
+
+			// First subscriber activates
+			const dispose = createEffect(() => {
+				ref.get()
+			})
+
+			await wait(50)
+			expect(counter).toBeGreaterThan(0)
+			expect(intervalId).toBeDefined()
+
+			// Last subscriber removed — cleanup runs
+			dispose()
+			const counterAfterStop = counter
+
+			await wait(50)
+			expect(counter).toBe(counterAfterStop)
+			expect(intervalId).toBeUndefined()
+		})
+
+		test('should call start only once for multiple subscribers', () => {
+			let startCount = 0
+			let stopCount = 0
+
+			const ref = createRef({ x: 1 }, () => {
+				startCount++
+				return () => {
+					stopCount++
+				}
+			})
+
+			const dispose1 = createEffect(() => {
+				ref.get()
+			})
+			expect(startCount).toBe(1)
+
+			const dispose2 = createEffect(() => {
+				ref.get()
+			})
+			expect(startCount).toBe(1)
+
+			dispose1()
+			expect(stopCount).toBe(0) // still has subscriber
+
+			dispose2()
+			expect(stopCount).toBe(1)
+		})
+
+		test('should reactivate after all subscribers leave and new one arrives', () => {
+			let startCount = 0
+			let stopCount = 0
+
+			const ref = createRef({ x: 1 }, () => {
+				startCount++
+				return () => {
+					stopCount++
+				}
+			})
+
+			const dispose1 = createEffect(() => {
+				ref.get()
+			})
+			expect(startCount).toBe(1)
+
+			dispose1()
+			expect(stopCount).toBe(1)
+
+			const dispose2 = createEffect(() => {
+				ref.get()
+			})
+			expect(startCount).toBe(2)
+
+			dispose2()
+			expect(stopCount).toBe(2)
+		})
 	})
 
-	expect(effect1Mock).toHaveBeenCalledTimes(1)
-	expect(effect2Mock).toHaveBeenCalledTimes(1)
-	expect(effect2Mock).toHaveBeenCalledWith(false)
+	describe('Input Validation', () => {
+		test('should throw NullishSignalValueError for null or undefined value', () => {
+			expect(() => {
+				// @ts-expect-error - Testing invalid input
+				createRef(null, () => () => {})
+			}).toThrow('[Ref] Signal value cannot be null or undefined')
 
-	// Simulate database connection change
-	database.connected = true
-	database.queries = 10
-	ref.notify()
+			expect(() => {
+				// @ts-expect-error - Testing invalid input
+				createRef(undefined, () => () => {})
+			}).toThrow('[Ref] Signal value cannot be null or undefined')
+		})
 
-	expect(effect1Mock).toHaveBeenCalledTimes(2)
-	expect(effect2Mock).toHaveBeenCalledTimes(2)
-	expect(effect2Mock).toHaveBeenLastCalledWith(true)
-})
+		test('should throw InvalidCallbackError for non-function start', () => {
+			expect(() => {
+				// @ts-expect-error - Testing invalid input
+				createRef({ x: 1 }, null)
+			}).toThrow('[Ref] Callback null is invalid')
+		})
 
-test('Ref - with Bun.file() scenario', () => {
-	// Mock a file-like object that could change externally
-	const fileRef = {
-		name: 'config.json',
-		size: 1024,
-		lastModified: Date.now(),
-		// Simulate file methods
-		exists: () => true,
-		text: () => Promise.resolve('{"version": "1.0"}'),
-	}
-
-	const ref = new Ref(fileRef)
-
-	let sizeChanges = 0
-	createEffect(() => {
-		const file = ref.get()
-		if (file.size > 1000) sizeChanges++
+		test('should throw InvalidCallbackError for async start callback', () => {
+			expect(() => {
+				// @ts-expect-error - Testing invalid input
+				createRef({ x: 1 }, async () => () => {})
+			}).toThrow()
+		})
 	})
-
-	expect(sizeChanges).toBe(1) // Initial run
-
-	// Simulate file growing (external change)
-	fileRef.size = 2048
-	fileRef.lastModified = Date.now()
-	ref.notify()
-
-	expect(sizeChanges).toBe(2) // Effect re-ran and condition still met
-
-	// Simulate file shrinking
-	fileRef.size = 500
-	ref.notify()
-
-	expect(sizeChanges).toBe(2) // Effect re-ran but condition no longer met
-})
-
-test('Ref - validation errors', () => {
-	// @ts-expect-error deliberatly provoked error
-	expect(() => new Ref(null)).toThrow()
-	// @ts-expect-error deliberatly provoked error
-	expect(() => new Ref(undefined)).toThrow()
-})
-
-test('Ref - server config object scenario', () => {
-	const config = {
-		host: 'localhost',
-		port: 3000,
-		ssl: false,
-		maxConnections: 100,
-	}
-
-	const configRef = new Ref(config)
-	const connectionAttempts: string[] = []
-
-	createEffect(() => {
-		const cfg = configRef.get()
-		const protocol = cfg.ssl ? 'https' : 'http'
-		connectionAttempts.push(`${protocol}://${cfg.host}:${cfg.port}`)
-	})
-
-	expect(connectionAttempts).toEqual(['http://localhost:3000'])
-
-	// Simulate config reload from file/environment
-	config.ssl = true
-	config.port = 8443
-	configRef.notify()
-
-	expect(connectionAttempts).toEqual([
-		'http://localhost:3000',
-		'https://localhost:8443',
-	])
-})
-
-test('Ref - handles complex nested objects', () => {
-	const apiResponse = {
-		status: 200,
-		data: {
-			users: [{ id: 1, name: 'Alice' }],
-			pagination: { page: 1, total: 1 },
-		},
-		headers: { 'content-type': 'application/json' },
-	}
-
-	const ref = new Ref(apiResponse)
-	let userCount = 0
-
-	createEffect(() => {
-		const response = ref.get()
-		userCount = response.data.users.length
-	})
-
-	expect(userCount).toBe(1)
-
-	// Simulate API response update
-	apiResponse.data.users.push({ id: 2, name: 'Bob' })
-	apiResponse.data.pagination.total = 2
-	ref.notify()
-
-	expect(userCount).toBe(2)
-})
-
-test('Ref - options.watched lazy resource management', async () => {
-	// 1. Create Ref with current Date
-	let counter = 0
-	let intervalId: Timer | undefined
-	const ref = new Ref(new Date(), {
-		watched: () => {
-			intervalId = setInterval(() => {
-				counter++
-			}, 10)
-		},
-		unwatched: () => {
-			if (intervalId) {
-				clearInterval(intervalId)
-				intervalId = undefined
-			}
-		},
-	})
-
-	// 2. Counter should not be running yet
-	expect(counter).toBe(0)
-
-	// Wait a bit to ensure counter doesn't increment
-	await new Promise(resolve => setTimeout(resolve, 50))
-	expect(counter).toBe(0)
-	expect(intervalId).toBeUndefined()
-
-	// 3. Effect subscribes by .get()ting the signal value
-	const effectCleanup = createEffect(() => {
-		ref.get()
-	})
-
-	// 4. Counter should now be running
-	await new Promise(resolve => setTimeout(resolve, 50))
-	expect(counter).toBeGreaterThan(0)
-	expect(intervalId).toBeDefined()
-
-	// 5. Call effect cleanup, which should stop internal watcher and unsubscribe
-	effectCleanup()
-	const counterAfterStop = counter
-
-	// 6. Ref signal should call #unwatch() and counter should stop incrementing
-	await new Promise(resolve => setTimeout(resolve, 50))
-	expect(counter).toBe(counterAfterStop) // Counter should not have incremented
-	expect(intervalId).toBeUndefined() // Interval should be cleared
-})
-
-test('Ref - options.watched exception handling', async () => {
-	const ref = new Ref(
-		{ test: 'value' },
-		{
-			watched: () => {
-				throwingCallbackCalled = true
-				throw new Error('Test error in watched callback')
-			},
-		},
-	)
-
-	// Mock console.error to capture error logs
-	const originalError = console.error
-	const errorSpy = mock(() => {})
-	console.error = errorSpy
-
-	let throwingCallbackCalled = false
-
-	// Subscribe to trigger watched callback
-	const effectCleanup = createEffect(() => {
-		ref.get()
-	})
-
-	// Both callbacks should have been called despite the exception
-	expect(throwingCallbackCalled).toBe(true)
-
-	// Error should have been logged
-	expect(errorSpy).toHaveBeenCalledWith(
-		'Error in effect callback:',
-		expect.any(Error),
-	)
-
-	// Cleanup
-	effectCleanup()
-	console.error = originalError
-})
-
-test('Ref - options.unwatched exception handling', async () => {
-	const ref = new Ref(
-		{ test: 'value' },
-		{
-			watched: () => {},
-			unwatched: () => {
-				cleanup1Called = true
-				throw new Error('Test error in cleanup function')
-			},
-		},
-	)
-
-	// Mock console.error to capture error logs
-	const originalError = console.error
-	const errorSpy = mock(() => {})
-	console.error = errorSpy
-
-	let cleanup1Called = false
-
-	// Subscribe and then unsubscribe to trigger cleanup
-	const effectCleanup = createEffect(() => {
-		ref.get()
-	})
-
-	// Unsubscribe to trigger cleanup functions
-	effectCleanup()
-
-	// Wait a bit for cleanup to complete
-	await new Promise(resolve => setTimeout(resolve, 10))
-
-	// Both cleanup functions should have been called despite the exception
-	expect(cleanup1Called).toBe(true)
-
-	// Error should have been logged
-	expect(errorSpy).toHaveBeenCalledWith(
-		'Error in effect cleanup:',
-		expect.any(Error),
-	)
-
-	// Cleanup
-	console.error = originalError
 })

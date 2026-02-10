@@ -1,3 +1,5 @@
+import { CircularDependencyError, type Guard } from './errors'
+
 /* === Internal Types === */
 
 type SourceFields<T extends {}> = {
@@ -80,16 +82,6 @@ type Cleanup = () => void
 type MaybeCleanup = Cleanup | undefined | void
 
 /**
- * A type guard function that validates whether an unknown value is of type T.
- * Used to ensure type safety when updating signals.
- *
- * @template T - The type to guard against
- * @param value - The value to check
- * @returns True if the value is of type T
- */
-type Guard<T extends {}> = (value: unknown) => value is T
-
-/**
  * Options for configuring signal behavior.
  *
  * @template T - The type of value in the signal
@@ -151,6 +143,11 @@ type EffectCallback = () => MaybeCleanup
 const TYPE_STATE = 'State'
 const TYPE_MEMO = 'Memo'
 const TYPE_TASK = 'Task'
+const TYPE_REF = 'Ref'
+const TYPE_SENSOR = 'Sensor'
+const TYPE_LIST = 'List'
+const TYPE_COLLECTION = 'Collection'
+const TYPE_STORE = 'Store'
 
 const FLAG_CLEAN = 0
 const FLAG_CHECK = 1 << 0
@@ -167,15 +164,13 @@ let flushing = false
 
 /* === Utility Functions === */
 
-const defaultEquals = /*#__PURE__*/ <T extends {}>(a: T, b: T) => a === b
-
-const isFunction = /*#__PURE__*/ <T>(
-	fn: unknown,
-): fn is (...args: unknown[]) => T => typeof fn === 'function'
+function defaultEquals<T extends {}>(a: T, b: T): boolean {
+	return a === b
+}
 
 /* === Link Management === */
 
-const isValidEdge = (checkEdge: Edge, node: SinkNode): boolean => {
+function isValidEdge(checkEdge: Edge, node: SinkNode): boolean {
 	const sourcesTail = node.sourcesTail
 	if (sourcesTail) {
 		let edge = node.sources
@@ -188,7 +183,7 @@ const isValidEdge = (checkEdge: Edge, node: SinkNode): boolean => {
 	return false
 }
 
-const link = (source: SourceNode, sink: SinkNode) => {
+function link(source: SourceNode, sink: SinkNode): void {
 	const prevSource = sink.sourcesTail
 	if (prevSource?.source === source) return
 
@@ -217,7 +212,7 @@ const link = (source: SourceNode, sink: SinkNode) => {
 	else source.sinks = newEdge
 }
 
-const unlink = (edge: Edge) => {
+function unlink(edge: Edge): Edge | null {
 	const { source, nextSource, nextSink, prevSink } = edge
 
 	if (nextSink) nextSink.prevSink = prevSink
@@ -233,7 +228,7 @@ const unlink = (edge: Edge) => {
 	return nextSource
 }
 
-const trimSources = (node: SinkNode) => {
+function trimSources(node: SinkNode): void {
 	const tail = node.sourcesTail
 	let source = tail ? tail.nextSource : node.sources
 	while (source) source = unlink(source)
@@ -243,7 +238,7 @@ const trimSources = (node: SinkNode) => {
 
 /* === Propagation === */
 
-const propagate = (node: SinkNode, newFlag = FLAG_DIRTY) => {
+function propagate(node: SinkNode, newFlag = FLAG_DIRTY): void {
 	const flags = node.flags
 
 	if ('sinks' in node) {
@@ -271,7 +266,7 @@ const propagate = (node: SinkNode, newFlag = FLAG_DIRTY) => {
 
 /* === State Management === */
 
-const setState = <T extends {}>(node: StateNode<T>, next: T): void => {
+function setState<T extends {}>(node: StateNode<T>, next: T): void {
 	if (node.equals(node.value, next)) return
 
 	node.value = next
@@ -281,13 +276,13 @@ const setState = <T extends {}>(node: StateNode<T>, next: T): void => {
 
 /* === Cleanup Management === */
 
-const registerCleanup = (owner: OwnerNode, fn: Cleanup): void => {
+function registerCleanup(owner: OwnerNode, fn: Cleanup): void {
 	if (!owner.cleanup) owner.cleanup = fn
 	else if (Array.isArray(owner.cleanup)) owner.cleanup.push(fn)
 	else owner.cleanup = [owner.cleanup, fn]
 }
 
-const runCleanup = (owner: OwnerNode): void => {
+function runCleanup(owner: OwnerNode): void {
 	if (!owner.cleanup) return
 
 	if (Array.isArray(owner.cleanup))
@@ -298,7 +293,7 @@ const runCleanup = (owner: OwnerNode): void => {
 
 /* === Recomputation === */
 
-const recomputeMemo = (node: MemoNode<unknown & {}>) => {
+function recomputeMemo(node: MemoNode<unknown & {}>): void {
 	const prevWatcher = activeSink
 	activeSink = node
 	node.sourcesTail = null
@@ -328,7 +323,7 @@ const recomputeMemo = (node: MemoNode<unknown & {}>) => {
 	node.flags = FLAG_CLEAN
 }
 
-const recomputeTask = (node: TaskNode<unknown & {}>) => {
+function recomputeTask(node: TaskNode<unknown & {}>): void {
 	node.controller?.abort()
 
 	const controller = new AbortController()
@@ -385,7 +380,7 @@ const recomputeTask = (node: TaskNode<unknown & {}>) => {
 	node.flags = FLAG_CLEAN
 }
 
-const runEffect = (node: EffectNode) => {
+function runEffect(node: EffectNode): void {
 	runCleanup(node)
 	const prevContext = activeSink
 	const prevOwner = activeOwner
@@ -405,7 +400,7 @@ const runEffect = (node: EffectNode) => {
 	node.flags = FLAG_CLEAN
 }
 
-const refresh = (node: SinkNode): void => {
+function refresh(node: SinkNode): void {
 	if (node.flags & FLAG_CHECK) {
 		for (let e = node.sources; e; e = e.nextSource) {
 			if ('fn' in e.source) refresh(e.source as SinkNode)
@@ -434,7 +429,7 @@ const refresh = (node: SinkNode): void => {
 
 /* === Batching === */
 
-const flush = (): void => {
+function flush(): void {
 	if (flushing) return
 	flushing = true
 	try {
@@ -468,7 +463,7 @@ const flush = (): void => {
  * });
  * ```
  */
-const batch = (fn: () => void): void => {
+function batch(fn: () => void): void {
 	batchDepth++
 	try {
 		fn()
@@ -481,8 +476,23 @@ const batch = (fn: () => void): void => {
 /**
  * Runs a callback without tracking dependencies.
  * Any signal reads inside the callback will not create edges to the current active sink.
+ *
+ * @param fn - The function to execute without tracking
+ * @returns The return value of the function
+ *
+ * @example
+ * ```ts
+ * const count = createState(0);
+ * const label = createState('Count');
+ *
+ * createEffect(() => {
+ *   // Only re-runs when count changes, not when label changes
+ *   const name = untrack(() => label.get());
+ *   console.log(`${name}: ${count.get()}`);
+ * });
+ * ```
  */
-const untrack = <T>(fn: () => T): T => {
+function untrack<T>(fn: () => T): T {
 	const prev = activeSink
 	activeSink = null
 	try {
@@ -516,20 +526,8 @@ const untrack = <T>(fn: () => T): T => {
  *
  * dispose(); // Cleans up the effect and runs cleanup callbacks
  * ```
- *
- * @example
- * ```ts
- * // Nested scopes
- * const disposeOuter = createScope(() => {
- *   const disposeInner = createScope(() => {
- *     // ...
- *   });
- *   // disposeOuter() will also dispose inner scope
- *   return disposeInner;
- * });
- * ```
  */
-const createScope = (fn: () => MaybeCleanup): Cleanup => {
+function createScope(fn: () => MaybeCleanup): Cleanup {
 	const prevOwner = activeOwner
 	const scope: Scope = { cleanup: null }
 	activeOwner = scope
@@ -545,146 +543,11 @@ const createScope = (fn: () => MaybeCleanup): Cleanup => {
 	}
 }
 
-/* === Errors === */
-
-const valueString = (value: unknown): string =>
-	typeof value === 'string'
-		? `"${value}"`
-		: !!value && typeof value === 'object'
-			? JSON.stringify(value)
-			: String(value)
-
-function validateSignalValue<T extends {}>(
-	where: string,
-	value: unknown,
-	guard?: Guard<T>,
-): asserts value is T {
-	if (value == null) throw new NullishSignalValueError(where)
-	if (guard && !guard(value)) throw new InvalidSignalValueError(where, value)
-}
-
-function validateReadValue<T extends {}>(
-	where: string,
-	value: T | null | undefined,
-): asserts value is T {
-	if (value == null) throw new UnsetSignalValueError(where)
-}
-
-function validateCallback(
-	where: string,
-	value: unknown,
-): asserts value is (...args: unknown[]) => unknown
-function validateCallback<T>(
-	where: string,
-	value: unknown,
-	guard: (value: unknown) => value is T,
-): asserts value is T
-function validateCallback(
-	where: string,
-	value: unknown,
-	guard: (value: unknown) => boolean = isFunction,
-): void {
-	if (!guard(value)) throw new InvalidCallbackError(where, value)
-}
-
-/**
- * Error thrown on re-entrance on an already running function.
- */
-class CircularDependencyError extends Error {
-	/**
-	 * Constructs a new CircularDependencyError.
-	 *
-	 * @param where - The location where the error occurred.
-	 */
-	constructor(where: string) {
-		super(`[${where}] Circular dependency detected`)
-		this.name = 'CircularDependencyError'
-	}
-}
-
-/**
- * Error thrown when a signal value is null or undefined.
- */
-class NullishSignalValueError extends TypeError {
-	/**
-	 * Constructs a new NullishSignalValueError.
-	 *
-	 * @param where - The location where the error occurred.
-	 */
-	constructor(where: string) {
-		super(`[${where}] Signal value cannot be null or undefined`)
-		this.name = 'NullishSignalValueError'
-	}
-}
-
-/**
- * Error thrown when a signal is read before it has a value.
- */
-class UnsetSignalValueError extends Error {
-	/**
-	 * Constructs a new UnsetSignalValueError.
-	 *
-	 * @param where - The location where the error occurred.
-	 */
-	constructor(where: string) {
-		super(`[${where}] Signal value is unset`)
-		this.name = 'UnsetSignalValueError'
-	}
-}
-
-/**
- * Error thrown when a signal value is invalid.
- */
-class InvalidSignalValueError extends TypeError {
-	/**
-	 * Constructs a new InvalidSignalValueError.
-	 *
-	 * @param where - The location where the error occurred.
-	 * @param value - The invalid value.
-	 */
-	constructor(where: string, value: unknown) {
-		super(`[${where}] Signal value ${valueString(value)} is invalid`)
-		this.name = 'InvalidSignalValueError'
-	}
-}
-
-/**
- * Error thrown when a callback is invalid.
- */
-class InvalidCallbackError extends TypeError {
-	/**
-	 * Constructs a new InvalidCallbackError.
-	 *
-	 * @param where - The location where the error occurred.
-	 * @param value - The invalid value.
-	 */
-	constructor(where: string, value: unknown) {
-		super(`[${where}] Callback ${valueString(value)} is invalid`)
-		this.name = 'InvalidCallbackError'
-	}
-}
-
-/**
- * Error thrown when an API requiring an owner is called without one.
- */
-class RequiredOwnerError extends Error {
-	/**
-	 * Constructs a new RequiredOwnerError.
-	 *
-	 * @param where - The location where the error occurred.
-	 */
-	constructor(where: string) {
-		super(`[${where}] Active owner is required`)
-		this.name = 'RequiredOwnerError'
-	}
-}
-
 export {
 	type Cleanup,
 	type ComputedOptions,
 	type EffectCallback,
 	type EffectNode,
-	type Guard,
 	type MaybeCleanup,
 	type MemoCallback,
 	type MemoNode,
@@ -700,16 +563,12 @@ export {
 	activeSink,
 	batch,
 	batchDepth,
-	CircularDependencyError,
 	createScope,
 	defaultEquals,
 	FLAG_CLEAN,
 	FLAG_DIRTY,
 	flush,
-	InvalidCallbackError,
-	InvalidSignalValueError,
 	link,
-	NullishSignalValueError,
 	propagate,
 	refresh,
 	registerCleanup,
@@ -717,14 +576,14 @@ export {
 	runEffect,
 	setState,
 	trimSources,
+	TYPE_COLLECTION,
+	TYPE_LIST,
 	TYPE_MEMO,
+	TYPE_REF,
+	TYPE_SENSOR,
 	TYPE_STATE,
+	TYPE_STORE,
 	TYPE_TASK,
-	RequiredOwnerError,
-	UnsetSignalValueError,
 	unlink,
 	untrack,
-	validateSignalValue,
-	validateReadValue,
-	validateCallback,
 }

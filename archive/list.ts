@@ -1,18 +1,18 @@
-import { type DiffResult, diff, isEqual, type UnknownArray } from '../src/diff'
+import { type DiffResult, diff, isEqual, type UnknownArray } from './diff'
 import {
 	DuplicateKeyError,
 	InvalidSignalValueError,
 	NullishSignalValueError,
 	ReadonlySignalError,
-} from '../src/errors'
-import { isMutableSignal, type MutableSignal } from '../src/signal'
+} from './errors'
+import { isMutableSignal, type MutableSignal } from './signal'
 import {
 	batch,
 	notifyWatchers,
 	subscribeActiveWatcher,
 	UNSET,
 	type Watcher,
-} from '../src/system'
+} from './system'
 import {
 	isFunction,
 	isNumber,

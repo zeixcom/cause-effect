@@ -5,7 +5,7 @@ import {
 	isEqual,
 	UNSET,
 	type UnknownRecord,
-} from '../index.ts'
+} from '../../index.ts'
 
 describe('diff', () => {
 	describe('basic object diffing', () => {

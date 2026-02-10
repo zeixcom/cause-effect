@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { Memo, match, resolve, State, Task, UNSET } from '../index.ts'
+import { Memo, match, resolve, State, Task, UNSET } from '../../index.ts'
 
 /* === Tests === */
 

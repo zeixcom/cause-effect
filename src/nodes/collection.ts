@@ -1,12 +1,15 @@
+import { validateCallback } from '../errors'
 import {
 	activeSink,
-	batchDepth,
-	flush,
+	FLAG_CLEAN,
+	FLAG_DIRTY,
 	link,
-	propagate,
-	type RefNode,
+	type MemoNode,
+	refresh,
 	type Signal,
-	validateCallback,
+	type SinkNode,
+	TYPE_COLLECTION,
+	untrack,
 } from '../graph'
 import { isAsyncFunction, isObjectOfType } from '../util'
 import { isList, type List } from './list'
@@ -40,12 +43,25 @@ type Collection<T extends {}> = {
 	readonly length: number
 }
 
-/* === Constants === */
-
-const TYPE_COLLECTION = 'Collection' as const
-
 /* === Functions === */
 
+/** Shallow equality check for string arrays */
+function keysEqual(a: string[], b: string[]): boolean {
+	if (a.length !== b.length) return false
+	for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
+	return true
+}
+
+/**
+ * Creates a derived Collection from a List or another Collection with item-level memoization.
+ * Sync callbacks use createMemo, async callbacks use createTask.
+ * Structural changes are tracked reactively via the source's keys.
+ *
+ * @since 0.18.0
+ * @param source - The source List or Collection to derive from
+ * @param callback - Transformation function applied to each item
+ * @returns A Collection signal
+ */
 function createCollection<T extends {}, U extends {}>(
 	source: CollectionSource<U>,
 	callback: (sourceValue: U) => T,
@@ -66,24 +82,6 @@ function createCollection<T extends {}, U extends {}>(
 
 	const isAsync = isAsyncFunction(callback)
 	const signals = new Map<string, Memo<T>>()
-	let keys: string[] = []
-
-	// Collection-level RefNode for structural reactivity
-	const node: RefNode<T[]> = {
-		value: [] as unknown as T[],
-		sinks: null,
-		sinksTail: null,
-		stop: undefined,
-	}
-
-	const notify = () => {
-		for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
-		if (batchDepth === 0) flush()
-	}
-
-	const linkCollection = () => {
-		if (activeSink) link(node, activeSink)
-	}
 
 	const addSignal = (key: string): void => {
 		const signal = isAsync
@@ -106,84 +104,81 @@ function createCollection<T extends {}, U extends {}>(
 		signals.set(key, signal as Memo<T>)
 	}
 
-	// Use a memo to track source keys reactively
-	// When accessed, it reads source.keys() creating a dependency on the source's RefNode.
-	// When source structure changes, this memo recomputes and returns new keys.
-	const sourceKeysMemo = createMemo(() => {
-		return Array.from(source.keys())
-	})
+	// Sync collection signals with source keys, reading source.keys()
+	// to establish a graph edge from source → this node
+	function syncKeys(): string[] {
+		const newKeys = Array.from(source.keys())
+		const oldKeys = node.value
 
-	// Sync collection signals with source keys — called lazily on access
-	const sync = () => {
-		const newKeys = sourceKeysMemo.get()
+		if (!keysEqual(oldKeys, newKeys)) {
+			const oldKeySet = new Set(oldKeys)
+			const newKeySet = new Set(newKeys)
 
-		// Fast path: check for same length and order first (most common case)
-		if (keys.length === newKeys.length) {
-			let reordered = false
-			for (let i = 0; i < keys.length; i++) {
-				if (keys[i] !== newKeys[i]) {
-					reordered = true
-					break
-				}
-			}
-			if (!reordered) return // No changes at all
+			for (const key of oldKeys)
+				if (!newKeySet.has(key)) signals.delete(key)
+			for (const key of newKeys) if (!oldKeySet.has(key)) addSignal(key)
 		}
 
-		// Slow path: structural changes detected, use Sets for diff
-		const oldKeySet = new Set(keys)
-		const newKeySet = new Set(newKeys)
+		return newKeys
+	}
 
-		// Remove signals for deleted keys
-		for (const key of keys) {
-			if (!newKeySet.has(key)) {
-				signals.delete(key)
+	// MemoNode for structural reactivity — fn reads source.keys()
+	const node: MemoNode<string[]> = {
+		fn: syncKeys,
+		value: [],
+		flags: FLAG_DIRTY,
+		sources: null,
+		sourcesTail: null,
+		sinks: null,
+		sinksTail: null,
+		equals: keysEqual,
+		error: undefined,
+	}
+
+	// Ensure keys are synced, using the same pattern as List/Store
+	function ensureSynced(): string[] {
+		if (node.sources) {
+			if (node.flags) {
+				node.value = untrack(syncKeys)
+				node.flags = FLAG_CLEAN
 			}
+		} else {
+			refresh(node as unknown as SinkNode)
+			if (node.error) throw node.error
 		}
-
-		// Add signals for new keys
-		for (const key of newKeys) {
-			if (!oldKeySet.has(key)) {
-				addSignal(key)
-			}
-		}
-
-		keys = newKeys
-
-		notify()
+		return node.value
 	}
 
 	// Initialize signals for current source keys
-	for (const key of Array.from(source.keys())) {
-		addSignal(key)
-		keys.push(key)
-	}
+	const initialKeys = Array.from(source.keys())
+	for (const key of initialKeys) addSignal(key)
+	node.value = initialKeys
+	// Keep FLAG_DIRTY so the first refresh() establishes the edge to the source
 
 	const collection: Collection<T> = {
 		[Symbol.toStringTag]: TYPE_COLLECTION,
 		[Symbol.isConcatSpreadable]: true as const,
 
 		*[Symbol.iterator]() {
-			for (const key of keys) {
+			for (const key of node.value) {
 				const signal = signals.get(key)
 				if (signal) yield signal
 			}
 		},
 
 		get length() {
-			linkCollection()
-			sync()
-			return keys.length
+			if (activeSink) link(node, activeSink)
+			return ensureSynced().length
 		},
 
 		keys() {
-			linkCollection()
-			sync()
-			return keys.values()
+			if (activeSink) link(node, activeSink)
+			return ensureSynced().values()
 		},
 
 		get() {
-			linkCollection()
-			sync()
+			if (activeSink) link(node, activeSink)
+			const keys = ensureSynced()
 			return keys
 				.map(key => {
 					try {
@@ -196,7 +191,7 @@ function createCollection<T extends {}, U extends {}>(
 		},
 
 		at(index: number) {
-			return signals.get(keys[index])
+			return signals.get(node.value[index])
 		},
 
 		byKey(key: string) {
@@ -204,11 +199,11 @@ function createCollection<T extends {}, U extends {}>(
 		},
 
 		keyAt(index: number) {
-			return keys[index]
+			return node.value[index]
 		},
 
 		indexOfKey(key: string) {
-			return keys.indexOf(key)
+			return node.value.indexOf(key)
 		},
 
 		deriveCollection<R extends {}>(
@@ -226,12 +221,29 @@ function createCollection<T extends {}, U extends {}>(
 	return collection
 }
 
-const isCollection = <T extends {}>(value: unknown): value is Collection<T> =>
-	isObjectOfType(value, TYPE_COLLECTION)
+/**
+ * Checks if a value is a Collection signal.
+ *
+ * @since 0.17.2
+ * @param value - The value to check
+ * @returns True if the value is a Collection
+ */
+function isCollection<T extends {}>(value: unknown): value is Collection<T> {
+	return isObjectOfType(value, TYPE_COLLECTION)
+}
 
-const isCollectionSource = <T extends {}>(
+/**
+ * Checks if a value is a valid Collection source (List or Collection).
+ *
+ * @since 0.17.2
+ * @param value - The value to check
+ * @returns True if the value is a List or Collection
+ */
+function isCollectionSource<T extends {}>(
 	value: unknown,
-): value is CollectionSource<T> => isList(value) || isCollection(value)
+): value is CollectionSource<T> {
+	return isList(value) || isCollection(value)
+}
 
 /* === Exports === */
 
@@ -239,7 +251,6 @@ export {
 	createCollection,
 	isCollection,
 	isCollectionSource,
-	TYPE_COLLECTION,
 	type Collection,
 	type CollectionCallback,
 	type CollectionSource,

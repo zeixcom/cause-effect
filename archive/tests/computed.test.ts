@@ -9,7 +9,7 @@ import {
 	State,
 	Task,
 	UNSET,
-} from '../index.ts'
+} from '../../index.ts'
 
 /* === Utility Functions === */
 

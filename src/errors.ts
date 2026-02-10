@@ -1,123 +1,167 @@
-import { isMutableSignal, type MutableSignal } from './signal'
-import { UNSET } from './system'
-import { isFunction, isSymbol, valueString } from './util'
+import { isFunction, valueString } from './util'
 
 /* === Types === */
 
-type Guard<T> = (value: unknown) => value is T
+/**
+ * A type guard function that validates whether an unknown value is of type T.
+ * Used to ensure type safety when updating signals.
+ *
+ * @template T - The type to guard against
+ * @param value - The value to check
+ * @returns True if the value is of type T
+ */
+type Guard<T extends {}> = (value: unknown) => value is T
 
-/* === Classes === */
+/* === Error Classes === */
 
+/**
+ * Error thrown on re-entrance on an already running function.
+ */
 class CircularDependencyError extends Error {
+	/**
+	 * Constructs a new CircularDependencyError.
+	 *
+	 * @param where - The location where the error occurred.
+	 */
 	constructor(where: string) {
-		super(`Circular dependency detected in ${where}`)
+		super(`[${where}] Circular dependency detected`)
 		this.name = 'CircularDependencyError'
+	}
+}
+
+/**
+ * Error thrown when a signal value is null or undefined.
+ */
+class NullishSignalValueError extends TypeError {
+	/**
+	 * Constructs a new NullishSignalValueError.
+	 *
+	 * @param where - The location where the error occurred.
+	 */
+	constructor(where: string) {
+		super(`[${where}] Signal value cannot be null or undefined`)
+		this.name = 'NullishSignalValueError'
+	}
+}
+
+/**
+ * Error thrown when a signal is read before it has a value.
+ */
+class UnsetSignalValueError extends Error {
+	/**
+	 * Constructs a new UnsetSignalValueError.
+	 *
+	 * @param where - The location where the error occurred.
+	 */
+	constructor(where: string) {
+		super(`[${where}] Signal value is unset`)
+		this.name = 'UnsetSignalValueError'
+	}
+}
+
+/**
+ * Error thrown when a signal value is invalid.
+ */
+class InvalidSignalValueError extends TypeError {
+	/**
+	 * Constructs a new InvalidSignalValueError.
+	 *
+	 * @param where - The location where the error occurred.
+	 * @param value - The invalid value.
+	 */
+	constructor(where: string, value: unknown) {
+		super(`[${where}] Signal value ${valueString(value)} is invalid`)
+		this.name = 'InvalidSignalValueError'
+	}
+}
+
+/**
+ * Error thrown when a callback is invalid.
+ */
+class InvalidCallbackError extends TypeError {
+	/**
+	 * Constructs a new InvalidCallbackError.
+	 *
+	 * @param where - The location where the error occurred.
+	 * @param value - The invalid value.
+	 */
+	constructor(where: string, value: unknown) {
+		super(`[${where}] Callback ${valueString(value)} is invalid`)
+		this.name = 'InvalidCallbackError'
+	}
+}
+
+/**
+ * Error thrown when an API requiring an owner is called without one.
+ */
+class RequiredOwnerError extends Error {
+	/**
+	 * Constructs a new RequiredOwnerError.
+	 *
+	 * @param where - The location where the error occurred.
+	 */
+	constructor(where: string) {
+		super(`[${where}] Active owner is required`)
+		this.name = 'RequiredOwnerError'
 	}
 }
 
 class DuplicateKeyError extends Error {
 	constructor(where: string, key: string, value?: unknown) {
 		super(
-			`Could not add ${where} key "${key}"${
-				value ? ` with value ${valueString(value)}` : ''
+			`[${where}] Could not add key "${key}"${
+				value ? ` with value ${JSON.stringify(value)}` : ''
 			} because it already exists`,
 		)
 		this.name = 'DuplicateKeyError'
 	}
 }
 
-class FailedAssertionError extends Error {
-	constructor(message: string = 'unexpected condition') {
-		super(`Assertion failed: ${message}`)
-		this.name = 'FailedAssertionError'
-	}
+/* === Validation Functions === */
+
+function validateSignalValue<T extends {}>(
+	where: string,
+	value: unknown,
+	guard?: Guard<T>,
+): asserts value is T {
+	if (value == null) throw new NullishSignalValueError(where)
+	if (guard && !guard(value)) throw new InvalidSignalValueError(where, value)
 }
 
-class InvalidCallbackError extends TypeError {
-	constructor(where: string, value: unknown) {
-		super(`Invalid ${where} callback ${valueString(value)}`)
-		this.name = 'InvalidCallbackError'
-	}
+function validateReadValue<T extends {}>(
+	where: string,
+	value: T | null | undefined,
+): asserts value is T {
+	if (value == null) throw new UnsetSignalValueError(where)
 }
 
-class InvalidCollectionSourceError extends TypeError {
-	constructor(where: string, value: unknown) {
-		super(`Invalid ${where} source ${valueString(value)}`)
-		this.name = 'InvalidCollectionSourceError'
-	}
-}
-
-class InvalidSignalValueError extends TypeError {
-	constructor(where: string, value: unknown) {
-		super(`Invalid signal value ${valueString(value)} in ${where}`)
-		this.name = 'InvalidSignalValueError'
-	}
-}
-
-class NullishSignalValueError extends TypeError {
-	constructor(where: string) {
-		super(`Nullish signal values are not allowed in ${where}`)
-		this.name = 'NullishSignalValueError'
-	}
-}
-
-class ReadonlySignalError extends Error {
-	constructor(what: string, value: unknown) {
-		super(
-			`Could not set ${what} to ${valueString(value)} because signal is read-only`,
-		)
-		this.name = 'ReadonlySignalError'
-	}
-}
-
-/* === Functions === */
-
-function assert(condition: unknown, msg?: string): asserts condition {
-	if (!condition) throw new FailedAssertionError(msg)
-}
-
-const createError = /*#__PURE__*/ (reason: unknown): Error =>
-	reason instanceof Error ? reason : Error(String(reason))
-
-const validateCallback = (
+function validateCallback(
+	where: string,
+	value: unknown,
+): asserts value is (...args: unknown[]) => unknown
+function validateCallback<T>(
+	where: string,
+	value: unknown,
+	guard: (value: unknown) => value is T,
+): asserts value is T
+function validateCallback(
 	where: string,
 	value: unknown,
 	guard: (value: unknown) => boolean = isFunction,
-): void => {
+): void {
 	if (!guard(value)) throw new InvalidCallbackError(where, value)
-}
-
-const validateSignalValue = (
-	where: string,
-	value: unknown,
-	guard: (value: unknown) => boolean = () =>
-		!(isSymbol(value) && value !== UNSET) || isFunction(value),
-): void => {
-	if (value == null) throw new NullishSignalValueError(where)
-	if (!guard(value)) throw new InvalidSignalValueError(where, value)
-}
-
-const guardMutableSignal = <T extends {}>(
-	what: string,
-	value: unknown,
-	signal: unknown,
-): signal is MutableSignal<T> => {
-	if (!isMutableSignal(signal)) throw new ReadonlySignalError(what, value)
-	return true
 }
 
 export {
 	type Guard,
 	CircularDependencyError,
-	DuplicateKeyError,
-	InvalidCallbackError,
-	InvalidCollectionSourceError,
-	InvalidSignalValueError,
 	NullishSignalValueError,
-	ReadonlySignalError,
-	assert,
-	createError,
-	validateCallback,
+	InvalidSignalValueError,
+	UnsetSignalValueError,
+	InvalidCallbackError,
+	RequiredOwnerError,
+	DuplicateKeyError,
 	validateSignalValue,
-	guardMutableSignal,
+	validateReadValue,
+	validateCallback,
 }

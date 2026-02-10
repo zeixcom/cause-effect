@@ -9,7 +9,7 @@ import {
 	UNSET,
 	type Watcher,
 } from '../system'
-import { isAsyncFunction, isFunction, isObjectOfType } from '../util'
+import { isAsyncFunction, isFunction, isObjectOfType } from '../../src/util'
 import { type Computed, createComputed } from './computed'
 import { isList, type List } from './list'
 

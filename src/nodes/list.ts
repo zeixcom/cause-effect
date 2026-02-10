@@ -1,8 +1,12 @@
 import {
+	CircularDependencyError,
+	DuplicateKeyError,
+	validateSignalValue,
+} from '../errors'
+import {
 	activeSink,
 	batch,
 	batchDepth,
-	CircularDependencyError,
 	type Cleanup,
 	FLAG_CLEAN,
 	FLAG_DIRTY,
@@ -12,8 +16,8 @@ import {
 	propagate,
 	refresh,
 	type SinkNode,
+	TYPE_LIST,
 	untrack,
-	validateSignalValue,
 } from '../graph'
 import {
 	isFunction,
@@ -74,23 +78,6 @@ type List<T extends {}> = {
 	): Collection<R>
 }
 
-/* === Constants === */
-
-const TYPE_LIST = 'List' as const
-
-/* === Errors === */
-
-class DuplicateKeyError extends Error {
-	constructor(where: string, key: string, value?: unknown) {
-		super(
-			`Could not add ${where} key "${key}"${
-				value ? ` with value ${JSON.stringify(value)}` : ''
-			} because it already exists`,
-		)
-		this.name = 'DuplicateKeyError'
-	}
-}
-
 /* === Functions === */
 
 /**
@@ -102,7 +89,7 @@ class DuplicateKeyError extends Error {
  * @param {WeakSet<object>} visited - Set to track visited objects for cycle detection
  * @returns {boolean} Whether the two values are equal
  */
-const isEqual = <T>(a: T, b: T, visited?: WeakSet<object>): boolean => {
+function isEqual<T>(a: T, b: T, visited?: WeakSet<object>): boolean {
 	// Fast paths
 	if (Object.is(a, b)) return true
 	if (typeof a !== typeof b) return false
@@ -154,19 +141,19 @@ const isEqual = <T>(a: T, b: T, visited?: WeakSet<object>): boolean => {
  * Compares two arrays using existing keys and returns differences as a DiffResult.
  * Avoids object conversion by working directly with arrays and keys.
  *
- * @since 0.15.0
+ * @since 0.18.0
  * @param {T[]} oldArray - The old array
  * @param {T[]} newArray - The new array
  * @param {string[]} currentKeys - Current keys array (may be sparse or shorter than oldArray)
  * @param {(item: T) => string} generateKey - Function to generate keys for new items
  * @returns {DiffResult & { newKeys: string[] }} The differences in DiffResult format plus updated keys array
  */
-const diffArrays = <T>(
+function diffArrays<T>(
 	oldArray: T[],
 	newArray: T[],
 	currentKeys: string[],
 	generateKey: (item: T) => string,
-): DiffResult & { newKeys: string[] } => {
+): DiffResult & { newKeys: string[] } {
 	const visited = new WeakSet()
 	const add = {} as UnknownRecord
 	const change = {} as UnknownRecord
@@ -220,10 +207,18 @@ const diffArrays = <T>(
 	return { add, change, remove, newKeys, changed }
 }
 
-const createList = <T extends {}>(
+/**
+ * Creates a reactive list with stable keys and per-item reactivity.
+ *
+ * @since 0.18.0
+ * @param initialValue - Initial array of items
+ * @param options - Optional configuration for key generation and watch lifecycle
+ * @returns A List signal
+ */
+function createList<T extends {}>(
 	initialValue: T[],
 	options?: ListOptions<T>,
-): List<T> => {
+): List<T> {
 	validateSignalValue(TYPE_LIST, initialValue, Array.isArray)
 
 	const signals = new Map<string, State<T>>()
@@ -527,10 +522,10 @@ const createList = <T extends {}>(
 			cb: CollectionCallback<R, T>,
 		): Collection<R> {
 			return (
-				createCollection as <T extends {}, U extends {}>(
-					source: CollectionSource<U>,
-					callback: CollectionCallback<T, U>,
-				) => Collection<T>
+				createCollection as <T2 extends {}, U2 extends {}>(
+					source: CollectionSource<U2>,
+					callback: CollectionCallback<T2, U2>,
+				) => Collection<T2>
 			)(list, cb)
 		},
 	}
@@ -538,8 +533,16 @@ const createList = <T extends {}>(
 	return list
 }
 
-const isList = <T extends {}>(value: unknown): value is List<T> =>
-	isObjectOfType(value, TYPE_LIST)
+/**
+ * Checks if a value is a List signal.
+ *
+ * @since 0.15.0
+ * @param value - The value to check
+ * @returns True if the value is a List
+ */
+function isList<T extends {}>(value: unknown): value is List<T> {
+	return isObjectOfType(value, TYPE_LIST)
+}
 
 /* === Exports === */
 

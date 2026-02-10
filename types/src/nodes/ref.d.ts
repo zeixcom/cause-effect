@@ -31,14 +31,16 @@ type RefCallback = (notify: () => void) => Cleanup;
  * - Network connections (notify on status changes)
  * - External resources that need observation setup/teardown
  *
+ * @since 0.18.0
  * @template T - The type of the referenced object
  */
-declare const createRef: <T extends {}>(value: T, start: RefCallback) => Ref<T>;
+declare function createRef<T extends {}>(value: T, start: RefCallback): Ref<T>;
 /**
  * Checks if a value is a Ref signal.
  *
+ * @since 0.18.0
  * @param value - The value to check
  * @returns True if the value is a Ref
  */
-declare const isRef: <T extends {} = {}>(value: unknown) => value is Ref<T>;
+declare function isRef<T extends {} = unknown & {}>(value: unknown): value is Ref<T>;
 export { createRef, isRef, type Ref, type RefCallback };

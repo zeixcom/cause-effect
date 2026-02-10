@@ -1,3 +1,4 @@
+import { isFunction, isNumber, isObjectOfType, isString } from '../../src/util'
 import { type DiffResult, diff, isEqual, type UnknownArray } from '../diff'
 import {
 	DuplicateKeyError,
@@ -13,7 +14,6 @@ import {
 	UNSET,
 	unsubscribeAllFrom,
 } from '../system'
-import { isFunction, isNumber, isObjectOfType, isString } from '../util'
 import { type CollectionCallback, DerivedCollection } from './collection'
 import { State } from './state'
 

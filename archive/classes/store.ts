@@ -14,7 +14,7 @@ import {
 	UNSET,
 	unsubscribeAllFrom,
 } from '../system'
-import { isFunction, isObjectOfType, isRecord, isSymbol } from '../util'
+import { isFunction, isObjectOfType, isRecord, isSymbol } from '../../src/util'
 import type { List } from './list'
 import type { State } from './state'
 

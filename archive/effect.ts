@@ -1,6 +1,6 @@
 import { CircularDependencyError, InvalidCallbackError } from './errors'
 import { type Cleanup, createWatcher, type MaybeCleanup } from './system'
-import { isAbortError, isAsyncFunction, isFunction } from './util'
+import { isAbortError, isAsyncFunction, isFunction } from '../src/util'
 
 /* === Types === */
 

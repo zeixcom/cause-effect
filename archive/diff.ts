@@ -1,6 +1,6 @@
 import { CircularDependencyError } from './errors'
 import { UNSET } from './system'
-import { isNonNullObject, isRecord, isRecordOrArray } from './util'
+import { isNonNullObject, isRecord, isRecordOrArray } from '../src/util'
 
 /* === Types === */
 

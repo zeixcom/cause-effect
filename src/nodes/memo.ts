@@ -1,4 +1,9 @@
 import {
+	validateCallback,
+	validateReadValue,
+	validateSignalValue,
+} from '../errors'
+import {
 	activeSink,
 	type ComputedOptions,
 	defaultEquals,
@@ -9,9 +14,6 @@ import {
 	refresh,
 	type SinkNode,
 	TYPE_MEMO,
-	validateCallback,
-	validateReadValue,
-	validateSignalValue,
 } from '../graph'
 import { isObjectOfType, isSyncFunction } from '../util'
 
@@ -43,6 +45,7 @@ type Memo<T extends {}> = {
  * The computation automatically tracks dependencies and recomputes when they change.
  * Uses lazy evaluation - only computes when the value is accessed.
  *
+ * @since 0.18.0
  * @template T - The type of value computed by the memo
  * @param fn - The computation function that receives the previous value
  * @param options - Optional configuration for the memo
@@ -106,11 +109,12 @@ function createMemo<T extends {}>(
 /**
  * Checks if a value is a Memo signal.
  *
+ * @since 0.18.0
  * @param value - The value to check
  * @returns True if the value is a Memo
  */
-const isMemo = <T extends {} = unknown & {}>(
-	value: unknown,
-): value is Memo<T> => isObjectOfType(value, TYPE_MEMO)
+function isMemo<T extends {} = unknown & {}>(value: unknown): value is Memo<T> {
+	return isObjectOfType(value, TYPE_MEMO)
+}
 
 export { createMemo, isMemo, type Memo }

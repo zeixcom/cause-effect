@@ -1,3 +1,9 @@
+import {
+	isAbortError,
+	isAsyncFunction,
+	isObjectOfType,
+	isSyncFunction,
+} from '../../src/util'
 import { isEqual } from '../diff'
 import {
 	CircularDependencyError,
@@ -15,12 +21,6 @@ import {
 	UNSET,
 	type Watcher,
 } from '../system'
-import {
-	isAbortError,
-	isAsyncFunction,
-	isObjectOfType,
-	isSyncFunction,
-} from '../util'
 
 /* === Types === */
 

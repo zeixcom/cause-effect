@@ -1,10 +1,10 @@
-import { isEqual } from '../src/diff'
+import { isEqual } from './diff'
 import {
 	CircularDependencyError,
 	createError,
 	InvalidCallbackError,
 	NullishSignalValueError,
-} from '../src/errors'
+} from './errors'
 import {
 	createWatcher,
 	flush,
@@ -12,7 +12,7 @@ import {
 	subscribeActiveWatcher,
 	UNSET,
 	type Watcher,
-} from '../src/system'
+} from './system'
 import { isAbortError, isAsyncFunction, isObjectOfType } from '../src/util'
 
 /* === Types === */

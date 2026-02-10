@@ -1,4 +1,9 @@
 import {
+	validateCallback,
+	validateReadValue,
+	validateSignalValue,
+} from '../errors'
+import {
 	activeSink,
 	type ComputedOptions,
 	defaultEquals,
@@ -9,9 +14,6 @@ import {
 	type TaskCallback,
 	type TaskNode,
 	TYPE_TASK,
-	validateCallback,
-	validateReadValue,
-	validateSignalValue,
 } from '../graph'
 import { isAsyncFunction, isObjectOfType } from '../util'
 
@@ -56,6 +58,7 @@ type Task<T extends {}> = {
  * The computation automatically tracks dependencies and re-executes when they change.
  * Provides abort semantics - in-flight computations are aborted when dependencies change.
  *
+ * @since 0.18.0
  * @template T - The type of value resolved by the task
  * @param fn - The async computation function that receives the previous value and an AbortSignal
  * @param options - Optional configuration for the task
@@ -132,19 +135,12 @@ function createTask<T extends {}>(
 /**
  * Checks if a value is a Task signal.
  *
+ * @since 0.18.0
  * @param value - The value to check
  * @returns True if the value is a Task
- *
- * @example
- * ```ts
- * const task = createTask(async () => 42, null);
- * if (isTask(task)) {
- *   task.abort(); // TypeScript knows task has abort()
- * }
- * ```
  */
-const isTask = <T extends {} = unknown & {}>(
-	value: unknown,
-): value is Task<T> => isObjectOfType(value, TYPE_TASK)
+function isTask<T extends {} = unknown & {}>(value: unknown): value is Task<T> {
+	return isObjectOfType(value, TYPE_TASK)
+}
 
 export { createTask, isTask, type Task }

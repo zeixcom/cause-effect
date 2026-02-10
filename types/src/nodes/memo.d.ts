@@ -21,6 +21,7 @@ type Memo<T extends {}> = {
  * The computation automatically tracks dependencies and recomputes when they change.
  * Uses lazy evaluation - only computes when the value is accessed.
  *
+ * @since 0.18.0
  * @template T - The type of value computed by the memo
  * @param fn - The computation function that receives the previous value
  * @param options - Optional configuration for the memo
@@ -48,8 +49,9 @@ declare function createMemo<T extends {}>(fn: MemoCallback<T>, options?: Compute
 /**
  * Checks if a value is a Memo signal.
  *
+ * @since 0.18.0
  * @param value - The value to check
  * @returns True if the value is a Memo
  */
-declare const isMemo: <T extends {} = {}>(value: unknown) => value is Memo<T>;
+declare function isMemo<T extends {} = unknown & {}>(value: unknown): value is Memo<T>;
 export { createMemo, isMemo, type Memo };

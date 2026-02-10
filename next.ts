@@ -5,22 +5,25 @@
  */
 
 export {
-	batch,
 	CircularDependencyError,
+	type Guard,
+	InvalidCallbackError,
+	InvalidSignalValueError,
+	NullishSignalValueError,
+	RequiredOwnerError,
+	UnsetSignalValueError,
+} from './src/errors'
+export {
+	batch,
 	type Cleanup,
 	type ComputedOptions,
 	createScope,
 	type EffectCallback,
-	type Guard,
-	InvalidCallbackError,
-	InvalidSignalValueError,
 	type MemoCallback,
-	NullishSignalValueError,
-	RequiredOwnerError,
 	type Signal,
 	type SignalOptions,
 	type TaskCallback,
-	UnsetSignalValueError,
+	untrack,
 } from './src/graph'
 export {
 	type Collection,
@@ -37,7 +40,9 @@ export {
 } from './src/nodes/effect'
 export {
 	createList,
+	diffArray,
 	isList,
+	isEqual,
 	type KeyConfig,
 	type List,
 	type ListOptions,
@@ -63,15 +68,16 @@ export {
 	type StoreOptions,
 } from './src/nodes/store'
 export { createTask, isTask, type Task } from './src/nodes/task'
-/* export {
+export {
+	createComputed,
+	createMutableSignal,
 	createSignal,
+	isComputed,
 	isMutableSignal,
 	isSignal,
-	type Signal,
-	type SignalValues,
-	type UnknownSignalRecord,
-} from './src/signal' */
-/* export {
+	type MutableSignal,
+} from './src/signal'
+export {
 	isAbortError,
 	isAsyncFunction,
 	isFunction,
@@ -82,4 +88,4 @@ export { createTask, isTask, type Task } from './src/nodes/task'
 	isString,
 	isSymbol,
 	valueString,
-} from './src/util' */
+} from './src/util'

@@ -12,6 +12,7 @@ type MatchHandlers<T extends Signal<unknown & {}>[]> = {
  * Effects run immediately upon creation and re-run when any tracked signal changes.
  * Effects are executed during the flush phase, after all updates have been batched.
  *
+ * @since 0.1.0
  * @param fn - The effect function that can track dependencies and register cleanup callbacks
  * @returns A cleanup function that can be called to dispose of the effect
  *
@@ -35,12 +36,13 @@ type MatchHandlers<T extends Signal<unknown & {}>[]> = {
  * });
  * ```
  */
-declare const createEffect: (fn: EffectCallback) => Cleanup;
+declare function createEffect(fn: EffectCallback): Cleanup;
 /**
  * Runs handlers based on the current values of signals.
  * Must be called within an active owner (effect or scope) so async cleanup can be registered.
  *
+ * @since 0.15.0
  * @throws RequiredOwnerError If called without an active owner.
  */
-declare const match: <T extends Signal<unknown & {}>[]>(signals: T, handlers: MatchHandlers<T>) => MaybeCleanup;
+declare function match<T extends Signal<unknown & {}>[]>(signals: T, handlers: MatchHandlers<T>): MaybeCleanup;
 export { type MaybePromise, type MatchHandlers, createEffect, match };

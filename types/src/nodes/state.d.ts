@@ -37,6 +37,7 @@ type State<T extends {}> = {
 /**
  * Creates a mutable reactive state container.
  *
+ * @since 0.9.0
  * @template T - The type of value stored in the state
  * @param value - The initial value
  * @param options - Optional configuration for the state
@@ -57,10 +58,11 @@ type State<T extends {}> = {
  * });
  * ```
  */
-declare const createState: <T extends {}>(value: T, options?: SignalOptions<T>) => State<T>;
+declare function createState<T extends {}>(value: T, options?: SignalOptions<T>): State<T>;
 /**
  * Checks if a value is a State signal.
  *
+ * @since 0.9.0
  * @param value - The value to check
  * @returns True if the value is a State
  *
@@ -72,5 +74,5 @@ declare const createState: <T extends {}>(value: T, options?: SignalOptions<T>) 
  * }
  * ```
  */
-declare const isState: <T extends {} = {}>(value: unknown) => value is State<T>;
+declare function isState<T extends {} = unknown & {}>(value: unknown): value is State<T>;
 export { createState, isState, type State, type UpdateCallback };

@@ -16,9 +16,32 @@ type Collection<T extends {}> = {
     deriveCollection<R extends {}>(callback: (sourceValue: T, abort: AbortSignal) => Promise<R>): Collection<R>;
     readonly length: number;
 };
-declare const TYPE_COLLECTION: "Collection";
+/**
+ * Creates a derived Collection from a List or another Collection with item-level memoization.
+ * Sync callbacks use createMemo, async callbacks use createTask.
+ * Structural changes are tracked reactively via the source's keys.
+ *
+ * @since 0.18.0
+ * @param source - The source List or Collection to derive from
+ * @param callback - Transformation function applied to each item
+ * @returns A Collection signal
+ */
 declare function createCollection<T extends {}, U extends {}>(source: CollectionSource<U>, callback: (sourceValue: U) => T): Collection<T>;
 declare function createCollection<T extends {}, U extends {}>(source: CollectionSource<U>, callback: (sourceValue: U, abort: AbortSignal) => Promise<T>): Collection<T>;
-declare const isCollection: <T extends {}>(value: unknown) => value is Collection<T>;
-declare const isCollectionSource: <T extends {}>(value: unknown) => value is CollectionSource<T>;
-export { createCollection, isCollection, isCollectionSource, TYPE_COLLECTION, type Collection, type CollectionCallback, type CollectionSource, };
+/**
+ * Checks if a value is a Collection signal.
+ *
+ * @since 0.17.2
+ * @param value - The value to check
+ * @returns True if the value is a Collection
+ */
+declare function isCollection<T extends {}>(value: unknown): value is Collection<T>;
+/**
+ * Checks if a value is a valid Collection source (List or Collection).
+ *
+ * @since 0.17.2
+ * @param value - The value to check
+ * @returns True if the value is a List or Collection
+ */
+declare function isCollectionSource<T extends {}>(value: unknown): value is CollectionSource<T>;
+export { createCollection, isCollection, isCollectionSource, type Collection, type CollectionCallback, type CollectionSource, };
