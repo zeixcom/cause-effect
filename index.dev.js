@@ -435,6 +435,14 @@ function isState(value) {
 }
 
 // src/nodes/list.ts
+function keysEqual(a, b) {
+  if (a.length !== b.length)
+    return false;
+  for (let i = 0;i < a.length; i++)
+    if (a[i] !== b[i])
+      return false;
+  return true;
+}
 function isEqual(a, b, visited) {
   if (Object.is(a, b))
     return true;
@@ -482,7 +490,7 @@ function isEqual(a, b, visited) {
     visited.delete(b);
   }
 }
-function diffArrays(oldArray, newArray, currentKeys, generateKey) {
+function diffArrays(oldArray, newArray, currentKeys, generateKey, contentBased) {
   const visited = new WeakSet;
   const add = {};
   const change = {};
@@ -500,9 +508,9 @@ function diffArrays(oldArray, newArray, currentKeys, generateKey) {
     const newValue = newArray[i];
     if (newValue === undefined)
       continue;
-    let key = currentKeys[i];
-    if (!key)
-      key = generateKey(newValue);
+    const key = contentBased ? generateKey(newValue) : currentKeys[i] ?? generateKey(newValue);
+    if (seenKeys.has(key))
+      throw new DuplicateKeyError(TYPE_LIST, key, newValue);
     newKeys.push(key);
     seenKeys.add(key);
     if (!oldByKey.has(key)) {
@@ -522,6 +530,8 @@ function diffArrays(oldArray, newArray, currentKeys, generateKey) {
       changed = true;
     }
   }
+  if (!changed && !keysEqual(currentKeys, newKeys))
+    changed = true;
   return { add, change, remove, newKeys, changed };
 }
 function createList(initialValue, options) {
@@ -530,7 +540,8 @@ function createList(initialValue, options) {
   let keys = [];
   let keyCounter = 0;
   const keyConfig = options?.keyConfig;
-  const generateKey = isString(keyConfig) ? () => `${keyConfig}${keyCounter++}` : isFunction(keyConfig) ? (item) => keyConfig(item) : () => String(keyCounter++);
+  const contentBased = isFunction(keyConfig);
+  const generateKey = isString(keyConfig) ? () => `${keyConfig}${keyCounter++}` : contentBased ? (item) => keyConfig(item) : () => String(keyCounter++);
   const buildValue = () => keys.map((key) => signals.get(key)?.get()).filter((v) => v !== undefined);
   const node = {
     fn: buildValue,
@@ -636,7 +647,7 @@ function createList(initialValue, options) {
     },
     set(newValue) {
       const currentValue = node.flags & FLAG_DIRTY ? buildValue() : node.value;
-      const changes = diffArrays(currentValue, newValue, keys, generateKey);
+      const changes = diffArrays(currentValue, newValue, keys, generateKey, contentBased);
       if (changes.changed) {
         keys = changes.newKeys;
         applyChanges(changes);
@@ -703,7 +714,7 @@ function createList(initialValue, options) {
     sort(compareFn) {
       const entries = keys.map((key) => [key, signals.get(key)?.get()]).sort(isFunction(compareFn) ? (a, b) => compareFn(a[1], b[1]) : (a, b) => String(a[1]).localeCompare(String(b[1])));
       const newOrder = entries.map(([key]) => key);
-      if (!isEqual(keys, newOrder)) {
+      if (!keysEqual(keys, newOrder)) {
         keys = newOrder;
         propagate(node);
         node.flags |= FLAG_DIRTY;
@@ -729,6 +740,8 @@ function createList(initialValue, options) {
       const newOrder = keys.slice(0, actualStart);
       for (const item of items) {
         const key = generateKey(item);
+        if (signals.has(key) && !(key in remove))
+          throw new DuplicateKeyError(TYPE_LIST, key, item);
         newOrder.push(key);
         add[key] = item;
       }
@@ -834,14 +847,6 @@ function isTask(value) {
 }
 
 // src/nodes/collection.ts
-function keysEqual(a, b) {
-  if (a.length !== b.length)
-    return false;
-  for (let i = 0;i < a.length; i++)
-    if (a[i] !== b[i])
-      return false;
-  return true;
-}
 function createCollection(source, callback) {
   validateCallback(TYPE_COLLECTION, callback);
   if (!isCollectionSource(source))
@@ -928,14 +933,19 @@ function createCollection(source, callback) {
     get() {
       if (activeSink)
         link(node, activeSink);
-      const keys = ensureSynced();
-      return keys.map((key) => {
+      const currentKeys = ensureSynced();
+      const result = [];
+      for (const key of currentKeys) {
         try {
-          return signals.get(key)?.get();
-        } catch {
-          return;
+          const v = signals.get(key)?.get();
+          if (v != null)
+            result.push(v);
+        } catch (e) {
+          if (!(e instanceof UnsetSignalValueError))
+            throw e;
         }
-      }).filter((v) => v != null);
+      }
+      return result;
     },
     at(index) {
       return signals.get(node.value[index]);
@@ -965,13 +975,18 @@ function createSourceCollection(initialValue, start, options) {
   const generateKey = isString(keyConfig) ? () => `${keyConfig}${keyCounter++}` : isFunction(keyConfig) ? (item) => keyConfig(item) : () => String(keyCounter++);
   const itemFactory = options?.createItem ?? ((_key, value) => createState(value));
   function buildValue() {
-    return keys.map((key) => {
+    const result = [];
+    for (const key of keys) {
       try {
-        return signals.get(key)?.get();
-      } catch {
-        return;
+        const v = signals.get(key)?.get();
+        if (v != null)
+          result.push(v);
+      } catch (e) {
+        if (!(e instanceof UnsetSignalValueError))
+          throw e;
       }
-    }).filter((v) => v != null);
+    }
+    return result;
   }
   const node = {
     fn: buildValue,

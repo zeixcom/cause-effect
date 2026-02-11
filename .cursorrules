@@ -1,58 +1,65 @@
-# Cause & Effect - Reactive State Management Library
+# Cause & Effect - Reactive State Management Primitives
 
 ## Project Type
-TypeScript/JavaScript reactive state management library using signals pattern
+TypeScript reactive state management primitives library using a unified signal graph
 
 ## Core Concepts
-- Signals: Base reactive primitives with .get() method
-- State: new State() for primitives/simple values  
-- Ref: new Ref() for external objects (DOM, Map, Set) requiring manual .notify()
-- Computed: new Memo() for derived/memoized values and new Task() for asynchronous computations
-- Store: createStore() for objects with reactive properties
-- List: new List() for arrays with stable keys and reactive items
-- Collection: Interface for reactive collections (DerivedCollection, ElementCollection)
-- Effects: createEffect() for side effects
+- Signals: Reactive primitives with .get() method for dependency tracking
+- State: createState() for mutable source values
+- Sensor: createSensor() for external input with lazy lifecycle
+- Memo: createMemo() for synchronous memoized derivations
+- Task: createTask() for asynchronous derivations with cancellation
+- Store: createStore() for reactive objects with per-property signals
+- List: createList() for reactive arrays with stable keys
+- Collection: createCollection() for read-only derived arrays with item-level memoization
+- SourceCollection: createSourceCollection() for externally-driven collections
+- Effect: createEffect() for side-effect sinks
 
 ## Code Style
 - Use const for immutable values
 - Generic constraints: T extends {} (excludes null/undefined)
 - Factory functions: create* prefix
-- Type predicates: is* prefix  
+- Type predicates: is* prefix
 - Constants: TYPE_* or UPPER_CASE
 - Pure functions marked with /*#__PURE__*/ comment
 
 ## Key Patterns
 - All signals have .get() method
 - Mutable signals have .set(value) and .update(fn)
-- Store properties auto-become reactive signals
-- Computed callbacks receive oldValue as first parameter for reducer patterns
-- Async computed and effect callbacks receive AbortSignal for async cancellation
-- Use UNSET symbol for uninitialized states
-- Batch updates for performance
-- JSDoc comments on all public APIs
+- Store properties auto-become reactive signals via Proxy
+- Memo callbacks receive previous value as first parameter for reducer patterns
+- Task callbacks receive (next, AbortSignal)
+- Sensor and SourceCollection use start callbacks for lazy resource management
+- Store and List support optional watched callbacks
+- batch() for grouping multiple updates
+- untrack() for reading signals without creating edges
 
 ## File Structure
-- src/signal.ts - Base signal types
-- src/classes/state.ts - Mutable state signals
-- src/classes/ref.ts - Signal wrappers for external objects
-- src/classes/store.ts - Object stores
-- src/classes/list.ts - Array stores with stable keys
-- src/classes/collection.ts - Collection interface and DerivedCollection
-- src/classes/computed.ts - Computed signals
-- src/effect.ts - Effect system
-- src/system.ts - Core reactivity (watchers, batching)
-- index.ts - Main exports
+- src/graph.ts - Core reactive engine (nodes, edges, propagation, flush)
+- src/nodes/state.ts - Mutable state signals
+- src/nodes/sensor.ts - External input tracking
+- src/nodes/memo.ts - Synchronous derived signals
+- src/nodes/task.ts - Asynchronous derived signals
+- src/nodes/effect.ts - Side-effect system
+- src/nodes/store.ts - Reactive objects
+- src/nodes/list.ts - Reactive arrays with stable keys
+- src/nodes/collection.ts - Derived and source collections
+- next.ts - Public API exports
 
-## Error Handling  
+## Error Handling
 - Custom error classes in src/errors.ts
-- Validate inputs, throw descriptive errors
-- Support AbortSignal in async operations
+- Validate inputs with validateSignalValue() and validateCallback()
+- AbortSignal integration for async cancellation in Task and Collection
 
 ## Performance
-- Use Set<Watcher> for subscriptions
-- Shallow equality with isEqual() utility
-- Tree-shaking friendly code
-- Minimize effect re-runs
+- Linked-list edges for O(1) dependency tracking
+- Flag-based dirty checking (CLEAN, CHECK, DIRTY)
+- Tree-shaking friendly, zero dependencies
+- Minimize effect re-runs via equality checks
+
+## Testing
+- bun:test with describe/test/expect
+- Test files: test/*.test.ts
 
 ## Build
 - Bun build tool and runtime

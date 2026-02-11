@@ -45,8 +45,8 @@ export {
 export {
 	createList,
 	type DiffResult,
-	isList,
 	isEqual,
+	isList,
 	type KeyConfig,
 	type List,
 	type ListOptions,

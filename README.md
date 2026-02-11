@@ -2,32 +2,40 @@
 
 Version 0.18.0
 
-**Cause & Effect** is a tiny (~5kB gzipped), dependency-free reactive state management library for JavaScript. It uses fine-grained signals so derived values and side effects update automatically when their dependencies change.
+**Cause & Effect** is a reactive state management primitives library for TypeScript. It provides the foundational building blocks for managing complex, dynamic, composite, and asynchronous state — correctly and performantly — in a unified signal graph.
 
-## What is Cause & Effect?
+It is deliberately **not a framework**. It has no opinions about rendering, persistence, or application architecture. It is a thin, trustworthy layer over JavaScript that provides the comfort and guarantees of fine-grained reactivity while avoiding the common pitfalls of imperative code.
 
-**Cause & Effect** provides a simple way to manage application state using signals. Signals are containers for values that can change over time. When a signal's value changes, it automatically updates all dependent computations and effects, ensuring your UI stays in sync with your data without manual intervention.
+## Who Is This For?
 
-### Core Concepts
+**Library authors** building on TypeScript — frontend or backend — who need a solid reactive foundation. The library is designed so that consuming libraries do not have to implement their own reactive primitives. Patterns like external data feeds, async derivations, and keyed collections are handled correctly within a unified graph rather than bolted on as ad-hoc extensions.
 
-- **State**: mutable value (`createState()`)
-- **Memo**: derived & memoized value (`createMemo()`)
-- **Effect**: runs when dependencies change (`createEffect()`)
-- **Task**: async derived value with cancellation (`createTask()`)
-- **Store**: object with reactive nested props (`createStore()`)
-- **List**: mutable array with stable keys & reactive items (`createList()`)
-- **Collection**: read-only derived arrays from Lists (`createCollection()`)
-- **SourceCollection**: externally-driven collection with watched lifecycle (`createSourceCollection()`)
-- **Sensor**: external input tracking with automatic updates (`createSensor()`)
+**Experienced developers** who want to write framework-agnostic applications with explicit dependencies, predictable updates, and type safety. If you are comfortable composing your own rendering and application layers on top of reactive primitives, this library gives you the guarantees without the opinions.
 
-## Key Features
+Cause & Effect is open source, built to power **Le Truc** (a Web Component library) by [Zeix AG](https://zeix.com).
 
-- ⚡ **Fine-grained reactivity** with automatic dependency tracking
-- 🧩 **Composable signal graph** with a small API
-- ⏱️ **Async ready** (`createTask`, `AbortController`, async collections)
-- 🛡️ **Declarative error handling** (`match()`)
-- 🚀 **Batching** and efficient dependency tracking
-- 📦 **Tree-shakable**, zero dependencies
+## Signal Types
+
+Every signal type participates in the same dependency graph with the same propagation, batching, and cleanup semantics. Each type is justified by a distinct role in the graph and the data structure it manages:
+
+| Type | Role | Create with |
+|------|------|-------------|
+| **State** | Mutable source | `createState()` |
+| **Sensor** | External input source (lazy lifecycle) | `createSensor()` |
+| **Memo** | Synchronous derivation (memoized) | `createMemo()` |
+| **Task** | Asynchronous derivation (memoized, cancellable) | `createTask()` |
+| **Store** | Reactive object (keyed properties, proxy-based) | `createStore()` |
+| **List** | Reactive array (keyed items, stable identity) | `createList()` |
+| **Collection** | Derived array (item-level memoization) | `createCollection()` |
+| **SourceCollection** | External collection source (lazy lifecycle) | `createSourceCollection()` |
+| **Effect** | Side-effect sink (terminal) | `createEffect()` |
+
+## Design Principles
+
+- **Explicit reactivity**: Dependencies are tracked through `.get()` calls — the graph always reflects the true dependency structure, with no hidden subscriptions
+- **Non-nullable types**: All signals enforce `T extends {}`, excluding `null` and `undefined` at the type level — you can trust returned values without null checks
+- **Unified graph**: Composite signals (Store, List, Collection) and async signals (Task) are first-class citizens, not afterthoughts — all derivable state can be derived
+- **Tree-shakable, zero dependencies**: Import only what you use — core signals (State, Memo, Task, Effect) stay below 5 kB gzipped, the full library below 10 kB
 
 ## Installation
 
@@ -59,11 +67,11 @@ createEffect(() => {
 user.update(u => ({ ...u, age: 31 })) // Logs: "Hello Alice! You are 31 years old"
 ```
 
-## Usage of Signals
+## API
 
 ### State
 
-A `State` is a mutable signal created with `createState()`. Every signal has a `.get()` method to access its current value. State signals also provide `.set()` to directly assign a new value and `.update()` to modify the value with a function.
+A mutable source signal. Every signal has a `.get()` method to read its current value. State signals also provide `.set()` to assign a new value and `.update()` to modify it with a function.
 
 ```js
 import { createState, createEffect } from '@zeix/cause-effect'
@@ -78,11 +86,48 @@ document.querySelector('.increment').addEventListener('click', () => {
 })
 ```
 
-Use `State` for primitives or for objects you typically replace entirely.
+Use State for primitives or for objects you replace entirely.
+
+### Sensor
+
+A read-only source that tracks external input. It activates lazily when first accessed by an effect and cleans up when no effects are watching:
+
+```js
+import { createSensor, createEffect } from '@zeix/cause-effect'
+
+const mousePos = createSensor((set) => {
+  const handler = (e) => set({ x: e.clientX, y: e.clientY })
+  window.addEventListener('mousemove', handler)
+  return () => window.removeEventListener('mousemove', handler)
+})
+
+createEffect(() => {
+  const pos = mousePos.get()
+  if (pos) console.log(`Mouse: ${pos.x}, ${pos.y}`)
+})
+```
+
+Use Sensor for mouse position, window size, media queries, geolocation, device orientation, or any external value stream.
+
+**Observing mutable objects**: Use `SKIP_EQUALITY` when the reference stays the same but internal state changes:
+
+```js
+import { createSensor, SKIP_EQUALITY, createEffect } from '@zeix/cause-effect'
+
+const el = document.getElementById('status')
+const element = createSensor((set) => {
+  set(el)
+  const observer = new MutationObserver(() => set(el))
+  observer.observe(el, { attributes: true, childList: true })
+  return () => observer.disconnect()
+}, { value: el, equals: SKIP_EQUALITY })
+
+createEffect(() => console.log(element.get().className))
+```
 
 ### Memo
 
-A `Memo` is a memoized read-only signal created with `createMemo()`. It automatically tracks dependencies and updates only when those dependencies change.
+A memoized read-only derivation. It automatically tracks dependencies and updates only when those dependencies actually change.
 
 ```js
 import { createState, createMemo, createEffect } from '@zeix/cause-effect'
@@ -118,7 +163,7 @@ const counter = createMemo(prev => {
 
 ### Task
 
-A `Task` handles asynchronous computations with cancellation support, created with `createTask()`:
+An asynchronous derivation with automatic cancellation. When dependencies change while a computation is in flight, the previous one is aborted:
 
 ```js
 import { createState, createTask } from '@zeix/cause-effect'
@@ -136,11 +181,11 @@ id.set(2) // cancels previous fetch automatically
 
 Tasks also provide `.isPending()` to check if a computation is in progress and `.abort()` to manually cancel.
 
-**Note**: Use Task (not plain async functions) when you want memoization + cancellation + reactive pending/error states.
+Use Task (not plain async functions) when you need memoization, cancellation, and reactive pending/error states.
 
 ### Store
 
-A `Store` is a reactive object created with `createStore()`. Each property automatically becomes its own signal with `.get()`, `.set()`, and `.update()` methods. Nested objects recursively become nested stores.
+A reactive object where each property becomes its own signal. Nested objects recursively become nested stores. A Proxy provides direct property access:
 
 ```js
 import { createStore, createEffect } from '@zeix/cause-effect'
@@ -170,9 +215,9 @@ for (const key of user.keys()) {
 }
 ```
 
-Access items by key using `.byKey()` or via direct property access like `user.name` (enabled by the Proxy `createStore()` returns).
+Access properties by key using `.byKey()` or via direct property access like `user.name` (enabled by the Proxy).
 
-Dynamic properties using the `.add()` and `.remove()` methods:
+Dynamic properties with `.add()` and `.remove()`:
 
 ```js
 const settings = createStore({ autoSave: true })
@@ -183,7 +228,7 @@ settings.remove('timeout')
 
 ### List
 
-A `List` is a mutable signal for arrays with individually reactive items and stable keys, created with `createList()`. Each item becomes its own signal while maintaining persistent identity through sorting and reordering:
+A reactive array with individually reactive items and stable keys. Each item becomes its own signal while maintaining persistent identity through sorting and reordering:
 
 ```js
 import { createList, createEffect } from '@zeix/cause-effect'
@@ -222,7 +267,7 @@ Lists have `.keys()`, `.add()`, and `.remove()` methods like stores. Additionall
 
 ### Collection
 
-A `Collection` is a read-only derived reactive list from a `List` or another `Collection`. Create one with `createCollection()` or via `.deriveCollection()`:
+A read-only derived array from a List or another Collection, with item-level memoization. Create one with `createCollection()` or via `.deriveCollection()`:
 
 ```js
 import { createList, createEffect } from '@zeix/cause-effect'
@@ -258,46 +303,9 @@ const processed = users
   .deriveCollection(user => user.active ? `Active: ${user.name}` : `Inactive: ${user.name}`)
 ```
 
-### Sensor
-
-A `Sensor` tracks external input and updates a state value automatically, created with `createSensor()`. It activates lazily when first accessed by an effect:
-
-```js
-import { createSensor, createEffect } from '@zeix/cause-effect'
-
-const mousePos = createSensor((set) => {
-  const handler = (e) => set({ x: e.clientX, y: e.clientY })
-  window.addEventListener('mousemove', handler)
-  return () => window.removeEventListener('mousemove', handler)
-})
-
-createEffect(() => {
-  const pos = mousePos.get()
-  if (pos) console.log(`Mouse: ${pos.x}, ${pos.y}`)
-})
-```
-
-Use `Sensor` for mouse position, window size, media queries, geolocation, device orientation, etc.
-
-**Observing mutable objects**: Use `SKIP_EQUALITY` when the reference stays the same but internal state changes:
-
-```js
-import { createSensor, SKIP_EQUALITY, createEffect } from '@zeix/cause-effect'
-
-const el = document.getElementById('status')
-const element = createSensor((set) => {
-  set(el)
-  const observer = new MutationObserver(() => set(el))
-  observer.observe(el, { attributes: true, childList: true })
-  return () => observer.disconnect()
-}, { value: el, equals: SKIP_EQUALITY })
-
-createEffect(() => console.log(element.get().className))
-```
-
 ### SourceCollection
 
-A `SourceCollection` is an externally-driven collection with a watched lifecycle, created with `createSourceCollection()`. Unlike `createCollection()` which derives from a List, a SourceCollection receives data from external sources (WebSocket, Server-Sent Events, etc.) via `applyChanges()`:
+An externally-driven collection with a watched lifecycle. Unlike Collection which derives from a List, a SourceCollection receives data from external sources (WebSocket, Server-Sent Events, etc.) via `applyChanges()`:
 
 ```js
 import { createSourceCollection, createEffect } from '@zeix/cause-effect'
@@ -316,9 +324,9 @@ createEffect(() => console.log('Items:', items.get()))
 
 SourceCollections share the same `Collection` interface — `.get()`, `.byKey()`, `.keys()`, `.at()`, `.deriveCollection()` — and support chaining for data pipelines.
 
-## Effects
+### Effect
 
-The `createEffect()` callback runs whenever the signals it reads change. It returns a cleanup/dispose function.
+A side-effect sink that runs whenever the signals it reads change. Effects are terminal — they consume values but produce none. The returned function disposes the effect:
 
 ```js
 import { createState, createEffect } from '@zeix/cause-effect'
@@ -342,9 +350,9 @@ createEffect(() => {
 })
 ```
 
-### Error Handling: match()
+#### Error Handling: match()
 
-Use `match()` inside effects to handle signal values declaratively, including pending and error states:
+Use `match()` inside effects to handle signal values declaratively, including pending and error states from Tasks:
 
 ```js
 import { createState, createTask, createEffect, match } from '@zeix/cause-effect'
@@ -365,7 +373,7 @@ createEffect(() => {
 })
 ```
 
-## Signal Type Decision Tree
+## Choosing the Right Signal
 
 ```
 Does the data come from *outside* the reactive system?
@@ -516,43 +524,6 @@ This pattern is ideal for:
 - Network connections that can be lazily established
 - Expensive computations that should pause when not needed
 - External subscriptions (WebSocket, Server-Sent Events, etc.)
-
-### diff()
-
-Compare object changes:
-
-```js
-import { diff } from '@zeix/cause-effect'
-
-const oldUser = { name: 'Alice', age: 30, city: 'Boston' }
-const newUser = { name: 'Alice', age: 31, email: 'alice@example.com' }
-
-const changes = diff(oldUser, newUser)
-console.log(changes.changed)  // true - something changed
-console.log(changes.add)      // { email: 'alice@example.com' }
-console.log(changes.change)   // { age: 31 }
-console.log(changes.remove)   // { city: null }
-```
-
-### isEqual()
-
-Deep equality comparison with circular reference detection:
-
-```js
-import { isEqual } from '@zeix/cause-effect'
-
-const obj1 = { name: 'Alice', preferences: { theme: 'dark' } }
-const obj2 = { name: 'Alice', preferences: { theme: 'dark' } }
-const obj3 = { name: 'Bob', preferences: { theme: 'dark' } }
-
-console.log(isEqual(obj1, obj2)) // true - deep equality
-console.log(isEqual(obj1, obj3)) // false - names differ
-
-// Handles arrays, primitives, and complex nested structures
-console.log(isEqual([1, 2, 3], [1, 2, 3]))           // true
-console.log(isEqual('hello', 'hello'))               // true
-console.log(isEqual({ a: [1, 2] }, { a: [1, 2] }))   // true
-```
 
 ## Contributing & License
 

@@ -7,7 +7,10 @@ type StoreOptions = {
 type BaseStore<T extends UnknownRecord> = {
     readonly [Symbol.toStringTag]: 'Store';
     readonly [Symbol.isConcatSpreadable]: false;
-    [Symbol.iterator](): IterableIterator<[string, State<T[keyof T] & {}>]>;
+    [Symbol.iterator](): IterableIterator<[
+        string,
+        State<T[keyof T] & {}> | Store<UnknownRecord> | List<unknown & {}>
+    ]>;
     keys(): IterableIterator<string>;
     byKey<K extends keyof T & string>(key: K): T[K] extends readonly (infer U extends {})[] ? List<U> : T[K] extends UnknownRecord ? Store<T[K]> : T[K] extends unknown & {} ? State<T[K] & {}> : State<T[K] & {}> | undefined;
     get(): T;
