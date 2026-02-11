@@ -19,6 +19,7 @@ export {
 	type ComputedOptions,
 	createScope,
 	type EffectCallback,
+	type MaybeCleanup,
 	type MemoCallback,
 	type Signal,
 	type SignalOptions,
