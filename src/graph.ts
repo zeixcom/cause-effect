@@ -181,7 +181,7 @@ function defaultEquals<T extends {}>(a: T, b: T): boolean {
  * }, { value: node, equals: SKIP_EQUALITY });
  * ```
  */
-const SKIP_EQUALITY = (): boolean => false
+const SKIP_EQUALITY = (_a?: unknown, _b?: unknown): boolean => false
 
 /* === Link Management === */
 
