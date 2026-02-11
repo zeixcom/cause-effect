@@ -129,5 +129,8 @@ dist
 .yarn/install-state.gz
 .pnp.*
 
+# Regression test baseline (machine-specific)
+test/regression-baseline.json
+
 # Claude
 .claude
