@@ -77,7 +77,7 @@ Before a sink recomputes, the engine sets `activeSink = node`, ensuring all `.ge
 
 After a sink finishes recomputing, `trimSources()` removes any edges beyond `sourcesTail` — these are dependencies from the previous execution that were not accessed this time. This is how the graph adapts to conditional dependencies.
 
-`unlink()` removes an edge from the source's sink list. If the source's sink list becomes empty and the source has a `stop` callback, that callback is invoked — this is how lazy resources (Sensor, SourceCollection, watched Store/List) are deallocated when no longer observed.
+`unlink()` removes an edge from the source's sink list. If the source's sink list becomes empty and the source has a `stop` callback, that callback is invoked — this is how lazy resources (Sensor, Collection, watched Store/List) are deallocated when no longer observed.
 
 ### Dependency Tracking Opt-Out: `untrack(fn)`
 
@@ -245,14 +245,30 @@ A reactive array with stable keys and per-item reactivity. Each item becomes a `
 
 ### Collection (`src/nodes/collection.ts`)
 
+Collection implements two creation patterns that share the same `Collection<T>` interface:
+
+#### `createCollection(start, options?)` — externally driven
+
+**Graph node**: `MemoNode<T[]>` (source + sink, tracks item values)
+
+An externally-driven reactive collection with a watched lifecycle, mirroring `createSensor(start, options?)`. The `start` callback receives an `applyChanges(diffResult)` function for granular add/change/remove operations. Initial items are provided via `options.value` (default `[]`).
+
+**Lazy lifecycle**: Like Sensor, the `start` callback is invoked on first sink attachment. The returned cleanup is stored as `node.stop` and called when the last sink detaches (via `unlink()`). The `startWatching()` guard ensures `start` fires before `link()` so synchronous mutations inside `start` update `node.value` before the activating effect reads it.
+
+**External mutation via `applyChanges`**: Additions create new item signals (via configurable `createItem` factory, default `createState`). Changes update existing `State` signals. Removals delete signals and keys. Structural changes null out `node.sources` to force edge re-establishment. The node uses `equals: () => false` since structural changes are managed externally rather than detected by diffing.
+
+**Two-path access**: Same pattern as Store/List — first `get()` uses `refresh()` to establish edges from child signals to the collection node; subsequent reads use `untrack(buildValue)` to avoid re-linking.
+
+#### `deriveCollection(source, callback)` — internally derived
+
 **Graph node**: `MemoNode<string[]>` (source + sink, tracks keys not values)
 
-A read-only derived transformation of a List or another Collection. Each source item is individually memoized: sync callbacks create `Memo` signals, async callbacks create `Task` signals.
+An internal factory (not exported from the public API) that creates a read-only derived transformation of a List or another Collection. Exposed to users via the `.deriveCollection(callback)` method on List and Collection. Each source item is individually memoized: sync callbacks create `Memo` signals, async callbacks create `Task` signals.
 
-**Two-level reactivity**: The Collection's `MemoNode` tracks structural changes only — its `fn` (`syncKeys`) reads `source.keys()` to detect additions and removals. Value-level changes flow through the individual per-item `Memo`/`Task` signals, which independently track their source item.
+**Two-level reactivity**: The derived collection's `MemoNode` tracks structural changes only — its `fn` (`syncKeys`) reads `source.keys()` to detect additions and removals. Value-level changes flow through the individual per-item `Memo`/`Task` signals, which independently track their source item.
 
 **Key differences from Store/List**: The `MemoNode.value` is a `string[]` (the keys array), not the collection's actual values. The `equals` function is a shallow string array comparison (`keysEqual`). The node starts `FLAG_DIRTY` (unlike Store/List which start clean after initialization) to ensure the first `refresh()` establishes the edge from source to collection.
 
-**No `invalidateEdges`**: Unlike Store/List, the Collection never needs to re-establish its source edge because it has exactly one source (the parent List or Collection) that never changes identity. Structural changes (adding/removing per-item signals) happen inside `syncKeys` without affecting the source edge.
+**No `invalidateEdges`**: Unlike Store/List, the derived collection never needs to re-establish its source edge because it has exactly one source (the parent List or Collection) that never changes identity. Structural changes (adding/removing per-item signals) happen inside `syncKeys` without affecting the source edge.
 
-**Chaining**: `deriveCollection()` creates a new Collection from an existing one, forming a pipeline. Each level in the chain has its own `MemoNode` for structural tracking and its own set of per-item derived signals.
+**Chaining**: `.deriveCollection()` creates a new derived collection from an existing one, forming a pipeline. Each level in the chain has its own `MemoNode` for structural tracking and its own set of per-item derived signals.

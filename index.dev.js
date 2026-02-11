@@ -1,13 +1,4 @@
 // src/util.ts
-function isString(value) {
-  return typeof value === "string";
-}
-function isNumber(value) {
-  return typeof value === "number";
-}
-function isSymbol(value) {
-  return typeof value === "symbol";
-}
 function isFunction(fn) {
   return typeof fn === "function";
 }
@@ -17,26 +8,17 @@ function isAsyncFunction(fn) {
 function isSyncFunction(fn) {
   return isFunction(fn) && fn.constructor.name !== "AsyncFunction";
 }
-function isNonNullObject(value) {
-  return value != null && typeof value === "object";
-}
 function isObjectOfType(value, type) {
   return Object.prototype.toString.call(value) === `[object ${type}]`;
 }
 function isRecord(value) {
   return isObjectOfType(value, "Object");
 }
-function isRecordOrArray(value) {
-  return isRecord(value) || Array.isArray(value);
-}
 function isUniformArray(value, guard = (item) => item != null) {
   return Array.isArray(value) && value.every(guard);
 }
-function isAbortError(error) {
-  return error instanceof DOMException && error.name === "AbortError";
-}
 function valueString(value) {
-  return isString(value) ? `"${value}"` : !!value && typeof value === "object" ? JSON.stringify(value) : String(value);
+  return typeof value === "string" ? `"${value}"` : !!value && typeof value === "object" ? JSON.stringify(value) : String(value);
 }
 
 // src/errors.ts
@@ -448,7 +430,7 @@ function isEqual(a, b, visited) {
     return true;
   if (typeof a !== typeof b)
     return false;
-  if (!isNonNullObject(a) || !isNonNullObject(b))
+  if (a == null || typeof a !== "object" || b == null || typeof b !== "object")
     return false;
   if (!visited)
     visited = new WeakSet;
@@ -541,7 +523,7 @@ function createList(initialValue, options) {
   let keyCounter = 0;
   const keyConfig = options?.keyConfig;
   const contentBased = isFunction(keyConfig);
-  const generateKey = isString(keyConfig) ? () => `${keyConfig}${keyCounter++}` : contentBased ? (item) => keyConfig(item) : () => String(keyCounter++);
+  const generateKey = typeof keyConfig === "string" ? () => `${keyConfig}${keyCounter++}` : contentBased ? (item) => keyConfig(item) : () => String(keyCounter++);
   const buildValue = () => keys.map((key) => signals.get(key)?.get()).filter((v) => v !== undefined);
   const node = {
     fn: buildValue,
@@ -697,10 +679,10 @@ function createList(initialValue, options) {
       return key;
     },
     remove(keyOrIndex) {
-      const key = isNumber(keyOrIndex) ? keys[keyOrIndex] : keyOrIndex;
+      const key = typeof keyOrIndex === "number" ? keys[keyOrIndex] : keyOrIndex;
       const ok = signals.delete(key);
       if (ok) {
-        const index = isNumber(keyOrIndex) ? keyOrIndex : keys.indexOf(key);
+        const index = typeof keyOrIndex === "number" ? keyOrIndex : keys.indexOf(key);
         if (index >= 0)
           keys.splice(index, 1);
         node.sources = null;
@@ -763,7 +745,7 @@ function createList(initialValue, options) {
       return Object.values(remove);
     },
     deriveCollection(cb) {
-      return createCollection(list, cb);
+      return deriveCollection(list, cb);
     }
   };
   return list;
@@ -847,7 +829,7 @@ function isTask(value) {
 }
 
 // src/nodes/collection.ts
-function createCollection(source, callback) {
+function deriveCollection(source, callback) {
   validateCallback(TYPE_COLLECTION, callback);
   if (!isCollectionSource(source))
     throw new TypeError(`[${TYPE_COLLECTION}] Invalid collection source: expected a List or Collection`);
@@ -960,19 +942,21 @@ function createCollection(source, callback) {
       return node.value.indexOf(key);
     },
     deriveCollection(cb) {
-      return createCollection(collection, cb);
+      return deriveCollection(collection, cb);
     }
   };
   return collection;
 }
-function createSourceCollection(initialValue, start, options) {
-  validateSignalValue(TYPE_COLLECTION, initialValue, Array.isArray);
+function createCollection(start, options) {
+  const initialValue = options?.value ?? [];
+  if (initialValue.length)
+    validateSignalValue(TYPE_COLLECTION, initialValue, Array.isArray);
   validateCallback(TYPE_COLLECTION, start);
   const signals = new Map;
   const keys = [];
   let keyCounter = 0;
   const keyConfig = options?.keyConfig;
-  const generateKey = isString(keyConfig) ? () => `${keyConfig}${keyCounter++}` : isFunction(keyConfig) ? (item) => keyConfig(item) : () => String(keyCounter++);
+  const generateKey = typeof keyConfig === "string" ? () => `${keyConfig}${keyCounter++}` : isFunction(keyConfig) ? (item) => keyConfig(item) : () => String(keyCounter++);
   const itemFactory = options?.createItem ?? ((_key, value) => createState(value));
   function buildValue() {
     const result = [];
@@ -1098,7 +1082,7 @@ function createSourceCollection(initialValue, start, options) {
       return keys.indexOf(key);
     },
     deriveCollection(cb) {
-      return createCollection(collection, cb);
+      return deriveCollection(collection, cb);
     }
   };
   return collection;
@@ -1210,8 +1194,8 @@ function isSensor(value) {
 }
 // src/nodes/store.ts
 function diffRecords(oldObj, newObj) {
-  const oldValid = isRecordOrArray(oldObj);
-  const newValid = isRecordOrArray(newObj);
+  const oldValid = isRecord(oldObj) || Array.isArray(oldObj);
+  const newValid = isRecord(newObj) || Array.isArray(newObj);
   if (!oldValid || !newValid) {
     const changed2 = !Object.is(oldObj, newObj);
     return {
@@ -1393,7 +1377,7 @@ function createStore(initialValue, options) {
         const value = Reflect.get(target, prop);
         return isFunction(value) ? value.bind(target) : value;
       }
-      if (!isSymbol(prop))
+      if (typeof prop !== "symbol")
         return target.byKey(prop);
     },
     has(target, prop) {
@@ -1407,7 +1391,7 @@ function createStore(initialValue, options) {
     getOwnPropertyDescriptor(target, prop) {
       if (prop in target)
         return Reflect.getOwnPropertyDescriptor(target, prop);
-      if (isSymbol(prop))
+      if (typeof prop === "symbol")
         return;
       const signal = target.byKey(String(prop));
       return signal ? {
@@ -1476,16 +1460,12 @@ export {
   untrack,
   match,
   isTask,
-  isSymbol,
-  isString,
   isStore,
   isState,
   isSignal,
   isSensor,
-  isRecordOrArray,
   isRecord,
   isObjectOfType,
-  isNumber,
   isMutableSignal,
   isMemo,
   isList,
@@ -1494,11 +1474,9 @@ export {
   isComputed,
   isCollection,
   isAsyncFunction,
-  isAbortError,
   createTask,
   createStore,
   createState,
-  createSourceCollection,
   createSignal,
   createSensor,
   createScope,
