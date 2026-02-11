@@ -5,7 +5,7 @@ import {
 	createList,
 	isCollection,
 	isList,
-} from '../next.ts'
+} from '../index.ts'
 
 /* === Utility Functions === */
 

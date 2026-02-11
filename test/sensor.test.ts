@@ -5,7 +5,7 @@ import {
 	isMemo,
 	isSensor,
 	UnsetSignalValueError,
-} from '../next.ts'
+} from '../index.ts'
 
 /* === Utility Functions === */
 

@@ -5,7 +5,7 @@ import {
 	isMemo,
 	isState,
 	UnsetSignalValueError,
-} from '../next.ts'
+} from '../index.ts'
 
 /* === Tests === */
 

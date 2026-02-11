@@ -6,7 +6,7 @@ import {
 	createMemo,
 	createState,
 	createStore,
-} from '../next.ts'
+} from '../index.ts'
 
 /* === Tests === */
 

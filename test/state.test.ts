@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { createEffect, createState, isMemo, isState } from '../next.ts'
+import { createEffect, createState, isMemo, isState } from '../index.ts'
 
 /* === Tests === */
 

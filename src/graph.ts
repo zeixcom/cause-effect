@@ -30,8 +30,6 @@ type AsyncFields = {
 	error: Error | undefined
 }
 
-type RefNode<T extends {}> = SourceFields<T>
-
 type StateNode<T extends {}> = SourceFields<T> & OptionsFields<T>
 
 type MemoNode<T extends {}> = SourceFields<T> &
@@ -55,7 +53,7 @@ type EffectNode = SinkFields &
 
 type Scope = OwnerFields
 
-type SourceNode = RefNode<unknown & {}>
+type SourceNode = SourceFields<unknown & {}>
 type SinkNode = MemoNode<unknown & {}> | TaskNode<unknown & {}> | EffectNode
 type OwnerNode = EffectNode | Scope
 
@@ -143,7 +141,6 @@ type EffectCallback = () => MaybeCleanup
 const TYPE_STATE = 'State'
 const TYPE_MEMO = 'Memo'
 const TYPE_TASK = 'Task'
-const TYPE_REF = 'Ref'
 const TYPE_SENSOR = 'Sensor'
 const TYPE_LIST = 'List'
 const TYPE_COLLECTION = 'Collection'
@@ -167,6 +164,24 @@ let flushing = false
 function defaultEquals<T extends {}>(a: T, b: T): boolean {
 	return a === b
 }
+
+/**
+ * Equality function that always returns false, causing propagation on every update.
+ * Use with `createSensor` for observing mutable objects where the reference stays the same
+ * but internal state changes (e.g., DOM elements observed via MutationObserver).
+ *
+ * @example
+ * ```ts
+ * const el = createSensor<HTMLElement>((set) => {
+ *   const node = document.getElementById('box')!;
+ *   set(node);
+ *   const obs = new MutationObserver(() => set(node));
+ *   obs.observe(node, { attributes: true });
+ *   return () => obs.disconnect();
+ * }, { value: node, equals: SKIP_EQUALITY });
+ * ```
+ */
+const SKIP_EQUALITY = (): boolean => false
 
 /* === Link Management === */
 
@@ -551,7 +566,6 @@ export {
 	type MaybeCleanup,
 	type MemoCallback,
 	type MemoNode,
-	type RefNode,
 	type Scope,
 	type Signal,
 	type SignalOptions,
@@ -565,6 +579,7 @@ export {
 	batchDepth,
 	createScope,
 	defaultEquals,
+	SKIP_EQUALITY,
 	FLAG_CLEAN,
 	FLAG_DIRTY,
 	flush,
@@ -579,7 +594,6 @@ export {
 	TYPE_COLLECTION,
 	TYPE_LIST,
 	TYPE_MEMO,
-	TYPE_REF,
 	TYPE_SENSOR,
 	TYPE_STATE,
 	TYPE_STORE,

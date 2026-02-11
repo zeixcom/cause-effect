@@ -22,7 +22,6 @@ type AsyncFields = {
     controller: AbortController | undefined;
     error: Error | undefined;
 };
-type RefNode<T extends {}> = SourceFields<T>;
 type StateNode<T extends {}> = SourceFields<T> & OptionsFields<T>;
 type MemoNode<T extends {}> = SourceFields<T> & OptionsFields<T> & SinkFields & {
     fn: MemoCallback<T>;
@@ -35,7 +34,7 @@ type EffectNode = SinkFields & OwnerFields & {
     fn: EffectCallback;
 };
 type Scope = OwnerFields;
-type SourceNode = RefNode<unknown & {}>;
+type SourceNode = SourceFields<unknown & {}>;
 type SinkNode = MemoNode<unknown & {}> | TaskNode<unknown & {}> | EffectNode;
 type OwnerNode = EffectNode | Scope;
 type Edge = {
@@ -104,7 +103,6 @@ type EffectCallback = () => MaybeCleanup;
 declare const TYPE_STATE = "State";
 declare const TYPE_MEMO = "Memo";
 declare const TYPE_TASK = "Task";
-declare const TYPE_REF = "Ref";
 declare const TYPE_SENSOR = "Sensor";
 declare const TYPE_LIST = "List";
 declare const TYPE_COLLECTION = "Collection";
@@ -115,6 +113,23 @@ declare let activeSink: SinkNode | null;
 declare let activeOwner: OwnerNode | null;
 declare let batchDepth: number;
 declare function defaultEquals<T extends {}>(a: T, b: T): boolean;
+/**
+ * Equality function that always returns false, causing propagation on every update.
+ * Use with `createSensor` for observing mutable objects where the reference stays the same
+ * but internal state changes (e.g., DOM elements observed via MutationObserver).
+ *
+ * @example
+ * ```ts
+ * const el = createSensor<HTMLElement>((set) => {
+ *   const node = document.getElementById('box')!;
+ *   set(node);
+ *   const obs = new MutationObserver(() => set(node));
+ *   obs.observe(node, { attributes: true });
+ *   return () => obs.disconnect();
+ * }, { value: node, equals: SKIP_EQUALITY });
+ * ```
+ */
+declare const SKIP_EQUALITY: () => boolean;
 declare function link(source: SourceNode, sink: SinkNode): void;
 declare function unlink(edge: Edge): Edge | null;
 declare function trimSources(node: SinkNode): void;
@@ -190,4 +205,4 @@ declare function untrack<T>(fn: () => T): T;
  * ```
  */
 declare function createScope(fn: () => MaybeCleanup): Cleanup;
-export { type Cleanup, type ComputedOptions, type EffectCallback, type EffectNode, type MaybeCleanup, type MemoCallback, type MemoNode, type RefNode, type Scope, type Signal, type SignalOptions, type SinkNode, type StateNode, type TaskCallback, type TaskNode, activeOwner, activeSink, batch, batchDepth, createScope, defaultEquals, FLAG_CLEAN, FLAG_DIRTY, flush, link, propagate, refresh, registerCleanup, runCleanup, runEffect, setState, trimSources, TYPE_COLLECTION, TYPE_LIST, TYPE_MEMO, TYPE_REF, TYPE_SENSOR, TYPE_STATE, TYPE_STORE, TYPE_TASK, unlink, untrack, };
+export { type Cleanup, type ComputedOptions, type EffectCallback, type EffectNode, type MaybeCleanup, type MemoCallback, type MemoNode, type Scope, type Signal, type SignalOptions, type SinkNode, type StateNode, type TaskCallback, type TaskNode, activeOwner, activeSink, batch, batchDepth, createScope, defaultEquals, SKIP_EQUALITY, FLAG_CLEAN, FLAG_DIRTY, flush, link, propagate, refresh, registerCleanup, runCleanup, runEffect, setState, trimSources, TYPE_COLLECTION, TYPE_LIST, TYPE_MEMO, TYPE_SENSOR, TYPE_STATE, TYPE_STORE, TYPE_TASK, unlink, untrack, };

@@ -17,7 +17,7 @@ Version 0.18.0
 - **Store**: object with reactive nested props (`createStore()`)
 - **List**: mutable array with stable keys & reactive items (`createList()`)
 - **Collection**: read-only derived arrays from Lists (`createCollection()`)
-- **Ref**: external objects with lazy observation (`createRef()`)
+- **SourceCollection**: externally-driven collection with watched lifecycle (`createSourceCollection()`)
 - **Sensor**: external input tracking with automatic updates (`createSensor()`)
 
 ## Key Features
@@ -258,28 +258,9 @@ const processed = users
   .deriveCollection(user => user.active ? `Active: ${user.name}` : `Inactive: ${user.name}`)
 ```
 
-### Ref
-
-A `Ref` is a read-only signal that holds a reference to an external object, created with `createRef()`. The start callback sets up observation and returns a cleanup function. It activates lazily when first accessed by an effect:
-
-```js
-import { createRef, createEffect } from '@zeix/cause-effect'
-
-const el = document.getElementById('status')
-const elementRef = createRef(el, (notify) => {
-  const observer = new MutationObserver(() => notify())
-  observer.observe(el, { attributes: true, childList: true })
-  return () => observer.disconnect()
-})
-
-createEffect(() => console.log(elementRef.get().className))
-```
-
-Use `Ref` for DOM nodes, external resources that need observation setup/teardown, network connections, etc.
-
 ### Sensor
 
-A `Sensor` tracks external input and updates a state value automatically, created with `createSensor()`. Like Ref, it activates lazily when first accessed:
+A `Sensor` tracks external input and updates a state value automatically, created with `createSensor()`. It activates lazily when first accessed by an effect:
 
 ```js
 import { createSensor, createEffect } from '@zeix/cause-effect'
@@ -297,6 +278,43 @@ createEffect(() => {
 ```
 
 Use `Sensor` for mouse position, window size, media queries, geolocation, device orientation, etc.
+
+**Observing mutable objects**: Use `SKIP_EQUALITY` when the reference stays the same but internal state changes:
+
+```js
+import { createSensor, SKIP_EQUALITY, createEffect } from '@zeix/cause-effect'
+
+const el = document.getElementById('status')
+const element = createSensor((set) => {
+  set(el)
+  const observer = new MutationObserver(() => set(el))
+  observer.observe(el, { attributes: true, childList: true })
+  return () => observer.disconnect()
+}, { value: el, equals: SKIP_EQUALITY })
+
+createEffect(() => console.log(element.get().className))
+```
+
+### SourceCollection
+
+A `SourceCollection` is an externally-driven collection with a watched lifecycle, created with `createSourceCollection()`. Unlike `createCollection()` which derives from a List, a SourceCollection receives data from external sources (WebSocket, Server-Sent Events, etc.) via `applyChanges()`:
+
+```js
+import { createSourceCollection, createEffect } from '@zeix/cause-effect'
+
+const items = createSourceCollection([], (applyChanges) => {
+  const ws = new WebSocket('/items')
+  ws.onmessage = (e) => {
+    const { add, change, remove } = JSON.parse(e.data)
+    applyChanges({ changed: true, add, change, remove })
+  }
+  return () => ws.close()
+}, { keyConfig: item => item.id })
+
+createEffect(() => console.log('Items:', items.get()))
+```
+
+SourceCollections share the same `Collection` interface — `.get()`, `.byKey()`, `.keys()`, `.at()`, `.deriveCollection()` — and support chaining for data pipelines.
 
 ## Effects
 
@@ -350,17 +368,16 @@ createEffect(() => {
 ## Signal Type Decision Tree
 
 ```
-Is the value managed *inside* the reactive system?
+Does the data come from *outside* the reactive system?
 │
-├─ No → Does it need observation setup/teardown?
-│   │
-│   ├─ Yes, observe & notify → `createRef(value, notify => { ... })`
-│   │   (DOM nodes with MutationObserver, IntersectionObserver, etc.)
-│   │
-│   └─ Yes, push values in → `createSensor(set => { ... })`
-│       (mouse position, window resize, media queries, etc.)
+├─ Yes, single value → `createSensor(set => { ... })`
+│   (mouse position, window resize, media queries, DOM observers, etc.)
+│   Tip: Use `{ equals: SKIP_EQUALITY }` for mutable object observation
 │
-└─ Yes? What kind of data is it?
+├─ Yes, keyed collection → `createSourceCollection(initial, applyChanges => { ... })`
+│   (WebSocket streams, Server-Sent Events, external data feeds, etc.)
+│
+└─ No, managed internally? What kind of data is it?
     │
     ├─ *Primitive* (number/string/boolean)
     │   │
@@ -437,41 +454,26 @@ user.set({ name: 'Bob', age: 28 }) // Won't trigger the effect anymore
 
 ### Scoped Cleanup
 
-Use `createScope()` for hierarchical cleanup of nested effects and resources:
+Use `createScope()` for hierarchical cleanup of nested effects and resources. It returns a single cleanup function:
 
 ```js
 import { createState, createEffect, createScope } from '@zeix/cause-effect'
 
-const [result, dispose] = createScope((onCleanup) => {
+const dispose = createScope(() => {
   const count = createState(0)
-
   createEffect(() => console.log(count.get()))
-
-  onCleanup(() => console.log('Scope disposed'))
-  return count
+  return () => console.log('Scope disposed')
 })
 
-dispose() // Cleans up the effect and runs onCleanup
+dispose() // Cleans up the effect and runs the returned cleanup
 ```
 
 ### Resource Management with Watch Callbacks
 
-Ref and Sensor signals use a **start callback** for lazy resource management. The callback runs when the signal is first accessed by an effect and the returned cleanup function runs when no effects are watching:
+Sensor and SourceCollection signals use a **start callback** for lazy resource management. The callback runs when the signal is first accessed by an effect and the returned cleanup function runs when no effects are watching:
 
 ```js
-import { createRef, createSensor, createEffect } from '@zeix/cause-effect'
-
-// Ref: observe external object changes
-const el = document.getElementById('status')
-const elementRef = createRef(el, (notify) => {
-  console.log('Setting up observer...')
-  const observer = new MutationObserver(() => notify())
-  observer.observe(el, { attributes: true })
-  return () => {
-    console.log('Tearing down observer...')
-    observer.disconnect()
-  }
-})
+import { createSensor, createSourceCollection, createEffect } from '@zeix/cause-effect'
 
 // Sensor: track external input
 const windowSize = createSensor((set) => {
@@ -481,13 +483,20 @@ const windowSize = createSensor((set) => {
   return () => window.removeEventListener('resize', update)
 })
 
-// Resource is created only when effect runs
-const cleanup = createEffect(() => {
-  console.log('Element class:', elementRef.get().className)
-  console.log('Window size:', windowSize.get())
+// SourceCollection: receive external data
+const feed = createSourceCollection([], (applyChanges) => {
+  const es = new EventSource('/feed')
+  es.onmessage = (e) => applyChanges(JSON.parse(e.data))
+  return () => es.close()
 })
 
-// Resource is cleaned up when effect stops
+// Resources are created only when effect runs
+const cleanup = createEffect(() => {
+  console.log('Window size:', windowSize.get())
+  console.log('Feed items:', feed.get())
+})
+
+// Resources are cleaned up when effect stops
 cleanup()
 ```
 

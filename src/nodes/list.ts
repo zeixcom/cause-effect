@@ -252,17 +252,6 @@ function createList<T extends {}>(
 		error: undefined,
 	}
 
-	// Force edge re-establishment on next get() after structural changes
-	const invalidateEdges = () => {
-		node.sources = null
-		node.sourcesTail = null
-	}
-
-	const addSignal = (key: string, value: T): void => {
-		validateSignalValue(`${TYPE_LIST} item for key "${key}"`, value)
-		signals.set(key, createState(value))
-	}
-
 	const toRecord = (array: T[]): Record<string, T> => {
 		const record = {} as Record<string, T>
 		for (let i = 0; i < array.length; i++) {
@@ -283,7 +272,9 @@ function createList<T extends {}>(
 
 		// Additions
 		for (const key in changes.add) {
-			addSignal(key, changes.add[key] as T)
+			const value = changes.add[key] as T
+			validateSignalValue(`${TYPE_LIST} item for key "${key}"`, value)
+			signals.set(key, createState(value))
 			structural = true
 		}
 
@@ -310,7 +301,10 @@ function createList<T extends {}>(
 			structural = true
 		}
 
-		if (structural) invalidateEdges()
+		if (structural) {
+			node.sources = null
+			node.sourcesTail = null
+		}
 
 		return changes.changed
 	}
@@ -318,7 +312,9 @@ function createList<T extends {}>(
 	// --- Initialize ---
 	const initRecord = toRecord(initialValue)
 	for (const key in initRecord) {
-		addSignal(key, initRecord[key])
+		const value = initRecord[key]
+		validateSignalValue(`${TYPE_LIST} item for key "${key}"`, value)
+		signals.set(key, createState(value))
 	}
 
 	// Clear dirty flag after initialization - initial value is correct
@@ -418,8 +414,10 @@ function createList<T extends {}>(
 			if (signals.has(key))
 				throw new DuplicateKeyError(TYPE_LIST, key, value)
 			if (!keys.includes(key)) keys.push(key)
-			addSignal(key, value)
-			invalidateEdges()
+			validateSignalValue(`${TYPE_LIST} item for key "${key}"`, value)
+			signals.set(key, createState(value))
+			node.sources = null
+			node.sourcesTail = null
 			propagate(node as unknown as SinkNode)
 			node.flags |= FLAG_DIRTY
 			if (batchDepth === 0) flush()
@@ -434,7 +432,8 @@ function createList<T extends {}>(
 					? keyOrIndex
 					: keys.indexOf(key)
 				if (index >= 0) keys.splice(index, 1)
-				invalidateEdges()
+				node.sources = null
+				node.sourcesTail = null
 				propagate(node as unknown as SinkNode)
 				node.flags |= FLAG_DIRTY
 				if (batchDepth === 0) flush()

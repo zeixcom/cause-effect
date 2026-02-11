@@ -46,7 +46,6 @@ Nodes are composed from field groups rather than using class inheritance:
 
 | Node | Composed From | Role |
 |------|---------------|------|
-| `RefNode<T>` | SourceFields | Source only |
 | `StateNode<T>` | SourceFields + OptionsFields | Source only |
 | `MemoNode<T>` | SourceFields + OptionsFields + SinkFields + `error` | Source + Sink |
 | `TaskNode<T>` | SourceFields + OptionsFields + SinkFields + AsyncFields | Source + Sink |
@@ -78,7 +77,7 @@ Before a sink recomputes, the engine sets `activeSink = node`, ensuring all `.ge
 
 After a sink finishes recomputing, `trimSources()` removes any edges beyond `sourcesTail` — these are dependencies from the previous execution that were not accessed this time. This is how the graph adapts to conditional dependencies.
 
-`unlink()` removes an edge from the source's sink list. If the source's sink list becomes empty and the source has a `stop` callback, that callback is invoked — this is how lazy resources (Ref, Sensor, watched Store/List) are deallocated when no longer observed.
+`unlink()` removes an edge from the source's sink list. If the source's sink list becomes empty and the source has a `stop` callback, that callback is invoked — this is how lazy resources (Sensor, SourceCollection, watched Store/List) are deallocated when no longer observed.
 
 ### Dependency Tracking Opt-Out: `untrack(fn)`
 
@@ -175,23 +174,18 @@ A mutable value container. The simplest signal type — `get()` links and return
 
 `update(fn)` is sugar for `set(fn(get()))` with validation.
 
-### Ref (`src/nodes/ref.ts`)
-
-**Graph node**: `RefNode<T>` (source only)
-
-A read-only reference to an external object. The value never changes, but the `start` callback sets up observation (e.g., MutationObserver) that calls `notify()` when the object's properties change. `notify()` walks the sink list and propagates, like `setState` but without changing the value.
-
-**Lazy lifecycle**: The `start` callback is invoked on first sink attachment. The returned cleanup is stored as `node.stop` and called when the last sink detaches (via `unlink()`).
-
 ### Sensor (`src/nodes/sensor.ts`)
 
 **Graph node**: `StateNode<T>` (source only)
 
-Like Ref, but the `start` callback receives a `set` function that updates the node's value via `setState()`. This makes sensors suitable for continuous input streams (mouse position, resize events).
+A read-only signal that tracks external input. The `start` callback receives a `set` function that updates the node's value via `setState()`. Sensors cover two patterns:
 
-The value starts undefined. Reading a sensor before its `start` callback has called `set()` throws `UnsetSignalValueError`.
+1. **Tracking external values** (default): Receives replacement values from events (mouse position, resize events). Equality checking (`Object.is` by default) prevents unnecessary propagation.
+2. **Observing mutable objects** (with `SKIP_EQUALITY`): Holds a stable reference to a mutable object (DOM element, Map, Set). `set(sameRef)` with `equals: SKIP_EQUALITY` always propagates, notifying consumers that the object's internals have changed.
 
-**Lazy lifecycle**: Same as Ref — `start` on first sink, `stop` on last sink removal.
+The value starts undefined unless `options.value` is provided. Reading a sensor before its `start` callback has called `set()` (and without `options.value`) throws `UnsetSignalValueError`.
+
+**Lazy lifecycle**: The `start` callback is invoked on first sink attachment. The returned cleanup is stored as `node.stop` and called when the last sink detaches (via `unlink()`).
 
 ### Memo (`src/nodes/memo.ts`)
 
@@ -235,7 +229,7 @@ A reactive object where each property is its own signal. Properties are automati
 
 **Diff-based updates**: `store.set(newObj)` diffs the new object against the current state, applying only the granular changes to child signals. This preserves identity of unchanged child signals and their downstream edges.
 
-**Watched lifecycle**: An optional `watched` callback in options provides lazy resource allocation, following the same pattern as Ref/Sensor — activated on first sink, cleaned up when the last sink detaches.
+**Watched lifecycle**: An optional `watched` callback in options provides lazy resource allocation, following the same pattern as Sensor — activated on first sink, cleaned up when the last sink detaches.
 
 ### List (`src/nodes/list.ts`)
 
@@ -267,7 +261,7 @@ A read-only derived transformation of a List or another Collection. Each source 
 
 1. **Store/List initialization clears `flags` to 0 (clean) after setup, but Collection keeps `FLAG_DIRTY`**. Store and List can do this because their mutation methods explicitly call `propagate()` + `invalidateEdges()`. Collection must start dirty because it passively observes its source and needs `refresh()` to establish the source edge. This asymmetry is intentional but could be confusing — would it be clearer if all composite nodes started `FLAG_DIRTY` and always went through `refresh()` on first access?
 
-2. **Sensor uses `StateNode` rather than `RefNode` with a `stop` field**. Both Ref and Sensor support lazy lifecycle via `stop`, but `stop` is defined on `SourceFields` (available to all source nodes including `StateNode`). Meanwhile, State signals created via `createState()` never use `stop`. This means `StateNode` carries an unused optional `stop` field when used for State. Should `stop` be separated into its own mixin to make the field usage more explicit?
+2. **`StateNode` carries an unused optional `stop` field when used for State signals**. `stop` is defined on `SourceFields` (available to all source nodes including `StateNode`) because Sensors need it for lazy lifecycle. State signals created via `createState()` never use `stop`. Should `stop` be separated into its own mixin to make the field usage more explicit? (Note: `RefNode` was removed in v0.18.0 — the mutable-object observation pattern is now handled by `createSensor` with `SKIP_EQUALITY`.)
 
 3. **`EffectNode.fn` is typed as `EffectCallback` but set to `undefined` on dispose** (via `node.fn = undefined as unknown as EffectCallback`). This cast is needed because the node type doesn't model the disposed state. A `fn: EffectCallback | undefined` type would be more accurate but would require null checks elsewhere.
 

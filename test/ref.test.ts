@@ -1,5 +1,10 @@
 import { describe, expect, mock, test } from 'bun:test'
-import { createEffect, createRef, isMemo, isRef } from '../next.ts'
+import {
+	createEffect,
+	createSensor,
+	isSensor,
+	SKIP_EQUALITY,
+} from '../index.ts'
 
 /* === Utility Functions === */
 
@@ -7,53 +12,75 @@ const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
 /* === Tests === */
 
-describe('Ref', () => {
-	describe('createRef', () => {
+describe('Sensor (mutable object observation pattern)', () => {
+	describe('createSensor with SKIP_EQUALITY', () => {
 		test('should return the reference value from get()', () => {
 			const obj = { name: 'test' }
-			const ref = createRef(obj, () => () => {})
+			const sensor = createSensor<typeof obj>(
+				set => {
+					set(obj)
+					return () => {}
+				},
+				{ value: obj, equals: SKIP_EQUALITY },
+			)
 
 			let received: typeof obj | undefined
 			const dispose = createEffect(() => {
-				received = ref.get()
+				received = sensor.get()
 			})
 			expect(received).toBe(obj)
 			dispose()
 		})
 
-		test('should have Symbol.toStringTag of "Ref"', () => {
-			const ref = createRef({ x: 1 }, () => () => {})
-			expect(ref[Symbol.toStringTag]).toBe('Ref')
+		test('should have Symbol.toStringTag of "Sensor"', () => {
+			const sensor = createSensor<{ x: number }>(
+				set => {
+					set({ x: 1 })
+					return () => {}
+				},
+				{ equals: SKIP_EQUALITY },
+			)
+			expect(sensor[Symbol.toStringTag]).toBe('Sensor')
+		})
+
+		test('should be identified by isSensor', () => {
+			const sensor = createSensor<{ x: number }>(
+				set => {
+					set({ x: 1 })
+					return () => {}
+				},
+				{ equals: SKIP_EQUALITY },
+			)
+			expect(isSensor(sensor)).toBe(true)
 		})
 	})
 
-	describe('isRef', () => {
-		test('should identify ref signals', () => {
-			expect(isRef(createRef({ x: 1 }, () => () => {}))).toBe(true)
-		})
-
-		test('should return false for non-ref values', () => {
-			expect(isRef(42)).toBe(false)
-			expect(isRef(null)).toBe(false)
-			expect(isRef({})).toBe(false)
-			expect(isMemo(createRef({ x: 1 }, () => () => {}))).toBe(false)
+	describe('SKIP_EQUALITY', () => {
+		test('should always return false', () => {
+			expect(SKIP_EQUALITY()).toBe(false)
+			// biome-ignore lint/suspicious/noExplicitAny: testing with arbitrary values
+			expect((SKIP_EQUALITY as any)(1, 1)).toBe(false)
 		})
 	})
 
-	describe('notify', () => {
-		test('should re-run effects when notify is called', () => {
+	describe('notify via set() with same reference', () => {
+		test('should re-run effects when set is called with same reference', () => {
 			const obj = { status: 'offline' }
-			let notifyFn!: () => void
+			let setFn!: (next: typeof obj) => void
 
-			const ref = createRef(obj, notify => {
-				notifyFn = notify
-				return () => {}
-			})
+			const sensor = createSensor<typeof obj>(
+				set => {
+					setFn = set
+					set(obj)
+					return () => {}
+				},
+				{ equals: SKIP_EQUALITY },
+			)
 
 			let effectCount = 0
 			let lastStatus = ''
 			createEffect(() => {
-				lastStatus = ref.get().status
+				lastStatus = sensor.get().status
 				effectCount++
 			})
 
@@ -61,55 +88,63 @@ describe('Ref', () => {
 			expect(lastStatus).toBe('offline')
 
 			obj.status = 'online'
-			expect(effectCount).toBe(1) // no notify yet
+			expect(effectCount).toBe(1) // no set yet
 
-			notifyFn()
+			setFn(obj) // same reference, but SKIP_EQUALITY ensures propagation
 			expect(effectCount).toBe(2)
 			expect(lastStatus).toBe('online')
 		})
 
-		test('should trigger multiple effect runs on multiple notifies', () => {
+		test('should trigger multiple effect runs on multiple set calls', () => {
 			const obj = { size: 100 }
-			let notifyFn!: () => void
+			let setFn!: (next: typeof obj) => void
 
-			const ref = createRef(obj, notify => {
-				notifyFn = notify
-				return () => {}
-			})
+			const sensor = createSensor<typeof obj>(
+				set => {
+					setFn = set
+					set(obj)
+					return () => {}
+				},
+				{ equals: SKIP_EQUALITY },
+			)
 
 			const callback = mock(() => {})
 			createEffect(() => {
-				ref.get()
+				sensor.get()
 				callback()
 			})
 
 			expect(callback).toHaveBeenCalledTimes(1)
 
-			notifyFn()
+			setFn(obj)
 			expect(callback).toHaveBeenCalledTimes(2)
 
-			notifyFn()
+			setFn(obj)
 			expect(callback).toHaveBeenCalledTimes(3)
 		})
 
 		test('should notify multiple effects', () => {
 			const obj = { connected: false }
-			let notifyFn!: () => void
+			let setFn!: (next: typeof obj) => void
 
-			const ref = createRef(obj, notify => {
-				notifyFn = notify
-				return () => {}
-			})
+			const sensor = createSensor<typeof obj>(
+				set => {
+					setFn = set
+					set(obj)
+					return () => {}
+				},
+				{ equals: SKIP_EQUALITY },
+			)
 
 			const mock1 = mock(() => {})
 			const mock2 = mock(() => {})
 
 			createEffect(() => {
-				ref.get()
+				sensor.get()
 				mock1()
 			})
 			createEffect(() => {
-				ref.get()
+				sensor.get()
 				mock2()
 			})
 
@@ -117,7 +152,7 @@ describe('Ref', () => {
 			expect(mock2).toHaveBeenCalledTimes(1)
 
 			obj.connected = true
-			notifyFn()
+			setFn(obj)
 
 			expect(mock1).toHaveBeenCalledTimes(2)
 			expect(mock2).toHaveBeenCalledTimes(2)
@@ -128,17 +163,22 @@ describe('Ref', () => {
 		test('should only call start when first effect subscribes', async () => {
 			let counter = 0
 			let intervalId: Timer | undefined
+			const dateObj = new Date()
 
-			const ref = createRef(new Date(), notify => {
-				intervalId = setInterval(() => {
-					counter++
-					notify()
-				}, 10)
-				return () => {
-					clearInterval(intervalId)
-					intervalId = undefined
-				}
-			})
+			const sensor = createSensor<Date>(
+				set => {
+					set(dateObj)
+					intervalId = setInterval(() => {
+						counter++
+						set(dateObj) // same reference, triggers via SKIP_EQUALITY
+					}, 10)
+					return () => {
+						clearInterval(intervalId)
+						intervalId = undefined
+					}
+				},
+				{ value: dateObj, equals: SKIP_EQUALITY },
+			)
 
 			// No subscribers yet
 			expect(counter).toBe(0)
@@ -148,7 +188,7 @@ describe('Ref', () => {
 
 			// First subscriber activates
 			const dispose = createEffect(() => {
-				ref.get()
+				sensor.get()
 			})
 
 			await wait(50)
@@ -167,21 +207,26 @@ describe('Ref', () => {
 		test('should call start only once for multiple subscribers', () => {
 			let startCount = 0
 			let stopCount = 0
+			const obj = { x: 1 }
 
-			const ref = createRef({ x: 1 }, () => {
-				startCount++
-				return () => {
-					stopCount++
-				}
-			})
+			const sensor = createSensor<typeof obj>(
+				set => {
+					startCount++
+					set(obj)
+					return () => {
+						stopCount++
+					}
+				},
+				{ value: obj, equals: SKIP_EQUALITY },
+			)
 
 			const dispose1 = createEffect(() => {
-				ref.get()
+				sensor.get()
 			})
 			expect(startCount).toBe(1)
 
 			const dispose2 = createEffect(() => {
-				ref.get()
+				sensor.get()
 			})
 			expect(startCount).toBe(1)
 
@@ -195,16 +240,21 @@ describe('Ref', () => {
 		test('should reactivate after all subscribers leave and new one arrives', () => {
 			let startCount = 0
 			let stopCount = 0
+			const obj = { x: 1 }
 
-			const ref = createRef({ x: 1 }, () => {
-				startCount++
-				return () => {
-					stopCount++
-				}
-			})
+			const sensor = createSensor<typeof obj>(
+				set => {
+					startCount++
+					set(obj)
+					return () => {
+						stopCount++
+					}
+				},
+				{ value: obj, equals: SKIP_EQUALITY },
+			)
 
 			const dispose1 = createEffect(() => {
-				ref.get()
+				sensor.get()
 			})
 			expect(startCount).toBe(1)
 
@@ -212,7 +262,7 @@ describe('Ref', () => {
 			expect(stopCount).toBe(1)
 
 			const dispose2 = createEffect(() => {
-				ref.get()
+				sensor.get()
 			})
 			expect(startCount).toBe(2)
 
@@ -221,31 +271,61 @@ describe('Ref', () => {
 		})
 	})
 
-	describe('Input Validation', () => {
-		test('should throw NullishSignalValueError for null or undefined value', () => {
-			expect(() => {
-				// @ts-expect-error - Testing invalid input
-				createRef(null, () => () => {})
-			}).toThrow('[Ref] Signal value cannot be null or undefined')
+	describe('options.value (initial value)', () => {
+		test('should not throw UnsetSignalValueError when options.value is provided', () => {
+			const obj = { x: 1 }
+			const sensor = createSensor<typeof obj>(
+				() => {
+					// start callback does NOT call set() immediately
+					return () => {}
+				},
+				{ value: obj, equals: SKIP_EQUALITY },
+			)
 
-			expect(() => {
-				// @ts-expect-error - Testing invalid input
-				createRef(undefined, () => () => {})
-			}).toThrow('[Ref] Signal value cannot be null or undefined')
+			let received: typeof obj | undefined
+			const dispose = createEffect(() => {
+				received = sensor.get()
+			})
+			expect(received).toBe(obj)
+			dispose()
 		})
+	})
 
+	describe('Input Validation', () => {
 		test('should throw InvalidCallbackError for non-function start', () => {
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
-				createRef({ x: 1 }, null)
-			}).toThrow('[Ref] Callback null is invalid')
+				createSensor(null)
+			}).toThrow('[Sensor] Callback null is invalid')
 		})
 
 		test('should throw InvalidCallbackError for async start callback', () => {
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
-				createRef({ x: 1 }, async () => () => {})
+				createSensor(async () => () => {})
 			}).toThrow()
+		})
+
+		test('should validate values passed through set() even with SKIP_EQUALITY', () => {
+			let setFn!: (next: unknown) => void
+
+			const sensor = createSensor<{ x: number }>(
+				set => {
+					setFn = set as (next: unknown) => void
+					set({ x: 1 })
+					return () => {}
+				},
+				{ equals: SKIP_EQUALITY },
+			)
+
+			createEffect(() => {
+				sensor.get()
+			})
+
+			expect(() => {
+				// biome-ignore lint/suspicious/noExplicitAny: testing invalid input
+				setFn(null as any)
+			}).toThrow('[Sensor] Signal value cannot be null or undefined')
 		})
 	})
 })

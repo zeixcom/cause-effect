@@ -25,26 +25,42 @@ type Sensor<T extends {}> = {
 type SensorCallback<T extends {}> = (set: (next: T) => void) => Cleanup;
 /**
  * Creates a sensor that tracks external input and updates a state value as long as it is active.
- * Sensors get activated when they are first accessed and deactivated when they are no longer needed.
+ * Sensors get activated when they are first accessed by an effect and deactivated when they are
+ * no longer watched. This lazy activation pattern ensures resources are only consumed when needed.
  *
  * @since 0.18.0
  * @template T - The type of value stored in the state
  * @param start - The callback function that starts the sensor and returns a cleanup function.
  * @param options - Optional options for the sensor.
- * @returns The sensor object.
+ * @param options.value - Optional initial value. Avoids `UnsetSignalValueError` on first read
+ *   before the start callback fires. Essential for the mutable-object observation pattern.
+ * @param options.equals - Optional equality function. Defaults to `Object.is`. Use `SKIP_EQUALITY`
+ *   for mutable objects where the reference stays the same but internal state changes.
+ * @param options.guard - Optional type guard to validate values.
+ * @returns A read-only sensor signal.
  *
- * @example
+ * @example Tracking external values
  * ```ts
  * const mousePos = createSensor<{ x: number; y: number }>((set) => {
  *   const handler = (e: MouseEvent) => {
  *     set({ x: e.clientX, y: e.clientY });
  *   };
- *
  *   window.addEventListener('mousemove', handler);
- *   return () => {
- *     window.removeEventListener('mousemove', handler);
- *   };
+ *   return () => window.removeEventListener('mousemove', handler);
  * });
+ * ```
+ *
+ * @example Observing a mutable object
+ * ```ts
+ * import { createSensor, SKIP_EQUALITY } from 'cause-effect';
+ *
+ * const el = createSensor<HTMLElement>((set) => {
+ *   const node = document.getElementById('box')!;
+ *   set(node);
+ *   const obs = new MutationObserver(() => set(node));
+ *   obs.observe(node, { attributes: true });
+ *   return () => obs.disconnect();
+ * }, { value: node, equals: SKIP_EQUALITY });
  * ```
  */
 declare function createSensor<T extends {}>(start: SensorCallback<T>, options?: ComputedOptions<T>): Sensor<T>;

@@ -182,12 +182,6 @@ function createStore<T extends UnknownRecord>(
 		error: undefined,
 	}
 
-	// Force edge re-establishment on next get() after structural changes
-	const invalidateEdges = () => {
-		node.sources = null
-		node.sourcesTail = null
-	}
-
 	const applyChanges = (changes: DiffResult): boolean => {
 		let structural = false
 
@@ -221,7 +215,10 @@ function createStore<T extends UnknownRecord>(
 			structural = true
 		}
 
-		if (structural) invalidateEdges()
+		if (structural) {
+			node.sources = null
+			node.sourcesTail = null
+		}
 
 		return changes.changed
 	}
@@ -307,7 +304,8 @@ function createStore<T extends UnknownRecord>(
 			if (signals.has(key))
 				throw new DuplicateKeyError(TYPE_STORE, key, value)
 			addSignal(key, value)
-			invalidateEdges()
+			node.sources = null
+			node.sourcesTail = null
 			propagate(node as unknown as SinkNode)
 			node.flags |= FLAG_DIRTY
 			if (batchDepth === 0) flush()
@@ -317,7 +315,8 @@ function createStore<T extends UnknownRecord>(
 		remove(key: string) {
 			const ok = signals.delete(key)
 			if (ok) {
-				invalidateEdges()
+				node.sources = null
+				node.sourcesTail = null
 				propagate(node as unknown as SinkNode)
 				node.flags |= FLAG_DIRTY
 				if (batchDepth === 0) flush()

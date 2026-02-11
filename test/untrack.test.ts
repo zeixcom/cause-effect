@@ -5,7 +5,7 @@ import {
 	createScope,
 	createState,
 	untrack,
-} from '../next.ts'
+} from '../index.ts'
 
 /* === Tests === */
 

@@ -7,7 +7,7 @@ import {
 	createTask,
 	match,
 	RequiredOwnerError,
-} from '../next.ts'
+} from '../index.ts'
 
 /* === Utility Functions === */
 

@@ -6,7 +6,7 @@ import {
 	createStore,
 	isList,
 	isStore,
-} from '../next.ts'
+} from '../index.ts'
 
 describe('Store', () => {
 	describe('createStore', () => {

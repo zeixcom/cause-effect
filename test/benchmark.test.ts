@@ -1,11 +1,10 @@
 import { describe, expect, mock, test } from 'bun:test'
-import { batch, createEffect, Memo, State } from '../index.ts'
 import {
 	batch as batchNext,
 	createEffect as createEffectNext,
 	createMemo,
 	createState,
-} from '../next.ts'
+} from '../index.ts'
 import { Counter, makeGraph, runGraph } from './util/dependency-graph'
 import type { Computed, ReactiveFramework } from './util/reactive-framework'
 
@@ -19,26 +18,6 @@ const busy = () => {
 }
 
 /* === Framework Adapters === */
-
-const v17: ReactiveFramework = {
-	name: 'v0.17.3 (classes)',
-	// @ts-expect-error ReactiveFramework doesn't have non-nullable signals
-	signal: <T extends {}>(initialValue: T) => {
-		const s = new State<T>(initialValue)
-		return {
-			write: (v: T) => s.set(v),
-			read: () => s.get(),
-		}
-	},
-	// @ts-expect-error ReactiveFramework doesn't have non-nullable signals
-	computed: <T extends {}>(fn: () => T) => {
-		const c = new Memo(fn)
-		return { read: () => c.get() }
-	},
-	effect: (fn: () => undefined) => createEffect(fn),
-	withBatch: fn => batch(fn),
-	withBuild: <T>(fn: () => T) => fn(),
-}
 
 const v18: ReactiveFramework = {
 	name: 'v0.18.0 (graph)',
@@ -75,7 +54,7 @@ function makeConfig() {
 
 /* === Parameterized Test Suite === */
 
-for (const framework of [v17, v18]) {
+for (const framework of [v18]) {
 	const name = framework.name
 
 	describe(`Basic tests [${name}]`, () => {

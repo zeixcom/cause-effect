@@ -7,36 +7,36 @@ Cause & Effect is a reactive state management library for JavaScript/TypeScript 
 ## Core Architecture
 
 ### Graph Engine (`src/graph.ts`)
-- **Nodes**: RefNode (source-only), StateNode (source + equality), MemoNode (source + sink), TaskNode (source + sink + async), EffectNode (sink + owner)
+- **Nodes**: StateNode (source + equality), MemoNode (source + sink), TaskNode (source + sink + async), EffectNode (sink + owner)
 - **Edges**: Doubly-linked list connecting sources to sinks
 - **Operations**: `link()` creates edges, `propagate()` flags sinks dirty, `flush()` runs queued effects, `batch()` defers flushing
 - **Flags**: FLAG_CLEAN, FLAG_CHECK, FLAG_DIRTY, FLAG_RUNNING for efficient dirty checking
 
 ### Signal Types (all in `src/nodes/`)
 - **State** (`createState`): Mutable signals for values (`get`, `set`, `update`)
-- **Ref** (`createRef`): Read-only signals for external objects with lazy observation setup/teardown
-- **Sensor** (`createSensor`): Read-only signals for external input with automatic state updates
+- **Sensor** (`createSensor`): Read-only signals for external input with automatic state updates. Use `SKIP_EQUALITY` for mutable object observation.
 - **Memo** (`createMemo`): Synchronous derived computations with memoization and reducer capabilities
 - **Task** (`createTask`): Async derived computations with automatic AbortController cancellation
 - **Store** (`createStore`): Proxy-based reactive objects with per-property State/Store signals
 - **List** (`createList`): Reactive arrays with stable keys and per-item State signals
 - **Collection** (`createCollection`): Read-only derived collections with item-level Memo/Task signals
+- **SourceCollection** (`createSourceCollection`): Externally-driven collections with watched lifecycle
 - **Effect** (`createEffect`): Side effects that react to signal changes
 
 ## Key Files Structure
 
-- `src/graph.ts` - Core reactive engine (nodes, edges, link, propagate, flush, batch, errors)
+- `src/graph.ts` - Core reactive engine (nodes, edges, link, propagate, flush, batch)
+- `src/errors.ts` - Error classes and validation functions
 - `src/nodes/state.ts` - createState, isState, State type
-- `src/nodes/ref.ts` - createRef, RefCallback type
-- `src/nodes/sensor.ts` - createSensor, SensorCallback type
+- `src/nodes/sensor.ts` - createSensor, isSensor, SensorCallback type
 - `src/nodes/memo.ts` - createMemo, isMemo, Memo type
 - `src/nodes/task.ts` - createTask, isTask, Task type
 - `src/nodes/effect.ts` - createEffect, match, MatchHandlers type
 - `src/nodes/store.ts` - createStore, isStore, Store type, diff, isEqual
 - `src/nodes/list.ts` - createList, isList, List type
-- `src/nodes/collection.ts` - createCollection, isCollection, Collection type
+- `src/nodes/collection.ts` - createCollection, createSourceCollection, isCollection, Collection type
 - `src/util.ts` - Utility functions and type checks
-- `next.ts` - Entry point / main export file
+- `index.ts` - Entry point / main export file
 
 ## Coding Conventions
 
@@ -48,14 +48,14 @@ Cause & Effect is a reactive state management library for JavaScript/TypeScript 
 - JSDoc comments for all public APIs
 
 ### Naming Conventions
-- Factory functions: `create*` (e.g., `createState`, `createMemo`, `createEffect`, `createStore`, `createList`, `createCollection`)
-- Type predicates: `is*` (e.g., `isState`, `isMemo`, `isStore`, `isList`, `isCollection`)
+- Factory functions: `create*` (e.g., `createState`, `createMemo`, `createEffect`, `createStore`, `createList`, `createCollection`, `createSourceCollection`, `createSensor`)
+- Type predicates: `is*` (e.g., `isState`, `isMemo`, `isStore`, `isList`, `isCollection`, `isSensor`)
 - Type constants: `TYPE_*` for internal type tags
-- Callback types: `*Callback` suffix (MemoCallback, TaskCallback, EffectCallback, RefCallback, SensorCallback, CollectionCallback)
+- Callback types: `*Callback` suffix (MemoCallback, TaskCallback, EffectCallback, SensorCallback, CollectionCallback, SourceCollectionCallback)
 - Private variables: use descriptive names, no underscore prefix
 
 ### Error Handling
-- Error classes defined in `src/graph.ts`: CircularDependencyError, NullishSignalValueError, InvalidSignalValueError, InvalidCallbackError
+- Error classes defined in `src/errors.ts`: CircularDependencyError, NullishSignalValueError, InvalidSignalValueError, InvalidCallbackError, RequiredOwnerError, UnsetSignalValueError
 - `validateSignalValue()` and `validateCallback()` for input validation at public API boundaries
 - Optional `guard` function in SignalOptions for runtime type checking
 - AbortSignal for cancellation in async Tasks
@@ -73,7 +73,7 @@ Cause & Effect is a reactive state management library for JavaScript/TypeScript 
 - All signals have `.get()` for value access
 - Mutable signals (State) have `.set(value)` and `.update(fn)`
 - Store properties are automatically reactive signals via Proxy
-- Ref/Sensor use a start callback returning Cleanup (lazy activation)
+- Sensor/SourceCollection use a start callback returning Cleanup (lazy activation)
 - Store/List use optional `watched` callback in options returning Cleanup
 - Effects return a dispose function (Cleanup)
 
@@ -92,19 +92,21 @@ Cause & Effect is a reactive state management library for JavaScript/TypeScript 
 const count = createState(42)
 const name = createState('Alice')
 
-// Ref for external objects (returns Memo<T>)
-const el = createRef(document.getElementById('box'), (notify) => {
-  const obs = new MutationObserver(() => notify())
-  obs.observe(el.get(), { attributes: true })
-  return () => obs.disconnect()
-})
-
-// Sensor for external input (returns Memo<T>)
+// Sensor for external input
 const mouse = createSensor<{ x: number; y: number }>((set) => {
   const h = (e: MouseEvent) => set({ x: e.clientX, y: e.clientY })
   window.addEventListener('mousemove', h)
   return () => window.removeEventListener('mousemove', h)
 })
+
+// Sensor for mutable object observation (SKIP_EQUALITY)
+const element = createSensor<HTMLElement>((set) => {
+  const node = document.getElementById('box')!
+  set(node)
+  const obs = new MutationObserver(() => set(node))
+  obs.observe(node, { attributes: true })
+  return () => obs.disconnect()
+}, { value: node, equals: SKIP_EQUALITY })
 
 // Store for reactive objects
 const user = createStore({ name: 'Alice', age: 30 })
@@ -139,6 +141,13 @@ const enriched = createCollection(users, async (user, abort) => {
   const res = await fetch(`/api/${user.id}`, { signal: abort })
   return { ...user, details: await res.json() }
 })
+
+// SourceCollection for externally-driven data
+const feed = createSourceCollection<{ id: string; text: string }>([], (applyChanges) => {
+  const ws = new WebSocket('/feed')
+  ws.onmessage = (e) => applyChanges(JSON.parse(e.data))
+  return () => ws.close()
+}, { keyConfig: item => item.id })
 ```
 
 ### Reactivity
@@ -183,17 +192,17 @@ const count = createState(0, {
 ## Resource Management
 
 ```typescript
-// Ref: lazy observation of external objects
-const ref = createRef(externalObj, (notify) => {
-  // setup — called when first effect accesses ref
-  return () => { /* cleanup — called when last effect stops watching */ }
-})
-
 // Sensor: lazy external input tracking
 const sensor = createSensor<T>((set) => {
   // setup — call set(value) to update
-  return () => { /* cleanup */ }
+  return () => { /* cleanup — called when last effect stops watching */ }
 })
+
+// SourceCollection: lazy external data source
+const feed = createSourceCollection<T>(initialItems, (applyChanges) => {
+  // setup — call applyChanges(diffResult) on changes
+  return () => { /* cleanup */ }
+}, { keyConfig: item => item.id })
 
 // Store/List: optional watched callback
 const store = createStore(initialValue, {
@@ -204,13 +213,12 @@ const store = createStore(initialValue, {
 })
 
 // Scope for hierarchical cleanup
-const [result, dispose] = createScope((onCleanup) => {
+const dispose = createScope(() => {
   const state = createState(0)
   createEffect(() => console.log(state.get()))
-  onCleanup(() => console.log('scope disposed'))
-  return state
+  return () => console.log('scope disposed')
 })
-dispose() // cleans up effect and runs onCleanup
+dispose() // cleans up effect and runs the returned cleanup
 ```
 
 ## Build System

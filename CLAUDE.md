@@ -14,13 +14,13 @@ Cause & Effect is a reactive state management library that implements the signal
 
 Think of signals as **observable cells** in a spreadsheet:
 - **State signals** are input cells for primitive values and objects
-- **Ref signals** are read-only cells that reference external objects (DOM, Map, Set) requiring manual notification
-- **Sensor signals** are read-only cells that track external input (mouse position, resize, etc.) and update automatically
+- **Sensor signals** are read-only cells that track external input (mouse position, resize, mutable objects) and update lazily
 - **Memo signals** are formula cells that automatically recalculate when dependencies change
 - **Task signals** are async formula cells with abort semantics and pending state
 - **Store signals** are structured tables where individual columns (properties) are reactive
 - **List signals** are tables with stable row IDs that survive sorting and reordering
 - **Collection signals** are read-only derived tables with item-level memoization
+- **SourceCollection signals** are externally-fed tables with a watched lifecycle (WebSocket, SSE)
 - **Effects** are event handlers that trigger side effects when cells change
 
 ## Architectural Deep Dive
@@ -37,9 +37,8 @@ The core of reactivity lies in the linked graph system (`src/graph.ts`):
 ### Node Types in the Graph
 
 ```
-RefNode<T>    — source-only (Ref, Sensor, Store, List, Collection)
 StateNode<T>  — source-only with equality + guard (State, Sensor)
-MemoNode<T>   — source + sink (Memo)
+MemoNode<T>   — source + sink (Memo, Store, List, Collection)
 TaskNode<T>   — source + sink + async (Task)
 EffectNode    — sink + owner (Effect)
 Scope         — owner-only (createScope)
@@ -87,24 +86,29 @@ The generic constraint `T extends {}` is crucial - it excludes `null` and `undef
 
 ### Collection Architecture
 
-Collections are derived from Lists or other Collections:
-
+**Derived Collections** (`createCollection`): Transformed from Lists or other Collections
 - Created via `createCollection(source, callback)` or `source.deriveCollection(callback)`
 - Item-level memoization: sync callbacks use `createMemo`, async callbacks use `createTask`
-- Structural changes tracked via an internal `createMemo` that reads `source.keys()`
+- Structural changes tracked via an internal `MemoNode` that reads `source.keys()`
 - Chainable for data pipelines
+
+**Source Collections** (`createSourceCollection`): Externally-driven collections with watched lifecycle
+- Created via `createSourceCollection(initialValue, start, options?)`
+- The `start` callback receives an `applyChanges(diffResult)` function for granular add/change/remove operations
+- Same `Collection` interface as derived collections (`.get()`, `.byKey()`, `.keys()`, `.deriveCollection()`)
+- Lazy activation: `start` callback invoked on first effect access, cleanup when unwatched
 
 ### Store and List Architecture
 
 **Store signals** (`createStore`): Transform objects into reactive data structures
 - Each property becomes its own State signal (primitives) or nested Store (objects) via Proxy
-- Uses `RefNode` for structural reactivity (add/remove properties)
+- Uses an internal `MemoNode` for structural reactivity (add/remove properties)
 - `diff()` computes granular changes when calling `set()`
 - Dynamic property addition/removal with `add()`/`remove()`
 
 **List signals** (`createList`): Arrays with stable keys and reactive items
 - Each item becomes a `State` signal in a `Map<string, State<T>>`
-- Uses `RefNode` for structural reactivity
+- Uses an internal `MemoNode` for structural reactivity
 - Configurable key generation: auto-increment, string prefix, or function
 - Provides `byKey()`, `keyAt()`, `indexOfKey()` for key-based access
 - `deriveCollection()` creates derived Collections
@@ -120,22 +124,31 @@ Computed signals implement smart memoization:
 
 ## Resource Management with Watch Callbacks
 
-Ref and Sensor signals use a **start callback** pattern for lazy resource management. Resources are allocated only when a signal is first accessed by an effect and automatically cleaned up when no effects are watching:
+Sensor and SourceCollection signals use a **start callback** pattern for lazy resource management. Resources are allocated only when a signal is first accessed by an effect and automatically cleaned up when no effects are watching:
 
 ```typescript
-// Ref: observe an external object
-const element = createRef(document.getElementById('status'), (notify) => {
-  const observer = new MutationObserver(() => notify())
-  observer.observe(element.get(), { attributes: true })
-  return () => observer.disconnect() // cleanup when unwatched
-})
-
 // Sensor: track external input with state updates
 const mousePos = createSensor<{ x: number; y: number }>((set) => {
   const handler = (e: MouseEvent) => set({ x: e.clientX, y: e.clientY })
   window.addEventListener('mousemove', handler)
   return () => window.removeEventListener('mousemove', handler)
 })
+
+// Sensor: observe a mutable external object (SKIP_EQUALITY)
+const element = createSensor<HTMLElement>((set) => {
+  const node = document.getElementById('status')!
+  set(node)
+  const observer = new MutationObserver(() => set(node))
+  observer.observe(node, { attributes: true })
+  return () => observer.disconnect() // cleanup when unwatched
+}, { value: node, equals: SKIP_EQUALITY })
+
+// SourceCollection: receive keyed data from external source
+const feed = createSourceCollection<{ id: string; text: string }>([], (applyChanges) => {
+  const es = new EventSource('/feed')
+  es.onmessage = (e) => applyChanges(JSON.parse(e.data))
+  return () => es.close()
+}, { keyConfig: item => item.id })
 ```
 
 Store and List signals support an optional `watched` callback in their options:
@@ -171,30 +184,29 @@ const count = createState(0)
 const theme = createState<'light' | 'dark'>('light')
 ```
 
-**Ref (`createRef`)**:
-- External objects that change outside the reactive system
-- DOM elements observed via MutationObserver, IntersectionObserver, etc.
-- Returns a `Memo<T>` (read-only signal)
-
-```typescript
-const el = createRef(document.getElementById('box'), (notify) => {
-  const observer = new IntersectionObserver(() => notify())
-  observer.observe(el.get())
-  return () => observer.disconnect()
-})
-```
-
 **Sensor (`createSensor`)**:
 - External input streams (mouse position, window size, media queries)
-- Returns a `Memo<T>` (read-only signal) that starts undefined until first `set()`
+- External mutable objects observed via MutationObserver, IntersectionObserver, etc.
+- Returns a read-only signal that activates lazily and tears down when unwatched
+- Starts undefined until first `set()` unless `options.value` is provided
 
 ```typescript
+// Tracking external values (default equality)
 const windowSize = createSensor<{ w: number; h: number }>((set) => {
   const update = () => set({ w: innerWidth, h: innerHeight })
   update()
   window.addEventListener('resize', update)
   return () => window.removeEventListener('resize', update)
 })
+
+// Observing a mutable object (SKIP_EQUALITY)
+const el = createSensor<HTMLElement>((set) => {
+  const node = document.getElementById('box')!
+  set(node)
+  const obs = new MutationObserver(() => set(node))
+  obs.observe(node, { attributes: true })
+  return () => obs.disconnect()
+}, { value: node, equals: SKIP_EQUALITY })
 ```
 
 **Store (`createStore`)**:
@@ -232,6 +244,19 @@ const enriched = createCollection(users, async (user, abort) => {
 const processed = todoList
   .deriveCollection(todo => ({ ...todo, urgent: todo.priority > 8 }))
   .deriveCollection(todo => todo.urgent ? `URGENT: ${todo.text}` : todo.text)
+```
+
+**SourceCollection (`createSourceCollection`)**:
+- Externally-driven keyed collections (WebSocket streams, SSE, external data feeds)
+- Same `Collection` interface — `.get()`, `.byKey()`, `.keys()`, `.deriveCollection()`
+- Watched lifecycle: activates on first effect access, tears down when unwatched
+
+```typescript
+const feed = createSourceCollection<{ id: string; text: string }>([], (applyChanges) => {
+  const ws = new WebSocket('/feed')
+  ws.onmessage = (e) => applyChanges(JSON.parse(e.data))
+  return () => ws.close()
+}, { keyConfig: item => item.id })
 ```
 
 **Memo (`createMemo`)**:

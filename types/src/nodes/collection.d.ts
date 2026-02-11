@@ -1,5 +1,5 @@
-import { type Signal } from '../graph';
-import { type List } from './list';
+import { type Cleanup, type Signal } from '../graph';
+import { type DiffResult, type KeyConfig, type List } from './list';
 type CollectionSource<T extends {}> = List<T> | Collection<T>;
 type CollectionCallback<T extends {}, U extends {}> = ((sourceValue: U) => T) | ((sourceValue: U, abort: AbortSignal) => Promise<T>);
 type Collection<T extends {}> = {
@@ -16,6 +16,11 @@ type Collection<T extends {}> = {
     deriveCollection<R extends {}>(callback: (sourceValue: T, abort: AbortSignal) => Promise<R>): Collection<R>;
     readonly length: number;
 };
+type SourceCollectionOptions<T extends {}> = {
+    keyConfig?: KeyConfig<T>;
+    createItem?: (key: string, value: T) => Signal<T>;
+};
+type SourceCollectionCallback = (applyChanges: (changes: DiffResult) => void) => Cleanup;
 /**
  * Creates a derived Collection from a List or another Collection with item-level memoization.
  * Sync callbacks use createMemo, async callbacks use createTask.
@@ -28,6 +33,18 @@ type Collection<T extends {}> = {
  */
 declare function createCollection<T extends {}, U extends {}>(source: CollectionSource<U>, callback: (sourceValue: U) => T): Collection<T>;
 declare function createCollection<T extends {}, U extends {}>(source: CollectionSource<U>, callback: (sourceValue: U, abort: AbortSignal) => Promise<T>): Collection<T>;
+/**
+ * Creates an externally-driven Collection with a watched lifecycle.
+ * Items are managed by the start callback via `applyChanges(diffResult)`.
+ * The collection activates when first accessed by an effect and deactivates when no longer watched.
+ *
+ * @since 0.18.0
+ * @param initialValue - Initial array of items
+ * @param start - Callback invoked when the collection starts being watched, receives applyChanges helper
+ * @param options - Optional configuration for key generation and item signal creation
+ * @returns A read-only Collection signal
+ */
+declare function createSourceCollection<T extends {}>(initialValue: T[], start: SourceCollectionCallback, options?: SourceCollectionOptions<T>): Collection<T>;
 /**
  * Checks if a value is a Collection signal.
  *
@@ -44,4 +61,4 @@ declare function isCollection<T extends {}>(value: unknown): value is Collection
  * @returns True if the value is a List or Collection
  */
 declare function isCollectionSource<T extends {}>(value: unknown): value is CollectionSource<T>;
-export { createCollection, isCollection, isCollectionSource, type Collection, type CollectionCallback, type CollectionSource, };
+export { createCollection, createSourceCollection, isCollection, isCollectionSource, type Collection, type CollectionCallback, type CollectionSource, type SourceCollectionCallback, type SourceCollectionOptions, };

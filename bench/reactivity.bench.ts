@@ -1,53 +1,22 @@
 import { bench, group, run } from 'mitata'
 import {
 	batch,
-	createEffect,
-	createStore as createStoreV17,
-	DerivedCollection,
-	List,
-	Memo,
-	Ref,
-	State,
-	Task,
-} from '../index.ts'
-import {
-	batch as batchNext,
 	createCollection,
-	createEffect as createEffectNext,
+	createEffect,
 	createList,
 	createMemo,
-	createRef,
 	createSensor,
 	createState,
 	createStore,
 	createTask,
-} from '../next.ts'
+	SKIP_EQUALITY,
+} from '../index.ts'
 import type { ReactiveFramework } from '../test/util/reactive-framework'
 
-/* === Framework Adapters === */
+/* === Framework Adapter === */
 
-const v17: ReactiveFramework = {
-	name: 'v0.17.3 (classes)',
-	// @ts-expect-error ReactiveFramework doesn't have non-nullable signals
-	signal: <T extends {}>(initialValue: T) => {
-		const s = new State<T>(initialValue)
-		return {
-			write: (v: T) => s.set(v),
-			read: () => s.get(),
-		}
-	},
-	// @ts-expect-error ReactiveFramework doesn't have non-nullable signals
-	computed: <T extends {}>(fn: () => T) => {
-		const c = new Memo(fn)
-		return { read: () => c.get() }
-	},
-	effect: (fn: () => undefined) => createEffect(fn),
-	withBatch: fn => batch(fn),
-	withBuild: <T>(fn: () => T) => fn(),
-}
-
-const v18: ReactiveFramework = {
-	name: 'v0.18.0 (graph)',
+const framework: ReactiveFramework = {
+	name: 'cause-effect',
 	// @ts-expect-error ReactiveFramework doesn't have non-nullable signals
 	signal: <T extends {}>(initialValue: T) => {
 		const s = createState(initialValue)
@@ -59,9 +28,9 @@ const v18: ReactiveFramework = {
 		return { read: c.get }
 	},
 	effect: (fn: () => undefined) => {
-		createEffectNext(() => fn())
+		createEffect(() => fn())
 	},
-	withBatch: fn => batchNext(fn),
+	withBatch: fn => batch(fn),
 	withBuild: <T>(fn: () => T) => fn(),
 }
 
@@ -379,52 +348,35 @@ const kairoBenchmarks = [
 
 for (const [name, setup] of kairoBenchmarks) {
 	group(`Kairo: ${name}`, () => {
-		const runV17 = setup(v17 as ReactiveFramework)
-		const runV18 = setup(v18 as ReactiveFramework)
-		bench('v0.17.3', runV17)
-		bench('v0.18.0', runV18)
+		bench('cause-effect', setup(framework))
 	})
 }
 
 // CellX benchmarks
 for (const layers of [10]) {
 	group(`CellX ${layers} layers`, () => {
-		const runV17 = setupCellx(v17 as ReactiveFramework, layers)
-		const runV18 = setupCellx(v18 as ReactiveFramework, layers)
-		bench('v0.17.3', runV17)
-		bench('v0.18.0', runV18)
+		bench('cause-effect', setupCellx(framework, layers))
 	})
 }
 
 // $mol_wire benchmark
 group('$mol_wire', () => {
-	const runV17 = setupMolWire(v17 as ReactiveFramework)
-	const runV18 = setupMolWire(v18 as ReactiveFramework)
-	bench('v0.17.3', runV17)
-	bench('v0.18.0', runV18)
+	bench('cause-effect', setupMolWire(framework))
 })
 
 // Creation benchmarks
 group('Create 1k signals', () => {
-	bench('v0.17.3', benchCreateSignals(v17 as ReactiveFramework, 1_000))
-	bench('v0.18.0', benchCreateSignals(v18 as ReactiveFramework, 1_000))
+	bench('cause-effect', benchCreateSignals(framework, 1_000))
 })
 
 group('Create 1k computations', () => {
-	bench('v0.17.3', benchCreateComputations(v17 as ReactiveFramework, 1_000))
-	bench('v0.18.0', benchCreateComputations(v18 as ReactiveFramework, 1_000))
+	bench('cause-effect', benchCreateComputations(framework, 1_000))
 })
 
 /* === Task Benchmarks === */
 
 group('Create 100 tasks', () => {
-	bench('v0.17.3', () => {
-		const src = new State(0)
-		for (let i = 0; i < 100; i++) {
-			new Task(async () => src.get() + 1)
-		}
-	})
-	bench('v0.18.0', () => {
+	bench('cause-effect', () => {
 		const src = createState(0)
 		for (let i = 0; i < 100; i++) {
 			createTask(async () => src.get() + 1)
@@ -435,79 +387,32 @@ group('Create 100 tasks', () => {
 group('Task: resolve propagation', () => {
 	const wait = () => new Promise<void>(r => setTimeout(r, 0))
 
-	// v0.17.3: create task that resolves and triggers effect
-	const srcV17 = new State(1)
-	const taskV17 = new Task(async () => srcV17.get() * 2, {
-		initialValue: 0,
-	})
-	createEffect(() => {
-		taskV17.get()
-	})
-
-	// v0.18.0: same pattern
-	const srcV18 = createState(1)
-	const taskV18 = createTask(async () => srcV18.get() * 2, {
+	const src = createState(1)
+	const task = createTask(async () => src.get() * 2, {
 		value: 0,
 	})
-	createEffectNext(() => {
-		taskV18.get()
+	createEffect(() => {
+		task.get()
 	})
 
-	let i17 = 1
-	bench('v0.17.3', async () => {
-		batch(() => srcV17.set(++i17))
-		await wait()
-	})
-	let i18 = 1
-	bench('v0.18.0', async () => {
-		batchNext(() => srcV18.set(++i18))
+	let i = 1
+	bench('cause-effect', async () => {
+		batch(() => src.set(++i))
 		await wait()
 	})
 })
 
-/* === Ref Benchmarks === */
+/* === Sensor Benchmarks === */
 
-group('Ref: create + notify', () => {
-	bench('v0.17.3', () => {
-		const obj = { x: 0 }
-		const ref = new Ref(obj)
-		createEffect(() => {
-			ref.get()
-		})
-		for (let i = 0; i < 10; i++) {
-			obj.x = i
-			ref.notify()
-		}
-	})
-	bench('v0.18.0', () => {
-		const obj = { x: 0 }
-		let notifyFn: () => void
-		const ref = createRef(obj, notify => {
-			notifyFn = notify
-			return () => {}
-		})
-		createEffectNext(() => {
-			ref.get()
-		})
-		for (let i = 0; i < 10; i++) {
-			obj.x = i
-			// biome-ignore lint/style/noNonNullAssertion: assigned in start callback
-			notifyFn!()
-		}
-	})
-})
-
-/* === Sensor Benchmark (v0.18.0 only) === */
-
-group('Sensor: create + update', () => {
-	bench('v0.18.0', () => {
+group('Sensor: create + update (with equality)', () => {
+	bench('cause-effect', () => {
 		let setFn: (v: number) => void
 		const sensor = createSensor<number>(set => {
 			setFn = set
-			set(0) // Set initial value so .get() doesn't throw
+			set(0)
 			return () => {}
 		})
-		createEffectNext(() => {
+		createEffect(() => {
 			sensor.get()
 		})
 		for (let i = 0; i < 10; i++) {
@@ -517,25 +422,40 @@ group('Sensor: create + update', () => {
 	})
 })
 
+group('Sensor: create + update (SKIP_EQUALITY)', () => {
+	bench('cause-effect', () => {
+		const obj = { x: 0 }
+		let setFn: (v: typeof obj) => void
+		const sensor = createSensor<typeof obj>(
+			set => {
+				setFn = set
+				set(obj)
+				return () => {}
+			},
+			{ value: obj, equals: SKIP_EQUALITY },
+		)
+		createEffect(() => {
+			sensor.get()
+		})
+		for (let i = 0; i < 10; i++) {
+			obj.x = i
+			// biome-ignore lint/style/noNonNullAssertion: assigned in start callback
+			setFn!(obj)
+		}
+	})
+})
+
 /* === List Benchmarks === */
 
 group('List: create 100 items', () => {
 	const items = Array.from({ length: 100 }, (_, i) => i + 1)
-	bench('v0.17.3', () => {
-		new List(items)
-	})
-	bench('v0.18.0', () => {
+	bench('cause-effect', () => {
 		createList(items)
 	})
 })
 
 group('List: add + remove 10 items', () => {
-	bench('v0.17.3', () => {
-		const list = new List<number>([1, 2, 3])
-		for (let i = 0; i < 10; i++) list.add(i + 10)
-		for (let i = 0; i < 10; i++) list.remove(0)
-	})
-	bench('v0.18.0', () => {
+	bench('cause-effect', () => {
 		const list = createList<number>([1, 2, 3])
 		for (let i = 0; i < 10; i++) list.add(i + 10)
 		for (let i = 0; i < 10; i++) list.remove(0)
@@ -543,13 +463,7 @@ group('List: add + remove 10 items', () => {
 })
 
 group('List: sort 50 items', () => {
-	bench('v0.17.3', () => {
-		const list = new List(
-			Array.from({ length: 50 }, () => Math.random() * 100),
-		)
-		list.sort((a, b) => a - b)
-	})
-	bench('v0.18.0', () => {
+	bench('cause-effect', () => {
 		const list = createList(
 			Array.from({ length: 50 }, () => Math.random() * 100),
 		)
@@ -560,50 +474,29 @@ group('List: sort 50 items', () => {
 group('List: set (diff) 50 items', () => {
 	const initial = Array.from({ length: 50 }, (_, i) => i)
 	const updated = Array.from({ length: 50 }, (_, i) => i * 2)
-	bench('v0.17.3', () => {
-		const list = new List(initial.slice())
-		list.set(updated)
-	})
-	bench('v0.18.0', () => {
+	bench('cause-effect', () => {
 		const list = createList(initial.slice())
 		list.set(updated)
 	})
 })
 
 group('List: reactive propagation', () => {
-	// v0.17.3: update existing item instead of growing the list
-	const listV17 = new List([1, 2, 3])
-	const memoV17 = new Memo(() => listV17.get().reduce((a, b) => a + b, 0))
+	const list = createList([1, 2, 3])
+	const memo = createMemo(() => list.get().reduce((a, b) => a + b, 0))
 	createEffect(() => {
-		memoV17.get()
+		memo.get()
 	})
 
-	// v0.18.0
-	const listV18 = createList([1, 2, 3])
-	const memoV18 = createMemo(() => listV18.get().reduce((a, b) => a + b, 0))
-	createEffectNext(() => {
-		memoV18.get()
-	})
-
-	let i17 = 0
-	bench('v0.17.3', () => {
-		listV17.set([++i17, 2, 3])
-	})
-	let i18 = 0
-	bench('v0.18.0', () => {
-		listV18.set([++i18, 2, 3])
+	let i = 0
+	bench('cause-effect', () => {
+		list.set([++i, 2, 3])
 	})
 })
 
 /* === Collection Benchmarks === */
 
 group('Collection: derive 50 items (sync)', () => {
-	bench('v0.17.3', () => {
-		const list = new List(Array.from({ length: 50 }, (_, i) => i + 1))
-		const col = new DerivedCollection(list, (v: number) => v * 2)
-		col.get()
-	})
-	bench('v0.18.0', () => {
+	bench('cause-effect', () => {
 		const list = createList(Array.from({ length: 50 }, (_, i) => i + 1))
 		const col = createCollection(list, (v: number) => v * 2)
 		col.get()
@@ -611,13 +504,7 @@ group('Collection: derive 50 items (sync)', () => {
 })
 
 group('Collection: chain 2 derivations', () => {
-	bench('v0.17.3', () => {
-		const list = new List(Array.from({ length: 20 }, (_, i) => i + 1))
-		const col1 = list.deriveCollection((v: number) => v * 2)
-		const col2 = col1.deriveCollection((v: number) => v + 1)
-		col2.get()
-	})
-	bench('v0.18.0', () => {
+	bench('cause-effect', () => {
 		const list = createList(Array.from({ length: 20 }, (_, i) => i + 1))
 		const col1 = list.deriveCollection((v: number) => v * 2)
 		const col2 = col1.deriveCollection((v: number) => v + 1)
@@ -626,27 +513,15 @@ group('Collection: chain 2 derivations', () => {
 })
 
 group('Collection: reactive update', () => {
-	// v0.17.3: update existing items instead of growing the list
-	const listV17 = new List([1, 2, 3, 4, 5])
-	const colV17 = new DerivedCollection(listV17, (v: number) => v * 10)
+	const list = createList([1, 2, 3, 4, 5])
+	const col = createCollection(list, (v: number) => v * 10)
 	createEffect(() => {
-		colV17.get()
+		col.get()
 	})
 
-	// v0.18.0
-	const listV18 = createList([1, 2, 3, 4, 5])
-	const colV18 = createCollection(listV18, (v: number) => v * 10)
-	createEffectNext(() => {
-		colV18.get()
-	})
-
-	let i17 = 0
-	bench('v0.17.3', () => {
-		listV17.set([++i17, 2, 3, 4, 5])
-	})
-	let i18 = 0
-	bench('v0.18.0', () => {
-		listV18.set([++i18, 2, 3, 4, 5])
+	let i = 0
+	bench('cause-effect', () => {
+		list.set([++i, 2, 3, 4, 5])
 	})
 })
 
@@ -656,86 +531,47 @@ group('Store: create with 10 properties', () => {
 	const obj = Object.fromEntries(
 		Array.from({ length: 10 }, (_, i) => [`key${i}`, i]),
 	)
-	bench('v0.17.3', () => {
-		createStoreV17(obj)
-	})
-	bench('v0.18.0', () => {
+	bench('cause-effect', () => {
 		createStore(obj)
 	})
 })
 
 group('Store: property access + set', () => {
-	// v0.17.3
-	const storeV17 = createStoreV17({ a: 1, b: 2, c: 3 })
+	const store = createStore({ a: 1, b: 2, c: 3 })
 	createEffect(() => {
-		storeV17.a.get()
+		store.a.get()
 	})
 
-	// v0.18.0
-	const storeV18 = createStore({ a: 1, b: 2, c: 3 })
-	createEffectNext(() => {
-		storeV18.a.get()
-	})
-
-	let i17 = 1
-	bench('v0.17.3', () => {
-		storeV17.a.set(++i17)
-	})
-	let i18 = 1
-	bench('v0.18.0', () => {
-		storeV18.a.set(++i18)
+	let i = 1
+	bench('cause-effect', () => {
+		store.a.set(++i)
 	})
 })
 
 group('Store: set (diff) entire object', () => {
-	// v0.17.3
-	const storeV17 = createStoreV17({ x: 0, y: 0, z: 0 })
+	const store = createStore({ x: 0, y: 0, z: 0 })
 	createEffect(() => {
-		storeV17.get()
+		store.get()
 	})
 
-	// v0.18.0
-	const storeV18 = createStore({ x: 0, y: 0, z: 0 })
-	createEffectNext(() => {
-		storeV18.get()
-	})
-
-	let i17 = 0
-	bench('v0.17.3', () => {
-		storeV17.set({ x: ++i17, y: i17 * 2, z: i17 * 3 })
-	})
-	let i18 = 0
-	bench('v0.18.0', () => {
-		storeV18.set({ x: ++i18, y: i18 * 2, z: i18 * 3 })
+	let i = 0
+	bench('cause-effect', () => {
+		store.set({ x: ++i, y: i * 2, z: i * 3 })
 	})
 })
 
 group('Store: nested store propagation', () => {
-	// v0.17.3
-	const nestedV17 = createStoreV17({
+	const nested = createStore({
 		user: { name: 'Alice', prefs: { theme: 'light' } },
 	})
 	createEffect(() => {
-		nestedV17.get()
+		nested.get()
 	})
 
-	// v0.18.0
-	const nestedV18 = createStore({
-		user: { name: 'Alice', prefs: { theme: 'light' } },
-	})
-	createEffectNext(() => {
-		nestedV18.get()
-	})
-
-	let toggle17 = false
-	bench('v0.17.3', () => {
-		toggle17 = !toggle17
-		nestedV17.user.prefs.theme.set(toggle17 ? 'dark' : 'light')
-	})
-	let toggle18 = false
-	bench('v0.18.0', () => {
-		toggle18 = !toggle18
-		nestedV18.user.prefs.theme.set(toggle18 ? 'dark' : 'light')
+	let toggle = false
+	bench('cause-effect', () => {
+		toggle = !toggle
+		nested.user.prefs.theme.set(toggle ? 'dark' : 'light')
 	})
 })
 

@@ -1,19 +1,23 @@
-import { validateCallback } from '../errors'
+import { validateCallback, validateSignalValue } from '../errors'
 import {
 	activeSink,
+	batch,
+	type Cleanup,
 	FLAG_CLEAN,
 	FLAG_DIRTY,
 	link,
 	type MemoNode,
+	propagate,
 	refresh,
 	type Signal,
 	type SinkNode,
 	TYPE_COLLECTION,
 	untrack,
 } from '../graph'
-import { isAsyncFunction, isObjectOfType } from '../util'
-import { isList, type List } from './list'
+import { isAsyncFunction, isFunction, isObjectOfType, isString } from '../util'
+import { type DiffResult, isList, type KeyConfig, type List } from './list'
 import { createMemo, type Memo } from './memo'
+import { createState, isState } from './state'
 import { createTask } from './task'
 
 /* === Types === */
@@ -42,6 +46,15 @@ type Collection<T extends {}> = {
 	): Collection<R>
 	readonly length: number
 }
+
+type SourceCollectionOptions<T extends {}> = {
+	keyConfig?: KeyConfig<T>
+	createItem?: (key: string, value: T) => Signal<T>
+}
+
+type SourceCollectionCallback = (
+	applyChanges: (changes: DiffResult) => void,
+) => Cleanup
 
 /* === Functions === */
 
@@ -222,6 +235,192 @@ function createCollection<T extends {}, U extends {}>(
 }
 
 /**
+ * Creates an externally-driven Collection with a watched lifecycle.
+ * Items are managed by the start callback via `applyChanges(diffResult)`.
+ * The collection activates when first accessed by an effect and deactivates when no longer watched.
+ *
+ * @since 0.18.0
+ * @param initialValue - Initial array of items
+ * @param start - Callback invoked when the collection starts being watched, receives applyChanges helper
+ * @param options - Optional configuration for key generation and item signal creation
+ * @returns A read-only Collection signal
+ */
+function createSourceCollection<T extends {}>(
+	initialValue: T[],
+	start: SourceCollectionCallback,
+	options?: SourceCollectionOptions<T>,
+): Collection<T> {
+	validateSignalValue(TYPE_COLLECTION, initialValue, Array.isArray)
+	validateCallback(TYPE_COLLECTION, start)
+
+	const signals = new Map<string, Signal<T>>()
+	const keys: string[] = []
+
+	let keyCounter = 0
+	const keyConfig = options?.keyConfig
+	const generateKey: (item: T) => string = isString(keyConfig)
+		? () => `${keyConfig}${keyCounter++}`
+		: isFunction<string>(keyConfig)
+			? (item: T) => keyConfig(item)
+			: () => String(keyCounter++)
+
+	const itemFactory =
+		options?.createItem ?? ((_key: string, value: T) => createState(value))
+
+	// Build current value from child signals
+	function buildValue(): T[] {
+		return keys
+			.map(key => {
+				try {
+					return signals.get(key)?.get()
+				} catch {
+					return undefined
+				}
+			})
+			.filter(v => v != null) as T[]
+	}
+
+	const node: MemoNode<T[]> = {
+		fn: buildValue,
+		value: initialValue,
+		flags: FLAG_DIRTY,
+		sources: null,
+		sourcesTail: null,
+		sinks: null,
+		sinksTail: null,
+		equals: () => false, // Always rebuild — structural changes are managed externally
+		error: undefined,
+	}
+
+	/** Apply external changes to the collection */
+	function applyChanges(changes: DiffResult): void {
+		if (!changes.changed) return
+		let structural = false
+
+		batch(() => {
+			// Additions
+			for (const key in changes.add) {
+				const value = changes.add[key] as T
+				signals.set(key, itemFactory(key, value))
+				if (!keys.includes(key)) keys.push(key)
+				structural = true
+			}
+
+			// Changes — only for State signals
+			for (const key in changes.change) {
+				const signal = signals.get(key)
+				if (signal && isState(signal)) {
+					signal.set(changes.change[key] as T)
+				}
+			}
+
+			// Removals
+			for (const key in changes.remove) {
+				signals.delete(key)
+				const index = keys.indexOf(key)
+				if (index !== -1) keys.splice(index, 1)
+				structural = true
+			}
+
+			if (structural) {
+				node.sources = null
+				node.sourcesTail = null
+			}
+			node.flags = FLAG_CLEAN
+			propagate(node as unknown as SinkNode)
+			node.flags |= FLAG_DIRTY
+		})
+	}
+
+	// Initialize signals for initial value
+	for (const item of initialValue) {
+		const key = generateKey(item)
+		signals.set(key, itemFactory(key, item))
+		keys.push(key)
+	}
+	node.value = initialValue
+	node.flags = FLAG_DIRTY // First refresh() will establish child edges
+
+	function startWatching(): void {
+		if (!node.sinks) node.stop = start(applyChanges)
+	}
+
+	const collection: Collection<T> = {
+		[Symbol.toStringTag]: TYPE_COLLECTION,
+		[Symbol.isConcatSpreadable]: true as const,
+
+		*[Symbol.iterator]() {
+			for (const key of keys) {
+				const signal = signals.get(key)
+				if (signal) yield signal
+			}
+		},
+
+		get length() {
+			if (activeSink) {
+				startWatching()
+				link(node, activeSink)
+			}
+			return keys.length
+		},
+
+		keys() {
+			if (activeSink) {
+				startWatching()
+				link(node, activeSink)
+			}
+			return keys.values()
+		},
+
+		get() {
+			if (activeSink) {
+				startWatching()
+				link(node, activeSink)
+			}
+			if (node.sources) {
+				if (node.flags) {
+					node.value = untrack(buildValue)
+					node.flags = FLAG_CLEAN
+				}
+			} else {
+				refresh(node as unknown as SinkNode)
+				if (node.error) throw node.error
+			}
+			return node.value
+		},
+
+		at(index: number) {
+			return signals.get(keys[index])
+		},
+
+		byKey(key: string) {
+			return signals.get(key)
+		},
+
+		keyAt(index: number) {
+			return keys[index]
+		},
+
+		indexOfKey(key: string) {
+			return keys.indexOf(key)
+		},
+
+		deriveCollection<R extends {}>(
+			cb: CollectionCallback<R, T>,
+		): Collection<R> {
+			return (
+				createCollection as <T2 extends {}, U2 extends {}>(
+					source: CollectionSource<U2>,
+					callback: CollectionCallback<T2, U2>,
+				) => Collection<T2>
+			)(collection, cb)
+		},
+	}
+
+	return collection
+}
+
+/**
  * Checks if a value is a Collection signal.
  *
  * @since 0.17.2
@@ -249,9 +448,12 @@ function isCollectionSource<T extends {}>(
 
 export {
 	createCollection,
+	createSourceCollection,
 	isCollection,
 	isCollectionSource,
 	type Collection,
 	type CollectionCallback,
 	type CollectionSource,
+	type SourceCollectionCallback,
+	type SourceCollectionOptions,
 }

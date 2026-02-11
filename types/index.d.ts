@@ -1,19 +1,17 @@
 /**
  * @name Cause & Effect
- * @version 0.17.3
+ * @version 0.18.0
  * @author Esther Brunner
  */
-export { type Collection, type CollectionCallback, type CollectionSource, DerivedCollection, isCollection, TYPE_COLLECTION, } from './src/classes/collection';
-export { type Computed, createComputed, isComputed, isMemoCallback, isTaskCallback, Memo, type MemoCallback, Task, type TaskCallback, TYPE_COMPUTED, } from './src/classes/computed';
-export { type ArrayToRecord, isList, type KeyConfig, List, TYPE_LIST, } from './src/classes/list';
-export { isRef, Ref, TYPE_REF } from './src/classes/ref';
-export { isState, State, TYPE_STATE } from './src/classes/state';
-export { BaseStore, createStore, isStore, type Store, TYPE_STORE, } from './src/classes/store';
-export { type DiffResult, diff, isEqual, type UnknownArray, type UnknownRecord, } from './src/diff';
-export { createEffect, type EffectCallback, type MaybeCleanup, } from './src/effect';
-export { CircularDependencyError, createError, DuplicateKeyError, type Guard, guardMutableSignal, InvalidCallbackError, InvalidCollectionSourceError, InvalidSignalValueError, NullishSignalValueError, ReadonlySignalError, validateCallback, validateSignalValue, } from './src/errors';
-export { type MatchHandlers, match } from './src/match';
-export { type ResolveResult, resolve } from './src/resolve';
-export { createSignal, isMutableSignal, isSignal, type Signal, type SignalValues, type UnknownSignalRecord, } from './src/signal';
-export { batch, type Cleanup, createWatcher, flush, notifyOf, type SignalOptions, subscribeTo, track, UNSET, untrack, type Watcher, } from './src/system';
+export { CircularDependencyError, type Guard, InvalidCallbackError, InvalidSignalValueError, NullishSignalValueError, RequiredOwnerError, UnsetSignalValueError, } from './src/errors';
+export { batch, type Cleanup, type ComputedOptions, createScope, type EffectCallback, type MemoCallback, type Signal, type SignalOptions, SKIP_EQUALITY, type TaskCallback, untrack, } from './src/graph';
+export { type Collection, type CollectionCallback, type CollectionSource, createCollection, createSourceCollection, isCollection, type SourceCollectionCallback, type SourceCollectionOptions, } from './src/nodes/collection';
+export { createEffect, type MatchHandlers, type MaybePromise, match, } from './src/nodes/effect';
+export { createList, type DiffResult, isList, isEqual, type KeyConfig, type List, type ListOptions, } from './src/nodes/list';
+export { createMemo, isMemo, type Memo } from './src/nodes/memo';
+export { createSensor, isSensor, type Sensor, type SensorCallback, } from './src/nodes/sensor';
+export { createState, isState, type State, type UpdateCallback, } from './src/nodes/state';
+export { createStore, isStore, type Store, type StoreOptions, } from './src/nodes/store';
+export { createTask, isTask, type Task } from './src/nodes/task';
+export { createComputed, createMutableSignal, createSignal, isComputed, isMutableSignal, isSignal, type MutableSignal, } from './src/signal';
 export { isAbortError, isAsyncFunction, isFunction, isNumber, isObjectOfType, isRecord, isRecordOrArray, isString, isSymbol, valueString, } from './src/util';

@@ -5,7 +5,7 @@ import {
 	createMemo,
 	isList,
 	isMemo,
-} from '../next.ts'
+} from '../index.ts'
 
 describe('List', () => {
 	describe('createList', () => {

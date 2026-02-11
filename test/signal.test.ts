@@ -24,7 +24,7 @@ import {
 	type State,
 	type Store,
 	type Task,
-} from '../next.ts'
+} from '../index.ts'
 
 /* === Tests === */
 
