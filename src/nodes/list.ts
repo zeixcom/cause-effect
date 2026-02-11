@@ -19,14 +19,7 @@ import {
 	TYPE_LIST,
 	untrack,
 } from '../graph'
-import {
-	isFunction,
-	isNonNullObject,
-	isNumber,
-	isObjectOfType,
-	isRecord,
-	isString,
-} from '../util'
+import { isFunction, isObjectOfType, isRecord } from '../util'
 import {
 	type Collection,
 	type CollectionSource,
@@ -101,7 +94,13 @@ function isEqual<T>(a: T, b: T, visited?: WeakSet<object>): boolean {
 	// Fast paths
 	if (Object.is(a, b)) return true
 	if (typeof a !== typeof b) return false
-	if (!isNonNullObject(a) || !isNonNullObject(b)) return false
+	if (
+		a == null ||
+		typeof a !== 'object' ||
+		b == null ||
+		typeof b !== 'object'
+	)
+		return false
 
 	// Cycle detection (only allocate WeakSet when both values are objects)
 	if (!visited) visited = new WeakSet()
@@ -245,11 +244,12 @@ function createList<T extends {}>(
 	let keyCounter = 0
 	const keyConfig = options?.keyConfig
 	const contentBased = isFunction<string>(keyConfig)
-	const generateKey: (item: T) => string = isString(keyConfig)
-		? () => `${keyConfig}${keyCounter++}`
-		: contentBased
-			? (item: T) => keyConfig(item)
-			: () => String(keyCounter++)
+	const generateKey: (item: T) => string =
+		typeof keyConfig === 'string'
+			? () => `${keyConfig}${keyCounter++}`
+			: contentBased
+				? (item: T) => keyConfig(item)
+				: () => String(keyCounter++)
 
 	// --- Internal helpers ---
 
@@ -450,12 +450,14 @@ function createList<T extends {}>(
 		},
 
 		remove(keyOrIndex: string | number) {
-			const key = isNumber(keyOrIndex) ? keys[keyOrIndex] : keyOrIndex
+			const key =
+				typeof keyOrIndex === 'number' ? keys[keyOrIndex] : keyOrIndex
 			const ok = signals.delete(key)
 			if (ok) {
-				const index = isNumber(keyOrIndex)
-					? keyOrIndex
-					: keys.indexOf(key)
+				const index =
+					typeof keyOrIndex === 'number'
+						? keyOrIndex
+						: keys.indexOf(key)
 				if (index >= 0) keys.splice(index, 1)
 				node.sources = null
 				node.sourcesTail = null

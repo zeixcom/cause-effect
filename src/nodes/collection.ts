@@ -18,7 +18,7 @@ import {
 	TYPE_COLLECTION,
 	untrack,
 } from '../graph'
-import { isAsyncFunction, isFunction, isObjectOfType, isString } from '../util'
+import { isAsyncFunction, isFunction, isObjectOfType } from '../util'
 import {
 	type DiffResult,
 	isList,
@@ -269,11 +269,12 @@ function createCollection<T extends {}>(
 
 	let keyCounter = 0
 	const keyConfig = options?.keyConfig
-	const generateKey: (item: T) => string = isString(keyConfig)
-		? () => `${keyConfig}${keyCounter++}`
-		: isFunction<string>(keyConfig)
-			? (item: T) => keyConfig(item)
-			: () => String(keyCounter++)
+	const generateKey: (item: T) => string =
+		typeof keyConfig === 'string'
+			? () => `${keyConfig}${keyCounter++}`
+			: isFunction<string>(keyConfig)
+				? (item: T) => keyConfig(item)
+				: () => String(keyCounter++)
 
 	const itemFactory =
 		options?.createItem ?? ((_key: string, value: T) => createState(value))

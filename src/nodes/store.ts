@@ -15,13 +15,7 @@ import {
 	TYPE_STORE,
 	untrack,
 } from '../graph'
-import {
-	isFunction,
-	isObjectOfType,
-	isRecord,
-	isRecordOrArray,
-	isSymbol,
-} from '../util'
+import { isFunction, isObjectOfType, isRecord } from '../util'
 import {
 	createList,
 	type DiffResult,
@@ -81,8 +75,8 @@ function diffRecords<T extends UnknownRecord>(
 	newObj: T,
 ): DiffResult {
 	// Guard against non-objects that can't be diffed properly with Object.keys and 'in' operator
-	const oldValid = isRecordOrArray(oldObj)
-	const newValid = isRecordOrArray(newObj)
+	const oldValid = isRecord(oldObj) || Array.isArray(oldObj)
+	const newValid = isRecord(newObj) || Array.isArray(newObj)
 	if (!oldValid || !newValid) {
 		// For non-objects or non-plain objects, treat as complete change if different
 		const changed = !Object.is(oldObj, newObj)
@@ -346,7 +340,8 @@ function createStore<T extends UnknownRecord>(
 				const value = Reflect.get(target, prop)
 				return isFunction(value) ? value.bind(target) : value
 			}
-			if (!isSymbol(prop)) return target.byKey(prop as keyof T & string)
+			if (typeof prop !== 'symbol')
+				return target.byKey(prop as keyof T & string)
 		},
 		has(target, prop) {
 			if (prop in target) return true
@@ -358,7 +353,7 @@ function createStore<T extends UnknownRecord>(
 		getOwnPropertyDescriptor(target, prop) {
 			if (prop in target)
 				return Reflect.getOwnPropertyDescriptor(target, prop)
-			if (isSymbol(prop)) return undefined
+			if (typeof prop === 'symbol') return undefined
 			const signal = target.byKey(String(prop) as keyof T & string)
 			return signal
 				? {

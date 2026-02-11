@@ -81,11 +81,7 @@ export {
 export {
 	isAsyncFunction,
 	isFunction,
-	isNumber,
 	isObjectOfType,
 	isRecord,
-	isRecordOrArray,
-	isString,
-	isSymbol,
 	valueString,
 } from './src/util'
