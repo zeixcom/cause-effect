@@ -101,10 +101,8 @@ var activeOwner = null;
 var queuedEffects = [];
 var batchDepth = 0;
 var flushing = false;
-function defaultEquals(a, b) {
-  return a === b;
-}
-var SKIP_EQUALITY = () => false;
+var DEFAULT_EQUALITY = (a, b) => a === b;
+var SKIP_EQUALITY = (_a, _b) => false;
 function isValidEdge(checkEdge, node) {
   const sourcesTail = node.sourcesTail;
   if (sourcesTail) {
@@ -390,7 +388,7 @@ function createState(value, options) {
     value,
     sinks: null,
     sinksTail: null,
-    equals: options?.equals ?? defaultEquals,
+    equals: options?.equals ?? DEFAULT_EQUALITY,
     guard: options?.guard
   };
   return {
@@ -767,7 +765,7 @@ function createMemo(fn, options) {
     sourcesTail: null,
     sinks: null,
     sinksTail: null,
-    equals: options?.equals ?? defaultEquals,
+    equals: options?.equals ?? DEFAULT_EQUALITY,
     error: undefined
   };
   return {
@@ -800,7 +798,7 @@ function createTask(fn, options) {
     sinks: null,
     sinksTail: null,
     flags: FLAG_DIRTY,
-    equals: options?.equals ?? defaultEquals,
+    equals: options?.equals ?? DEFAULT_EQUALITY,
     controller: undefined,
     error: undefined
   };
@@ -1169,7 +1167,7 @@ function createSensor(start, options) {
     value: options?.value,
     sinks: null,
     sinksTail: null,
-    equals: options?.equals ?? defaultEquals,
+    equals: options?.equals ?? DEFAULT_EQUALITY,
     guard: options?.guard,
     stop: undefined
   };

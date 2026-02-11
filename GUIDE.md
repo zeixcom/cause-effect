@@ -147,7 +147,7 @@ cleanup() // you must call this yourself
 
 ### Explicit equality, not reference identity
 
-By default, signals use `Object.is` for equality — same as React's `useState` and Angular's `signal()`. But unlike frameworks where this is buried in internals, you can override it per signal:
+By default, signals use `===` for equality. But unlike frameworks where this is buried in internals, you can override it per signal:
 
 ```ts
 const point = createState({ x: 0, y: 0 }, {
@@ -296,5 +296,3 @@ const windowSize = createSensor((set) => {
 ```
 
 The start callback runs lazily — only when an effect first reads the sensor. When no effects are watching, the cleanup runs automatically. When an effect reads it again, the start callback runs again. No manual setup/teardown.
-
-

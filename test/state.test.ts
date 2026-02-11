@@ -167,6 +167,60 @@ describe('State', () => {
 		})
 	})
 
+	describe('Edge cases: NaN and special numbers', () => {
+		test('should propagate on every set(NaN) since NaN !== NaN', () => {
+			const state = createState(NaN)
+			let effectCount = 0
+			createEffect(() => {
+				state.get()
+				effectCount++
+			})
+			expect(effectCount).toBe(1)
+
+			state.set(NaN)
+			expect(effectCount).toBe(2) // NaN !== NaN, so it propagates
+
+			state.set(NaN)
+			expect(effectCount).toBe(3)
+		})
+
+		test('should reject NaN with a Number.isFinite guard', () => {
+			const state = createState(1, {
+				guard: (v): v is number => Number.isFinite(v),
+			})
+			expect(() => state.set(NaN)).toThrow(
+				'[State] Signal value NaN is invalid',
+			)
+			expect(state.get()).toBe(1)
+		})
+
+		test('should reject Infinity with a Number.isFinite guard', () => {
+			const state = createState(1, {
+				guard: (v): v is number => Number.isFinite(v),
+			})
+			expect(() => state.set(Infinity)).toThrow(
+				'[State] Signal value Infinity is invalid',
+			)
+			expect(() => state.set(-Infinity)).toThrow(
+				'[State] Signal value -Infinity is invalid',
+			)
+			expect(state.get()).toBe(1)
+		})
+
+		test('should treat +0 and -0 as equal by default (===)', () => {
+			const state = createState(0)
+			let effectCount = 0
+			createEffect(() => {
+				state.get()
+				effectCount++
+			})
+			expect(effectCount).toBe(1)
+
+			state.set(-0) // +0 === -0 is true
+			expect(effectCount).toBe(1) // no propagation
+		})
+	})
+
 	describe('Input Validation', () => {
 		test('should throw NullishSignalValueError for null or undefined initial value', () => {
 			expect(() => {

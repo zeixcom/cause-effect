@@ -326,8 +326,7 @@ describe('Sensor', () => {
 	describe('SKIP_EQUALITY', () => {
 		test('should always return false', () => {
 			expect(SKIP_EQUALITY()).toBe(false)
-			// biome-ignore lint/suspicious/noExplicitAny: testing with arbitrary values
-			expect((SKIP_EQUALITY as any)(1, 1)).toBe(false)
+			expect(SKIP_EQUALITY(1, 1)).toBe(false)
 		})
 
 		test('should return the reference value from get()', () => {

@@ -161,9 +161,7 @@ let flushing = false
 
 /* === Utility Functions === */
 
-function defaultEquals<T extends {}>(a: T, b: T): boolean {
-	return a === b
-}
+const DEFAULT_EQUALITY = <T extends {}>(a: T, b: T): boolean => a === b
 
 /**
  * Equality function that always returns false, causing propagation on every update.
@@ -578,7 +576,7 @@ export {
 	batch,
 	batchDepth,
 	createScope,
-	defaultEquals,
+	DEFAULT_EQUALITY as defaultEquals,
 	SKIP_EQUALITY,
 	FLAG_CLEAN,
 	FLAG_DIRTY,

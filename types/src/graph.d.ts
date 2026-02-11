@@ -112,7 +112,7 @@ declare const FLAG_DIRTY: number;
 declare let activeSink: SinkNode | null;
 declare let activeOwner: OwnerNode | null;
 declare let batchDepth: number;
-declare function defaultEquals<T extends {}>(a: T, b: T): boolean;
+declare const DEFAULT_EQUALITY: <T extends {}>(a: T, b: T) => boolean;
 /**
  * Equality function that always returns false, causing propagation on every update.
  * Use with `createSensor` for observing mutable objects where the reference stays the same
@@ -129,7 +129,7 @@ declare function defaultEquals<T extends {}>(a: T, b: T): boolean;
  * }, { value: node, equals: SKIP_EQUALITY });
  * ```
  */
-declare const SKIP_EQUALITY: () => boolean;
+declare const SKIP_EQUALITY: (_a?: unknown, _b?: unknown) => boolean;
 declare function link(source: SourceNode, sink: SinkNode): void;
 declare function unlink(edge: Edge): Edge | null;
 declare function trimSources(node: SinkNode): void;
@@ -205,4 +205,4 @@ declare function untrack<T>(fn: () => T): T;
  * ```
  */
 declare function createScope(fn: () => MaybeCleanup): Cleanup;
-export { type Cleanup, type ComputedOptions, type EffectCallback, type EffectNode, type MaybeCleanup, type MemoCallback, type MemoNode, type Scope, type Signal, type SignalOptions, type SinkNode, type StateNode, type TaskCallback, type TaskNode, activeOwner, activeSink, batch, batchDepth, createScope, defaultEquals, SKIP_EQUALITY, FLAG_CLEAN, FLAG_DIRTY, flush, link, propagate, refresh, registerCleanup, runCleanup, runEffect, setState, trimSources, TYPE_COLLECTION, TYPE_LIST, TYPE_MEMO, TYPE_SENSOR, TYPE_STATE, TYPE_STORE, TYPE_TASK, unlink, untrack, };
+export { type Cleanup, type ComputedOptions, type EffectCallback, type EffectNode, type MaybeCleanup, type MemoCallback, type MemoNode, type Scope, type Signal, type SignalOptions, type SinkNode, type StateNode, type TaskCallback, type TaskNode, activeOwner, activeSink, batch, batchDepth, createScope, DEFAULT_EQUALITY as defaultEquals, SKIP_EQUALITY, FLAG_CLEAN, FLAG_DIRTY, flush, link, propagate, refresh, registerCleanup, runCleanup, runEffect, setState, trimSources, TYPE_COLLECTION, TYPE_LIST, TYPE_MEMO, TYPE_SENSOR, TYPE_STATE, TYPE_STORE, TYPE_TASK, unlink, untrack, };
