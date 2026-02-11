@@ -238,7 +238,9 @@ Each item is its own signal. Sorting reorders keys without destroying signals or
 
 ### Collection: derived arrays with item-level memoization
 
-`createCollection()` or `.deriveCollection()` transforms a List (or another Collection) item by item, with each transformation individually memoized:
+Collections provide reactive transformations over arrays with automatic per-item memoization. They come in two forms: **derived collections** (transformations of Lists or other Collections) and **externally-driven collections** (fed by external sources like WebSockets or Server-Sent Events).
+
+**Derived collections** are created via `.deriveCollection()` on a List or Collection:
 
 ```ts
 const display = todos.deriveCollection(todo => ({
@@ -259,6 +261,25 @@ const pipeline = todos
 
 When one item changes, only its derived signal recomputes. Structural changes (additions, removals) are tracked separately from value changes.
 
+**Externally-driven collections** are created with `createCollection()` and a start callback for keyed data arriving from external sources:
+
+```ts
+import { createCollection, createEffect } from '@zeix/cause-effect'
+
+const messages = createCollection((applyChanges) => {
+  const ws = new WebSocket('/messages')
+  ws.onmessage = (e) => applyChanges({ changed: true, add: JSON.parse(e.data) })
+  return () => ws.close()
+}, { keyConfig: msg => msg.id })
+
+// Same Collection interface — .get(), .byKey(), .deriveCollection()
+createEffect(() => {
+  console.log('Messages:', messages.get().length)
+})
+```
+
+The WebSocket connects when the first effect reads the collection and disconnects when no effects are watching. Incoming data is applied as granular add/change/remove operations, not wholesale array replacement.
+
 ### Sensor: lazy external input
 
 Frameworks typically manage event listeners inside component lifecycle hooks (`useEffect`, `onMounted`, `ngOnInit`). In Cause & Effect, `createSensor()` encapsulates external input with automatic resource management:
@@ -276,23 +297,4 @@ const windowSize = createSensor((set) => {
 
 The start callback runs lazily — only when an effect first reads the sensor. When no effects are watching, the cleanup runs automatically. When an effect reads it again, the start callback runs again. No manual setup/teardown.
 
-### SourceCollection: externally-driven collections
 
-For keyed data arriving from external sources (WebSocket, Server-Sent Events), `createSourceCollection()` combines the watched lifecycle of Sensor with the keyed structure of List:
-
-```ts
-import { createSourceCollection, createEffect } from '@zeix/cause-effect'
-
-const messages = createSourceCollection([], (applyChanges) => {
-  const ws = new WebSocket('/messages')
-  ws.onmessage = (e) => applyChanges({ changed: true, add: JSON.parse(e.data) })
-  return () => ws.close()
-}, { keyConfig: msg => msg.id })
-
-// Same Collection interface — .get(), .byKey(), .deriveCollection()
-createEffect(() => {
-  console.log('Messages:', messages.get().length)
-})
-```
-
-The WebSocket connects when the first effect reads the collection and disconnects when no effects are watching. Incoming data is applied as granular add/change/remove operations, not wholesale array replacement.

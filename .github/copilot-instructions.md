@@ -19,8 +19,7 @@ Cause & Effect is a reactive state management library for JavaScript/TypeScript 
 - **Task** (`createTask`): Async derived computations with automatic AbortController cancellation
 - **Store** (`createStore`): Proxy-based reactive objects with per-property State/Store signals
 - **List** (`createList`): Reactive arrays with stable keys and per-item State signals
-- **Collection** (`createCollection`): Read-only derived collections with item-level Memo/Task signals
-- **SourceCollection** (`createSourceCollection`): Externally-driven collections with watched lifecycle
+- **Collection** (`createCollection`): Reactive collections — either externally-driven with watched lifecycle, or derived from List/Collection with item-level memoization
 - **Effect** (`createEffect`): Side effects that react to signal changes
 
 ## Key Files Structure
@@ -34,7 +33,7 @@ Cause & Effect is a reactive state management library for JavaScript/TypeScript 
 - `src/nodes/effect.ts` - createEffect, match, MatchHandlers type
 - `src/nodes/store.ts` - createStore, isStore, Store type, diff, isEqual
 - `src/nodes/list.ts` - createList, isList, List type
-- `src/nodes/collection.ts` - createCollection, createSourceCollection, isCollection, Collection type
+- `src/nodes/collection.ts` - createCollection, isCollection, Collection type, deriveCollection (internal)
 - `src/util.ts` - Utility functions and type checks
 - `index.ts` - Entry point / main export file
 
@@ -48,10 +47,10 @@ Cause & Effect is a reactive state management library for JavaScript/TypeScript 
 - JSDoc comments for all public APIs
 
 ### Naming Conventions
-- Factory functions: `create*` (e.g., `createState`, `createMemo`, `createEffect`, `createStore`, `createList`, `createCollection`, `createSourceCollection`, `createSensor`)
+- Factory functions: `create*` (e.g., `createState`, `createMemo`, `createEffect`, `createStore`, `createList`, `createCollection`, `createSensor`)
 - Type predicates: `is*` (e.g., `isState`, `isMemo`, `isStore`, `isList`, `isCollection`, `isSensor`)
 - Type constants: `TYPE_*` for internal type tags
-- Callback types: `*Callback` suffix (MemoCallback, TaskCallback, EffectCallback, SensorCallback, CollectionCallback, SourceCollectionCallback)
+- Callback types: `*Callback` suffix (MemoCallback, TaskCallback, EffectCallback, SensorCallback, CollectionCallback, DeriveCollectionCallback)
 - Private variables: use descriptive names, no underscore prefix
 
 ### Error Handling
@@ -73,7 +72,7 @@ Cause & Effect is a reactive state management library for JavaScript/TypeScript 
 - All signals have `.get()` for value access
 - Mutable signals (State) have `.set(value)` and `.update(fn)`
 - Store properties are automatically reactive signals via Proxy
-- Sensor/SourceCollection use a start callback returning Cleanup (lazy activation)
+- Sensor/Collection use a start callback returning Cleanup (lazy activation)
 - Store/List use optional `watched` callback in options returning Cleanup
 - Effects return a dispose function (Cleanup)
 
@@ -136,14 +135,14 @@ const userData = createTask(async (prev, abort) => {
 })
 
 // Collection for derived transformations
-const doubled = createCollection(numbers, (n: number) => n * 2)
-const enriched = createCollection(users, async (user, abort) => {
+const doubled = numbers.deriveCollection((n: number) => n * 2)
+const enriched = users.deriveCollection(async (user, abort) => {
   const res = await fetch(`/api/${user.id}`, { signal: abort })
   return { ...user, details: await res.json() }
 })
 
-// SourceCollection for externally-driven data
-const feed = createSourceCollection<{ id: string; text: string }>([], (applyChanges) => {
+// Collection for externally-driven data
+const feed = createCollection<{ id: string; text: string }>((applyChanges) => {
   const ws = new WebSocket('/feed')
   ws.onmessage = (e) => applyChanges(JSON.parse(e.data))
   return () => ws.close()
@@ -198,8 +197,8 @@ const sensor = createSensor<T>((set) => {
   return () => { /* cleanup — called when last effect stops watching */ }
 })
 
-// SourceCollection: lazy external data source
-const feed = createSourceCollection<T>(initialItems, (applyChanges) => {
+// Collection: lazy external data source
+const feed = createCollection<T>((applyChanges) => {
   // setup — call applyChanges(diffResult) on changes
   return () => { /* cleanup */ }
 }, { keyConfig: item => item.id })

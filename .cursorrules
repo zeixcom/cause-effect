@@ -11,8 +11,7 @@ TypeScript reactive state management primitives library using a unified signal g
 - Task: createTask() for asynchronous derivations with cancellation
 - Store: createStore() for reactive objects with per-property signals
 - List: createList() for reactive arrays with stable keys
-- Collection: createCollection() for read-only derived arrays with item-level memoization
-- SourceCollection: createSourceCollection() for externally-driven collections
+- Collection: createCollection() for reactive collections (external source or derived, item-level memoization)
 - Effect: createEffect() for side-effect sinks
 
 ## Code Style
@@ -29,7 +28,7 @@ TypeScript reactive state management primitives library using a unified signal g
 - Store properties auto-become reactive signals via Proxy
 - Memo callbacks receive previous value as first parameter for reducer patterns
 - Task callbacks receive (next, AbortSignal)
-- Sensor and SourceCollection use start callbacks for lazy resource management
+- Sensor and Collection use start callbacks for lazy resource management
 - Store and List support optional watched callbacks
 - batch() for grouping multiple updates
 - untrack() for reading signals without creating edges
@@ -43,7 +42,7 @@ TypeScript reactive state management primitives library using a unified signal g
 - src/nodes/effect.ts - Side-effect system
 - src/nodes/store.ts - Reactive objects
 - src/nodes/list.ts - Reactive arrays with stable keys
-- src/nodes/collection.ts - Derived and source collections
+- src/nodes/collection.ts - Externally-driven and derived collections
 - next.ts - Public API exports
 
 ## Error Handling

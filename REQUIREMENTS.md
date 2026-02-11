@@ -32,7 +32,7 @@ All signals enforce `T extends {}`, excluding `null` and `undefined` at the type
 Every signal type participates in the same dependency graph with the same propagation, batching, and cleanup semantics. Composite signals (Store, List, Collection) and async signals (Task) are first-class citizens, not afterthoughts. The goal is that all state which is derivable can be derived.
 
 ### Minimal Surface, Maximum Coverage
-The library ships 9 signal types — each justified by a distinct role in the graph and a distinct data structure it manages:
+The library ships 8 signal types — each justified by a distinct role in the graph and a distinct data structure it manages:
 
 | Type | Role | Data Structure |
 |------|------|----------------|
@@ -43,8 +43,7 @@ The library ships 9 signal types — each justified by a distinct role in the gr
 | **Effect** | Side-effect sink | None (terminal) |
 | **Store** | Reactive object | Keyed properties (proxy-based) |
 | **List** | Reactive array | Keyed items (stable identity) |
-| **Collection** | Derived array | Keyed items (item-level memoization) |
-| **SourceCollection** | External collection source | Keyed items (lazy lifecycle) |
+| **Collection** | Reactive collection (external source or derived) | Keyed items (lazy lifecycle, item-level memoization) |
 
 This set is considered **complete**. The principle for inclusion is: does this type represent a fundamentally different data structure or role in the graph that cannot be correctly or performantly expressed as a composition of existing types?
 
@@ -55,7 +54,7 @@ This set is considered **complete**. The principle for inclusion is: does this t
 - Modern Node.js (with ES module support)
 - Deno
 
-The library uses no browser-specific APIs in its core. Environment-specific behavior (DOM events, network connections) is the responsibility of user-provided callbacks (Sensor start functions, SourceCollection feeds, watched callbacks).
+The library uses no browser-specific APIs in its core. Environment-specific behavior (DOM events, network connections) is the responsibility of user-provided callbacks (Sensor start functions, Collection start callbacks, watched callbacks).
 
 ## Size and Performance Constraints
 
@@ -64,13 +63,13 @@ The library uses no browser-specific APIs in its core. Environment-specific beha
 | Usage | Target |
 |-------|--------|
 | Core signals only (State, Memo, Task, Effect) | Below 5 kB gzipped |
-| Full library (all 9 signal types + utilities) | Below 10 kB gzipped |
+| Full library (all 8 signal types + utilities) | Below 10 kB gzipped |
 
 The library must remain tree-shakable: importing only what you use should not pull in unrelated signal types.
 
 ### Performance
 
-The synchronous path (State, Memo, Effect propagation) must be competitive with current leaders in fine-grained reactivity (Preact Signals, Solid, Alien Signals). The library's differentiator is not being the absolute fastest on micro-benchmarks, but seamlessly integrating async (Task), external observers (Sensor, SourceCollection), and composite signals (Store, List, Collection) without sacrificing sync-path performance.
+The synchronous path (State, Memo, Effect propagation) must be competitive with current leaders in fine-grained reactivity (Preact Signals, Solid, Alien Signals). The library's differentiator is not being the absolute fastest on micro-benchmarks, but seamlessly integrating async (Task), external observers (Sensor, Collection), and composite signals (Store, List, Collection) without sacrificing sync-path performance.
 
 ## Non-Goals
 
@@ -80,7 +79,7 @@ The following are explicitly out of scope and will not be added to the library:
 - **Persistence**: No serialization, no local storage, no database integration. State enters and leaves the graph through signals; how it is stored is not this library's concern.
 - **Framework-specific bindings**: No React hooks, no Vue composables, no Angular decorators. Consuming libraries build their own integrations.
 - **DevTools protocol**: Debugging is straightforward by design — attaching an effect to any signal reveals its current value and update behavior. A dedicated debugging protocol adds complexity without proportional value.
-- **Additional signal types**: The 9 signal types are considered complete. New types would only be considered if major Web Platform changes shift the optimal way to achieve the library's existing goals.
+- **Additional signal types**: The 8 signal types are considered complete. New types would only be considered if major Web Platform changes shift the optimal way to achieve the library's existing goals.
 
 ## Stability
 

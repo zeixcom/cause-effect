@@ -26,8 +26,7 @@ Every signal type participates in the same dependency graph with the same propag
 | **Task** | Asynchronous derivation (memoized, cancellable) | `createTask()` |
 | **Store** | Reactive object (keyed properties, proxy-based) | `createStore()` |
 | **List** | Reactive array (keyed items, stable identity) | `createList()` |
-| **Collection** | Derived array (item-level memoization) | `createCollection()` |
-| **SourceCollection** | External collection source (lazy lifecycle) | `createSourceCollection()` |
+| **Collection** | Reactive collection (external source or derived, item-level memoization) | `createCollection()` |
 | **Effect** | Side-effect sink (terminal) | `createEffect()` |
 
 ## Design Principles
@@ -267,10 +266,31 @@ Lists have `.keys()`, `.add()`, and `.remove()` methods like stores. Additionall
 
 ### Collection
 
-A read-only derived array from a List or another Collection, with item-level memoization. Create one with `createCollection()` or via `.deriveCollection()`:
+A reactive collection with item-level memoization. Collections can be externally-driven (via a start callback) or derived from a List or another Collection.
+
+**Externally-driven collections** receive data from external sources (WebSocket, Server-Sent Events, etc.) via `applyChanges()`:
 
 ```js
-import { createList, createEffect } from '@zeix/cause-effect'
+import { createCollection, createEffect } from '@zeix/cause-effect'
+
+const items = createCollection((applyChanges) => {
+  const ws = new WebSocket('/items')
+  ws.onmessage = (e) => {
+    const { add, change, remove } = JSON.parse(e.data)
+    applyChanges({ changed: true, add, change, remove })
+  }
+  return () => ws.close()
+}, { keyConfig: item => item.id })
+
+createEffect(() => console.log('Items:', items.get()))
+```
+
+The start callback activates lazily when the collection is first accessed by an effect and cleans up when no effects are watching. Options include `value` for initial items (default `[]`) and `keyConfig` for key generation.
+
+**Derived collections** transform Lists or other Collections via `.deriveCollection()`:
+
+```js
+import { createList } from '@zeix/cause-effect'
 
 const users = createList([
   { id: 1, name: 'Alice', role: 'admin' },
@@ -282,7 +302,6 @@ const profiles = users.deriveCollection(user => ({
   displayName: `${user.name} (${user.role})`
 }))
 
-createEffect(() => console.log('Profiles:', profiles.get()))
 console.log(profiles.at(0)?.get().displayName)
 ```
 
@@ -302,27 +321,6 @@ const processed = users
   .deriveCollection(user => ({ ...user, active: user.lastLogin > threshold }))
   .deriveCollection(user => user.active ? `Active: ${user.name}` : `Inactive: ${user.name}`)
 ```
-
-### SourceCollection
-
-An externally-driven collection with a watched lifecycle. Unlike Collection which derives from a List, a SourceCollection receives data from external sources (WebSocket, Server-Sent Events, etc.) via `applyChanges()`:
-
-```js
-import { createSourceCollection, createEffect } from '@zeix/cause-effect'
-
-const items = createSourceCollection([], (applyChanges) => {
-  const ws = new WebSocket('/items')
-  ws.onmessage = (e) => {
-    const { add, change, remove } = JSON.parse(e.data)
-    applyChanges({ changed: true, add, change, remove })
-  }
-  return () => ws.close()
-}, { keyConfig: item => item.id })
-
-createEffect(() => console.log('Items:', items.get()))
-```
-
-SourceCollections share the same `Collection` interface — `.get()`, `.byKey()`, `.keys()`, `.at()`, `.deriveCollection()` — and support chaining for data pipelines.
 
 ### Effect
 
@@ -382,7 +380,7 @@ Does the data come from *outside* the reactive system?
 │   (mouse position, window resize, media queries, DOM observers, etc.)
 │   Tip: Use `{ equals: SKIP_EQUALITY }` for mutable object observation
 │
-├─ Yes, keyed collection → `createSourceCollection(initial, applyChanges => { ... })`
+├─ Yes, keyed collection → `createCollection(applyChanges => { ... })`
 │   (WebSocket streams, Server-Sent Events, external data feeds, etc.)
 │
 └─ No, managed internally? What kind of data is it?
@@ -418,7 +416,7 @@ Does the data come from *outside* the reactive system?
         │     └─ No, whole array mutations only → `createState()`
         │
         └─ Is it derived / read-only transformation of a `List` or `Collection`?
-              └─ Yes → `createCollection()` or `.deriveCollection()`
+              └─ Yes → `.deriveCollection()`
                  (memoized + supports async mapping + chaining)
 ```
 
@@ -478,10 +476,10 @@ dispose() // Cleans up the effect and runs the returned cleanup
 
 ### Resource Management with Watch Callbacks
 
-Sensor and SourceCollection signals use a **start callback** for lazy resource management. The callback runs when the signal is first accessed by an effect and the returned cleanup function runs when no effects are watching:
+Sensor and Collection signals use a **start callback** for lazy resource management. The callback runs when the signal is first accessed by an effect and the returned cleanup function runs when no effects are watching:
 
 ```js
-import { createSensor, createSourceCollection, createEffect } from '@zeix/cause-effect'
+import { createSensor, createCollection, createEffect } from '@zeix/cause-effect'
 
 // Sensor: track external input
 const windowSize = createSensor((set) => {
@@ -491,12 +489,12 @@ const windowSize = createSensor((set) => {
   return () => window.removeEventListener('resize', update)
 })
 
-// SourceCollection: receive external data
-const feed = createSourceCollection([], (applyChanges) => {
+// Collection: receive external data
+const feed = createCollection((applyChanges) => {
   const es = new EventSource('/feed')
   es.onmessage = (e) => applyChanges(JSON.parse(e.data))
   return () => es.close()
-})
+}, { keyConfig: item => item.id })
 
 // Resources are created only when effect runs
 const cleanup = createEffect(() => {
