@@ -28,13 +28,12 @@ export {
 } from './src/graph'
 export {
 	type Collection,
-	type CollectionSource,
-	createSourceCollection,
+	type CollectionCallback,
+	type CollectionOptions,
+	createCollection,
 	type DeriveCollectionCallback,
 	deriveCollection,
 	isCollection,
-	type SourceCollectionCallback,
-	type SourceCollectionOptions,
 } from './src/nodes/collection'
 export {
 	createEffect,

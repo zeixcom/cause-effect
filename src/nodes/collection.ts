@@ -54,12 +54,13 @@ type Collection<T extends {}> = {
 	readonly length: number
 }
 
-type SourceCollectionOptions<T extends {}> = {
+type CollectionOptions<T extends {}> = {
+	value?: T[]
 	keyConfig?: KeyConfig<T>
 	createItem?: (key: string, value: T) => Signal<T>
 }
 
-type SourceCollectionCallback = (
+type CollectionCallback<T extends {}> = (
 	applyChanges: (changes: DiffResult) => void,
 ) => Cleanup
 
@@ -247,17 +248,17 @@ function deriveCollection<T extends {}, U extends {}>(
  * The collection activates when first accessed by an effect and deactivates when no longer watched.
  *
  * @since 0.18.0
- * @param initialValue - Initial array of items
  * @param start - Callback invoked when the collection starts being watched, receives applyChanges helper
- * @param options - Optional configuration for key generation and item signal creation
+ * @param options - Optional configuration including initial value, key generation, and item signal creation
  * @returns A read-only Collection signal
  */
-function createSourceCollection<T extends {}>(
-	initialValue: T[],
-	start: SourceCollectionCallback,
-	options?: SourceCollectionOptions<T>,
+function createCollection<T extends {}>(
+	start: CollectionCallback<T>,
+	options?: CollectionOptions<T>,
 ): Collection<T> {
-	validateSignalValue(TYPE_COLLECTION, initialValue, Array.isArray)
+	const initialValue = options?.value ?? []
+	if (initialValue.length)
+		validateSignalValue(TYPE_COLLECTION, initialValue, Array.isArray)
 	validateCallback(TYPE_COLLECTION, start)
 
 	const signals = new Map<string, Signal<T>>()
@@ -457,13 +458,13 @@ function isCollectionSource<T extends {}>(
 /* === Exports === */
 
 export {
-	createSourceCollection,
+	createCollection,
 	deriveCollection,
 	isCollection,
 	isCollectionSource,
 	type Collection,
+	type CollectionCallback,
+	type CollectionOptions,
 	type CollectionSource,
 	type DeriveCollectionCallback,
-	type SourceCollectionCallback,
-	type SourceCollectionOptions,
 }

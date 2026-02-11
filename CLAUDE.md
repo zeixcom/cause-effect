@@ -19,8 +19,7 @@ Think of signals as **observable cells** in a spreadsheet:
 - **Task signals** are async formula cells with abort semantics and pending state
 - **Store signals** are structured tables where individual columns (properties) are reactive
 - **List signals** are tables with stable row IDs that survive sorting and reordering
-- **Collection signals** are read-only derived tables with item-level memoization
-- **SourceCollection signals** are externally-fed tables with a watched lifecycle (WebSocket, SSE)
+- **Collection signals** are externally-fed reactive tables with a watched lifecycle (WebSocket, SSE), or derived tables from Lists/Collections via `.deriveCollection()`
 - **Effects** are event handlers that trigger side effects when cells change
 
 ## Architectural Deep Dive
@@ -86,17 +85,18 @@ The generic constraint `T extends {}` is crucial - it excludes `null` and `undef
 
 ### Collection Architecture
 
-**Derived Collections** (`createCollection`): Transformed from Lists or other Collections
-- Created via `createCollection(source, callback)` or `source.deriveCollection(callback)`
+**Collections** (`createCollection`): Externally-driven collections with watched lifecycle
+- Created via `createCollection(start, options?)` — mirrors `createSensor(start, options?)`
+- The `start` callback receives an `applyChanges(diffResult)` function for granular add/change/remove operations
+- `options.value` provides initial items (default `[]`), `options.keyConfig` configures key generation
+- Lazy activation: `start` callback invoked on first effect access, cleanup when unwatched
+
+**Derived Collections** (`deriveCollection`): Transformed from Lists or other Collections
+- Created via `list.deriveCollection(callback)` or `collection.deriveCollection(callback)`
+- Also available as `deriveCollection(source, callback)` (internal helper, exported for advanced use)
 - Item-level memoization: sync callbacks use `createMemo`, async callbacks use `createTask`
 - Structural changes tracked via an internal `MemoNode` that reads `source.keys()`
 - Chainable for data pipelines
-
-**Source Collections** (`createSourceCollection`): Externally-driven collections with watched lifecycle
-- Created via `createSourceCollection(initialValue, start, options?)`
-- The `start` callback receives an `applyChanges(diffResult)` function for granular add/change/remove operations
-- Same `Collection` interface as derived collections (`.get()`, `.byKey()`, `.keys()`, `.deriveCollection()`)
-- Lazy activation: `start` callback invoked on first effect access, cleanup when unwatched
 
 ### Store and List Architecture
 
@@ -124,7 +124,7 @@ Computed signals implement smart memoization:
 
 ## Resource Management with Watch Callbacks
 
-Sensor and SourceCollection signals use a **start callback** pattern for lazy resource management. Resources are allocated only when a signal is first accessed by an effect and automatically cleaned up when no effects are watching:
+Sensor and Collection signals use a **start callback** pattern for lazy resource management. Resources are allocated only when a signal is first accessed by an effect and automatically cleaned up when no effects are watching:
 
 ```typescript
 // Sensor: track external input with state updates
@@ -143,8 +143,8 @@ const element = createSensor<HTMLElement>((set) => {
   return () => observer.disconnect() // cleanup when unwatched
 }, { value: node, equals: SKIP_EQUALITY })
 
-// SourceCollection: receive keyed data from external source
-const feed = createSourceCollection<{ id: string; text: string }>([], (applyChanges) => {
+// Collection: receive keyed data from external source
+const feed = createCollection<{ id: string; text: string }>((applyChanges) => {
   const es = new EventSource('/feed')
   es.onmessage = (e) => applyChanges(JSON.parse(e.data))
   return () => es.close()
@@ -229,13 +229,27 @@ const firstTodo = todoList.byKey('task1') // Access by stable key
 ```
 
 **Collection (`createCollection`)**:
-- Read-only derived transformations of Lists or other Collections
+- Externally-driven keyed collections (WebSocket streams, SSE, external data feeds)
+- Mirrors `createSensor(start, options?)` — start callback pattern with watched lifecycle
+- Same `Collection` interface — `.get()`, `.byKey()`, `.keys()`, `.deriveCollection()`
 
 ```typescript
-const doubled = createCollection(numbers, (value: number) => value * 2)
+const feed = createCollection<{ id: string; text: string }>((applyChanges) => {
+  const ws = new WebSocket('/feed')
+  ws.onmessage = (e) => applyChanges(JSON.parse(e.data))
+  return () => ws.close()
+}, { keyConfig: item => item.id })
+```
+
+**Derived Collection** (`.deriveCollection()`):
+- Read-only derived transformations of Lists or other Collections
+- Created via `.deriveCollection()` method on List or Collection
+
+```typescript
+const doubled = numbers.deriveCollection((value: number) => value * 2)
 
 // Async transformation
-const enriched = createCollection(users, async (user, abort) => {
+const enriched = users.deriveCollection(async (user, abort) => {
   const response = await fetch(`/api/${user.id}`, { signal: abort })
   return { ...user, details: await response.json() }
 })
@@ -244,19 +258,6 @@ const enriched = createCollection(users, async (user, abort) => {
 const processed = todoList
   .deriveCollection(todo => ({ ...todo, urgent: todo.priority > 8 }))
   .deriveCollection(todo => todo.urgent ? `URGENT: ${todo.text}` : todo.text)
-```
-
-**SourceCollection (`createSourceCollection`)**:
-- Externally-driven keyed collections (WebSocket streams, SSE, external data feeds)
-- Same `Collection` interface — `.get()`, `.byKey()`, `.keys()`, `.deriveCollection()`
-- Watched lifecycle: activates on first effect access, tears down when unwatched
-
-```typescript
-const feed = createSourceCollection<{ id: string; text: string }>([], (applyChanges) => {
-  const ws = new WebSocket('/feed')
-  ws.onmessage = (e) => applyChanges(JSON.parse(e.data))
-  return () => ws.close()
-}, { keyConfig: item => item.id })
 ```
 
 **Memo (`createMemo`)**:
