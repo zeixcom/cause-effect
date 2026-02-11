@@ -28,10 +28,10 @@ export {
 } from './src/graph'
 export {
 	type Collection,
-	type CollectionCallback,
 	type CollectionSource,
-	createCollection,
 	createSourceCollection,
+	type DeriveCollectionCallback,
+	deriveCollection,
 	isCollection,
 	type SourceCollectionCallback,
 	type SourceCollectionOptions,

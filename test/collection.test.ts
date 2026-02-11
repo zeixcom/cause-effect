@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import {
-	createCollection,
 	createEffect,
 	createList,
+	deriveCollection,
 	isCollection,
 	isList,
 } from '../index.ts'
@@ -14,10 +14,10 @@ const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 /* === Tests === */
 
 describe('Collection', () => {
-	describe('createCollection', () => {
+	describe('deriveCollection', () => {
 		test('should transform list values with sync callback', () => {
 			const numbers = createList([1, 2, 3])
-			const doubled = createCollection(numbers, (v: number) => v * 2)
+			const doubled = deriveCollection(numbers, (v: number) => v * 2)
 
 			expect(doubled.get()).toEqual([2, 4, 6])
 			expect(doubled.length).toBe(3)
@@ -25,7 +25,7 @@ describe('Collection', () => {
 
 		test('should transform values with async callback', async () => {
 			const numbers = createList([1, 2, 3])
-			const doubled = createCollection(
+			const doubled = deriveCollection(
 				numbers,
 				async (v: number, abort: AbortSignal) => {
 					await wait(10)
@@ -49,7 +49,7 @@ describe('Collection', () => {
 
 		test('should handle empty source list', () => {
 			const empty = createList<number>([])
-			const doubled = createCollection(empty, (v: number) => v * 2)
+			const doubled = deriveCollection(empty, (v: number) => v * 2)
 
 			expect(doubled.get()).toEqual([])
 			expect(doubled.length).toBe(0)
@@ -57,13 +57,13 @@ describe('Collection', () => {
 
 		test('should have Symbol.toStringTag of "Collection"', () => {
 			const list = createList([1])
-			const col = createCollection(list, (v: number) => v)
+			const col = deriveCollection(list, (v: number) => v)
 			expect(col[Symbol.toStringTag]).toBe('Collection')
 		})
 
 		test('should have Symbol.isConcatSpreadable set to true', () => {
 			const list = createList([1])
-			const col = createCollection(list, (v: number) => v)
+			const col = deriveCollection(list, (v: number) => v)
 			expect(col[Symbol.isConcatSpreadable]).toBe(true)
 		})
 	})
@@ -71,7 +71,7 @@ describe('Collection', () => {
 	describe('isCollection', () => {
 		test('should identify collection signals', () => {
 			const list = createList([1])
-			const col = createCollection(list, (v: number) => v)
+			const col = deriveCollection(list, (v: number) => v)
 			expect(isCollection(col)).toBe(true)
 		})
 
@@ -80,7 +80,7 @@ describe('Collection', () => {
 			expect(isCollection(null)).toBe(false)
 			expect(isCollection({})).toBe(false)
 			expect(
-				isList(createCollection(createList([1]), (v: number) => v)),
+				isList(deriveCollection(createList([1]), (v: number) => v)),
 			).toBe(false)
 		})
 	})
@@ -88,7 +88,7 @@ describe('Collection', () => {
 	describe('at', () => {
 		test('should return Signal at index', () => {
 			const list = createList([1, 2, 3])
-			const doubled = createCollection(list, (v: number) => v * 2)
+			const doubled = deriveCollection(list, (v: number) => v * 2)
 
 			expect(doubled.at(0)?.get()).toBe(2)
 			expect(doubled.at(1)?.get()).toBe(4)
@@ -97,7 +97,7 @@ describe('Collection', () => {
 
 		test('should return undefined for out-of-bounds index', () => {
 			const list = createList([1])
-			const col = createCollection(list, (v: number) => v)
+			const col = deriveCollection(list, (v: number) => v)
 			expect(col.at(5)).toBeUndefined()
 		})
 	})
@@ -105,7 +105,7 @@ describe('Collection', () => {
 	describe('byKey', () => {
 		test('should return Signal by source key', () => {
 			const list = createList([10, 20])
-			const doubled = createCollection(list, (v: number) => v * 2)
+			const doubled = deriveCollection(list, (v: number) => v * 2)
 
 			// biome-ignore lint/style/noNonNullAssertion: index is within bounds
 			const key0 = list.keyAt(0)!
@@ -120,7 +120,7 @@ describe('Collection', () => {
 	describe('Key-based Access', () => {
 		test('keyAt should return key at index', () => {
 			const list = createList([10, 20, 30])
-			const col = createCollection(list, (v: number) => v)
+			const col = deriveCollection(list, (v: number) => v)
 			const key0 = col.keyAt(0)
 			expect(key0).toBeDefined()
 			expect(typeof key0).toBe('string')
@@ -128,7 +128,7 @@ describe('Collection', () => {
 
 		test('indexOfKey should return index for key', () => {
 			const list = createList([10, 20])
-			const col = createCollection(list, (v: number) => v)
+			const col = deriveCollection(list, (v: number) => v)
 			// biome-ignore lint/style/noNonNullAssertion: index is within bounds
 			const key = col.keyAt(0)!
 			expect(col.indexOfKey(key)).toBe(0)
@@ -136,7 +136,7 @@ describe('Collection', () => {
 
 		test('keys should return iterator of all keys', () => {
 			const list = createList([10, 20, 30])
-			const col = createCollection(list, (v: number) => v)
+			const col = deriveCollection(list, (v: number) => v)
 			const allKeys = [...col.keys()]
 			expect(allKeys).toHaveLength(3)
 		})
@@ -145,7 +145,7 @@ describe('Collection', () => {
 	describe('Iteration', () => {
 		test('should support for...of via Symbol.iterator', () => {
 			const list = createList([1, 2, 3])
-			const doubled = createCollection(list, (v: number) => v * 2)
+			const doubled = deriveCollection(list, (v: number) => v * 2)
 
 			const signals = [...doubled]
 			expect(signals).toHaveLength(3)
@@ -158,7 +158,7 @@ describe('Collection', () => {
 	describe('Reactivity', () => {
 		test('should react to source additions', () => {
 			const list = createList([1, 2])
-			const doubled = createCollection(list, (v: number) => v * 2)
+			const doubled = deriveCollection(list, (v: number) => v * 2)
 
 			let result: number[] = []
 			let effectCount = 0
@@ -177,7 +177,7 @@ describe('Collection', () => {
 
 		test('should react to source removals', () => {
 			const list = createList([1, 2, 3])
-			const doubled = createCollection(list, (v: number) => v * 2)
+			const doubled = deriveCollection(list, (v: number) => v * 2)
 
 			expect(doubled.get()).toEqual([2, 4, 6])
 			list.remove(1)
@@ -187,7 +187,7 @@ describe('Collection', () => {
 
 		test('should react to item mutations', () => {
 			const list = createList([1, 2])
-			const doubled = createCollection(list, (v: number) => v * 2)
+			const doubled = deriveCollection(list, (v: number) => v * 2)
 
 			let result: number[] = []
 			createEffect(() => {
@@ -201,7 +201,7 @@ describe('Collection', () => {
 
 		test('async collection should react to changes', async () => {
 			const list = createList([1, 2])
-			const doubled = createCollection(
+			const doubled = deriveCollection(
 				list,
 				async (v: number, abort: AbortSignal) => {
 					await wait(5)
@@ -247,10 +247,10 @@ describe('Collection', () => {
 			expect(quadrupled.get()).toEqual([4, 8, 12, 16])
 		})
 
-		test('should chain with createCollection from collection source', () => {
+		test('should chain with deriveCollection from collection source', () => {
 			const list = createList([1, 2, 3])
-			const doubled = createCollection(list, (v: number) => v * 2)
-			const quadrupled = createCollection(doubled, (v: number) => v * 2)
+			const doubled = deriveCollection(list, (v: number) => v * 2)
+			const quadrupled = deriveCollection(doubled, (v: number) => v * 2)
 
 			expect(quadrupled.get()).toEqual([4, 8, 12])
 		})
@@ -259,7 +259,7 @@ describe('Collection', () => {
 	describe('Error Propagation', () => {
 		test('should propagate errors from per-item memos in get()', () => {
 			const list = createList([1, 2, 3])
-			const mapped = createCollection(list, (v: number) => {
+			const mapped = deriveCollection(list, (v: number) => {
 				if (v === 2) throw new Error('bad item')
 				return v * 2
 			})
@@ -272,7 +272,7 @@ describe('Collection', () => {
 		test('should throw InvalidCallbackError for non-function callback', () => {
 			const list = createList([1])
 			// @ts-expect-error - Testing invalid input
-			expect(() => createCollection(list, null)).toThrow(
+			expect(() => deriveCollection(list, null)).toThrow(
 				'[Collection] Callback null is invalid',
 			)
 		})
@@ -280,7 +280,7 @@ describe('Collection', () => {
 		test('should throw TypeError for invalid source', () => {
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
-				createCollection({}, (v: number) => v)
+				deriveCollection({}, (v: number) => v)
 			}).toThrow('Invalid collection source')
 		})
 	})

@@ -29,9 +29,9 @@ import {
 } from '../util'
 import {
 	type Collection,
-	type CollectionCallback,
 	type CollectionSource,
-	createCollection,
+	type DeriveCollectionCallback,
+	deriveCollection,
 } from './collection'
 import { createState, type State } from './state'
 
@@ -71,10 +71,7 @@ type List<T extends {}> = {
 	sort(compareFn?: (a: T, b: T) => number): void
 	splice(start: number, deleteCount?: number, ...items: T[]): T[]
 	deriveCollection<R extends {}>(
-		callback: (sourceValue: T) => R,
-	): Collection<R>
-	deriveCollection<R extends {}>(
-		callback: (sourceValue: T, abort: AbortSignal) => Promise<R>,
+		callback: DeriveCollectionCallback<R, T>,
 	): Collection<R>
 }
 
@@ -545,12 +542,12 @@ function createList<T extends {}>(
 		},
 
 		deriveCollection<R extends {}>(
-			cb: CollectionCallback<R, T>,
+			cb: DeriveCollectionCallback<R, T>,
 		): Collection<R> {
 			return (
-				createCollection as <T2 extends {}, U2 extends {}>(
+				deriveCollection as <T2 extends {}, U2 extends {}>(
 					source: CollectionSource<U2>,
-					callback: CollectionCallback<T2, U2>,
+					callback: DeriveCollectionCallback<T2, U2>,
 				) => Collection<T2>
 			)(list, cb)
 		},

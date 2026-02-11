@@ -34,7 +34,7 @@ import { createTask } from './task'
 
 type CollectionSource<T extends {}> = List<T> | Collection<T>
 
-type CollectionCallback<T extends {}, U extends {}> =
+type DeriveCollectionCallback<T extends {}, U extends {}> =
 	| ((sourceValue: U) => T)
 	| ((sourceValue: U, abort: AbortSignal) => Promise<T>)
 
@@ -49,10 +49,7 @@ type Collection<T extends {}> = {
 	keyAt(index: number): string | undefined
 	indexOfKey(key: string): number
 	deriveCollection<R extends {}>(
-		callback: (sourceValue: T) => R,
-	): Collection<R>
-	deriveCollection<R extends {}>(
-		callback: (sourceValue: T, abort: AbortSignal) => Promise<R>,
+		callback: DeriveCollectionCallback<R, T>,
 	): Collection<R>
 	readonly length: number
 }
@@ -78,17 +75,17 @@ type SourceCollectionCallback = (
  * @param callback - Transformation function applied to each item
  * @returns A Collection signal
  */
-function createCollection<T extends {}, U extends {}>(
+function deriveCollection<T extends {}, U extends {}>(
 	source: CollectionSource<U>,
 	callback: (sourceValue: U) => T,
 ): Collection<T>
-function createCollection<T extends {}, U extends {}>(
+function deriveCollection<T extends {}, U extends {}>(
 	source: CollectionSource<U>,
 	callback: (sourceValue: U, abort: AbortSignal) => Promise<T>,
 ): Collection<T>
-function createCollection<T extends {}, U extends {}>(
+function deriveCollection<T extends {}, U extends {}>(
 	source: CollectionSource<U>,
-	callback: CollectionCallback<T, U>,
+	callback: DeriveCollectionCallback<T, U>,
 ): Collection<T> {
 	validateCallback(TYPE_COLLECTION, callback)
 	if (!isCollectionSource(source))
@@ -230,12 +227,12 @@ function createCollection<T extends {}, U extends {}>(
 		},
 
 		deriveCollection<R extends {}>(
-			cb: CollectionCallback<R, T>,
+			cb: DeriveCollectionCallback<R, T>,
 		): Collection<R> {
 			return (
-				createCollection as <T2 extends {}, U2 extends {}>(
+				deriveCollection as <T2 extends {}, U2 extends {}>(
 					source: CollectionSource<U2>,
-					callback: CollectionCallback<T2, U2>,
+					callback: DeriveCollectionCallback<T2, U2>,
 				) => Collection<T2>
 			)(collection, cb)
 		},
@@ -419,12 +416,12 @@ function createSourceCollection<T extends {}>(
 		},
 
 		deriveCollection<R extends {}>(
-			cb: CollectionCallback<R, T>,
+			cb: DeriveCollectionCallback<R, T>,
 		): Collection<R> {
 			return (
-				createCollection as <T2 extends {}, U2 extends {}>(
+				deriveCollection as <T2 extends {}, U2 extends {}>(
 					source: CollectionSource<U2>,
-					callback: CollectionCallback<T2, U2>,
+					callback: DeriveCollectionCallback<T2, U2>,
 				) => Collection<T2>
 			)(collection, cb)
 		},
@@ -460,13 +457,13 @@ function isCollectionSource<T extends {}>(
 /* === Exports === */
 
 export {
-	createCollection,
 	createSourceCollection,
+	deriveCollection,
 	isCollection,
 	isCollectionSource,
 	type Collection,
-	type CollectionCallback,
 	type CollectionSource,
+	type DeriveCollectionCallback,
 	type SourceCollectionCallback,
 	type SourceCollectionOptions,
 }
