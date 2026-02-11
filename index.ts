@@ -32,7 +32,6 @@ export {
 	type CollectionOptions,
 	createCollection,
 	type DeriveCollectionCallback,
-	deriveCollection,
 	isCollection,
 } from './src/nodes/collection'
 export {

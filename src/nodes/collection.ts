@@ -49,7 +49,10 @@ type Collection<T extends {}> = {
 	keyAt(index: number): string | undefined
 	indexOfKey(key: string): number
 	deriveCollection<R extends {}>(
-		callback: DeriveCollectionCallback<R, T>,
+		callback: (sourceValue: T) => R,
+	): Collection<R>
+	deriveCollection<R extends {}>(
+		callback: (sourceValue: T, abort: AbortSignal) => Promise<R>,
 	): Collection<R>
 	readonly length: number
 }
@@ -60,7 +63,7 @@ type CollectionOptions<T extends {}> = {
 	createItem?: (key: string, value: T) => Signal<T>
 }
 
-type CollectionCallback<T extends {}> = (
+type CollectionCallback = (
 	applyChanges: (changes: DiffResult) => void,
 ) => Cleanup
 
@@ -253,7 +256,7 @@ function deriveCollection<T extends {}, U extends {}>(
  * @returns A read-only Collection signal
  */
 function createCollection<T extends {}>(
-	start: CollectionCallback<T>,
+	start: CollectionCallback,
 	options?: CollectionOptions<T>,
 ): Collection<T> {
 	const initialValue = options?.value ?? []

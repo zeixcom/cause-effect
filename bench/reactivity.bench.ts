@@ -1,7 +1,6 @@
 import { bench, group, run } from 'mitata'
 import {
 	batch,
-	deriveCollection,
 	createEffect,
 	createList,
 	createMemo,
@@ -498,7 +497,7 @@ group('List: reactive propagation', () => {
 group('Collection: derive 50 items (sync)', () => {
 	bench('cause-effect', () => {
 		const list = createList(Array.from({ length: 50 }, (_, i) => i + 1))
-		const col = deriveCollection(list, (v: number) => v * 2)
+		const col = list.deriveCollection((v: number) => v * 2)
 		col.get()
 	})
 })
@@ -514,7 +513,7 @@ group('Collection: chain 2 derivations', () => {
 
 group('Collection: reactive update', () => {
 	const list = createList([1, 2, 3, 4, 5])
-	const col = deriveCollection(list, (v: number) => v * 10)
+	const col = list.deriveCollection((v: number) => v * 10)
 	createEffect(() => {
 		col.get()
 	})

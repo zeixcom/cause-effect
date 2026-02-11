@@ -71,7 +71,10 @@ type List<T extends {}> = {
 	sort(compareFn?: (a: T, b: T) => number): void
 	splice(start: number, deleteCount?: number, ...items: T[]): T[]
 	deriveCollection<R extends {}>(
-		callback: DeriveCollectionCallback<R, T>,
+		callback: (sourceValue: T) => R,
+	): Collection<R>
+	deriveCollection<R extends {}>(
+		callback: (sourceValue: T, abort: AbortSignal) => Promise<R>,
 	): Collection<R>
 }
 
