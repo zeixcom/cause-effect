@@ -79,7 +79,6 @@ export {
 	type MutableSignal,
 } from './src/signal'
 export {
-	isAbortError,
 	isAsyncFunction,
 	isFunction,
 	isNumber,

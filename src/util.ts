@@ -55,19 +55,6 @@ function isUniformArray<T>(
 	return Array.isArray(value) && value.every(guard)
 }
 
-function hasMethod<
-	T extends object & Record<string, (...args: unknown[]) => unknown>,
->(
-	obj: T,
-	methodName: string,
-): obj is T & Record<string, (...args: unknown[]) => unknown> {
-	return methodName in obj && isFunction(obj[methodName])
-}
-
-function isAbortError(error: unknown): boolean {
-	return error instanceof DOMException && error.name === 'AbortError'
-}
-
 function valueString(value: unknown): string {
 	return isString(value)
 		? `"${value}"`
@@ -90,7 +77,5 @@ export {
 	isRecord,
 	isRecordOrArray,
 	isUniformArray,
-	hasMethod,
-	isAbortError,
 	valueString,
 }
