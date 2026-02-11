@@ -107,6 +107,9 @@ function createSensor<T extends {}>(
 		[Symbol.toStringTag]: TYPE_SENSOR,
 		get(): T {
 			if (activeSink) {
+				// Start fires before link: synchronous set() inside start updates
+				// node.value without propagation (no sinks yet). The activating
+				// effect reads the updated value directly after link.
 				if (!node.sinks)
 					node.stop = start((next: T): void => {
 						validateSignalValue(TYPE_SENSOR, next, node.guard)

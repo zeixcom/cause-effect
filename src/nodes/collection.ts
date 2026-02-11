@@ -1,4 +1,8 @@
-import { validateCallback, validateSignalValue } from '../errors'
+import {
+	UnsetSignalValueError,
+	validateCallback,
+	validateSignalValue,
+} from '../errors'
 import {
 	activeSink,
 	batch,
@@ -15,7 +19,13 @@ import {
 	untrack,
 } from '../graph'
 import { isAsyncFunction, isFunction, isObjectOfType, isString } from '../util'
-import { type DiffResult, isList, type KeyConfig, type List } from './list'
+import {
+	type DiffResult,
+	isList,
+	type KeyConfig,
+	keysEqual,
+	type List,
+} from './list'
 import { createMemo, type Memo } from './memo'
 import { createState, isState } from './state'
 import { createTask } from './task'
@@ -57,13 +67,6 @@ type SourceCollectionCallback = (
 ) => Cleanup
 
 /* === Functions === */
-
-/** Shallow equality check for string arrays */
-function keysEqual(a: string[], b: string[]): boolean {
-	if (a.length !== b.length) return false
-	for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
-	return true
-}
 
 /**
  * Creates a derived Collection from a List or another Collection with item-level memoization.
@@ -118,7 +121,10 @@ function createCollection<T extends {}, U extends {}>(
 	}
 
 	// Sync collection signals with source keys, reading source.keys()
-	// to establish a graph edge from source → this node
+	// to establish a graph edge from source → this node.
+	// Intentionally side-effectful: mutates the private signals map inside what
+	// is conceptually a MemoNode.fn. The side effects are idempotent and scoped
+	// to private state — separating detection from application would add complexity.
 	function syncKeys(): string[] {
 		const newKeys = Array.from(source.keys())
 		const oldKeys = node.value
@@ -135,7 +141,9 @@ function createCollection<T extends {}, U extends {}>(
 		return newKeys
 	}
 
-	// MemoNode for structural reactivity — fn reads source.keys()
+	// Structural tracking node — not a general-purpose Memo.
+	// fn (syncKeys) reads source.keys() to detect additions/removals.
+	// Value is a string[] of keys, not the collection's actual values.
 	const node: MemoNode<string[]> = {
 		fn: syncKeys,
 		value: [],
@@ -191,16 +199,18 @@ function createCollection<T extends {}, U extends {}>(
 
 		get() {
 			if (activeSink) link(node, activeSink)
-			const keys = ensureSynced()
-			return keys
-				.map(key => {
-					try {
-						return signals.get(key)?.get()
-					} catch {
-						return undefined
-					}
-				})
-				.filter(v => v != null) as T[]
+			const currentKeys = ensureSynced()
+			const result: T[] = []
+			for (const key of currentKeys) {
+				try {
+					const v = signals.get(key)?.get()
+					if (v != null) result.push(v)
+				} catch (e) {
+					// Skip pending async items; rethrow real errors
+					if (!(e instanceof UnsetSignalValueError)) throw e
+				}
+			}
+			return result
 		},
 
 		at(index: number) {
@@ -269,15 +279,17 @@ function createSourceCollection<T extends {}>(
 
 	// Build current value from child signals
 	function buildValue(): T[] {
-		return keys
-			.map(key => {
-				try {
-					return signals.get(key)?.get()
-				} catch {
-					return undefined
-				}
-			})
-			.filter(v => v != null) as T[]
+		const result: T[] = []
+		for (const key of keys) {
+			try {
+				const v = signals.get(key)?.get()
+				if (v != null) result.push(v)
+			} catch (e) {
+				// Skip pending async items; rethrow real errors
+				if (!(e instanceof UnsetSignalValueError)) throw e
+			}
+		}
+		return result
 	}
 
 	const node: MemoNode<T[]> = {
@@ -326,6 +338,7 @@ function createSourceCollection<T extends {}>(
 				node.sources = null
 				node.sourcesTail = null
 			}
+			// Reset CHECK/RUNNING before propagate; mark DIRTY so next get() rebuilds
 			node.flags = FLAG_CLEAN
 			propagate(node as unknown as SinkNode)
 			node.flags |= FLAG_DIRTY

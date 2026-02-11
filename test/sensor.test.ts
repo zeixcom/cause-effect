@@ -1,6 +1,7 @@
 import { describe, expect, mock, test } from 'bun:test'
 import {
 	createEffect,
+	createMemo,
 	createSensor,
 	isMemo,
 	isSensor,
@@ -58,6 +59,31 @@ describe('Sensor', () => {
 			expect(isSensor(null)).toBe(false)
 			expect(isSensor({})).toBe(false)
 			expect(isMemo(createSensor<number>(() => () => {}))).toBe(false)
+		})
+	})
+
+	describe('start/link ordering', () => {
+		test('synchronous set() inside start should be visible to activating effect', () => {
+			// Start fires before link: synchronous set() updates node.value
+			// without propagation (no sinks yet). The activating effect reads
+			// the updated value directly after link completes.
+			const sensor = createSensor<number>(
+				set => {
+					set(10)
+					return () => {}
+				},
+				{ value: 0 },
+			)
+
+			const doubled = createMemo(() => sensor.get() * 2)
+
+			let result = 0
+			createEffect(() => {
+				result = doubled.get()
+			})
+
+			// The memo should see 10 (from start's set), not 0 (initial value)
+			expect(result).toBe(20)
 		})
 	})
 

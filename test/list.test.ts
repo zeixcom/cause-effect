@@ -90,6 +90,55 @@ describe('List', () => {
 			// Same signal reference, updated value
 			expect(signal0?.get()).toBe(10)
 		})
+
+		test('should keep stable keys when reordering with content-based keyConfig', () => {
+			type Item = { id: string; val: number }
+			const list = createList<Item>(
+				[
+					{ id: 'a', val: 1 },
+					{ id: 'b', val: 2 },
+					{ id: 'c', val: 3 },
+				],
+				{ keyConfig: item => item.id },
+			)
+
+			// Grab signal references by key before reorder
+			const signalA = list.byKey('a')
+			const signalB = list.byKey('b')
+			const signalC = list.byKey('c')
+
+			// Reverse order
+			list.set([
+				{ id: 'c', val: 3 },
+				{ id: 'b', val: 2 },
+				{ id: 'a', val: 1 },
+			])
+
+			// Keys should follow items, not positions
+			expect(list.byKey('a')?.get()).toEqual({ id: 'a', val: 1 })
+			expect(list.byKey('b')?.get()).toEqual({ id: 'b', val: 2 })
+			expect(list.byKey('c')?.get()).toEqual({ id: 'c', val: 3 })
+
+			// Signal references should be preserved (same State objects)
+			expect(list.byKey('a')).toBe(signalA)
+			expect(list.byKey('b')).toBe(signalB)
+			expect(list.byKey('c')).toBe(signalC)
+
+			// Key order should match new array order
+			expect([...list.keys()]).toEqual(['c', 'b', 'a'])
+		})
+
+		test('should detect duplicates in set() with content-based keyConfig', () => {
+			const list = createList([{ id: 'a', val: 1 }], {
+				keyConfig: item => item.id,
+			})
+			expect(() =>
+				list.set([
+					{ id: 'a', val: 1 },
+					{ id: 'a', val: 2 },
+				]),
+			).toThrow('already exists')
+		})
 	})
 
 	describe('update', () => {
@@ -208,6 +257,19 @@ describe('List', () => {
 			const deleted = list.splice(-1, 1, 4)
 			expect(deleted).toEqual([3])
 			expect(list.get()).toEqual([1, 2, 4])
+		})
+
+		test('should throw DuplicateKeyError for duplicate keys on insert', () => {
+			const list = createList(
+				[
+					{ id: 'a', val: 1 },
+					{ id: 'b', val: 2 },
+				],
+				{ keyConfig: item => item.id },
+			)
+			expect(() => list.splice(1, 0, { id: 'a', val: 3 })).toThrow(
+				'already exists',
+			)
 		})
 	})
 

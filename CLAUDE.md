@@ -342,6 +342,7 @@ const display = createMemo(() => user.name.get() + user.email.get())
 3. **Over-reactivity**: Structure data to minimize unnecessary updates
 4. **Async Race Conditions**: Trust automatic cancellation with AbortSignal
 5. **Circular Dependencies**: The graph detects and throws `CircularDependencyError`
+6. **Untracked `byKey()`/`at()` access**: On Store, List, and Collection, `byKey()`, `at()`, `keyAt()`, and `indexOfKey()` do **not** create graph edges. They are direct lookups that bypass structural tracking. An effect using only `collection.byKey('x')?.get()` will react to value changes of key `'x'`, but will **not** re-run if key `'x'` is added or removed. Use `get()`, `keys()`, or `length` to track structural changes.
 
 ## Advanced Patterns
 

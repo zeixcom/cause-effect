@@ -256,6 +256,18 @@ describe('Collection', () => {
 		})
 	})
 
+	describe('Error Propagation', () => {
+		test('should propagate errors from per-item memos in get()', () => {
+			const list = createList([1, 2, 3])
+			const mapped = createCollection(list, (v: number) => {
+				if (v === 2) throw new Error('bad item')
+				return v * 2
+			})
+
+			expect(() => mapped.get()).toThrow('bad item')
+		})
+	})
+
 	describe('Input Validation', () => {
 		test('should throw InvalidCallbackError for non-function callback', () => {
 			const list = createList([1])

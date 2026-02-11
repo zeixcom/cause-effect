@@ -40,7 +40,12 @@ type StoreOptions = {
 type BaseStore<T extends UnknownRecord> = {
 	readonly [Symbol.toStringTag]: 'Store'
 	readonly [Symbol.isConcatSpreadable]: false
-	[Symbol.iterator](): IterableIterator<[string, State<T[keyof T] & {}>]>
+	[Symbol.iterator](): IterableIterator<
+		[
+			string,
+			State<T[keyof T] & {}> | Store<UnknownRecord> | List<unknown & {}>,
+		]
+	>
 	keys(): IterableIterator<string>
 	byKey<K extends keyof T & string>(
 		key: K,
@@ -169,7 +174,10 @@ function createStore<T extends UnknownRecord>(
 		return record as T
 	}
 
-	// MemoNode for graph edge tracking (child signals → store → store sinks)
+	// Structural tracking node — not a general-purpose Memo.
+	// On first get(): refresh() establishes edges from child signals.
+	// On subsequent get(): untrack(buildValue) rebuilds without re-linking.
+	// Mutation methods (add/remove/set) null out sources to force re-establishment.
 	const node: MemoNode<T> = {
 		fn: buildValue,
 		value: initialValue,
@@ -236,7 +244,14 @@ function createStore<T extends UnknownRecord>(
 			for (const key of Array.from(signals.keys())) {
 				const signal = signals.get(key)
 				if (signal)
-					yield [key, signal] as [string, State<T[keyof T] & {}>]
+					yield [key, signal] as [
+						string,
+						(
+							| State<T[keyof T] & {}>
+							| Store<UnknownRecord>
+							| List<unknown & {}>
+						),
+					]
 			}
 		},
 

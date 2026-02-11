@@ -89,6 +89,14 @@ type List<T extends {}> = {
  * @param {WeakSet<object>} visited - Set to track visited objects for cycle detection
  * @returns {boolean} Whether the two values are equal
  */
+
+/** Shallow equality check for string arrays */
+function keysEqual(a: string[], b: string[]): boolean {
+	if (a.length !== b.length) return false
+	for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
+	return true
+}
+
 function isEqual<T>(a: T, b: T, visited?: WeakSet<object>): boolean {
 	// Fast paths
 	if (Object.is(a, b)) return true
@@ -146,6 +154,8 @@ function isEqual<T>(a: T, b: T, visited?: WeakSet<object>): boolean {
  * @param {T[]} newArray - The new array
  * @param {string[]} currentKeys - Current keys array (may be sparse or shorter than oldArray)
  * @param {(item: T) => string} generateKey - Function to generate keys for new items
+ * @param {boolean} contentBased - When true, always use generateKey (content-based keys);
+ *   when false, reuse positional keys from currentKeys (synthetic keys)
  * @returns {DiffResult & { newKeys: string[] }} The differences in DiffResult format plus updated keys array
  */
 function diffArrays<T>(
@@ -153,6 +163,7 @@ function diffArrays<T>(
 	newArray: T[],
 	currentKeys: string[],
 	generateKey: (item: T) => string,
+	contentBased: boolean,
 ): DiffResult & { newKeys: string[] } {
 	const visited = new WeakSet()
 	const add = {} as UnknownRecord
@@ -176,9 +187,13 @@ function diffArrays<T>(
 		const newValue = newArray[i]
 		if (newValue === undefined) continue
 
-		// Get or generate key for this position
-		let key = currentKeys[i]
-		if (!key) key = generateKey(newValue)
+		// Content-based keys: always derive from item; synthetic keys: reuse by position
+		const key = contentBased
+			? generateKey(newValue)
+			: (currentKeys[i] ?? generateKey(newValue))
+
+		if (seenKeys.has(key))
+			throw new DuplicateKeyError(TYPE_LIST, key, newValue)
 
 		newKeys.push(key)
 		seenKeys.add(key)
@@ -204,6 +219,9 @@ function diffArrays<T>(
 		}
 	}
 
+	// Detect reorder even when no values changed
+	if (!changed && !keysEqual(currentKeys, newKeys)) changed = true
+
 	return { add, change, remove, newKeys, changed }
 }
 
@@ -226,9 +244,10 @@ function createList<T extends {}>(
 
 	let keyCounter = 0
 	const keyConfig = options?.keyConfig
+	const contentBased = isFunction<string>(keyConfig)
 	const generateKey: (item: T) => string = isString(keyConfig)
 		? () => `${keyConfig}${keyCounter++}`
-		: isFunction<string>(keyConfig)
+		: contentBased
 			? (item: T) => keyConfig(item)
 			: () => String(keyCounter++)
 
@@ -240,6 +259,10 @@ function createList<T extends {}>(
 			.map(key => signals.get(key)?.get())
 			.filter(v => v !== undefined) as T[]
 
+	// Structural tracking node — not a general-purpose Memo.
+	// On first get(): refresh() establishes edges from child signals.
+	// On subsequent get(): untrack(buildValue) rebuilds without re-linking.
+	// Mutation methods (add/remove/set/splice) null out sources to force re-establishment.
 	const node: MemoNode<T[]> = {
 		fn: buildValue,
 		value: initialValue,
@@ -317,7 +340,8 @@ function createList<T extends {}>(
 		signals.set(key, createState(value))
 	}
 
-	// Clear dirty flag after initialization - initial value is correct
+	// Starts clean: mutation methods (add/remove/set/splice) explicitly call
+	// propagate() + invalidate edges, so refresh() on first get() is not needed.
 	node.value = initialValue
 	node.flags = 0
 
@@ -370,6 +394,7 @@ function createList<T extends {}>(
 				newValue,
 				keys,
 				generateKey,
+				contentBased,
 			)
 			if (changes.changed) {
 				keys = changes.newKeys
@@ -450,7 +475,7 @@ function createList<T extends {}>(
 				)
 			const newOrder = entries.map(([key]) => key)
 
-			if (!isEqual(keys, newOrder)) {
+			if (!keysEqual(keys, newOrder)) {
 				keys = newOrder
 				propagate(node as unknown as SinkNode)
 				node.flags |= FLAG_DIRTY
@@ -491,6 +516,8 @@ function createList<T extends {}>(
 
 			for (const item of items) {
 				const key = generateKey(item)
+				if (signals.has(key) && !(key in remove))
+					throw new DuplicateKeyError(TYPE_LIST, key, item)
 				newOrder.push(key)
 				add[key] = item
 			}
@@ -554,5 +581,6 @@ export {
 	createList,
 	isEqual,
 	isList,
+	keysEqual,
 	TYPE_LIST,
 }

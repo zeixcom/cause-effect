@@ -256,13 +256,3 @@ A read-only derived transformation of a List or another Collection. Each source 
 **No `invalidateEdges`**: Unlike Store/List, the Collection never needs to re-establish its source edge because it has exactly one source (the parent List or Collection) that never changes identity. Structural changes (adding/removing per-item signals) happen inside `syncKeys` without affecting the source edge.
 
 **Chaining**: `deriveCollection()` creates a new Collection from an existing one, forming a pipeline. Each level in the chain has its own `MemoNode` for structural tracking and its own set of per-item derived signals.
-
-## Open Questions
-
-1. **Store/List initialization clears `flags` to 0 (clean) after setup, but Collection keeps `FLAG_DIRTY`**. Store and List can do this because their mutation methods explicitly call `propagate()` + `invalidateEdges()`. Collection must start dirty because it passively observes its source and needs `refresh()` to establish the source edge. This asymmetry is intentional but could be confusing — would it be clearer if all composite nodes started `FLAG_DIRTY` and always went through `refresh()` on first access?
-
-2. **`StateNode` carries an unused optional `stop` field when used for State signals**. `stop` is defined on `SourceFields` (available to all source nodes including `StateNode`) because Sensors need it for lazy lifecycle. State signals created via `createState()` never use `stop`. Should `stop` be separated into its own mixin to make the field usage more explicit? (Note: `RefNode` was removed in v0.18.0 — the mutable-object observation pattern is now handled by `createSensor` with `SKIP_EQUALITY`.)
-
-3. **`EffectNode.fn` is typed as `EffectCallback` but set to `undefined` on dispose** (via `node.fn = undefined as unknown as EffectCallback`). This cast is needed because the node type doesn't model the disposed state. A `fn: EffectCallback | undefined` type would be more accurate but would require null checks elsewhere.
-
-4. **Collection's `syncKeys` has a side effect**: It mutates the `signals` map (adding/removing per-item Memo/Task signals) inside what is conceptually a pure computation (`MemoNode.fn`). This works correctly because the side effect is idempotent and the map is private to the collection, but it breaks the expectation that `fn` is a pure function of its dependencies.
