@@ -1,51 +1,65 @@
-import { type Computed } from './classes/computed';
-import { List } from './classes/list';
-import { State } from './classes/state';
-import { type Store } from './classes/store';
-import type { UnknownRecord } from './diff';
-type Signal<T extends {}> = {
+import { type ComputedOptions, type MemoCallback, type Signal, type TaskCallback } from './graph';
+import { type List, type UnknownRecord } from './nodes/list';
+import { type Memo } from './nodes/memo';
+import { type State } from './nodes/state';
+import { type Store } from './nodes/store';
+import { type Task } from './nodes/task';
+type MutableSignal<T extends {}> = {
     get(): T;
-};
-type UnknownSignal = Signal<unknown & {}>;
-type MutableSignal<T extends {}> = T extends readonly (infer U extends {})[] ? List<U> : T extends UnknownRecord ? Store<T> : State<T>;
-type ReadonlySignal<T extends {}> = Computed<T>;
-type UnknownSignalRecord = Record<string, UnknownSignal>;
-type SignalValues<S extends UnknownSignalRecord> = {
-    [K in keyof S]: S[K] extends Signal<infer T> ? T : never;
+    set(value: T): void;
+    update(callback: (value: T) => T): void;
 };
 /**
- * Check whether a value is a Signal
+ * Create a derived signal from existing signals
  *
  * @since 0.9.0
- * @param {unknown} value - value to check
- * @returns {boolean} - true if value is a Signal, false otherwise
+ * @param callback - Computation callback function
+ * @param options - Optional configuration
  */
-declare const isSignal: <T extends {}>(value: unknown) => value is Signal<T>;
-/**
- * Check whether a value is a State, Store, or List
- *
- * @since 0.15.2
- * @param {unknown} value - Value to check
- * @returns {boolean} - True if value is a State, Store, or List, false otherwise
- */
-declare const isMutableSignal: (value: unknown) => value is MutableSignal<unknown & {}>;
+declare function createComputed<T extends {}>(callback: TaskCallback<T>, options?: ComputedOptions<T>): Task<T>;
+declare function createComputed<T extends {}>(callback: MemoCallback<T>, options?: ComputedOptions<T>): Memo<T>;
 /**
  * Convert a value to a Signal.
  *
  * @since 0.9.6
  */
+declare function createSignal<T extends {}>(value: Signal<T>): Signal<T>;
 declare function createSignal<T extends {}>(value: readonly T[]): List<T>;
-declare function createSignal<T extends {}>(value: T[]): List<T>;
 declare function createSignal<T extends UnknownRecord>(value: T): Store<T>;
-declare function createSignal<T extends {}>(value: () => T): Computed<T>;
+declare function createSignal<T extends {}>(value: TaskCallback<T>): Task<T>;
+declare function createSignal<T extends {}>(value: MemoCallback<T>): Memo<T>;
 declare function createSignal<T extends {}>(value: T): State<T>;
 /**
  * Convert a value to a MutableSignal.
  *
  * @since 0.17.0
  */
+declare function createMutableSignal<T extends {}>(value: MutableSignal<T>): MutableSignal<T>;
 declare function createMutableSignal<T extends {}>(value: readonly T[]): List<T>;
-declare function createMutableSignal<T extends {}>(value: T[]): List<T>;
 declare function createMutableSignal<T extends UnknownRecord>(value: T): Store<T>;
 declare function createMutableSignal<T extends {}>(value: T): State<T>;
-export { createMutableSignal, createSignal, isMutableSignal, isSignal, type MutableSignal, type ReadonlySignal, type Signal, type SignalValues, type UnknownSignal, type UnknownSignalRecord, };
+/**
+ * Check if a value is a computed signal
+ *
+ * @since 0.9.0
+ * @param value - Value to check
+ * @returns True if value is a computed signal, false otherwise
+ */
+declare function isComputed<T extends {}>(value: unknown): value is Memo<T>;
+/**
+ * Check whether a value is a Signal
+ *
+ * @since 0.9.0
+ * @param value - Value to check
+ * @returns True if value is a Signal, false otherwise
+ */
+declare function isSignal<T extends {}>(value: unknown): value is Signal<T>;
+/**
+ * Check whether a value is a State, Store, or List
+ *
+ * @since 0.15.2
+ * @param value - Value to check
+ * @returns True if value is a State, Store, or List, false otherwise
+ */
+declare function isMutableSignal(value: unknown): value is MutableSignal<unknown & {}>;
+export { type MutableSignal, createComputed, createSignal, createMutableSignal, isComputed, isSignal, isMutableSignal, };
