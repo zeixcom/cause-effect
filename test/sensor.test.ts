@@ -5,6 +5,7 @@ import {
 	createSensor,
 	isMemo,
 	isSensor,
+	SKIP_EQUALITY,
 	UnsetSignalValueError,
 } from '../index.ts'
 
@@ -319,6 +320,113 @@ describe('Sensor', () => {
 				received = sensor.get()
 			})
 			expect(received).toBe(99)
+		})
+	})
+
+	describe('SKIP_EQUALITY', () => {
+		test('should always return false', () => {
+			expect(SKIP_EQUALITY()).toBe(false)
+			// biome-ignore lint/suspicious/noExplicitAny: testing with arbitrary values
+			expect((SKIP_EQUALITY as any)(1, 1)).toBe(false)
+		})
+
+		test('should return the reference value from get()', () => {
+			const obj = { name: 'test' }
+			const sensor = createSensor<typeof obj>(
+				set => {
+					set(obj)
+					return () => {}
+				},
+				{ value: obj, equals: SKIP_EQUALITY },
+			)
+
+			let received: typeof obj | undefined
+			const dispose = createEffect(() => {
+				received = sensor.get()
+			})
+			expect(received).toBe(obj)
+			dispose()
+		})
+
+		test('should re-run effects when set is called with same reference', () => {
+			const obj = { status: 'offline' }
+			let setFn!: (next: typeof obj) => void
+
+			const sensor = createSensor<typeof obj>(
+				set => {
+					setFn = set
+					set(obj)
+					return () => {}
+				},
+				{ equals: SKIP_EQUALITY },
+			)
+
+			let effectCount = 0
+			let lastStatus = ''
+			createEffect(() => {
+				lastStatus = sensor.get().status
+				effectCount++
+			})
+
+			expect(effectCount).toBe(1)
+			expect(lastStatus).toBe('offline')
+
+			obj.status = 'online'
+			expect(effectCount).toBe(1) // no set yet
+
+			setFn(obj) // same reference, but SKIP_EQUALITY ensures propagation
+			expect(effectCount).toBe(2)
+			expect(lastStatus).toBe('online')
+		})
+
+		test('should trigger multiple effect runs on multiple set calls', () => {
+			const obj = { size: 100 }
+			let setFn!: (next: typeof obj) => void
+
+			const sensor = createSensor<typeof obj>(
+				set => {
+					setFn = set
+					set(obj)
+					return () => {}
+				},
+				{ equals: SKIP_EQUALITY },
+			)
+
+			const callback = mock(() => {})
+			createEffect(() => {
+				sensor.get()
+				callback()
+			})
+
+			expect(callback).toHaveBeenCalledTimes(1)
+
+			setFn(obj)
+			expect(callback).toHaveBeenCalledTimes(2)
+
+			setFn(obj)
+			expect(callback).toHaveBeenCalledTimes(3)
+		})
+
+		test('should validate values passed through set()', () => {
+			let setFn!: (next: unknown) => void
+
+			const sensor = createSensor<{ x: number }>(
+				set => {
+					setFn = set as (next: unknown) => void
+					set({ x: 1 })
+					return () => {}
+				},
+				{ equals: SKIP_EQUALITY },
+			)
+
+			createEffect(() => {
+				sensor.get()
+			})
+
+			expect(() => {
+				// biome-ignore lint/suspicious/noExplicitAny: testing invalid input
+				setFn(null as any)
+			}).toThrow('[Sensor] Signal value cannot be null or undefined')
 		})
 	})
 
