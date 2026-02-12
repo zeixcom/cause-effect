@@ -576,7 +576,7 @@ export {
 	batch,
 	batchDepth,
 	createScope,
-	DEFAULT_EQUALITY as defaultEquals,
+	DEFAULT_EQUALITY,
 	SKIP_EQUALITY,
 	FLAG_CLEAN,
 	FLAG_DIRTY,

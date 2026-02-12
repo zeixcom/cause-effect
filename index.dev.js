@@ -415,14 +415,6 @@ function isState(value) {
 }
 
 // src/nodes/list.ts
-function keysEqual(a, b) {
-  if (a.length !== b.length)
-    return false;
-  for (let i = 0;i < a.length; i++)
-    if (a[i] !== b[i])
-      return false;
-  return true;
-}
 function isEqual(a, b, visited) {
   if (Object.is(a, b))
     return true;
@@ -445,10 +437,9 @@ function isEqual(a, b, visited) {
       const ba = b;
       if (aa.length !== ba.length)
         return false;
-      for (let i = 0;i < aa.length; i++) {
+      for (let i = 0;i < aa.length; i++)
         if (!isEqual(aa[i], ba[i], visited))
           return false;
-      }
       return true;
     }
     if (isRecord(a) && isRecord(b)) {
@@ -469,6 +460,22 @@ function isEqual(a, b, visited) {
     visited.delete(a);
     visited.delete(b);
   }
+}
+function keysEqual(a, b) {
+  if (a.length !== b.length)
+    return false;
+  for (let i = 0;i < a.length; i++)
+    if (a[i] !== b[i])
+      return false;
+  return true;
+}
+function getKeyGenerator(keyConfig) {
+  let keyCounter = 0;
+  const contentBased = typeof keyConfig === "function";
+  return [
+    typeof keyConfig === "string" ? () => `${keyConfig}${keyCounter++}` : contentBased ? (item) => keyConfig(item) || String(keyCounter++) : () => String(keyCounter++),
+    contentBased
+  ];
 }
 function diffArrays(oldArray, newArray, currentKeys, generateKey, contentBased) {
   const visited = new WeakSet;
@@ -518,10 +525,7 @@ function createList(initialValue, options) {
   validateSignalValue(TYPE_LIST, initialValue, Array.isArray);
   const signals = new Map;
   let keys = [];
-  let keyCounter = 0;
-  const keyConfig = options?.keyConfig;
-  const contentBased = isFunction(keyConfig);
-  const generateKey = typeof keyConfig === "string" ? () => `${keyConfig}${keyCounter++}` : contentBased ? (item) => keyConfig(item) || String(keyCounter++) : () => String(keyCounter++);
+  const [generateKey, contentBased] = getKeyGenerator(options?.keyConfig);
   const buildValue = () => keys.map((key) => signals.get(key)?.get()).filter((v) => v !== undefined);
   const node = {
     fn: buildValue,
@@ -581,6 +585,17 @@ function createList(initialValue, options) {
     }
     return changes.changed;
   };
+  const start = options?.watched;
+  const subscribe = start ? () => {
+    if (activeSink) {
+      if (!node.sinks)
+        node.stop = start();
+      link(node, activeSink);
+    }
+  } : () => {
+    if (activeSink)
+      link(node, activeSink);
+  };
   const initRecord = toRecord(initialValue);
   for (const key in initRecord) {
     const value = initRecord[key];
@@ -600,19 +615,11 @@ function createList(initialValue, options) {
       }
     },
     get length() {
-      if (activeSink) {
-        if (!node.sinks && options?.watched)
-          node.stop = options.watched();
-        link(node, activeSink);
-      }
+      subscribe();
       return keys.length;
     },
     get() {
-      if (activeSink) {
-        if (!node.sinks && options?.watched)
-          node.stop = options.watched();
-        link(node, activeSink);
-      }
+      subscribe();
       if (node.sources) {
         if (node.flags) {
           node.value = untrack(buildValue);
@@ -625,14 +632,15 @@ function createList(initialValue, options) {
       }
       return node.value;
     },
-    set(newValue) {
-      const currentValue = node.flags & FLAG_DIRTY ? buildValue() : node.value;
-      const changes = diffArrays(currentValue, newValue, keys, generateKey, contentBased);
+    set(next) {
+      const prev = node.flags & FLAG_DIRTY ? buildValue() : node.value;
+      const changes = diffArrays(prev, next, keys, generateKey, contentBased);
       if (changes.changed) {
         keys = changes.newKeys;
         applyChanges(changes);
-        propagate(node);
         node.flags |= FLAG_DIRTY;
+        for (let e = node.sinks;e; e = e.nextSink)
+          propagate(e.sink);
         if (batchDepth === 0)
           flush();
       }
@@ -644,11 +652,7 @@ function createList(initialValue, options) {
       return signals.get(keys[index]);
     },
     keys() {
-      if (activeSink) {
-        if (!node.sinks && options?.watched)
-          node.stop = options.watched();
-        link(node, activeSink);
-      }
+      subscribe();
       return keys.values();
     },
     byKey(key) {
@@ -670,8 +674,9 @@ function createList(initialValue, options) {
       signals.set(key, createState(value));
       node.sources = null;
       node.sourcesTail = null;
-      propagate(node);
       node.flags |= FLAG_DIRTY;
+      for (let e = node.sinks;e; e = e.nextSink)
+        propagate(e.sink);
       if (batchDepth === 0)
         flush();
       return key;
@@ -685,8 +690,9 @@ function createList(initialValue, options) {
           keys.splice(index, 1);
         node.sources = null;
         node.sourcesTail = null;
-        propagate(node);
         node.flags |= FLAG_DIRTY;
+        for (let e = node.sinks;e; e = e.nextSink)
+          propagate(e.sink);
         if (batchDepth === 0)
           flush();
       }
@@ -696,15 +702,16 @@ function createList(initialValue, options) {
       const newOrder = entries.map(([key]) => key);
       if (!keysEqual(keys, newOrder)) {
         keys = newOrder;
-        propagate(node);
         node.flags |= FLAG_DIRTY;
+        for (let e = node.sinks;e; e = e.nextSink)
+          propagate(e.sink);
         if (batchDepth === 0)
           flush();
       }
     },
-    splice(start, deleteCount, ...items) {
+    splice(start2, deleteCount, ...items) {
       const length = keys.length;
-      const actualStart = start < 0 ? Math.max(0, length + start) : Math.min(start, length);
+      const actualStart = start2 < 0 ? Math.max(0, length + start2) : Math.min(start2, length);
       const actualDeleteCount = Math.max(0, Math.min(deleteCount ?? Math.max(0, length - Math.max(0, actualStart)), length - actualStart));
       const add = {};
       const remove = {};
@@ -735,8 +742,9 @@ function createList(initialValue, options) {
           changed
         });
         keys = newOrder;
-        propagate(node);
         node.flags |= FLAG_DIRTY;
+        for (let e = node.sinks;e; e = e.nextSink)
+          propagate(e.sink);
         if (batchDepth === 0)
           flush();
       }
@@ -953,10 +961,7 @@ function createCollection(start, options) {
   const signals = new Map;
   const keys = [];
   const itemToKey = new Map;
-  let keyCounter = 0;
-  const keyConfig = options?.keyConfig;
-  const contentBased = isFunction(keyConfig);
-  const generateKey = typeof keyConfig === "string" ? () => `${keyConfig}${keyCounter++}` : contentBased ? (item) => keyConfig(item) || String(keyCounter++) : () => String(keyCounter++);
+  const [generateKey, contentBased] = getKeyGenerator(options?.keyConfig);
   const resolveKey = (item) => itemToKey.get(item) ?? (contentBased ? generateKey(item) : undefined);
   const itemFactory = options?.createItem ?? ((_key, value) => createState(value));
   function buildValue() {
@@ -981,7 +986,7 @@ function createCollection(start, options) {
     sourcesTail: null,
     sinks: null,
     sinksTail: null,
-    equals: () => false,
+    equals: SKIP_EQUALITY,
     error: undefined
   };
   function applyChanges(changes) {
@@ -1031,9 +1036,9 @@ function createCollection(start, options) {
         node.sources = null;
         node.sourcesTail = null;
       }
-      node.flags = FLAG_CLEAN;
-      propagate(node);
-      node.flags |= FLAG_DIRTY;
+      node.flags = FLAG_DIRTY;
+      for (let e = node.sinks;e; e = e.nextSink)
+        propagate(e.sink);
     });
   }
   for (const item of initialValue) {
@@ -1044,9 +1049,12 @@ function createCollection(start, options) {
   }
   node.value = initialValue;
   node.flags = FLAG_DIRTY;
-  function startWatching() {
-    if (!node.sinks)
-      node.stop = start(applyChanges);
+  function subscribe() {
+    if (activeSink) {
+      if (!node.sinks)
+        node.stop = start(applyChanges);
+      link(node, activeSink);
+    }
   }
   const collection = {
     [Symbol.toStringTag]: TYPE_COLLECTION,
@@ -1059,24 +1067,15 @@ function createCollection(start, options) {
       }
     },
     get length() {
-      if (activeSink) {
-        startWatching();
-        link(node, activeSink);
-      }
+      subscribe();
       return keys.length;
     },
     keys() {
-      if (activeSink) {
-        startWatching();
-        link(node, activeSink);
-      }
+      subscribe();
       return keys.values();
     },
     get() {
-      if (activeSink) {
-        startWatching();
-        link(node, activeSink);
-      }
+      subscribe();
       if (node.sources) {
         if (node.flags) {
           node.value = untrack(buildValue);
@@ -1313,6 +1312,17 @@ function createStore(initialValue, options) {
     }
     return changes.changed;
   };
+  const start = options?.watched;
+  const subscribe = start ? () => {
+    if (activeSink) {
+      if (!node.sinks)
+        node.stop = start();
+      link(node, activeSink);
+    }
+  } : () => {
+    if (activeSink)
+      link(node, activeSink);
+  };
   for (const key of Object.keys(initialValue))
     addSignal(key, initialValue[key]);
   const store = {
@@ -1326,22 +1336,14 @@ function createStore(initialValue, options) {
       }
     },
     keys() {
-      if (activeSink) {
-        if (!node.sinks && options?.watched)
-          node.stop = options.watched();
-        link(node, activeSink);
-      }
+      subscribe();
       return signals.keys();
     },
     byKey(key) {
       return signals.get(key);
     },
     get() {
-      if (activeSink) {
-        if (!node.sinks && options?.watched)
-          node.stop = options.watched();
-        link(node, activeSink);
-      }
+      subscribe();
       if (node.sources) {
         if (node.flags) {
           node.value = untrack(buildValue);
@@ -1358,8 +1360,9 @@ function createStore(initialValue, options) {
       const currentValue = node.flags & FLAG_DIRTY ? buildValue() : node.value;
       const changes = diffRecords(currentValue, newValue);
       if (applyChanges(changes)) {
-        propagate(node);
         node.flags |= FLAG_DIRTY;
+        for (let e = node.sinks;e; e = e.nextSink)
+          propagate(e.sink);
         if (batchDepth === 0)
           flush();
       }
@@ -1373,8 +1376,9 @@ function createStore(initialValue, options) {
       addSignal(key, value);
       node.sources = null;
       node.sourcesTail = null;
-      propagate(node);
       node.flags |= FLAG_DIRTY;
+      for (let e = node.sinks;e; e = e.nextSink)
+        propagate(e.sink);
       if (batchDepth === 0)
         flush();
       return key;
@@ -1384,8 +1388,9 @@ function createStore(initialValue, options) {
       if (ok) {
         node.sources = null;
         node.sourcesTail = null;
-        propagate(node);
         node.flags |= FLAG_DIRTY;
+        for (let e = node.sinks;e; e = e.nextSink)
+          propagate(e.sink);
         if (batchDepth === 0)
           flush();
       }
@@ -1393,10 +1398,8 @@ function createStore(initialValue, options) {
   };
   return new Proxy(store, {
     get(target, prop) {
-      if (prop in target) {
-        const value = Reflect.get(target, prop);
-        return isFunction(value) ? value.bind(target) : value;
-      }
+      if (prop in target)
+        return Reflect.get(target, prop);
       if (typeof prop !== "symbol")
         return target.byKey(prop);
     },

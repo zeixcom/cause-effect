@@ -15,11 +15,18 @@ import {
 	refresh,
 	type Signal,
 	type SinkNode,
+	SKIP_EQUALITY,
 	TYPE_COLLECTION,
 	untrack,
 } from '../graph'
-import { isAsyncFunction, isFunction, isObjectOfType } from '../util'
-import { isList, type KeyConfig, keysEqual, type List } from './list'
+import { isAsyncFunction, isObjectOfType } from '../util'
+import {
+	getKeyGenerator,
+	isList,
+	type KeyConfig,
+	keysEqual,
+	type List,
+} from './list'
 import { createMemo, type Memo } from './memo'
 import { createState, isState } from './state'
 import { createTask } from './task'
@@ -64,7 +71,7 @@ type CollectionOptions<T extends {}> = {
 }
 
 type CollectionCallback<T extends {}> = (
-	applyChanges: (changes: CollectionChanges<T>) => void,
+	apply: (changes: CollectionChanges<T>) => void,
 ) => Cleanup
 
 /* === Functions === */
@@ -268,15 +275,7 @@ function createCollection<T extends {}>(
 	const keys: string[] = []
 	const itemToKey = new Map<T, string>()
 
-	let keyCounter = 0
-	const keyConfig = options?.keyConfig
-	const contentBased = isFunction<string>(keyConfig)
-	const generateKey: (item: T) => string =
-		typeof keyConfig === 'string'
-			? () => `${keyConfig}${keyCounter++}`
-			: contentBased
-				? (item: T) => keyConfig(item) || String(keyCounter++)
-				: () => String(keyCounter++)
+	const [generateKey, contentBased] = getKeyGenerator(options?.keyConfig)
 
 	const resolveKey = (item: T): string | undefined =>
 		itemToKey.get(item) ?? (contentBased ? generateKey(item) : undefined)
@@ -307,7 +306,7 @@ function createCollection<T extends {}>(
 		sourcesTail: null,
 		sinks: null,
 		sinksTail: null,
-		equals: () => false, // Always rebuild — structural changes are managed externally
+		equals: SKIP_EQUALITY, // Always rebuild — structural changes are managed externally
 		error: undefined,
 	}
 
@@ -362,10 +361,9 @@ function createCollection<T extends {}>(
 				node.sources = null
 				node.sourcesTail = null
 			}
-			// Reset CHECK/RUNNING before propagate; mark DIRTY so next get() rebuilds
-			node.flags = FLAG_CLEAN
-			propagate(node as unknown as SinkNode)
-			node.flags |= FLAG_DIRTY
+			// Mark DIRTY so next get() rebuilds; propagate to sinks
+			node.flags = FLAG_DIRTY
+			for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
 		})
 	}
 
@@ -379,8 +377,11 @@ function createCollection<T extends {}>(
 	node.value = initialValue
 	node.flags = FLAG_DIRTY // First refresh() will establish child edges
 
-	function startWatching(): void {
-		if (!node.sinks) node.stop = start(applyChanges)
+	function subscribe(): void {
+		if (activeSink) {
+			if (!node.sinks) node.stop = start(applyChanges)
+			link(node, activeSink)
+		}
 	}
 
 	const collection: Collection<T> = {
@@ -395,26 +396,17 @@ function createCollection<T extends {}>(
 		},
 
 		get length() {
-			if (activeSink) {
-				startWatching()
-				link(node, activeSink)
-			}
+			subscribe()
 			return keys.length
 		},
 
 		keys() {
-			if (activeSink) {
-				startWatching()
-				link(node, activeSink)
-			}
+			subscribe()
 			return keys.values()
 		},
 
 		get() {
-			if (activeSink) {
-				startWatching()
-				link(node, activeSink)
-			}
+			subscribe()
 			if (node.sources) {
 				if (node.flags) {
 					node.value = untrack(buildValue)

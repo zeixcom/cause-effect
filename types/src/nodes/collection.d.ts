@@ -26,7 +26,7 @@ type CollectionOptions<T extends {}> = {
     keyConfig?: KeyConfig<T>;
     createItem?: (key: string, value: T) => Signal<T>;
 };
-type CollectionCallback<T extends {}> = (applyChanges: (changes: CollectionChanges<T>) => void) => Cleanup;
+type CollectionCallback<T extends {}> = (apply: (changes: CollectionChanges<T>) => void) => Cleanup;
 /**
  * Creates a derived Collection from a List or another Collection with item-level memoization.
  * Sync callbacks use createMemo, async callbacks use createTask.

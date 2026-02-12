@@ -6,7 +6,7 @@ import {
 import {
 	activeSink,
 	type ComputedOptions,
-	defaultEquals,
+	DEFAULT_EQUALITY,
 	FLAG_DIRTY,
 	link,
 	refresh,
@@ -108,7 +108,7 @@ function createTask<T extends {}>(
 		sinks: null,
 		sinksTail: null,
 		flags: FLAG_DIRTY,
-		equals: options?.equals ?? defaultEquals,
+		equals: options?.equals ?? DEFAULT_EQUALITY,
 		controller: undefined,
 		error: undefined,
 	}

@@ -52,8 +52,8 @@ type List<T extends {}> = {
 	[Symbol.iterator](): IterableIterator<State<T>>
 	readonly length: number
 	get(): T[]
-	set(newValue: T[]): void
-	update(fn: (oldValue: T[]) => T[]): void
+	set(next: T[]): void
+	update(fn: (prev: T[]) => T[]): void
 	at(index: number): State<T> | undefined
 	keys(): IterableIterator<string>
 	byKey(key: string): State<T> | undefined
@@ -82,14 +82,6 @@ type List<T extends {}> = {
  * @param {WeakSet<object>} visited - Set to track visited objects for cycle detection
  * @returns {boolean} Whether the two values are equal
  */
-
-/** Shallow equality check for string arrays */
-function keysEqual(a: string[], b: string[]): boolean {
-	if (a.length !== b.length) return false
-	for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
-	return true
-}
-
 function isEqual<T>(a: T, b: T, visited?: WeakSet<object>): boolean {
 	// Fast paths
 	if (Object.is(a, b)) return true
@@ -117,9 +109,8 @@ function isEqual<T>(a: T, b: T, visited?: WeakSet<object>): boolean {
 			const aa = a as unknown[]
 			const ba = b as unknown[]
 			if (aa.length !== ba.length) return false
-			for (let i = 0; i < aa.length; i++) {
+			for (let i = 0; i < aa.length; i++)
 				if (!isEqual(aa[i], ba[i], visited)) return false
-			}
 			return true
 		}
 
@@ -142,6 +133,28 @@ function isEqual<T>(a: T, b: T, visited?: WeakSet<object>): boolean {
 		visited.delete(a)
 		visited.delete(b)
 	}
+}
+
+/** Shallow equality check for string arrays */
+function keysEqual(a: string[], b: string[]): boolean {
+	if (a.length !== b.length) return false
+	for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
+	return true
+}
+
+function getKeyGenerator<T extends {}>(
+	keyConfig?: KeyConfig<T>,
+): [(item: T) => string, boolean] {
+	let keyCounter = 0
+	const contentBased = typeof keyConfig === 'function'
+	return [
+		typeof keyConfig === 'string'
+			? () => `${keyConfig}${keyCounter++}`
+			: contentBased
+				? (item: T) => keyConfig(item) || String(keyCounter++)
+				: () => String(keyCounter++),
+		contentBased,
+	]
 }
 
 /**
@@ -241,15 +254,7 @@ function createList<T extends {}>(
 	const signals = new Map<string, State<T>>()
 	let keys: string[] = []
 
-	let keyCounter = 0
-	const keyConfig = options?.keyConfig
-	const contentBased = isFunction<string>(keyConfig)
-	const generateKey: (item: T) => string =
-		typeof keyConfig === 'string'
-			? () => `${keyConfig}${keyCounter++}`
-			: contentBased
-				? (item: T) => keyConfig(item) || String(keyCounter++)
-				: () => String(keyCounter++)
+	const [generateKey, contentBased] = getKeyGenerator(options?.keyConfig)
 
 	// --- Internal helpers ---
 
@@ -332,6 +337,18 @@ function createList<T extends {}>(
 		return changes.changed
 	}
 
+	const start = options?.watched
+	const subscribe = start
+		? () => {
+				if (activeSink) {
+					if (!node.sinks) node.stop = start()
+					link(node, activeSink)
+				}
+			}
+		: () => {
+				if (activeSink) link(node, activeSink)
+			}
+
 	// --- Initialize ---
 	const initRecord = toRecord(initialValue)
 	for (const key in initRecord) {
@@ -358,20 +375,12 @@ function createList<T extends {}>(
 		},
 
 		get length() {
-			if (activeSink) {
-				if (!node.sinks && options?.watched)
-					node.stop = options.watched()
-				link(node, activeSink)
-			}
+			subscribe()
 			return keys.length
 		},
 
 		get() {
-			if (activeSink) {
-				if (!node.sinks && options?.watched)
-					node.stop = options.watched()
-				link(node, activeSink)
-			}
+			subscribe()
 			if (node.sources) {
 				// Fast path: edges already established, rebuild value directly
 				if (node.flags) {
@@ -386,12 +395,11 @@ function createList<T extends {}>(
 			return node.value
 		},
 
-		set(newValue: T[]) {
-			const currentValue =
-				node.flags & FLAG_DIRTY ? buildValue() : node.value
+		set(next: T[]) {
+			const prev = node.flags & FLAG_DIRTY ? buildValue() : node.value
 			const changes = diffArrays(
-				currentValue,
-				newValue,
+				prev,
+				next,
 				keys,
 				generateKey,
 				contentBased,
@@ -399,13 +407,13 @@ function createList<T extends {}>(
 			if (changes.changed) {
 				keys = changes.newKeys
 				applyChanges(changes)
-				propagate(node as unknown as SinkNode)
 				node.flags |= FLAG_DIRTY
+				for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
 				if (batchDepth === 0) flush()
 			}
 		},
 
-		update(fn: (oldValue: T[]) => T[]) {
+		update(fn: (prev: T[]) => T[]) {
 			list.set(fn(list.get()))
 		},
 
@@ -414,11 +422,7 @@ function createList<T extends {}>(
 		},
 
 		keys() {
-			if (activeSink) {
-				if (!node.sinks && options?.watched)
-					node.stop = options.watched()
-				link(node, activeSink)
-			}
+			subscribe()
 			return keys.values()
 		},
 
@@ -443,8 +447,8 @@ function createList<T extends {}>(
 			signals.set(key, createState(value))
 			node.sources = null
 			node.sourcesTail = null
-			propagate(node as unknown as SinkNode)
 			node.flags |= FLAG_DIRTY
+			for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
 			if (batchDepth === 0) flush()
 			return key
 		},
@@ -461,8 +465,8 @@ function createList<T extends {}>(
 				if (index >= 0) keys.splice(index, 1)
 				node.sources = null
 				node.sourcesTail = null
-				propagate(node as unknown as SinkNode)
 				node.flags |= FLAG_DIRTY
+				for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
 				if (batchDepth === 0) flush()
 			}
 		},
@@ -479,8 +483,8 @@ function createList<T extends {}>(
 
 			if (!keysEqual(keys, newOrder)) {
 				keys = newOrder
-				propagate(node as unknown as SinkNode)
 				node.flags |= FLAG_DIRTY
+				for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
 				if (batchDepth === 0) flush()
 			}
 		},
@@ -538,8 +542,8 @@ function createList<T extends {}>(
 					changed,
 				})
 				keys = newOrder
-				propagate(node as unknown as SinkNode)
 				node.flags |= FLAG_DIRTY
+				for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
 				if (batchDepth === 0) flush()
 			}
 
@@ -583,6 +587,7 @@ export {
 	createList,
 	isEqual,
 	isList,
+	getKeyGenerator,
 	keysEqual,
 	TYPE_LIST,
 }

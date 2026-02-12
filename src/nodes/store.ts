@@ -15,7 +15,7 @@ import {
 	TYPE_STORE,
 	untrack,
 } from '../graph'
-import { isFunction, isObjectOfType, isRecord } from '../util'
+import { isObjectOfType, isRecord } from '../util'
 import {
 	createList,
 	type DiffResult,
@@ -225,6 +225,18 @@ function createStore<T extends UnknownRecord>(
 		return changes.changed
 	}
 
+	const start = options?.watched
+	const subscribe = start
+		? () => {
+				if (activeSink) {
+					if (!node.sinks) node.stop = start()
+					link(node, activeSink)
+				}
+			}
+		: () => {
+				if (activeSink) link(node, activeSink)
+			}
+
 	// --- Initialize ---
 	for (const key of Object.keys(initialValue))
 		addSignal(key, initialValue[key])
@@ -250,11 +262,7 @@ function createStore<T extends UnknownRecord>(
 		},
 
 		keys() {
-			if (activeSink) {
-				if (!node.sinks && options?.watched)
-					node.stop = options.watched()
-				link(node, activeSink)
-			}
+			subscribe()
 			return signals.keys()
 		},
 
@@ -270,11 +278,7 @@ function createStore<T extends UnknownRecord>(
 		},
 
 		get() {
-			if (activeSink) {
-				if (!node.sinks && options?.watched)
-					node.stop = options.watched()
-				link(node, activeSink)
-			}
+			subscribe()
 			if (node.sources) {
 				// Fast path: edges already established, rebuild value directly
 				// from child signals using untrack to avoid creating spurious
@@ -298,9 +302,8 @@ function createStore<T extends UnknownRecord>(
 
 			const changes = diffRecords(currentValue, newValue)
 			if (applyChanges(changes)) {
-				// Call propagate BEFORE marking dirty to ensure it doesn't early-return
-				propagate(node as unknown as SinkNode)
 				node.flags |= FLAG_DIRTY
+				for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
 				if (batchDepth === 0) flush()
 			}
 		},
@@ -315,8 +318,8 @@ function createStore<T extends UnknownRecord>(
 			addSignal(key, value)
 			node.sources = null
 			node.sourcesTail = null
-			propagate(node as unknown as SinkNode)
 			node.flags |= FLAG_DIRTY
+			for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
 			if (batchDepth === 0) flush()
 			return key
 		},
@@ -326,8 +329,8 @@ function createStore<T extends UnknownRecord>(
 			if (ok) {
 				node.sources = null
 				node.sourcesTail = null
-				propagate(node as unknown as SinkNode)
 				node.flags |= FLAG_DIRTY
+				for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
 				if (batchDepth === 0) flush()
 			}
 		},
@@ -336,10 +339,7 @@ function createStore<T extends UnknownRecord>(
 	// --- Proxy ---
 	return new Proxy(store, {
 		get(target, prop) {
-			if (prop in target) {
-				const value = Reflect.get(target, prop)
-				return isFunction(value) ? value.bind(target) : value
-			}
+			if (prop in target) return Reflect.get(target, prop)
 			if (typeof prop !== 'symbol')
 				return target.byKey(prop as keyof T & string)
 		},

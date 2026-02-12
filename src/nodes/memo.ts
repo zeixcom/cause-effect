@@ -6,7 +6,7 @@ import {
 import {
 	activeSink,
 	type ComputedOptions,
-	defaultEquals,
+	DEFAULT_EQUALITY,
 	FLAG_DIRTY,
 	link,
 	type MemoCallback,
@@ -90,7 +90,7 @@ function createMemo<T extends {}>(
 		sourcesTail: null,
 		sinks: null,
 		sinksTail: null,
-		equals: options?.equals ?? defaultEquals,
+		equals: options?.equals ?? DEFAULT_EQUALITY,
 		error: undefined,
 	}
 

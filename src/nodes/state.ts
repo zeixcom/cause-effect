@@ -1,7 +1,7 @@
 import { validateCallback, validateSignalValue } from '../errors'
 import {
 	activeSink,
-	defaultEquals,
+	DEFAULT_EQUALITY,
 	link,
 	type SignalOptions,
 	type StateNode,
@@ -88,7 +88,7 @@ function createState<T extends {}>(
 		value,
 		sinks: null,
 		sinksTail: null,
-		equals: options?.equals ?? defaultEquals,
+		equals: options?.equals ?? DEFAULT_EQUALITY,
 		guard: options?.guard,
 	}
 
