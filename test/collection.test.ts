@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import {
 	batch,
+	type CollectionChanges,
 	createCollection,
 	createEffect,
 	createList,
 	createScope,
 	createState,
-	type DiffResult,
 	isCollection,
 	isList,
 } from '../index.ts'
@@ -174,7 +174,9 @@ describe('Collection', () => {
 
 	describe('applyChanges', () => {
 		test('should add items', () => {
-			let apply: ((changes: DiffResult) => void) | undefined
+			let apply:
+				| ((changes: CollectionChanges<number>) => void)
+				| undefined
 			const col = createCollection<number>(applyChanges => {
 				apply = applyChanges
 				return () => {}
@@ -190,12 +192,7 @@ describe('Collection', () => {
 			expect(values).toEqual([[]])
 
 			// biome-ignore lint/style/noNonNullAssertion: test
-			apply!({
-				changed: true,
-				add: { a: 1, b: 2 },
-				change: {},
-				remove: {},
-			})
+			apply!({ add: [1, 2] })
 
 			expect(values.length).toBe(2)
 			expect(values[1]).toEqual([1, 2])
@@ -205,7 +202,11 @@ describe('Collection', () => {
 		})
 
 		test('should change item values', () => {
-			let apply: ((changes: DiffResult) => void) | undefined
+			let apply:
+				| ((
+						changes: CollectionChanges<{ id: string; val: number }>,
+				  ) => void)
+				| undefined
 			const col = createCollection(
 				applyChanges => {
 					apply = applyChanges
@@ -227,12 +228,7 @@ describe('Collection', () => {
 			expect(values[0]).toEqual([{ id: 'x', val: 1 }])
 
 			// biome-ignore lint/style/noNonNullAssertion: test
-			apply!({
-				changed: true,
-				add: {},
-				change: { x: { id: 'x', val: 42 } },
-				remove: {},
-			})
+			apply!({ change: [{ id: 'x', val: 42 }] })
 
 			expect(values.length).toBe(2)
 			expect(values[1]).toEqual([{ id: 'x', val: 42 }])
@@ -241,7 +237,11 @@ describe('Collection', () => {
 		})
 
 		test('should remove items', () => {
-			let apply: ((changes: DiffResult) => void) | undefined
+			let apply:
+				| ((
+						changes: CollectionChanges<{ id: string; v: number }>,
+				  ) => void)
+				| undefined
 			const col = createCollection(
 				applyChanges => {
 					apply = applyChanges
@@ -271,12 +271,7 @@ describe('Collection', () => {
 			])
 
 			// biome-ignore lint/style/noNonNullAssertion: test
-			apply!({
-				changed: true,
-				add: {},
-				change: {},
-				remove: { b: null },
-			})
+			apply!({ remove: [{ id: 'b', v: 2 }] })
 
 			expect(values.length).toBe(2)
 			expect(values[1]).toEqual([
@@ -289,7 +284,11 @@ describe('Collection', () => {
 		})
 
 		test('should handle mixed add/change/remove', () => {
-			let apply: ((changes: DiffResult) => void) | undefined
+			let apply:
+				| ((
+						changes: CollectionChanges<{ id: string; v: number }>,
+				  ) => void)
+				| undefined
 			const col = createCollection(
 				applyChanges => {
 					apply = applyChanges
@@ -313,10 +312,9 @@ describe('Collection', () => {
 
 			// biome-ignore lint/style/noNonNullAssertion: test
 			apply!({
-				changed: true,
-				add: { c: { id: 'c', v: 3 } },
-				change: { a: { id: 'a', v: 10 } },
-				remove: { b: null },
+				add: [{ id: 'c', v: 3 }],
+				change: [{ id: 'a', v: 10 }],
+				remove: [{ id: 'b', v: 2 }],
 			})
 
 			expect(values.length).toBe(2)
@@ -328,8 +326,10 @@ describe('Collection', () => {
 			dispose()
 		})
 
-		test('should skip when changed is false', () => {
-			let apply: ((changes: DiffResult) => void) | undefined
+		test('should skip when no changes provided', () => {
+			let apply:
+				| ((changes: CollectionChanges<number>) => void)
+				| undefined
 			const col = createCollection(
 				applyChanges => {
 					apply = applyChanges
@@ -349,7 +349,7 @@ describe('Collection', () => {
 			expect(callCount).toBe(1)
 
 			// biome-ignore lint/style/noNonNullAssertion: test
-			apply!({ changed: false, add: {}, change: {}, remove: {} })
+			apply!({})
 
 			expect(callCount).toBe(1)
 
@@ -357,7 +357,9 @@ describe('Collection', () => {
 		})
 
 		test('should trigger effects on structural changes', () => {
-			let apply: ((changes: DiffResult) => void) | undefined
+			let apply:
+				| ((changes: CollectionChanges<string>) => void)
+				| undefined
 			const col = createCollection<string>(applyChanges => {
 				apply = applyChanges
 				return () => {}
@@ -374,12 +376,7 @@ describe('Collection', () => {
 			expect(effectCount).toBe(1)
 
 			// biome-ignore lint/style/noNonNullAssertion: test
-			apply!({
-				changed: true,
-				add: { a: 'hello' },
-				change: {},
-				remove: {},
-			})
+			apply!({ add: ['hello'] })
 
 			expect(effectCount).toBe(2)
 			expect(col.length).toBe(1)
@@ -388,7 +385,9 @@ describe('Collection', () => {
 		})
 
 		test('should batch multiple calls', () => {
-			let apply: ((changes: DiffResult) => void) | undefined
+			let apply:
+				| ((changes: CollectionChanges<number>) => void)
+				| undefined
 			const col = createCollection<number>(applyChanges => {
 				apply = applyChanges
 				return () => {}
@@ -406,19 +405,9 @@ describe('Collection', () => {
 
 			batch(() => {
 				// biome-ignore lint/style/noNonNullAssertion: test
-				apply!({
-					changed: true,
-					add: { a: 1 },
-					change: {},
-					remove: {},
-				})
+				apply!({ add: [1] })
 				// biome-ignore lint/style/noNonNullAssertion: test
-				apply!({
-					changed: true,
-					add: { b: 2 },
-					change: {},
-					remove: {},
-				})
+				apply!({ add: [2] })
 			})
 
 			expect(effectCount).toBe(2)

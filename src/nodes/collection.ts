@@ -19,13 +19,7 @@ import {
 	untrack,
 } from '../graph'
 import { isAsyncFunction, isFunction, isObjectOfType } from '../util'
-import {
-	type DiffResult,
-	isList,
-	type KeyConfig,
-	keysEqual,
-	type List,
-} from './list'
+import { isList, type KeyConfig, keysEqual, type List } from './list'
 import { createMemo, type Memo } from './memo'
 import { createState, isState } from './state'
 import { createTask } from './task'
@@ -57,14 +51,20 @@ type Collection<T extends {}> = {
 	readonly length: number
 }
 
+type CollectionChanges<T> = {
+	add?: T[]
+	change?: T[]
+	remove?: T[]
+}
+
 type CollectionOptions<T extends {}> = {
 	value?: T[]
 	keyConfig?: KeyConfig<T>
 	createItem?: (key: string, value: T) => Signal<T>
 }
 
-type CollectionCallback = (
-	applyChanges: (changes: DiffResult) => void,
+type CollectionCallback<T extends {}> = (
+	applyChanges: (changes: CollectionChanges<T>) => void,
 ) => Cleanup
 
 /* === Functions === */
@@ -256,7 +256,7 @@ function deriveCollection<T extends {}, U extends {}>(
  * @returns A read-only Collection signal
  */
 function createCollection<T extends {}>(
-	start: CollectionCallback,
+	start: CollectionCallback<T>,
 	options?: CollectionOptions<T>,
 ): Collection<T> {
 	const initialValue = options?.value ?? []
@@ -266,15 +266,20 @@ function createCollection<T extends {}>(
 
 	const signals = new Map<string, Signal<T>>()
 	const keys: string[] = []
+	const itemToKey = new Map<T, string>()
 
 	let keyCounter = 0
 	const keyConfig = options?.keyConfig
+	const contentBased = isFunction<string>(keyConfig)
 	const generateKey: (item: T) => string =
 		typeof keyConfig === 'string'
 			? () => `${keyConfig}${keyCounter++}`
-			: isFunction<string>(keyConfig)
-				? (item: T) => keyConfig(item)
+			: contentBased
+				? keyConfig
 				: () => String(keyCounter++)
+
+	const resolveKey = (item: T): string | undefined =>
+		itemToKey.get(item) ?? (contentBased ? generateKey(item) : undefined)
 
 	const itemFactory =
 		options?.createItem ?? ((_key: string, value: T) => createState(value))
@@ -307,33 +312,50 @@ function createCollection<T extends {}>(
 	}
 
 	/** Apply external changes to the collection */
-	function applyChanges(changes: DiffResult): void {
-		if (!changes.changed) return
+	function applyChanges(changes: CollectionChanges<T>): void {
+		const { add, change, remove } = changes
+		if (!add?.length && !change?.length && !remove?.length) return
 		let structural = false
 
 		batch(() => {
 			// Additions
-			for (const key in changes.add) {
-				const value = changes.add[key] as T
-				signals.set(key, itemFactory(key, value))
-				if (!keys.includes(key)) keys.push(key)
-				structural = true
+			if (add) {
+				for (const item of add) {
+					const key = generateKey(item)
+					signals.set(key, itemFactory(key, item))
+					itemToKey.set(item, key)
+					if (!keys.includes(key)) keys.push(key)
+					structural = true
+				}
 			}
 
 			// Changes — only for State signals
-			for (const key in changes.change) {
-				const signal = signals.get(key)
-				if (signal && isState(signal)) {
-					signal.set(changes.change[key] as T)
+			if (change) {
+				for (const item of change) {
+					const key = resolveKey(item)
+					if (!key) continue
+					const signal = signals.get(key)
+					if (signal && isState(signal)) {
+						// Update reverse map: remove old reference, add new
+						const oldValue = signal.get()
+						itemToKey.delete(oldValue)
+						signal.set(item)
+						itemToKey.set(item, key)
+					}
 				}
 			}
 
 			// Removals
-			for (const key in changes.remove) {
-				signals.delete(key)
-				const index = keys.indexOf(key)
-				if (index !== -1) keys.splice(index, 1)
-				structural = true
+			if (remove) {
+				for (const item of remove) {
+					const key = resolveKey(item)
+					if (!key) continue
+					itemToKey.delete(item)
+					signals.delete(key)
+					const index = keys.indexOf(key)
+					if (index !== -1) keys.splice(index, 1)
+					structural = true
+				}
 			}
 
 			if (structural) {
@@ -351,6 +373,7 @@ function createCollection<T extends {}>(
 	for (const item of initialValue) {
 		const key = generateKey(item)
 		signals.set(key, itemFactory(key, item))
+		itemToKey.set(item, key)
 		keys.push(key)
 	}
 	node.value = initialValue
@@ -468,6 +491,7 @@ export {
 	isCollectionSource,
 	type Collection,
 	type CollectionCallback,
+	type CollectionChanges,
 	type CollectionOptions,
 	type CollectionSource,
 	type DeriveCollectionCallback,

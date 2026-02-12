@@ -30,6 +30,7 @@ export {
 export {
 	type Collection,
 	type CollectionCallback,
+	type CollectionChanges,
 	type CollectionOptions,
 	createCollection,
 	type DeriveCollectionCallback,
@@ -43,7 +44,6 @@ export {
 } from './src/nodes/effect'
 export {
 	createList,
-	type DiffResult,
 	isEqual,
 	isList,
 	type KeyConfig,
