@@ -275,7 +275,7 @@ function createCollection<T extends {}>(
 		typeof keyConfig === 'string'
 			? () => `${keyConfig}${keyCounter++}`
 			: contentBased
-				? keyConfig
+				? (item: T) => keyConfig(item) || String(keyCounter++)
 				: () => String(keyCounter++)
 
 	const resolveKey = (item: T): string | undefined =>

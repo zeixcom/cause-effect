@@ -521,7 +521,7 @@ function createList(initialValue, options) {
   let keyCounter = 0;
   const keyConfig = options?.keyConfig;
   const contentBased = isFunction(keyConfig);
-  const generateKey = typeof keyConfig === "string" ? () => `${keyConfig}${keyCounter++}` : contentBased ? (item) => keyConfig(item) : () => String(keyCounter++);
+  const generateKey = typeof keyConfig === "string" ? () => `${keyConfig}${keyCounter++}` : contentBased ? (item) => keyConfig(item) || String(keyCounter++) : () => String(keyCounter++);
   const buildValue = () => keys.map((key) => signals.get(key)?.get()).filter((v) => v !== undefined);
   const node = {
     fn: buildValue,
@@ -952,9 +952,12 @@ function createCollection(start, options) {
   validateCallback(TYPE_COLLECTION, start);
   const signals = new Map;
   const keys = [];
+  const itemToKey = new Map;
   let keyCounter = 0;
   const keyConfig = options?.keyConfig;
-  const generateKey = typeof keyConfig === "string" ? () => `${keyConfig}${keyCounter++}` : isFunction(keyConfig) ? (item) => keyConfig(item) : () => String(keyCounter++);
+  const contentBased = isFunction(keyConfig);
+  const generateKey = typeof keyConfig === "string" ? () => `${keyConfig}${keyCounter++}` : contentBased ? (item) => keyConfig(item) || String(keyCounter++) : () => String(keyCounter++);
+  const resolveKey = (item) => itemToKey.get(item) ?? (contentBased ? generateKey(item) : undefined);
   const itemFactory = options?.createItem ?? ((_key, value) => createState(value));
   function buildValue() {
     const result = [];
@@ -982,29 +985,47 @@ function createCollection(start, options) {
     error: undefined
   };
   function applyChanges(changes) {
-    if (!changes.changed)
+    const { add, change, remove } = changes;
+    if (!add?.length && !change?.length && !remove?.length)
       return;
     let structural = false;
     batch(() => {
-      for (const key in changes.add) {
-        const value = changes.add[key];
-        signals.set(key, itemFactory(key, value));
-        if (!keys.includes(key))
-          keys.push(key);
-        structural = true;
-      }
-      for (const key in changes.change) {
-        const signal = signals.get(key);
-        if (signal && isState(signal)) {
-          signal.set(changes.change[key]);
+      if (add) {
+        for (const item of add) {
+          const key = generateKey(item);
+          signals.set(key, itemFactory(key, item));
+          itemToKey.set(item, key);
+          if (!keys.includes(key))
+            keys.push(key);
+          structural = true;
         }
       }
-      for (const key in changes.remove) {
-        signals.delete(key);
-        const index = keys.indexOf(key);
-        if (index !== -1)
-          keys.splice(index, 1);
-        structural = true;
+      if (change) {
+        for (const item of change) {
+          const key = resolveKey(item);
+          if (!key)
+            continue;
+          const signal = signals.get(key);
+          if (signal && isState(signal)) {
+            const oldValue = signal.get();
+            itemToKey.delete(oldValue);
+            signal.set(item);
+            itemToKey.set(item, key);
+          }
+        }
+      }
+      if (remove) {
+        for (const item of remove) {
+          const key = resolveKey(item);
+          if (!key)
+            continue;
+          itemToKey.delete(item);
+          signals.delete(key);
+          const index = keys.indexOf(key);
+          if (index !== -1)
+            keys.splice(index, 1);
+          structural = true;
+        }
       }
       if (structural) {
         node.sources = null;
@@ -1018,6 +1039,7 @@ function createCollection(start, options) {
   for (const item of initialValue) {
     const key = generateKey(item);
     signals.set(key, itemFactory(key, item));
+    itemToKey.set(item, key);
     keys.push(key);
   }
   node.value = initialValue;

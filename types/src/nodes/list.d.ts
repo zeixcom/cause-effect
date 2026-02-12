@@ -8,7 +8,7 @@ type DiffResult = {
     change: UnknownRecord;
     remove: UnknownRecord;
 };
-type KeyConfig<T> = string | ((item: T) => string);
+type KeyConfig<T> = string | ((item: T) => string | undefined);
 type ListOptions<T extends {}> = {
     keyConfig?: KeyConfig<T>;
     watched?: () => Cleanup;

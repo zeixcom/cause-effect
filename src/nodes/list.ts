@@ -39,7 +39,7 @@ type DiffResult = {
 	remove: UnknownRecord
 }
 
-type KeyConfig<T> = string | ((item: T) => string)
+type KeyConfig<T> = string | ((item: T) => string | undefined)
 
 type ListOptions<T extends {}> = {
 	keyConfig?: KeyConfig<T>
@@ -248,7 +248,7 @@ function createList<T extends {}>(
 		typeof keyConfig === 'string'
 			? () => `${keyConfig}${keyCounter++}`
 			: contentBased
-				? (item: T) => keyConfig(item)
+				? (item: T) => keyConfig(item) || String(keyCounter++)
 				: () => String(keyCounter++)
 
 	// --- Internal helpers ---
