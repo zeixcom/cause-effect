@@ -268,7 +268,7 @@ import { createCollection, createEffect } from '@zeix/cause-effect'
 
 const messages = createCollection((applyChanges) => {
   const ws = new WebSocket('/messages')
-  ws.onmessage = (e) => applyChanges({ changed: true, add: JSON.parse(e.data) })
+  ws.onmessage = (e) => applyChanges({ add: JSON.parse(e.data) })
   return () => ws.close()
 }, { keyConfig: msg => msg.id })
 
