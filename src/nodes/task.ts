@@ -5,10 +5,13 @@ import {
 } from '../errors'
 import {
 	activeSink,
+	batchDepth,
 	type ComputedOptions,
-	defaultEquals,
+	DEFAULT_EQUALITY,
 	FLAG_DIRTY,
+	flush,
 	link,
+	propagate,
 	refresh,
 	type SinkNode,
 	type TaskCallback,
@@ -62,6 +65,12 @@ type Task<T extends {}> = {
  * @template T - The type of value resolved by the task
  * @param fn - The async computation function that receives the previous value and an AbortSignal
  * @param options - Optional configuration for the task
+ * @param options.value - Optional initial value for reducer patterns
+ * @param options.equals - Optional equality function. Defaults to strict equality (`===`)
+ * @param options.guard - Optional type guard to validate values
+ * @param options.watched - Optional callback invoked when the task is first watched by an effect.
+ *   Receives an `invalidate` function to mark the task dirty and trigger re-execution.
+ *   Must return a cleanup function called when no effects are watching.
  * @returns A Task object with get(), isPending(), and abort() methods
  *
  * @example
@@ -108,15 +117,34 @@ function createTask<T extends {}>(
 		sinks: null,
 		sinksTail: null,
 		flags: FLAG_DIRTY,
-		equals: options?.equals ?? defaultEquals,
+		equals: options?.equals ?? DEFAULT_EQUALITY,
 		controller: undefined,
 		error: undefined,
+		stop: undefined,
 	}
+
+	const watched = options?.watched
+	const subscribe = watched
+		? () => {
+				if (activeSink) {
+					if (!node.sinks)
+						node.stop = watched(() => {
+							node.flags |= FLAG_DIRTY
+							for (let e = node.sinks; e; e = e.nextSink)
+								propagate(e.sink)
+							if (batchDepth === 0) flush()
+						})
+					link(node, activeSink)
+				}
+			}
+		: () => {
+				if (activeSink) link(node, activeSink)
+			}
 
 	return {
 		[Symbol.toStringTag]: TYPE_TASK,
 		get(): T {
-			if (activeSink) link(node, activeSink)
+			subscribe()
 			refresh(node as unknown as SinkNode)
 			if (node.error) throw node.error
 			validateReadValue(TYPE_TASK, node.value)

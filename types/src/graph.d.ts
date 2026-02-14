@@ -76,6 +76,16 @@ type ComputedOptions<T extends {}> = SignalOptions<T> & {
      * Useful for reducer patterns so that calculations start with a value of correct type.
      */
     value?: T;
+    /**
+     * Optional callback invoked when the signal is first watched by an effect.
+     * Receives an `invalidate` function that marks the signal dirty and triggers re-evaluation.
+     * Must return a cleanup function that is called when the signal is no longer watched.
+     *
+     * This enables lazy resource activation for computed signals that need to
+     * react to external events (e.g. DOM mutations, timers) in addition to
+     * tracked signal dependencies.
+     */
+    watched?: (invalidate: () => void) => Cleanup;
 };
 /**
  * A callback function for memos that computes a value based on the previous value.
@@ -97,7 +107,7 @@ type TaskCallback<T extends {}> = (prev: T | undefined, signal: AbortSignal) => 
 /**
  * A callback function for effects that can perform side effects.
  *
- * @param match - A function to register cleanup callbacks that will be called before the effect re-runs or is disposed
+ * @returns An optional cleanup function that will be called before the effect re-runs or is disposed
  */
 type EffectCallback = () => MaybeCleanup;
 declare const TYPE_STATE = "State";
@@ -205,4 +215,4 @@ declare function untrack<T>(fn: () => T): T;
  * ```
  */
 declare function createScope(fn: () => MaybeCleanup): Cleanup;
-export { type Cleanup, type ComputedOptions, type EffectCallback, type EffectNode, type MaybeCleanup, type MemoCallback, type MemoNode, type Scope, type Signal, type SignalOptions, type SinkNode, type StateNode, type TaskCallback, type TaskNode, activeOwner, activeSink, batch, batchDepth, createScope, DEFAULT_EQUALITY as defaultEquals, SKIP_EQUALITY, FLAG_CLEAN, FLAG_DIRTY, flush, link, propagate, refresh, registerCleanup, runCleanup, runEffect, setState, trimSources, TYPE_COLLECTION, TYPE_LIST, TYPE_MEMO, TYPE_SENSOR, TYPE_STATE, TYPE_STORE, TYPE_TASK, unlink, untrack, };
+export { type Cleanup, type ComputedOptions, type EffectCallback, type EffectNode, type MaybeCleanup, type MemoCallback, type MemoNode, type Scope, type Signal, type SignalOptions, type SinkNode, type StateNode, type TaskCallback, type TaskNode, activeOwner, activeSink, batch, batchDepth, createScope, DEFAULT_EQUALITY, SKIP_EQUALITY, FLAG_CLEAN, FLAG_DIRTY, flush, link, propagate, refresh, registerCleanup, runCleanup, runEffect, setState, trimSources, TYPE_COLLECTION, TYPE_LIST, TYPE_MEMO, TYPE_SENSOR, TYPE_STATE, TYPE_STORE, TYPE_TASK, unlink, untrack, };

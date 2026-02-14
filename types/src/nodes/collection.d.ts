@@ -1,5 +1,5 @@
 import { type Cleanup, type Signal } from '../graph';
-import { type DiffResult, type KeyConfig, type List } from './list';
+import { type KeyConfig, type List } from './list';
 type CollectionSource<T extends {}> = List<T> | Collection<T>;
 type DeriveCollectionCallback<T extends {}, U extends {}> = ((sourceValue: U) => T) | ((sourceValue: U, abort: AbortSignal) => Promise<T>);
 type Collection<T extends {}> = {
@@ -16,12 +16,17 @@ type Collection<T extends {}> = {
     deriveCollection<R extends {}>(callback: (sourceValue: T, abort: AbortSignal) => Promise<R>): Collection<R>;
     readonly length: number;
 };
+type CollectionChanges<T> = {
+    add?: T[];
+    change?: T[];
+    remove?: T[];
+};
 type CollectionOptions<T extends {}> = {
     value?: T[];
     keyConfig?: KeyConfig<T>;
-    createItem?: (key: string, value: T) => Signal<T>;
+    createItem?: (value: T) => Signal<T>;
 };
-type CollectionCallback = (applyChanges: (changes: DiffResult) => void) => Cleanup;
+type CollectionCallback<T extends {}> = (apply: (changes: CollectionChanges<T>) => void) => Cleanup;
 /**
  * Creates a derived Collection from a List or another Collection with item-level memoization.
  * Sync callbacks use createMemo, async callbacks use createTask.
@@ -36,15 +41,15 @@ declare function deriveCollection<T extends {}, U extends {}>(source: Collection
 declare function deriveCollection<T extends {}, U extends {}>(source: CollectionSource<U>, callback: (sourceValue: U, abort: AbortSignal) => Promise<T>): Collection<T>;
 /**
  * Creates an externally-driven Collection with a watched lifecycle.
- * Items are managed by the start callback via `applyChanges(diffResult)`.
+ * Items are managed via the `applyChanges(changes)` helper passed to the watched callback.
  * The collection activates when first accessed by an effect and deactivates when no longer watched.
  *
  * @since 0.18.0
- * @param start - Callback invoked when the collection starts being watched, receives applyChanges helper
+ * @param watched - Callback invoked when the collection starts being watched, receives applyChanges helper
  * @param options - Optional configuration including initial value, key generation, and item signal creation
  * @returns A read-only Collection signal
  */
-declare function createCollection<T extends {}>(start: CollectionCallback, options?: CollectionOptions<T>): Collection<T>;
+declare function createCollection<T extends {}>(watched: CollectionCallback<T>, options?: CollectionOptions<T>): Collection<T>;
 /**
  * Checks if a value is a Collection signal.
  *
@@ -61,4 +66,4 @@ declare function isCollection<T extends {}>(value: unknown): value is Collection
  * @returns True if the value is a List or Collection
  */
 declare function isCollectionSource<T extends {}>(value: unknown): value is CollectionSource<T>;
-export { createCollection, deriveCollection, isCollection, isCollectionSource, type Collection, type CollectionCallback, type CollectionOptions, type CollectionSource, type DeriveCollectionCallback, };
+export { createCollection, deriveCollection, isCollection, isCollectionSource, type Collection, type CollectionCallback, type CollectionChanges, type CollectionOptions, type CollectionSource, type DeriveCollectionCallback, };

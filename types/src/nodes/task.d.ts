@@ -36,6 +36,12 @@ type Task<T extends {}> = {
  * @template T - The type of value resolved by the task
  * @param fn - The async computation function that receives the previous value and an AbortSignal
  * @param options - Optional configuration for the task
+ * @param options.value - Optional initial value for reducer patterns
+ * @param options.equals - Optional equality function. Defaults to strict equality (`===`)
+ * @param options.guard - Optional type guard to validate values
+ * @param options.watched - Optional callback invoked when the task is first watched by an effect.
+ *   Receives an `invalidate` function to mark the task dirty and trigger re-execution.
+ *   Must return a cleanup function called when no effects are watching.
  * @returns A Task object with get(), isPending(), and abort() methods
  *
  * @example

@@ -5,12 +5,15 @@ import {
 } from '../errors'
 import {
 	activeSink,
+	batchDepth,
 	type ComputedOptions,
-	defaultEquals,
+	DEFAULT_EQUALITY,
 	FLAG_DIRTY,
+	flush,
 	link,
 	type MemoCallback,
 	type MemoNode,
+	propagate,
 	refresh,
 	type SinkNode,
 	TYPE_MEMO,
@@ -49,6 +52,12 @@ type Memo<T extends {}> = {
  * @template T - The type of value computed by the memo
  * @param fn - The computation function that receives the previous value
  * @param options - Optional configuration for the memo
+ * @param options.value - Optional initial value for reducer patterns
+ * @param options.equals - Optional equality function. Defaults to strict equality (`===`)
+ * @param options.guard - Optional type guard to validate values
+ * @param options.watched - Optional callback invoked when the memo is first watched by an effect.
+ *   Receives an `invalidate` function to mark the memo dirty and trigger recomputation.
+ *   Must return a cleanup function called when no effects are watching.
  * @returns A Memo object with a get() method
  *
  * @example
@@ -90,14 +99,33 @@ function createMemo<T extends {}>(
 		sourcesTail: null,
 		sinks: null,
 		sinksTail: null,
-		equals: options?.equals ?? defaultEquals,
+		equals: options?.equals ?? DEFAULT_EQUALITY,
 		error: undefined,
+		stop: undefined,
 	}
+
+	const watched = options?.watched
+	const subscribe = watched
+		? () => {
+				if (activeSink) {
+					if (!node.sinks)
+						node.stop = watched(() => {
+							node.flags |= FLAG_DIRTY
+							for (let e = node.sinks; e; e = e.nextSink)
+								propagate(e.sink)
+							if (batchDepth === 0) flush()
+						})
+					link(node, activeSink)
+				}
+			}
+		: () => {
+				if (activeSink) link(node, activeSink)
+			}
 
 	return {
 		[Symbol.toStringTag]: TYPE_MEMO,
 		get() {
-			if (activeSink) link(node, activeSink)
+			subscribe()
 			refresh(node as unknown as SinkNode)
 			if (node.error) throw node.error
 			validateReadValue(TYPE_MEMO, node.value)

@@ -1,6 +1,6 @@
 {
 	"name": "@zeix/cause-effect",
-	"version": "0.18.0",
+	"version": "0.18.1",
 	"author": "Esther Brunner",
 	"type": "module",
 	"main": "index.js",
@@ -15,7 +15,7 @@
 	"peerDependencies": {
 		"typescript": "^5.6.3"
 	},
-	"description": "Cause & Effect - fine-grained reactive state management library.",
+	"description": "Cause & Effect - reactive state management primitives library for TypeScript.",
 	"license": "MIT",
 	"keywords": [
 		"Cause & Effect",

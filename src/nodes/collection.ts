@@ -15,12 +15,13 @@ import {
 	refresh,
 	type Signal,
 	type SinkNode,
+	SKIP_EQUALITY,
 	TYPE_COLLECTION,
 	untrack,
 } from '../graph'
-import { isAsyncFunction, isFunction, isObjectOfType } from '../util'
+import { isAsyncFunction, isObjectOfType, isSyncFunction } from '../util'
 import {
-	type DiffResult,
+	getKeyGenerator,
 	isList,
 	type KeyConfig,
 	keysEqual,
@@ -57,14 +58,20 @@ type Collection<T extends {}> = {
 	readonly length: number
 }
 
+type CollectionChanges<T> = {
+	add?: T[]
+	change?: T[]
+	remove?: T[]
+}
+
 type CollectionOptions<T extends {}> = {
 	value?: T[]
 	keyConfig?: KeyConfig<T>
-	createItem?: (key: string, value: T) => Signal<T>
+	createItem?: (value: T) => Signal<T>
 }
 
-type CollectionCallback = (
-	applyChanges: (changes: DiffResult) => void,
+type CollectionCallback<T extends {}> = (
+	apply: (changes: CollectionChanges<T>) => void,
 ) => Cleanup
 
 /* === Functions === */
@@ -99,6 +106,7 @@ function deriveCollection<T extends {}, U extends {}>(
 
 	const isAsync = isAsyncFunction(callback)
 	const signals = new Map<string, Memo<T>>()
+	let keys: string[] = []
 
 	const addSignal = (key: string): void => {
 		const signal = isAsync
@@ -121,68 +129,100 @@ function deriveCollection<T extends {}, U extends {}>(
 		signals.set(key, signal as Memo<T>)
 	}
 
-	// Sync collection signals with source keys, reading source.keys()
+	// Sync signals map with source keys, reading source.keys()
 	// to establish a graph edge from source → this node.
-	// Intentionally side-effectful: mutates the private signals map inside what
-	// is conceptually a MemoNode.fn. The side effects are idempotent and scoped
-	// to private state — separating detection from application would add complexity.
-	function syncKeys(): string[] {
-		const newKeys = Array.from(source.keys())
-		const oldKeys = node.value
+	// Intentionally side-effectful: mutates the private signals map and keys
+	// array. The side effects are idempotent and scoped to private state.
+	function syncKeys(): void {
+		const nextKeys = Array.from(source.keys())
 
-		if (!keysEqual(oldKeys, newKeys)) {
-			const oldKeySet = new Set(oldKeys)
-			const newKeySet = new Set(newKeys)
+		if (!keysEqual(keys, nextKeys)) {
+			const a = new Set(keys)
+			const b = new Set(nextKeys)
 
-			for (const key of oldKeys)
-				if (!newKeySet.has(key)) signals.delete(key)
-			for (const key of newKeys) if (!oldKeySet.has(key)) addSignal(key)
+			for (const key of keys) if (!b.has(key)) signals.delete(key)
+			for (const key of nextKeys) if (!a.has(key)) addSignal(key)
+			keys = nextKeys
+
+			// Force re-establishment of edges on next refresh() so new
+			// child signals are properly linked to this node
+			node.sources = null
+			node.sourcesTail = null
 		}
-
-		return newKeys
 	}
 
-	// Structural tracking node — not a general-purpose Memo.
-	// fn (syncKeys) reads source.keys() to detect additions/removals.
-	// Value is a string[] of keys, not the collection's actual values.
-	const node: MemoNode<string[]> = {
-		fn: syncKeys,
+	// Build current value from child signals; syncKeys runs first to
+	// ensure the signals map is up to date and — during refresh() —
+	// to establish the graph edge from source → this node.
+	function buildValue(): T[] {
+		syncKeys()
+		const result: T[] = []
+		for (const key of keys) {
+			try {
+				const v = signals.get(key)?.get()
+				if (v != null) result.push(v)
+			} catch (e) {
+				// Skip pending async items; rethrow real errors
+				if (!(e instanceof UnsetSignalValueError)) throw e
+			}
+		}
+		return result
+	}
+
+	// Shallow reference equality for value arrays — prevents unnecessary
+	// downstream propagation when re-evaluation produces the same item references
+	const valuesEqual = (a: T[], b: T[]): boolean => {
+		if (a.length !== b.length) return false
+		for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
+		return true
+	}
+
+	// Structural tracking node — mirrors the List/Store/createCollection pattern.
+	// fn (buildValue) syncs keys then reads child signals to produce T[].
+	// Keys are tracked separately in a local variable.
+	const node: MemoNode<T[]> = {
+		fn: buildValue,
 		value: [],
 		flags: FLAG_DIRTY,
 		sources: null,
 		sourcesTail: null,
 		sinks: null,
 		sinksTail: null,
-		equals: keysEqual,
+		equals: valuesEqual,
 		error: undefined,
 	}
 
-	// Ensure keys are synced, using the same pattern as List/Store
-	function ensureSynced(): string[] {
+	function ensureFresh(): void {
 		if (node.sources) {
 			if (node.flags) {
-				node.value = untrack(syncKeys)
+				node.value = untrack(buildValue)
 				node.flags = FLAG_CLEAN
+				// syncKeys may have nulled sources if keys changed —
+				// re-run with refresh() to establish edges to new child signals
+				if (!node.sources) {
+					node.flags = FLAG_DIRTY
+					refresh(node as unknown as SinkNode)
+					if (node.error) throw node.error
+				}
 			}
 		} else {
 			refresh(node as unknown as SinkNode)
 			if (node.error) throw node.error
 		}
-		return node.value
 	}
 
 	// Initialize signals for current source keys
 	const initialKeys = Array.from(source.keys())
 	for (const key of initialKeys) addSignal(key)
-	node.value = initialKeys
-	// Keep FLAG_DIRTY so the first refresh() establishes the edge to the source
+	keys = initialKeys
+	// Keep FLAG_DIRTY so the first refresh() establishes edges
 
 	const collection: Collection<T> = {
 		[Symbol.toStringTag]: TYPE_COLLECTION,
 		[Symbol.isConcatSpreadable]: true as const,
 
 		*[Symbol.iterator]() {
-			for (const key of node.value) {
+			for (const key of keys) {
 				const signal = signals.get(key)
 				if (signal) yield signal
 			}
@@ -190,32 +230,24 @@ function deriveCollection<T extends {}, U extends {}>(
 
 		get length() {
 			if (activeSink) link(node, activeSink)
-			return ensureSynced().length
+			ensureFresh()
+			return keys.length
 		},
 
 		keys() {
 			if (activeSink) link(node, activeSink)
-			return ensureSynced().values()
+			ensureFresh()
+			return keys.values()
 		},
 
 		get() {
 			if (activeSink) link(node, activeSink)
-			const currentKeys = ensureSynced()
-			const result: T[] = []
-			for (const key of currentKeys) {
-				try {
-					const v = signals.get(key)?.get()
-					if (v != null) result.push(v)
-				} catch (e) {
-					// Skip pending async items; rethrow real errors
-					if (!(e instanceof UnsetSignalValueError)) throw e
-				}
-			}
-			return result
+			ensureFresh()
+			return node.value
 		},
 
 		at(index: number) {
-			return signals.get(node.value[index])
+			return signals.get(keys[index])
 		},
 
 		byKey(key: string) {
@@ -223,11 +255,11 @@ function deriveCollection<T extends {}, U extends {}>(
 		},
 
 		keyAt(index: number) {
-			return node.value[index]
+			return keys[index]
 		},
 
 		indexOfKey(key: string) {
-			return node.value.indexOf(key)
+			return keys.indexOf(key)
 		},
 
 		deriveCollection<R extends {}>(
@@ -247,37 +279,32 @@ function deriveCollection<T extends {}, U extends {}>(
 
 /**
  * Creates an externally-driven Collection with a watched lifecycle.
- * Items are managed by the start callback via `applyChanges(diffResult)`.
+ * Items are managed via the `applyChanges(changes)` helper passed to the watched callback.
  * The collection activates when first accessed by an effect and deactivates when no longer watched.
  *
  * @since 0.18.0
- * @param start - Callback invoked when the collection starts being watched, receives applyChanges helper
+ * @param watched - Callback invoked when the collection starts being watched, receives applyChanges helper
  * @param options - Optional configuration including initial value, key generation, and item signal creation
  * @returns A read-only Collection signal
  */
 function createCollection<T extends {}>(
-	start: CollectionCallback,
+	watched: CollectionCallback<T>,
 	options?: CollectionOptions<T>,
 ): Collection<T> {
-	const initialValue = options?.value ?? []
-	if (initialValue.length)
-		validateSignalValue(TYPE_COLLECTION, initialValue, Array.isArray)
-	validateCallback(TYPE_COLLECTION, start)
+	const value = options?.value ?? []
+	if (value.length) validateSignalValue(TYPE_COLLECTION, value, Array.isArray)
+	validateCallback(TYPE_COLLECTION, watched, isSyncFunction)
 
 	const signals = new Map<string, Signal<T>>()
 	const keys: string[] = []
+	const itemToKey = new Map<T, string>()
 
-	let keyCounter = 0
-	const keyConfig = options?.keyConfig
-	const generateKey: (item: T) => string =
-		typeof keyConfig === 'string'
-			? () => `${keyConfig}${keyCounter++}`
-			: isFunction<string>(keyConfig)
-				? (item: T) => keyConfig(item)
-				: () => String(keyCounter++)
+	const [generateKey, contentBased] = getKeyGenerator(options?.keyConfig)
 
-	const itemFactory =
-		options?.createItem ?? ((_key: string, value: T) => createState(value))
+	const resolveKey = (item: T): string | undefined =>
+		itemToKey.get(item) ?? (contentBased ? generateKey(item) : undefined)
+
+	const itemFactory = options?.createItem ?? createState
 
 	// Build current value from child signals
 	function buildValue(): T[] {
@@ -296,68 +323,87 @@ function createCollection<T extends {}>(
 
 	const node: MemoNode<T[]> = {
 		fn: buildValue,
-		value: initialValue,
+		value,
 		flags: FLAG_DIRTY,
 		sources: null,
 		sourcesTail: null,
 		sinks: null,
 		sinksTail: null,
-		equals: () => false, // Always rebuild — structural changes are managed externally
+		equals: SKIP_EQUALITY, // Always rebuild — structural changes are managed externally
 		error: undefined,
 	}
 
-	/** Apply external changes to the collection */
-	function applyChanges(changes: DiffResult): void {
-		if (!changes.changed) return
-		let structural = false
-
-		batch(() => {
-			// Additions
-			for (const key in changes.add) {
-				const value = changes.add[key] as T
-				signals.set(key, itemFactory(key, value))
-				if (!keys.includes(key)) keys.push(key)
-				structural = true
-			}
-
-			// Changes — only for State signals
-			for (const key in changes.change) {
-				const signal = signals.get(key)
-				if (signal && isState(signal)) {
-					signal.set(changes.change[key] as T)
-				}
-			}
-
-			// Removals
-			for (const key in changes.remove) {
-				signals.delete(key)
-				const index = keys.indexOf(key)
-				if (index !== -1) keys.splice(index, 1)
-				structural = true
-			}
-
-			if (structural) {
-				node.sources = null
-				node.sourcesTail = null
-			}
-			// Reset CHECK/RUNNING before propagate; mark DIRTY so next get() rebuilds
-			node.flags = FLAG_CLEAN
-			propagate(node as unknown as SinkNode)
-			node.flags |= FLAG_DIRTY
-		})
-	}
-
 	// Initialize signals for initial value
-	for (const item of initialValue) {
+	for (const item of value) {
 		const key = generateKey(item)
-		signals.set(key, itemFactory(key, item))
+		signals.set(key, itemFactory(item))
+		itemToKey.set(item, key)
 		keys.push(key)
 	}
-	node.value = initialValue
+	node.value = value
 	node.flags = FLAG_DIRTY // First refresh() will establish child edges
 
-	function startWatching(): void {
-		if (!node.sinks) node.stop = start(applyChanges)
+	function subscribe(): void {
+		if (activeSink) {
+			if (!node.sinks)
+				node.stop = watched((changes: CollectionChanges<T>): void => {
+					const { add, change, remove } = changes
+					if (!add?.length && !change?.length && !remove?.length)
+						return
+					let structural = false
+
+					batch(() => {
+						// Additions
+						if (add) {
+							for (const item of add) {
+								const key = generateKey(item)
+								signals.set(key, itemFactory(item))
+								itemToKey.set(item, key)
+								if (!keys.includes(key)) keys.push(key)
+								structural = true
+							}
+						}
+
+						// Changes — only for State signals
+						if (change) {
+							for (const item of change) {
+								const key = resolveKey(item)
+								if (!key) continue
+								const signal = signals.get(key)
+								if (signal && isState(signal)) {
+									// Update reverse map: remove old reference, add new
+									itemToKey.delete(signal.get())
+									signal.set(item)
+									itemToKey.set(item, key)
+								}
+							}
+						}
+
+						// Removals
+						if (remove) {
+							for (const item of remove) {
+								const key = resolveKey(item)
+								if (!key) continue
+								itemToKey.delete(item)
+								signals.delete(key)
+								const index = keys.indexOf(key)
+								if (index !== -1) keys.splice(index, 1)
+								structural = true
+							}
+						}
+
+						if (structural) {
+							node.sources = null
+							node.sourcesTail = null
+						}
+						// Mark DIRTY so next get() rebuilds; propagate to sinks
+						node.flags = FLAG_DIRTY
+						for (let e = node.sinks; e; e = e.nextSink)
+							propagate(e.sink)
+					})
+				})
+			link(node, activeSink)
+		}
 	}
 
 	const collection: Collection<T> = {
@@ -372,26 +418,17 @@ function createCollection<T extends {}>(
 		},
 
 		get length() {
-			if (activeSink) {
-				startWatching()
-				link(node, activeSink)
-			}
+			subscribe()
 			return keys.length
 		},
 
 		keys() {
-			if (activeSink) {
-				startWatching()
-				link(node, activeSink)
-			}
+			subscribe()
 			return keys.values()
 		},
 
 		get() {
-			if (activeSink) {
-				startWatching()
-				link(node, activeSink)
-			}
+			subscribe()
 			if (node.sources) {
 				if (node.flags) {
 					node.value = untrack(buildValue)
@@ -468,6 +505,7 @@ export {
 	isCollectionSource,
 	type Collection,
 	type CollectionCallback,
+	type CollectionChanges,
 	type CollectionOptions,
 	type CollectionSource,
 	type DeriveCollectionCallback,

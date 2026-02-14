@@ -39,7 +39,7 @@ type DiffResult = {
 	remove: UnknownRecord
 }
 
-type KeyConfig<T> = string | ((item: T) => string)
+type KeyConfig<T> = string | ((item: T) => string | undefined)
 
 type ListOptions<T extends {}> = {
 	keyConfig?: KeyConfig<T>
@@ -52,8 +52,8 @@ type List<T extends {}> = {
 	[Symbol.iterator](): IterableIterator<State<T>>
 	readonly length: number
 	get(): T[]
-	set(newValue: T[]): void
-	update(fn: (oldValue: T[]) => T[]): void
+	set(next: T[]): void
+	update(fn: (prev: T[]) => T[]): void
 	at(index: number): State<T> | undefined
 	keys(): IterableIterator<string>
 	byKey(key: string): State<T> | undefined
@@ -77,19 +77,11 @@ type List<T extends {}> = {
  * Checks if two values are equal with cycle detection
  *
  * @since 0.15.0
- * @param {T} a - First value to compare
- * @param {T} b - Second value to compare
- * @param {WeakSet<object>} visited - Set to track visited objects for cycle detection
- * @returns {boolean} Whether the two values are equal
+ * @param a - First value to compare
+ * @param b - Second value to compare
+ * @param visited - Set to track visited objects for cycle detection
+ * @returns Whether the two values are equal
  */
-
-/** Shallow equality check for string arrays */
-function keysEqual(a: string[], b: string[]): boolean {
-	if (a.length !== b.length) return false
-	for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
-	return true
-}
-
 function isEqual<T>(a: T, b: T, visited?: WeakSet<object>): boolean {
 	// Fast paths
 	if (Object.is(a, b)) return true
@@ -117,9 +109,8 @@ function isEqual<T>(a: T, b: T, visited?: WeakSet<object>): boolean {
 			const aa = a as unknown[]
 			const ba = b as unknown[]
 			if (aa.length !== ba.length) return false
-			for (let i = 0; i < aa.length; i++) {
+			for (let i = 0; i < aa.length; i++)
 				if (!isEqual(aa[i], ba[i], visited)) return false
-			}
 			return true
 		}
 
@@ -144,23 +135,45 @@ function isEqual<T>(a: T, b: T, visited?: WeakSet<object>): boolean {
 	}
 }
 
+/** Shallow equality check for string arrays */
+function keysEqual(a: string[], b: string[]): boolean {
+	if (a.length !== b.length) return false
+	for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
+	return true
+}
+
+function getKeyGenerator<T extends {}>(
+	keyConfig?: KeyConfig<T>,
+): [(item: T) => string, boolean] {
+	let keyCounter = 0
+	const contentBased = typeof keyConfig === 'function'
+	return [
+		typeof keyConfig === 'string'
+			? () => `${keyConfig}${keyCounter++}`
+			: contentBased
+				? (item: T) => keyConfig(item) || String(keyCounter++)
+				: () => String(keyCounter++),
+		contentBased,
+	]
+}
+
 /**
  * Compares two arrays using existing keys and returns differences as a DiffResult.
  * Avoids object conversion by working directly with arrays and keys.
  *
  * @since 0.18.0
- * @param {T[]} oldArray - The old array
- * @param {T[]} newArray - The new array
- * @param {string[]} currentKeys - Current keys array (may be sparse or shorter than oldArray)
- * @param {(item: T) => string} generateKey - Function to generate keys for new items
- * @param {boolean} contentBased - When true, always use generateKey (content-based keys);
+ * @param prev - The old array
+ * @param next - The new array
+ * @param prevKeys - Current keys array (may be sparse or shorter than oldArray)
+ * @param generateKey - Function to generate keys for new items
+ * @param contentBased - When true, always use generateKey (content-based keys);
  *   when false, reuse positional keys from currentKeys (synthetic keys)
- * @returns {DiffResult & { newKeys: string[] }} The differences in DiffResult format plus updated keys array
+ * @returns The differences in DiffResult format plus updated keys array
  */
 function diffArrays<T>(
-	oldArray: T[],
-	newArray: T[],
-	currentKeys: string[],
+	prev: T[],
+	next: T[],
+	prevKeys: string[],
 	generateKey: (item: T) => string,
 	contentBased: boolean,
 ): DiffResult & { newKeys: string[] } {
@@ -168,50 +181,46 @@ function diffArrays<T>(
 	const add = {} as UnknownRecord
 	const change = {} as UnknownRecord
 	const remove = {} as UnknownRecord
-	const newKeys: string[] = []
+	const nextKeys: string[] = []
 	let changed = false
 
 	// Build a map of old values by key for quick lookup
-	const oldByKey = new Map<string, T>()
-	for (let i = 0; i < oldArray.length; i++) {
-		const key = currentKeys[i]
-		if (key && oldArray[i]) oldByKey.set(key, oldArray[i])
+	const prevByKey = new Map<string, T>()
+	for (let i = 0; i < prev.length; i++) {
+		const key = prevKeys[i]
+		if (key && prev[i]) prevByKey.set(key, prev[i])
 	}
 
 	// Track which old keys we've seen
 	const seenKeys = new Set<string>()
 
 	// Process new array and build new keys array
-	for (let i = 0; i < newArray.length; i++) {
-		const newValue = newArray[i]
-		if (newValue === undefined) continue
+	for (let i = 0; i < next.length; i++) {
+		const val = next[i]
+		if (val === undefined) continue
 
 		// Content-based keys: always derive from item; synthetic keys: reuse by position
 		const key = contentBased
-			? generateKey(newValue)
-			: (currentKeys[i] ?? generateKey(newValue))
+			? generateKey(val)
+			: (prevKeys[i] ?? generateKey(val))
 
-		if (seenKeys.has(key))
-			throw new DuplicateKeyError(TYPE_LIST, key, newValue)
+		if (seenKeys.has(key)) throw new DuplicateKeyError(TYPE_LIST, key, val)
 
-		newKeys.push(key)
+		nextKeys.push(key)
 		seenKeys.add(key)
 
 		// Check if this key existed before
-		if (!oldByKey.has(key)) {
-			add[key] = newValue
+		if (!prevByKey.has(key)) {
+			add[key] = val
 			changed = true
-		} else {
-			const oldValue = oldByKey.get(key)
-			if (!isEqual(oldValue, newValue, visited)) {
-				change[key] = newValue
-				changed = true
-			}
+		} else if (!isEqual(prevByKey.get(key), val, visited)) {
+			change[key] = val
+			changed = true
 		}
 	}
 
 	// Find removed keys (existed in old but not in new)
-	for (const [key] of oldByKey) {
+	for (const [key] of prevByKey) {
 		if (!seenKeys.has(key)) {
 			remove[key] = null
 			changed = true
@@ -219,37 +228,29 @@ function diffArrays<T>(
 	}
 
 	// Detect reorder even when no values changed
-	if (!changed && !keysEqual(currentKeys, newKeys)) changed = true
+	if (!changed && !keysEqual(prevKeys, nextKeys)) changed = true
 
-	return { add, change, remove, newKeys, changed }
+	return { add, change, remove, newKeys: nextKeys, changed }
 }
 
 /**
  * Creates a reactive list with stable keys and per-item reactivity.
  *
  * @since 0.18.0
- * @param initialValue - Initial array of items
+ * @param value - Initial array of items
  * @param options - Optional configuration for key generation and watch lifecycle
  * @returns A List signal
  */
 function createList<T extends {}>(
-	initialValue: T[],
+	value: T[],
 	options?: ListOptions<T>,
 ): List<T> {
-	validateSignalValue(TYPE_LIST, initialValue, Array.isArray)
+	validateSignalValue(TYPE_LIST, value, Array.isArray)
 
 	const signals = new Map<string, State<T>>()
 	let keys: string[] = []
 
-	let keyCounter = 0
-	const keyConfig = options?.keyConfig
-	const contentBased = isFunction<string>(keyConfig)
-	const generateKey: (item: T) => string =
-		typeof keyConfig === 'string'
-			? () => `${keyConfig}${keyCounter++}`
-			: contentBased
-				? (item: T) => keyConfig(item)
-				: () => String(keyCounter++)
+	const [generateKey, contentBased] = getKeyGenerator(options?.keyConfig)
 
 	// --- Internal helpers ---
 
@@ -265,7 +266,7 @@ function createList<T extends {}>(
 	// Mutation methods (add/remove/set/splice) null out sources to force re-establishment.
 	const node: MemoNode<T[]> = {
 		fn: buildValue,
-		value: initialValue,
+		value,
 		flags: FLAG_DIRTY,
 		sources: null,
 		sourcesTail: null,
@@ -278,14 +279,14 @@ function createList<T extends {}>(
 	const toRecord = (array: T[]): Record<string, T> => {
 		const record = {} as Record<string, T>
 		for (let i = 0; i < array.length; i++) {
-			const value = array[i]
-			if (value === undefined) continue
+			const val = array[i]
+			if (val === undefined) continue
 			let key = keys[i]
 			if (!key) {
-				key = generateKey(value)
+				key = generateKey(val)
 				keys[i] = key
 			}
-			record[key] = value
+			record[key] = val
 		}
 		return record
 	}
@@ -295,9 +296,9 @@ function createList<T extends {}>(
 
 		// Additions
 		for (const key in changes.add) {
-			const value = changes.add[key] as T
-			validateSignalValue(`${TYPE_LIST} item for key "${key}"`, value)
-			signals.set(key, createState(value))
+			const val = changes.add[key] as T
+			validateSignalValue(`${TYPE_LIST} item for key "${key}"`, val)
+			signals.set(key, createState(val))
 			structural = true
 		}
 
@@ -305,13 +306,13 @@ function createList<T extends {}>(
 		if (Object.keys(changes.change).length) {
 			batch(() => {
 				for (const key in changes.change) {
-					const value = changes.change[key]
+					const val = changes.change[key]
 					validateSignalValue(
 						`${TYPE_LIST} item for key "${key}"`,
-						value,
+						val,
 					)
 					const signal = signals.get(key)
-					if (signal) signal.set(value as T)
+					if (signal) signal.set(val as T)
 				}
 			})
 		}
@@ -332,17 +333,29 @@ function createList<T extends {}>(
 		return changes.changed
 	}
 
+	const watched = options?.watched
+	const subscribe = watched
+		? () => {
+				if (activeSink) {
+					if (!node.sinks) node.stop = watched()
+					link(node, activeSink)
+				}
+			}
+		: () => {
+				if (activeSink) link(node, activeSink)
+			}
+
 	// --- Initialize ---
-	const initRecord = toRecord(initialValue)
+	const initRecord = toRecord(value)
 	for (const key in initRecord) {
-		const value = initRecord[key]
-		validateSignalValue(`${TYPE_LIST} item for key "${key}"`, value)
-		signals.set(key, createState(value))
+		const val = initRecord[key]
+		validateSignalValue(`${TYPE_LIST} item for key "${key}"`, val)
+		signals.set(key, createState(val))
 	}
 
 	// Starts clean: mutation methods (add/remove/set/splice) explicitly call
 	// propagate() + invalidate edges, so refresh() on first get() is not needed.
-	node.value = initialValue
+	node.value = value
 	node.flags = 0
 
 	// --- List object ---
@@ -358,20 +371,12 @@ function createList<T extends {}>(
 		},
 
 		get length() {
-			if (activeSink) {
-				if (!node.sinks && options?.watched)
-					node.stop = options.watched()
-				link(node, activeSink)
-			}
+			subscribe()
 			return keys.length
 		},
 
 		get() {
-			if (activeSink) {
-				if (!node.sinks && options?.watched)
-					node.stop = options.watched()
-				link(node, activeSink)
-			}
+			subscribe()
 			if (node.sources) {
 				// Fast path: edges already established, rebuild value directly
 				if (node.flags) {
@@ -386,12 +391,11 @@ function createList<T extends {}>(
 			return node.value
 		},
 
-		set(newValue: T[]) {
-			const currentValue =
-				node.flags & FLAG_DIRTY ? buildValue() : node.value
+		set(next: T[]) {
+			const prev = node.flags & FLAG_DIRTY ? buildValue() : node.value
 			const changes = diffArrays(
-				currentValue,
-				newValue,
+				prev,
+				next,
 				keys,
 				generateKey,
 				contentBased,
@@ -399,13 +403,13 @@ function createList<T extends {}>(
 			if (changes.changed) {
 				keys = changes.newKeys
 				applyChanges(changes)
-				propagate(node as unknown as SinkNode)
 				node.flags |= FLAG_DIRTY
+				for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
 				if (batchDepth === 0) flush()
 			}
 		},
 
-		update(fn: (oldValue: T[]) => T[]) {
+		update(fn: (prev: T[]) => T[]) {
 			list.set(fn(list.get()))
 		},
 
@@ -414,11 +418,7 @@ function createList<T extends {}>(
 		},
 
 		keys() {
-			if (activeSink) {
-				if (!node.sinks && options?.watched)
-					node.stop = options.watched()
-				link(node, activeSink)
-			}
+			subscribe()
 			return keys.values()
 		},
 
@@ -443,8 +443,8 @@ function createList<T extends {}>(
 			signals.set(key, createState(value))
 			node.sources = null
 			node.sourcesTail = null
-			propagate(node as unknown as SinkNode)
 			node.flags |= FLAG_DIRTY
+			for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
 			if (batchDepth === 0) flush()
 			return key
 		},
@@ -461,8 +461,8 @@ function createList<T extends {}>(
 				if (index >= 0) keys.splice(index, 1)
 				node.sources = null
 				node.sourcesTail = null
-				propagate(node as unknown as SinkNode)
 				node.flags |= FLAG_DIRTY
+				for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
 				if (batchDepth === 0) flush()
 			}
 		},
@@ -479,8 +479,8 @@ function createList<T extends {}>(
 
 			if (!keysEqual(keys, newOrder)) {
 				keys = newOrder
-				propagate(node as unknown as SinkNode)
 				node.flags |= FLAG_DIRTY
+				for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
 				if (batchDepth === 0) flush()
 			}
 		},
@@ -538,8 +538,8 @@ function createList<T extends {}>(
 					changed,
 				})
 				keys = newOrder
-				propagate(node as unknown as SinkNode)
 				node.flags |= FLAG_DIRTY
+				for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
 				if (batchDepth === 0) flush()
 			}
 
@@ -583,6 +583,7 @@ export {
 	createList,
 	isEqual,
 	isList,
+	getKeyGenerator,
 	keysEqual,
 	TYPE_LIST,
 }

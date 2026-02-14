@@ -105,6 +105,17 @@ type ComputedOptions<T extends {}> = SignalOptions<T> & {
 	 * Useful for reducer patterns so that calculations start with a value of correct type.
 	 */
 	value?: T
+
+	/**
+	 * Optional callback invoked when the signal is first watched by an effect.
+	 * Receives an `invalidate` function that marks the signal dirty and triggers re-evaluation.
+	 * Must return a cleanup function that is called when the signal is no longer watched.
+	 *
+	 * This enables lazy resource activation for computed signals that need to
+	 * react to external events (e.g. DOM mutations, timers) in addition to
+	 * tracked signal dependencies.
+	 */
+	watched?: (invalidate: () => void) => Cleanup
 }
 
 /**
@@ -132,7 +143,7 @@ type TaskCallback<T extends {}> = (
 /**
  * A callback function for effects that can perform side effects.
  *
- * @param match - A function to register cleanup callbacks that will be called before the effect re-runs or is disposed
+ * @returns An optional cleanup function that will be called before the effect re-runs or is disposed
  */
 type EffectCallback = () => MaybeCleanup
 
@@ -576,7 +587,7 @@ export {
 	batch,
 	batchDepth,
 	createScope,
-	DEFAULT_EQUALITY as defaultEquals,
+	DEFAULT_EQUALITY,
 	SKIP_EQUALITY,
 	FLAG_CLEAN,
 	FLAG_DIRTY,

@@ -1,4 +1,4 @@
-import { type Cleanup, type ComputedOptions } from '../graph';
+import { type Cleanup, type SignalOptions } from '../graph';
 /**
  * A read-only signal that tracks external input and updates a state value as long as it is active.
  *
@@ -8,7 +8,6 @@ type Sensor<T extends {}> = {
     readonly [Symbol.toStringTag]: 'Sensor';
     /**
      * Gets the current value of the sensor.
-     * Updates its state value if the sensor is active.
      * When called inside another reactive context, creates a dependency.
      * @returns The sensor value
      * @throws UnsetSignalValueError If the sensor value is still unset when read.
@@ -22,6 +21,13 @@ type Sensor<T extends {}> = {
  * @param set - A function to set the observed value
  * @returns A cleanup function when the sensor stops being watched
  */
+type SensorOptions<T extends {}> = SignalOptions<T> & {
+    /**
+     * Optional initial value. Avoids `UnsetSignalValueError` on first read
+     * before the watched callback fires.
+     */
+    value?: T;
+};
 type SensorCallback<T extends {}> = (set: (next: T) => void) => Cleanup;
 /**
  * Creates a sensor that tracks external input and updates a state value as long as it is active.
@@ -29,12 +35,12 @@ type SensorCallback<T extends {}> = (set: (next: T) => void) => Cleanup;
  * no longer watched. This lazy activation pattern ensures resources are only consumed when needed.
  *
  * @since 0.18.0
- * @template T - The type of value stored in the state
- * @param start - The callback function that starts the sensor and returns a cleanup function.
- * @param options - Optional options for the sensor.
+ * @template T - The type of value produced by the sensor
+ * @param watched - The callback invoked when the sensor starts being watched, receives a `set` function and returns a cleanup function.
+ * @param options - Optional configuration for the sensor.
  * @param options.value - Optional initial value. Avoids `UnsetSignalValueError` on first read
- *   before the start callback fires. Essential for the mutable-object observation pattern.
- * @param options.equals - Optional equality function. Defaults to `Object.is`. Use `SKIP_EQUALITY`
+ *   before the watched callback fires. Essential for the mutable-object observation pattern.
+ * @param options.equals - Optional equality function. Defaults to strict equality (`===`). Use `SKIP_EQUALITY`
  *   for mutable objects where the reference stays the same but internal state changes.
  * @param options.guard - Optional type guard to validate values.
  * @returns A read-only sensor signal.
@@ -63,7 +69,7 @@ type SensorCallback<T extends {}> = (set: (next: T) => void) => Cleanup;
  * }, { value: node, equals: SKIP_EQUALITY });
  * ```
  */
-declare function createSensor<T extends {}>(start: SensorCallback<T>, options?: ComputedOptions<T>): Sensor<T>;
+declare function createSensor<T extends {}>(watched: SensorCallback<T>, options?: SensorOptions<T>): Sensor<T>;
 /**
  * Checks if a value is a Sensor signal.
  *
@@ -72,4 +78,4 @@ declare function createSensor<T extends {}>(start: SensorCallback<T>, options?: 
  * @returns True if the value is a Sensor
  */
 declare function isSensor<T extends {} = unknown & {}>(value: unknown): value is Sensor<T>;
-export { createSensor, isSensor, type Sensor, type SensorCallback };
+export { createSensor, isSensor, type Sensor, type SensorCallback, type SensorOptions, };

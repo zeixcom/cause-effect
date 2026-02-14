@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import {
+	batch,
+	createEffect,
 	createMemo,
+	createScope,
 	createState,
 	isMemo,
 	isState,
@@ -375,6 +378,197 @@ describe('Memo', () => {
 				// @ts-expect-error - Testing invalid input
 				createMemo(() => 42, { value: null })
 			}).toThrow('[Memo] Signal value cannot be null or undefined')
+		})
+	})
+
+	describe('options.watched', () => {
+		test('should call watched on first effect access', () => {
+			let watchedCount = 0
+			const externalValue = 1
+
+			const memo = createMemo(() => externalValue, {
+				value: 0,
+				watched: _invalidate => {
+					watchedCount++
+					return () => {}
+				},
+			})
+
+			expect(watchedCount).toBe(0)
+
+			const dispose = createScope(() => {
+				createEffect(() => {
+					void memo.get()
+				})
+			})
+
+			expect(watchedCount).toBe(1)
+			dispose()
+		})
+
+		test('should call cleanup when last effect stops watching', () => {
+			let cleanedUp = false
+			const externalValue = 1
+
+			const memo = createMemo(() => externalValue, {
+				value: 0,
+				watched: _invalidate => {
+					return () => {
+						cleanedUp = true
+					}
+				},
+			})
+
+			const dispose = createScope(() => {
+				createEffect(() => {
+					void memo.get()
+				})
+			})
+
+			expect(cleanedUp).toBe(false)
+			dispose()
+			expect(cleanedUp).toBe(true)
+		})
+
+		test('should recompute memo when invalidate is called', () => {
+			let externalValue = 10
+			let computeCount = 0
+			let invalidate!: () => void
+
+			const memo = createMemo(
+				() => {
+					computeCount++
+					return externalValue
+				},
+				{
+					value: 0,
+					watched: inv => {
+						invalidate = inv
+						return () => {}
+					},
+				},
+			)
+
+			let observed = 0
+			const dispose = createScope(() => {
+				createEffect(() => {
+					observed = memo.get()
+				})
+			})
+
+			expect(observed).toBe(10)
+			expect(computeCount).toBe(1)
+
+			externalValue = 20
+			invalidate()
+			expect(observed).toBe(20)
+			expect(computeCount).toBe(2)
+
+			dispose()
+		})
+
+		test('should defer flush when invalidate is called inside batch', () => {
+			let externalValue = 1
+			let invalidate!: () => void
+
+			const memo = createMemo(() => externalValue, {
+				value: 0,
+				watched: inv => {
+					invalidate = inv
+					return () => {}
+				},
+			})
+
+			let observed = 0
+			const dispose = createScope(() => {
+				createEffect(() => {
+					observed = memo.get()
+				})
+			})
+
+			expect(observed).toBe(1)
+
+			batch(() => {
+				externalValue = 2
+				invalidate()
+				expect(observed).toBe(1) // not yet flushed
+			})
+			expect(observed).toBe(2) // flushed after batch
+
+			dispose()
+		})
+
+		test('should re-activate watched after cleanup and new effect access', () => {
+			let watchedCount = 0
+			const externalValue = 1
+
+			const memo = createMemo(() => externalValue, {
+				value: 0,
+				watched: _invalidate => {
+					watchedCount++
+					return () => {}
+				},
+			})
+
+			const dispose1 = createScope(() => {
+				createEffect(() => {
+					void memo.get()
+				})
+			})
+			expect(watchedCount).toBe(1)
+			dispose1()
+
+			const dispose2 = createScope(() => {
+				createEffect(() => {
+					void memo.get()
+				})
+			})
+			expect(watchedCount).toBe(2)
+			dispose2()
+		})
+
+		test('should work with both tracked dependencies and watched', () => {
+			const source = createState(1)
+			let externalValue = 100
+			let computeCount = 0
+			let invalidate!: () => void
+
+			const memo = createMemo(
+				() => {
+					computeCount++
+					return source.get() + externalValue
+				},
+				{
+					value: 0,
+					watched: inv => {
+						invalidate = inv
+						return () => {}
+					},
+				},
+			)
+
+			let observed = 0
+			const dispose = createScope(() => {
+				createEffect(() => {
+					observed = memo.get()
+				})
+			})
+
+			expect(observed).toBe(101)
+			expect(computeCount).toBe(1)
+
+			// Tracked dependency triggers recomputation
+			source.set(2)
+			expect(observed).toBe(102)
+			expect(computeCount).toBe(2)
+
+			// External invalidation triggers recomputation
+			externalValue = 200
+			invalidate()
+			expect(observed).toBe(202)
+			expect(computeCount).toBe(3)
+
+			dispose()
 		})
 	})
 })

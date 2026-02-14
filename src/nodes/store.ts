@@ -15,7 +15,7 @@ import {
 	TYPE_STORE,
 	untrack,
 } from '../graph'
-import { isFunction, isObjectOfType, isRecord } from '../util'
+import { isObjectOfType, isRecord } from '../util'
 import {
 	createList,
 	type DiffResult,
@@ -51,8 +51,8 @@ type BaseStore<T extends UnknownRecord> = {
 				? State<T[K] & {}>
 				: State<T[K] & {}> | undefined
 	get(): T
-	set(newValue: T): void
-	update(fn: (oldValue: T) => T): void
+	set(next: T): void
+	update(fn: (prev: T) => T): void
 	add<K extends keyof T & string>(key: K, value: T[K]): K
 	remove(key: string): void
 }
@@ -70,21 +70,18 @@ type Store<T extends UnknownRecord> = BaseStore<T> & {
 /* === Functions === */
 
 /** Diff two records and return granular changes */
-function diffRecords<T extends UnknownRecord>(
-	oldObj: T,
-	newObj: T,
-): DiffResult {
+function diffRecords<T extends UnknownRecord>(prev: T, next: T): DiffResult {
 	// Guard against non-objects that can't be diffed properly with Object.keys and 'in' operator
-	const oldValid = isRecord(oldObj) || Array.isArray(oldObj)
-	const newValid = isRecord(newObj) || Array.isArray(newObj)
-	if (!oldValid || !newValid) {
+	const prevValid = isRecord(prev) || Array.isArray(prev)
+	const nextValid = isRecord(next) || Array.isArray(next)
+	if (!prevValid || !nextValid) {
 		// For non-objects or non-plain objects, treat as complete change if different
-		const changed = !Object.is(oldObj, newObj)
+		const changed = !Object.is(prev, next)
 		return {
 			changed,
-			add: changed && newValid ? newObj : {},
+			add: changed && nextValid ? next : {},
 			change: {},
-			remove: changed && oldValid ? oldObj : {},
+			remove: changed && prevValid ? prev : {},
 		}
 	}
 
@@ -95,25 +92,25 @@ function diffRecords<T extends UnknownRecord>(
 	const remove = {} as UnknownRecord
 	let changed = false
 
-	const oldKeys = Object.keys(oldObj)
-	const newKeys = Object.keys(newObj)
+	const prevKeys = Object.keys(prev)
+	const nextKeys = Object.keys(next)
 
 	// Pass 1: iterate new keys — find additions and changes
-	for (const key of newKeys) {
-		if (key in oldObj) {
-			if (!isEqual(oldObj[key], newObj[key], visited)) {
-				change[key] = newObj[key]
+	for (const key of nextKeys) {
+		if (key in prev) {
+			if (!isEqual(prev[key], next[key], visited)) {
+				change[key] = next[key]
 				changed = true
 			}
 		} else {
-			add[key] = newObj[key]
+			add[key] = next[key]
 			changed = true
 		}
 	}
 
 	// Pass 2: iterate old keys — find removals
-	for (const key of oldKeys) {
-		if (!(key in newObj)) {
+	for (const key of prevKeys) {
+		if (!(key in next)) {
 			remove[key] = undefined
 			changed = true
 		}
@@ -128,7 +125,7 @@ function diffRecords<T extends UnknownRecord>(
  * Properties are accessible directly via proxy.
  *
  * @since 0.15.0
- * @param initialValue - Initial object value of the store
+ * @param value - Initial object value of the store
  * @param options - Optional configuration for watch lifecycle
  * @returns A Store with reactive properties
  *
@@ -140,10 +137,10 @@ function diffRecords<T extends UnknownRecord>(
  * ```
  */
 function createStore<T extends UnknownRecord>(
-	initialValue: T,
+	value: T,
 	options?: StoreOptions,
 ): Store<T> {
-	validateSignalValue(TYPE_STORE, initialValue, isRecord)
+	validateSignalValue(TYPE_STORE, value, isRecord)
 
 	const signals = new Map<
 		string,
@@ -152,11 +149,11 @@ function createStore<T extends UnknownRecord>(
 
 	// --- Internal helpers ---
 
-	const addSignal = (key: string, value: unknown): void => {
-		validateSignalValue(`${TYPE_STORE} for key "${key}"`, value)
-		if (Array.isArray(value)) signals.set(key, createList(value))
-		else if (isRecord(value)) signals.set(key, createStore(value))
-		else signals.set(key, createState(value as unknown & {}))
+	const addSignal = (key: string, val: unknown): void => {
+		validateSignalValue(`${TYPE_STORE} for key "${key}"`, val)
+		if (Array.isArray(val)) signals.set(key, createList(val))
+		else if (isRecord(val)) signals.set(key, createStore(val))
+		else signals.set(key, createState(val as unknown & {}))
 	}
 
 	// Build current value from child signals
@@ -174,7 +171,7 @@ function createStore<T extends UnknownRecord>(
 	// Mutation methods (add/remove/set) null out sources to force re-establishment.
 	const node: MemoNode<T> = {
 		fn: buildValue,
-		value: initialValue,
+		value,
 		flags: FLAG_DIRTY,
 		sources: null,
 		sourcesTail: null,
@@ -197,15 +194,15 @@ function createStore<T extends UnknownRecord>(
 		if (Object.keys(changes.change).length) {
 			batch(() => {
 				for (const key in changes.change) {
-					const value = changes.change[key]
-					validateSignalValue(`${TYPE_STORE} for key "${key}"`, value)
+					const val = changes.change[key]
+					validateSignalValue(`${TYPE_STORE} for key "${key}"`, val)
 					const signal = signals.get(key)
 					if (signal) {
 						// Type changed (e.g. primitive → object or vice versa): replace signal
-						if (isRecord(value) !== isStore(signal)) {
-							addSignal(key, value)
+						if (isRecord(val) !== isStore(signal)) {
+							addSignal(key, val)
 							structural = true
-						} else signal.set(value as never)
+						} else signal.set(val as never)
 					}
 				}
 			})
@@ -225,9 +222,20 @@ function createStore<T extends UnknownRecord>(
 		return changes.changed
 	}
 
+	const watched = options?.watched
+	const subscribe = watched
+		? () => {
+				if (activeSink) {
+					if (!node.sinks) node.stop = watched()
+					link(node, activeSink)
+				}
+			}
+		: () => {
+				if (activeSink) link(node, activeSink)
+			}
+
 	// --- Initialize ---
-	for (const key of Object.keys(initialValue))
-		addSignal(key, initialValue[key])
+	for (const key of Object.keys(value)) addSignal(key, value[key])
 
 	// --- Store object ---
 	const store: BaseStore<T> = {
@@ -250,11 +258,7 @@ function createStore<T extends UnknownRecord>(
 		},
 
 		keys() {
-			if (activeSink) {
-				if (!node.sinks && options?.watched)
-					node.stop = options.watched()
-				link(node, activeSink)
-			}
+			subscribe()
 			return signals.keys()
 		},
 
@@ -270,11 +274,7 @@ function createStore<T extends UnknownRecord>(
 		},
 
 		get() {
-			if (activeSink) {
-				if (!node.sinks && options?.watched)
-					node.stop = options.watched()
-				link(node, activeSink)
-			}
+			subscribe()
 			if (node.sources) {
 				// Fast path: edges already established, rebuild value directly
 				// from child signals using untrack to avoid creating spurious
@@ -291,16 +291,14 @@ function createStore<T extends UnknownRecord>(
 			return node.value
 		},
 
-		set(newValue: T) {
+		set(next: T) {
 			// Use cached value if clean, recompute if dirty
-			const currentValue =
-				node.flags & FLAG_DIRTY ? buildValue() : node.value
+			const prev = node.flags & FLAG_DIRTY ? buildValue() : node.value
 
-			const changes = diffRecords(currentValue, newValue)
+			const changes = diffRecords(prev, next)
 			if (applyChanges(changes)) {
-				// Call propagate BEFORE marking dirty to ensure it doesn't early-return
-				propagate(node as unknown as SinkNode)
 				node.flags |= FLAG_DIRTY
+				for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
 				if (batchDepth === 0) flush()
 			}
 		},
@@ -315,8 +313,8 @@ function createStore<T extends UnknownRecord>(
 			addSignal(key, value)
 			node.sources = null
 			node.sourcesTail = null
-			propagate(node as unknown as SinkNode)
 			node.flags |= FLAG_DIRTY
+			for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
 			if (batchDepth === 0) flush()
 			return key
 		},
@@ -326,8 +324,8 @@ function createStore<T extends UnknownRecord>(
 			if (ok) {
 				node.sources = null
 				node.sourcesTail = null
-				propagate(node as unknown as SinkNode)
 				node.flags |= FLAG_DIRTY
+				for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
 				if (batchDepth === 0) flush()
 			}
 		},
@@ -336,10 +334,7 @@ function createStore<T extends UnknownRecord>(
 	// --- Proxy ---
 	return new Proxy(store, {
 		get(target, prop) {
-			if (prop in target) {
-				const value = Reflect.get(target, prop)
-				return isFunction(value) ? value.bind(target) : value
-			}
+			if (prop in target) return Reflect.get(target, prop)
 			if (typeof prop !== 'symbol')
 				return target.byKey(prop as keyof T & string)
 		},
