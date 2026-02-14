@@ -107,7 +107,7 @@ type TaskCallback<T extends {}> = (prev: T | undefined, signal: AbortSignal) => 
 /**
  * A callback function for effects that can perform side effects.
  *
- * @param match - A function to register cleanup callbacks that will be called before the effect re-runs or is disposed
+ * @returns An optional cleanup function that will be called before the effect re-runs or is disposed
  */
 type EffectCallback = () => MaybeCleanup;
 declare const TYPE_STATE = "State";

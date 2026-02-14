@@ -86,10 +86,10 @@ The generic constraint `T extends {}` is crucial - it excludes `null` and `undef
 ### Collection Architecture
 
 **Collections** (`createCollection`): Externally-driven collections with watched lifecycle
-- Created via `createCollection(start, options?)` — mirrors `createSensor(start, options?)`
-- The `start` callback receives an `applyChanges(diffResult)` function for granular add/change/remove operations
+- Created via `createCollection(watched, options?)` — mirrors `createSensor(watched, options?)`
+- The `watched` callback receives an `applyChanges(diffResult)` function for granular add/change/remove operations
 - `options.value` provides initial items (default `[]`), `options.keyConfig` configures key generation
-- Lazy activation: `start` callback invoked on first effect access, cleanup when unwatched
+- Lazy activation: `watched` callback invoked on first effect access, cleanup when unwatched
 
 **Derived Collections** (`deriveCollection`): Transformed from Lists or other Collections
 - Created via `list.deriveCollection(callback)` or `collection.deriveCollection(callback)`
@@ -124,7 +124,7 @@ Computed signals implement smart memoization:
 
 ## Resource Management with Watch Callbacks
 
-Sensor and Collection signals use a **start callback** pattern for lazy resource management. Resources are allocated only when a signal is first accessed by an effect and automatically cleaned up when no effects are watching:
+Sensor, Collection, Memo (with `watched` option), and Task (with `watched` option) use a **watched callback** pattern for lazy resource management. Resources are allocated only when a signal is first accessed by an effect and automatically cleaned up when no effects are watching:
 
 ```typescript
 // Sensor: track external input with state updates
@@ -164,9 +164,9 @@ const user = createStore({ name: 'Alice', email: 'alice@example.com' }, {
 ```
 
 **Watch Lifecycle**:
-1. First effect accesses signal → start/watched callback executed
+1. First effect accesses signal → watched callback executed
 2. Last effect stops watching → returned cleanup function executed
-3. New effect accesses signal → start/watched callback executed again
+3. New effect accesses signal → watched callback executed again
 
 This pattern enables **lazy resource allocation** - resources are only consumed when actually needed and automatically freed when no longer used.
 
@@ -230,7 +230,7 @@ const firstTodo = todoList.byKey('task1') // Access by stable key
 
 **Collection (`createCollection`)**:
 - Externally-driven keyed collections (WebSocket streams, SSE, external data feeds)
-- Mirrors `createSensor(start, options?)` — start callback pattern with watched lifecycle
+- Mirrors `createSensor(watched, options?)` — watched callback pattern with lazy lifecycle
 - Same `Collection` interface — `.get()`, `.byKey()`, `.keys()`, `.deriveCollection()`
 
 ```typescript
@@ -263,6 +263,7 @@ const processed = todoList
 **Memo (`createMemo`)**:
 - Synchronous derived computations with memoization
 - Reducer pattern with previous value access
+- Optional `watched(invalidate)` callback for lazy external invalidation (e.g., MutationObserver)
 
 ```typescript
 const doubled = createMemo(() => count.get() * 2)
@@ -283,6 +284,7 @@ const runningTotal = createMemo(prev => prev + currentValue.get(), { value: 0 })
 
 **Task (`createTask`)**:
 - Async computations with automatic cancellation
+- Optional `watched(invalidate)` callback for lazy external invalidation
 
 ```typescript
 const userData = createTask(async (prev, abort) => {

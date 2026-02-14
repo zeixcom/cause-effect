@@ -37,10 +37,10 @@ type List<T extends {}> = {
  * Checks if two values are equal with cycle detection
  *
  * @since 0.15.0
- * @param {T} a - First value to compare
- * @param {T} b - Second value to compare
- * @param {WeakSet<object>} visited - Set to track visited objects for cycle detection
- * @returns {boolean} Whether the two values are equal
+ * @param a - First value to compare
+ * @param b - Second value to compare
+ * @param visited - Set to track visited objects for cycle detection
+ * @returns Whether the two values are equal
  */
 declare function isEqual<T>(a: T, b: T, visited?: WeakSet<object>): boolean;
 /** Shallow equality check for string arrays */
@@ -50,11 +50,11 @@ declare function getKeyGenerator<T extends {}>(keyConfig?: KeyConfig<T>): [(item
  * Creates a reactive list with stable keys and per-item reactivity.
  *
  * @since 0.18.0
- * @param initialValue - Initial array of items
+ * @param value - Initial array of items
  * @param options - Optional configuration for key generation and watch lifecycle
  * @returns A List signal
  */
-declare function createList<T extends {}>(initialValue: T[], options?: ListOptions<T>): List<T>;
+declare function createList<T extends {}>(value: T[], options?: ListOptions<T>): List<T>;
 /**
  * Checks if a value is a List signal.
  *

@@ -143,7 +143,7 @@ type TaskCallback<T extends {}> = (
 /**
  * A callback function for effects that can perform side effects.
  *
- * @param match - A function to register cleanup callbacks that will be called before the effect re-runs or is disposed
+ * @returns An optional cleanup function that will be called before the effect re-runs or is disposed
  */
 type EffectCallback = () => MaybeCleanup
 

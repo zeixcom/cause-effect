@@ -15,8 +15,8 @@ Cause & Effect is a reactive state management library for JavaScript/TypeScript 
 ### Signal Types (all in `src/nodes/`)
 - **State** (`createState`): Mutable signals for values (`get`, `set`, `update`)
 - **Sensor** (`createSensor`): Read-only signals for external input with automatic state updates. Use `SKIP_EQUALITY` for mutable object observation.
-- **Memo** (`createMemo`): Synchronous derived computations with memoization and reducer capabilities
-- **Task** (`createTask`): Async derived computations with automatic AbortController cancellation
+- **Memo** (`createMemo`): Synchronous derived computations with memoization, reducer capabilities, and optional `watched(invalidate)` for external invalidation
+- **Task** (`createTask`): Async derived computations with automatic AbortController cancellation and optional `watched(invalidate)` for external invalidation
 - **Store** (`createStore`): Proxy-based reactive objects with per-property State/Store signals
 - **List** (`createList`): Reactive arrays with stable keys and per-item State signals
 - **Collection** (`createCollection`): Reactive collections — either externally-driven with watched lifecycle, or derived from List/Collection with item-level memoization
@@ -72,7 +72,8 @@ Cause & Effect is a reactive state management library for JavaScript/TypeScript 
 - All signals have `.get()` for value access
 - Mutable signals (State) have `.set(value)` and `.update(fn)`
 - Store properties are automatically reactive signals via Proxy
-- Sensor/Collection use a start callback returning Cleanup (lazy activation)
+- Sensor/Collection use a watched callback returning Cleanup (lazy activation)
+- Memo/Task use optional `watched(invalidate)` callback in options for external invalidation
 - Store/List use optional `watched` callback in options returning Cleanup
 - Effects return a dispose function (Cleanup)
 
@@ -191,17 +192,26 @@ const count = createState(0, {
 ## Resource Management
 
 ```typescript
-// Sensor: lazy external input tracking
+// Sensor: lazy external input tracking (watched callback with set)
 const sensor = createSensor<T>((set) => {
   // setup — call set(value) to update
   return () => { /* cleanup — called when last effect stops watching */ }
 })
 
-// Collection: lazy external data source
+// Collection: lazy external data source (watched callback with applyChanges)
 const feed = createCollection<T>((applyChanges) => {
   // setup — call applyChanges(diffResult) on changes
   return () => { /* cleanup */ }
 }, { keyConfig: item => item.id })
+
+// Memo/Task: optional watched callback with invalidate
+const derived = createMemo(() => element.get().textContent ?? '', {
+  watched: (invalidate) => {
+    const obs = new MutationObserver(() => invalidate())
+    obs.observe(element.get(), { childList: true })
+    return () => obs.disconnect()
+  }
+})
 
 // Store/List: optional watched callback
 const store = createStore(initialValue, {

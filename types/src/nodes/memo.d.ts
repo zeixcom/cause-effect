@@ -25,6 +25,12 @@ type Memo<T extends {}> = {
  * @template T - The type of value computed by the memo
  * @param fn - The computation function that receives the previous value
  * @param options - Optional configuration for the memo
+ * @param options.value - Optional initial value for reducer patterns
+ * @param options.equals - Optional equality function. Defaults to strict equality (`===`)
+ * @param options.guard - Optional type guard to validate values
+ * @param options.watched - Optional callback invoked when the memo is first watched by an effect.
+ *   Receives an `invalidate` function to mark the memo dirty and trigger recomputation.
+ *   Must return a cleanup function called when no effects are watching.
  * @returns A Memo object with a get() method
  *
  * @example

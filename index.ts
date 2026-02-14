@@ -1,6 +1,6 @@
 /**
  * @name Cause & Effect
- * @version 0.18.0
+ * @version 0.18.1
  * @author Esther Brunner
  */
 
@@ -56,6 +56,7 @@ export {
 	isSensor,
 	type Sensor,
 	type SensorCallback,
+	type SensorOptions,
 } from './src/nodes/sensor'
 export {
 	createState,

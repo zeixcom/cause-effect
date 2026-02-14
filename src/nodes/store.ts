@@ -125,7 +125,7 @@ function diffRecords<T extends UnknownRecord>(prev: T, next: T): DiffResult {
  * Properties are accessible directly via proxy.
  *
  * @since 0.15.0
- * @param initialValue - Initial object value of the store
+ * @param value - Initial object value of the store
  * @param options - Optional configuration for watch lifecycle
  * @returns A Store with reactive properties
  *
@@ -137,10 +137,10 @@ function diffRecords<T extends UnknownRecord>(prev: T, next: T): DiffResult {
  * ```
  */
 function createStore<T extends UnknownRecord>(
-	initialValue: T,
+	value: T,
 	options?: StoreOptions,
 ): Store<T> {
-	validateSignalValue(TYPE_STORE, initialValue, isRecord)
+	validateSignalValue(TYPE_STORE, value, isRecord)
 
 	const signals = new Map<
 		string,
@@ -149,11 +149,11 @@ function createStore<T extends UnknownRecord>(
 
 	// --- Internal helpers ---
 
-	const addSignal = (key: string, value: unknown): void => {
-		validateSignalValue(`${TYPE_STORE} for key "${key}"`, value)
-		if (Array.isArray(value)) signals.set(key, createList(value))
-		else if (isRecord(value)) signals.set(key, createStore(value))
-		else signals.set(key, createState(value as unknown & {}))
+	const addSignal = (key: string, val: unknown): void => {
+		validateSignalValue(`${TYPE_STORE} for key "${key}"`, val)
+		if (Array.isArray(val)) signals.set(key, createList(val))
+		else if (isRecord(val)) signals.set(key, createStore(val))
+		else signals.set(key, createState(val as unknown & {}))
 	}
 
 	// Build current value from child signals
@@ -171,7 +171,7 @@ function createStore<T extends UnknownRecord>(
 	// Mutation methods (add/remove/set) null out sources to force re-establishment.
 	const node: MemoNode<T> = {
 		fn: buildValue,
-		value: initialValue,
+		value,
 		flags: FLAG_DIRTY,
 		sources: null,
 		sourcesTail: null,
@@ -194,15 +194,15 @@ function createStore<T extends UnknownRecord>(
 		if (Object.keys(changes.change).length) {
 			batch(() => {
 				for (const key in changes.change) {
-					const value = changes.change[key]
-					validateSignalValue(`${TYPE_STORE} for key "${key}"`, value)
+					const val = changes.change[key]
+					validateSignalValue(`${TYPE_STORE} for key "${key}"`, val)
 					const signal = signals.get(key)
 					if (signal) {
 						// Type changed (e.g. primitive → object or vice versa): replace signal
-						if (isRecord(value) !== isStore(signal)) {
-							addSignal(key, value)
+						if (isRecord(val) !== isStore(signal)) {
+							addSignal(key, val)
 							structural = true
-						} else signal.set(value as never)
+						} else signal.set(val as never)
 					}
 				}
 			})
@@ -235,8 +235,7 @@ function createStore<T extends UnknownRecord>(
 			}
 
 	// --- Initialize ---
-	for (const key of Object.keys(initialValue))
-		addSignal(key, initialValue[key])
+	for (const key of Object.keys(value)) addSignal(key, value[key])
 
 	// --- Store object ---
 	const store: BaseStore<T> = {

@@ -28,7 +28,7 @@ type Store<T extends UnknownRecord> = BaseStore<T> & {
  * Properties are accessible directly via proxy.
  *
  * @since 0.15.0
- * @param initialValue - Initial object value of the store
+ * @param value - Initial object value of the store
  * @param options - Optional configuration for watch lifecycle
  * @returns A Store with reactive properties
  *
@@ -39,7 +39,7 @@ type Store<T extends UnknownRecord> = BaseStore<T> & {
  * console.log(user.get()); // { name: 'Bob', age: 30 }
  * ```
  */
-declare function createStore<T extends UnknownRecord>(initialValue: T, options?: StoreOptions): Store<T>;
+declare function createStore<T extends UnknownRecord>(value: T, options?: StoreOptions): Store<T>;
 /**
  * Checks if a value is a Store signal.
  *

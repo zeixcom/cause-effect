@@ -266,7 +266,7 @@ Lists have `.keys()`, `.add()`, and `.remove()` methods like stores. Additionall
 
 ### Collection
 
-A reactive collection with item-level memoization. Collections can be externally-driven (via a start callback) or derived from a List or another Collection.
+A reactive collection with item-level memoization. Collections can be externally-driven (via a watched callback) or derived from a List or another Collection.
 
 **Externally-driven collections** receive data from external sources (WebSocket, Server-Sent Events, etc.) via `applyChanges()`:
 
@@ -277,7 +277,7 @@ const items = createCollection((applyChanges) => {
   const ws = new WebSocket('/items')
   ws.onmessage = (e) => {
     const { add, change, remove } = JSON.parse(e.data)
-    applyChanges({ changed: true, add, change, remove })
+    applyChanges({ add, change, remove })
   }
   return () => ws.close()
 }, { keyConfig: item => item.id })
@@ -285,7 +285,7 @@ const items = createCollection((applyChanges) => {
 createEffect(() => console.log('Items:', items.get()))
 ```
 
-The start callback activates lazily when the collection is first accessed by an effect and cleans up when no effects are watching. Options include `value` for initial items (default `[]`) and `keyConfig` for key generation.
+The watched callback activates lazily when the collection is first accessed by an effect and cleans up when no effects are watching. Options include `value` for initial items (default `[]`) and `keyConfig` for key generation.
 
 **Derived collections** transform Lists or other Collections via `.deriveCollection()`:
 
@@ -476,7 +476,7 @@ dispose() // Cleans up the effect and runs the returned cleanup
 
 ### Resource Management with Watch Callbacks
 
-Sensor and Collection signals use a **start callback** for lazy resource management. The callback runs when the signal is first accessed by an effect and the returned cleanup function runs when no effects are watching:
+Sensor and Collection signals use a **watched callback** for lazy resource management. The callback runs when the signal is first accessed by an effect and the returned cleanup function runs when no effects are watching:
 
 ```js
 import { createSensor, createCollection, createEffect } from '@zeix/cause-effect'
@@ -517,11 +517,29 @@ const user = createStore({ name: 'Alice' }, {
 })
 ```
 
+Memo and Task signals also support a `watched` option, but their callback receives an `invalidate` function that marks the signal dirty and triggers recomputation:
+
+```js
+const changes = createMemo((prev) => {
+  const next = new Set(parent.querySelectorAll(selector))
+  // ... diff prev vs next ...
+  return { current: next, added, removed }
+}, {
+  value: { current: new Set(), added: [], removed: [] },
+  watched: (invalidate) => {
+    const observer = new MutationObserver(() => invalidate())
+    observer.observe(parent, { childList: true, subtree: true })
+    return () => observer.disconnect()
+  }
+})
+```
+
 This pattern is ideal for:
 - Event listeners that should only be active when data is being watched
 - Network connections that can be lazily established
 - Expensive computations that should pause when not needed
 - External subscriptions (WebSocket, Server-Sent Events, etc.)
+- Computed signals that need to react to external events (DOM mutations, timers)
 
 ## Contributing & License
 

@@ -492,23 +492,20 @@ function diffArrays(prev, next, prevKeys, generateKey, contentBased) {
   }
   const seenKeys = new Set;
   for (let i = 0;i < next.length; i++) {
-    const newValue = next[i];
-    if (newValue === undefined)
+    const val = next[i];
+    if (val === undefined)
       continue;
-    const key = contentBased ? generateKey(newValue) : prevKeys[i] ?? generateKey(newValue);
+    const key = contentBased ? generateKey(val) : prevKeys[i] ?? generateKey(val);
     if (seenKeys.has(key))
-      throw new DuplicateKeyError(TYPE_LIST, key, newValue);
+      throw new DuplicateKeyError(TYPE_LIST, key, val);
     nextKeys.push(key);
     seenKeys.add(key);
     if (!prevByKey.has(key)) {
-      add[key] = newValue;
+      add[key] = val;
       changed = true;
-    } else {
-      const oldValue = prevByKey.get(key);
-      if (!isEqual(oldValue, newValue, visited)) {
-        change[key] = newValue;
-        changed = true;
-      }
+    } else if (!isEqual(prevByKey.get(key), val, visited)) {
+      change[key] = val;
+      changed = true;
     }
   }
   for (const [key] of prevByKey) {
@@ -521,15 +518,15 @@ function diffArrays(prev, next, prevKeys, generateKey, contentBased) {
     changed = true;
   return { add, change, remove, newKeys: nextKeys, changed };
 }
-function createList(initialValue, options) {
-  validateSignalValue(TYPE_LIST, initialValue, Array.isArray);
+function createList(value, options) {
+  validateSignalValue(TYPE_LIST, value, Array.isArray);
   const signals = new Map;
   let keys = [];
   const [generateKey, contentBased] = getKeyGenerator(options?.keyConfig);
   const buildValue = () => keys.map((key) => signals.get(key)?.get()).filter((v) => v !== undefined);
   const node = {
     fn: buildValue,
-    value: initialValue,
+    value,
     flags: FLAG_DIRTY,
     sources: null,
     sourcesTail: null,
@@ -541,34 +538,34 @@ function createList(initialValue, options) {
   const toRecord = (array) => {
     const record = {};
     for (let i = 0;i < array.length; i++) {
-      const value = array[i];
-      if (value === undefined)
+      const val = array[i];
+      if (val === undefined)
         continue;
       let key = keys[i];
       if (!key) {
-        key = generateKey(value);
+        key = generateKey(val);
         keys[i] = key;
       }
-      record[key] = value;
+      record[key] = val;
     }
     return record;
   };
   const applyChanges = (changes) => {
     let structural = false;
     for (const key in changes.add) {
-      const value = changes.add[key];
-      validateSignalValue(`${TYPE_LIST} item for key "${key}"`, value);
-      signals.set(key, createState(value));
+      const val = changes.add[key];
+      validateSignalValue(`${TYPE_LIST} item for key "${key}"`, val);
+      signals.set(key, createState(val));
       structural = true;
     }
     if (Object.keys(changes.change).length) {
       batch(() => {
         for (const key in changes.change) {
-          const value = changes.change[key];
-          validateSignalValue(`${TYPE_LIST} item for key "${key}"`, value);
+          const val = changes.change[key];
+          validateSignalValue(`${TYPE_LIST} item for key "${key}"`, val);
           const signal = signals.get(key);
           if (signal)
-            signal.set(value);
+            signal.set(val);
         }
       });
     }
@@ -596,13 +593,13 @@ function createList(initialValue, options) {
     if (activeSink)
       link(node, activeSink);
   };
-  const initRecord = toRecord(initialValue);
+  const initRecord = toRecord(value);
   for (const key in initRecord) {
-    const value = initRecord[key];
-    validateSignalValue(`${TYPE_LIST} item for key "${key}"`, value);
-    signals.set(key, createState(value));
+    const val = initRecord[key];
+    validateSignalValue(`${TYPE_LIST} item for key "${key}"`, val);
+    signals.set(key, createState(val));
   }
-  node.value = initialValue;
+  node.value = value;
   node.flags = 0;
   const list = {
     [Symbol.toStringTag]: TYPE_LIST,
@@ -664,14 +661,14 @@ function createList(initialValue, options) {
     indexOfKey(key) {
       return keys.indexOf(key);
     },
-    add(value) {
-      const key = generateKey(value);
+    add(value2) {
+      const key = generateKey(value2);
       if (signals.has(key))
-        throw new DuplicateKeyError(TYPE_LIST, key, value);
+        throw new DuplicateKeyError(TYPE_LIST, key, value2);
       if (!keys.includes(key))
         keys.push(key);
-      validateSignalValue(`${TYPE_LIST} item for key "${key}"`, value);
-      signals.set(key, createState(value));
+      validateSignalValue(`${TYPE_LIST} item for key "${key}"`, value2);
+      signals.set(key, createState(value2));
       node.sources = null;
       node.sourcesTail = null;
       node.flags |= FLAG_DIRTY;
@@ -777,11 +774,11 @@ function createMemo(fn, options) {
     error: undefined,
     stop: undefined
   };
-  const start = options?.watched;
-  const subscribe = start ? () => {
+  const watched = options?.watched;
+  const subscribe = watched ? () => {
     if (activeSink) {
       if (!node.sinks)
-        node.stop = start(() => {
+        node.stop = watched(() => {
           node.flags |= FLAG_DIRTY;
           for (let e = node.sinks;e; e = e.nextSink)
             propagate(e.sink);
@@ -890,19 +887,19 @@ function deriveCollection(source, callback) {
     signals.set(key, signal);
   };
   function syncKeys() {
-    const newKeys = Array.from(source.keys());
-    const oldKeys = node.value;
-    if (!keysEqual(oldKeys, newKeys)) {
-      const oldKeySet = new Set(oldKeys);
-      const newKeySet = new Set(newKeys);
-      for (const key of oldKeys)
-        if (!newKeySet.has(key))
+    const nextKeys = Array.from(source.keys());
+    const prevKeys = node.value;
+    if (!keysEqual(prevKeys, nextKeys)) {
+      const a = new Set(prevKeys);
+      const b = new Set(nextKeys);
+      for (const key of prevKeys)
+        if (!b.has(key))
           signals.delete(key);
-      for (const key of newKeys)
-        if (!oldKeySet.has(key))
+      for (const key of nextKeys)
+        if (!a.has(key))
           addSignal(key);
     }
-    return newKeys;
+    return nextKeys;
   }
   const node = {
     fn: syncKeys,
@@ -988,16 +985,16 @@ function deriveCollection(source, callback) {
   return collection;
 }
 function createCollection(watched, options) {
-  const initialValue = options?.value ?? [];
-  if (initialValue.length)
-    validateSignalValue(TYPE_COLLECTION, initialValue, Array.isArray);
+  const value = options?.value ?? [];
+  if (value.length)
+    validateSignalValue(TYPE_COLLECTION, value, Array.isArray);
   validateCallback(TYPE_COLLECTION, watched, isSyncFunction);
   const signals = new Map;
   const keys = [];
   const itemToKey = new Map;
   const [generateKey, contentBased] = getKeyGenerator(options?.keyConfig);
   const resolveKey = (item) => itemToKey.get(item) ?? (contentBased ? generateKey(item) : undefined);
-  const itemFactory = options?.createItem ?? ((_key, value) => createState(value));
+  const itemFactory = options?.createItem ?? createState;
   function buildValue() {
     const result = [];
     for (const key of keys) {
@@ -1014,7 +1011,7 @@ function createCollection(watched, options) {
   }
   const node = {
     fn: buildValue,
-    value: initialValue,
+    value,
     flags: FLAG_DIRTY,
     sources: null,
     sourcesTail: null,
@@ -1023,70 +1020,68 @@ function createCollection(watched, options) {
     equals: SKIP_EQUALITY,
     error: undefined
   };
-  function applyChanges(changes) {
-    const { add, change, remove } = changes;
-    if (!add?.length && !change?.length && !remove?.length)
-      return;
-    let structural = false;
-    batch(() => {
-      if (add) {
-        for (const item of add) {
-          const key = generateKey(item);
-          signals.set(key, itemFactory(key, item));
-          itemToKey.set(item, key);
-          if (!keys.includes(key))
-            keys.push(key);
-          structural = true;
-        }
-      }
-      if (change) {
-        for (const item of change) {
-          const key = resolveKey(item);
-          if (!key)
-            continue;
-          const signal = signals.get(key);
-          if (signal && isState(signal)) {
-            const oldValue = signal.get();
-            itemToKey.delete(oldValue);
-            signal.set(item);
-            itemToKey.set(item, key);
-          }
-        }
-      }
-      if (remove) {
-        for (const item of remove) {
-          const key = resolveKey(item);
-          if (!key)
-            continue;
-          itemToKey.delete(item);
-          signals.delete(key);
-          const index = keys.indexOf(key);
-          if (index !== -1)
-            keys.splice(index, 1);
-          structural = true;
-        }
-      }
-      if (structural) {
-        node.sources = null;
-        node.sourcesTail = null;
-      }
-      node.flags = FLAG_DIRTY;
-      for (let e = node.sinks;e; e = e.nextSink)
-        propagate(e.sink);
-    });
-  }
-  for (const item of initialValue) {
+  for (const item of value) {
     const key = generateKey(item);
-    signals.set(key, itemFactory(key, item));
+    signals.set(key, itemFactory(item));
     itemToKey.set(item, key);
     keys.push(key);
   }
-  node.value = initialValue;
+  node.value = value;
   node.flags = FLAG_DIRTY;
   function subscribe() {
     if (activeSink) {
       if (!node.sinks)
-        node.stop = watched(applyChanges);
+        node.stop = watched((changes) => {
+          const { add, change, remove } = changes;
+          if (!add?.length && !change?.length && !remove?.length)
+            return;
+          let structural = false;
+          batch(() => {
+            if (add) {
+              for (const item of add) {
+                const key = generateKey(item);
+                signals.set(key, itemFactory(item));
+                itemToKey.set(item, key);
+                if (!keys.includes(key))
+                  keys.push(key);
+                structural = true;
+              }
+            }
+            if (change) {
+              for (const item of change) {
+                const key = resolveKey(item);
+                if (!key)
+                  continue;
+                const signal = signals.get(key);
+                if (signal && isState(signal)) {
+                  itemToKey.delete(signal.get());
+                  signal.set(item);
+                  itemToKey.set(item, key);
+                }
+              }
+            }
+            if (remove) {
+              for (const item of remove) {
+                const key = resolveKey(item);
+                if (!key)
+                  continue;
+                itemToKey.delete(item);
+                signals.delete(key);
+                const index = keys.indexOf(key);
+                if (index !== -1)
+                  keys.splice(index, 1);
+                structural = true;
+              }
+            }
+            if (structural) {
+              node.sources = null;
+              node.sourcesTail = null;
+            }
+            node.flags = FLAG_DIRTY;
+            for (let e = node.sinks;e; e = e.nextSink)
+              propagate(e.sink);
+          });
+        });
       link(node, activeSink);
     }
   }
@@ -1284,17 +1279,17 @@ function diffRecords(prev, next) {
   }
   return { add, change, remove, changed };
 }
-function createStore(initialValue, options) {
-  validateSignalValue(TYPE_STORE, initialValue, isRecord);
+function createStore(value, options) {
+  validateSignalValue(TYPE_STORE, value, isRecord);
   const signals = new Map;
-  const addSignal = (key, value) => {
-    validateSignalValue(`${TYPE_STORE} for key "${key}"`, value);
-    if (Array.isArray(value))
-      signals.set(key, createList(value));
-    else if (isRecord(value))
-      signals.set(key, createStore(value));
+  const addSignal = (key, val) => {
+    validateSignalValue(`${TYPE_STORE} for key "${key}"`, val);
+    if (Array.isArray(val))
+      signals.set(key, createList(val));
+    else if (isRecord(val))
+      signals.set(key, createStore(val));
     else
-      signals.set(key, createState(value));
+      signals.set(key, createState(val));
   };
   const buildValue = () => {
     const record = {};
@@ -1305,7 +1300,7 @@ function createStore(initialValue, options) {
   };
   const node = {
     fn: buildValue,
-    value: initialValue,
+    value,
     flags: FLAG_DIRTY,
     sources: null,
     sourcesTail: null,
@@ -1323,15 +1318,15 @@ function createStore(initialValue, options) {
     if (Object.keys(changes.change).length) {
       batch(() => {
         for (const key in changes.change) {
-          const value = changes.change[key];
-          validateSignalValue(`${TYPE_STORE} for key "${key}"`, value);
+          const val = changes.change[key];
+          validateSignalValue(`${TYPE_STORE} for key "${key}"`, val);
           const signal = signals.get(key);
           if (signal) {
-            if (isRecord(value) !== isStore(signal)) {
-              addSignal(key, value);
+            if (isRecord(val) !== isStore(signal)) {
+              addSignal(key, val);
               structural = true;
             } else
-              signal.set(value);
+              signal.set(val);
           }
         }
       });
@@ -1357,8 +1352,8 @@ function createStore(initialValue, options) {
     if (activeSink)
       link(node, activeSink);
   };
-  for (const key of Object.keys(initialValue))
-    addSignal(key, initialValue[key]);
+  for (const key of Object.keys(value))
+    addSignal(key, value[key]);
   const store = {
     [Symbol.toStringTag]: TYPE_STORE,
     [Symbol.isConcatSpreadable]: false,
@@ -1404,10 +1399,10 @@ function createStore(initialValue, options) {
     update(fn) {
       store.set(fn(store.get()));
     },
-    add(key, value) {
+    add(key, value2) {
       if (signals.has(key))
-        throw new DuplicateKeyError(TYPE_STORE, key, value);
-      addSignal(key, value);
+        throw new DuplicateKeyError(TYPE_STORE, key, value2);
+      addSignal(key, value2);
       node.sources = null;
       node.sourcesTail = null;
       node.flags |= FLAG_DIRTY;

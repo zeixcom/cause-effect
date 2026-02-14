@@ -88,7 +88,7 @@ describe('Collection', () => {
 			let guardCalled = false
 			const col = createCollection(() => () => {}, {
 				value: [5, 10],
-				createItem: (_key, value) =>
+				createItem: value =>
 					createState(value, {
 						guard: (v): v is number => {
 							guardCalled = true

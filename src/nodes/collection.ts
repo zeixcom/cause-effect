@@ -67,7 +67,7 @@ type CollectionChanges<T> = {
 type CollectionOptions<T extends {}> = {
 	value?: T[]
 	keyConfig?: KeyConfig<T>
-	createItem?: (key: string, value: T) => Signal<T>
+	createItem?: (value: T) => Signal<T>
 }
 
 type CollectionCallback<T extends {}> = (
@@ -134,19 +134,18 @@ function deriveCollection<T extends {}, U extends {}>(
 	// is conceptually a MemoNode.fn. The side effects are idempotent and scoped
 	// to private state — separating detection from application would add complexity.
 	function syncKeys(): string[] {
-		const newKeys = Array.from(source.keys())
-		const oldKeys = node.value
+		const nextKeys = Array.from(source.keys())
+		const prevKeys = node.value
 
-		if (!keysEqual(oldKeys, newKeys)) {
-			const oldKeySet = new Set(oldKeys)
-			const newKeySet = new Set(newKeys)
+		if (!keysEqual(prevKeys, nextKeys)) {
+			const a = new Set(prevKeys)
+			const b = new Set(nextKeys)
 
-			for (const key of oldKeys)
-				if (!newKeySet.has(key)) signals.delete(key)
-			for (const key of newKeys) if (!oldKeySet.has(key)) addSignal(key)
+			for (const key of prevKeys) if (!b.has(key)) signals.delete(key)
+			for (const key of nextKeys) if (!a.has(key)) addSignal(key)
 		}
 
-		return newKeys
+		return nextKeys
 	}
 
 	// Structural tracking node — not a general-purpose Memo.
@@ -254,7 +253,7 @@ function deriveCollection<T extends {}, U extends {}>(
 
 /**
  * Creates an externally-driven Collection with a watched lifecycle.
- * Items are managed by the start callback via `applyChanges(diffResult)`.
+ * Items are managed via the `applyChanges(changes)` helper passed to the watched callback.
  * The collection activates when first accessed by an effect and deactivates when no longer watched.
  *
  * @since 0.18.0
@@ -266,9 +265,8 @@ function createCollection<T extends {}>(
 	watched: CollectionCallback<T>,
 	options?: CollectionOptions<T>,
 ): Collection<T> {
-	const initialValue = options?.value ?? []
-	if (initialValue.length)
-		validateSignalValue(TYPE_COLLECTION, initialValue, Array.isArray)
+	const value = options?.value ?? []
+	if (value.length) validateSignalValue(TYPE_COLLECTION, value, Array.isArray)
 	validateCallback(TYPE_COLLECTION, watched, isSyncFunction)
 
 	const signals = new Map<string, Signal<T>>()
@@ -280,8 +278,7 @@ function createCollection<T extends {}>(
 	const resolveKey = (item: T): string | undefined =>
 		itemToKey.get(item) ?? (contentBased ? generateKey(item) : undefined)
 
-	const itemFactory =
-		options?.createItem ?? ((_key: string, value: T) => createState(value))
+	const itemFactory = options?.createItem ?? createState
 
 	// Build current value from child signals
 	function buildValue(): T[] {
@@ -300,7 +297,7 @@ function createCollection<T extends {}>(
 
 	const node: MemoNode<T[]> = {
 		fn: buildValue,
-		value: initialValue,
+		value,
 		flags: FLAG_DIRTY,
 		sources: null,
 		sourcesTail: null,
@@ -310,76 +307,75 @@ function createCollection<T extends {}>(
 		error: undefined,
 	}
 
-	/** Apply external changes to the collection */
-	function applyChanges(changes: CollectionChanges<T>): void {
-		const { add, change, remove } = changes
-		if (!add?.length && !change?.length && !remove?.length) return
-		let structural = false
-
-		batch(() => {
-			// Additions
-			if (add) {
-				for (const item of add) {
-					const key = generateKey(item)
-					signals.set(key, itemFactory(key, item))
-					itemToKey.set(item, key)
-					if (!keys.includes(key)) keys.push(key)
-					structural = true
-				}
-			}
-
-			// Changes — only for State signals
-			if (change) {
-				for (const item of change) {
-					const key = resolveKey(item)
-					if (!key) continue
-					const signal = signals.get(key)
-					if (signal && isState(signal)) {
-						// Update reverse map: remove old reference, add new
-						const oldValue = signal.get()
-						itemToKey.delete(oldValue)
-						signal.set(item)
-						itemToKey.set(item, key)
-					}
-				}
-			}
-
-			// Removals
-			if (remove) {
-				for (const item of remove) {
-					const key = resolveKey(item)
-					if (!key) continue
-					itemToKey.delete(item)
-					signals.delete(key)
-					const index = keys.indexOf(key)
-					if (index !== -1) keys.splice(index, 1)
-					structural = true
-				}
-			}
-
-			if (structural) {
-				node.sources = null
-				node.sourcesTail = null
-			}
-			// Mark DIRTY so next get() rebuilds; propagate to sinks
-			node.flags = FLAG_DIRTY
-			for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
-		})
-	}
-
 	// Initialize signals for initial value
-	for (const item of initialValue) {
+	for (const item of value) {
 		const key = generateKey(item)
-		signals.set(key, itemFactory(key, item))
+		signals.set(key, itemFactory(item))
 		itemToKey.set(item, key)
 		keys.push(key)
 	}
-	node.value = initialValue
+	node.value = value
 	node.flags = FLAG_DIRTY // First refresh() will establish child edges
 
 	function subscribe(): void {
 		if (activeSink) {
-			if (!node.sinks) node.stop = watched(applyChanges)
+			if (!node.sinks)
+				node.stop = watched((changes: CollectionChanges<T>): void => {
+					const { add, change, remove } = changes
+					if (!add?.length && !change?.length && !remove?.length)
+						return
+					let structural = false
+
+					batch(() => {
+						// Additions
+						if (add) {
+							for (const item of add) {
+								const key = generateKey(item)
+								signals.set(key, itemFactory(item))
+								itemToKey.set(item, key)
+								if (!keys.includes(key)) keys.push(key)
+								structural = true
+							}
+						}
+
+						// Changes — only for State signals
+						if (change) {
+							for (const item of change) {
+								const key = resolveKey(item)
+								if (!key) continue
+								const signal = signals.get(key)
+								if (signal && isState(signal)) {
+									// Update reverse map: remove old reference, add new
+									itemToKey.delete(signal.get())
+									signal.set(item)
+									itemToKey.set(item, key)
+								}
+							}
+						}
+
+						// Removals
+						if (remove) {
+							for (const item of remove) {
+								const key = resolveKey(item)
+								if (!key) continue
+								itemToKey.delete(item)
+								signals.delete(key)
+								const index = keys.indexOf(key)
+								if (index !== -1) keys.splice(index, 1)
+								structural = true
+							}
+						}
+
+						if (structural) {
+							node.sources = null
+							node.sourcesTail = null
+						}
+						// Mark DIRTY so next get() rebuilds; propagate to sinks
+						node.flags = FLAG_DIRTY
+						for (let e = node.sinks; e; e = e.nextSink)
+							propagate(e.sink)
+					})
+				})
 			link(node, activeSink)
 		}
 	}

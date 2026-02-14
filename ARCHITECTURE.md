@@ -178,14 +178,14 @@ A mutable value container. The simplest signal type — `get()` links and return
 
 **Graph node**: `StateNode<T>` (source only)
 
-A read-only signal that tracks external input. The `start` callback receives a `set` function that updates the node's value via `setState()`. Sensors cover two patterns:
+A read-only signal that tracks external input. The `watched` callback receives a `set` function that updates the node's value via `setState()`. Sensors cover two patterns:
 
-1. **Tracking external values** (default): Receives replacement values from events (mouse position, resize events). Equality checking (`Object.is` by default) prevents unnecessary propagation.
+1. **Tracking external values** (default): Receives replacement values from events (mouse position, resize events). Equality checking (`===` by default) prevents unnecessary propagation.
 2. **Observing mutable objects** (with `SKIP_EQUALITY`): Holds a stable reference to a mutable object (DOM element, Map, Set). `set(sameRef)` with `equals: SKIP_EQUALITY` always propagates, notifying consumers that the object's internals have changed.
 
-The value starts undefined unless `options.value` is provided. Reading a sensor before its `start` callback has called `set()` (and without `options.value`) throws `UnsetSignalValueError`.
+The value starts undefined unless `options.value` is provided. Reading a sensor before its `watched` callback has called `set()` (and without `options.value`) throws `UnsetSignalValueError`.
 
-**Lazy lifecycle**: The `start` callback is invoked on first sink attachment. The returned cleanup is stored as `node.stop` and called when the last sink detaches (via `unlink()`).
+**Lazy lifecycle**: The `watched` callback is invoked on first sink attachment. The returned cleanup is stored as `node.stop` and called when the last sink detaches (via `unlink()`).
 
 ### Memo (`src/nodes/memo.ts`)
 
@@ -199,6 +199,8 @@ The `error` field preserves thrown errors: if `fn` throws, the error is stored a
 
 **Reducer pattern**: The `prev` parameter enables state accumulation across recomputations without writable state.
 
+**Watched lifecycle**: An optional `watched` callback in options provides lazy external invalidation. The callback receives an `invalidate` function and is invoked on first sink attachment. Calling `invalidate()` marks the node `FLAG_DIRTY`, propagates to sinks, and flushes — triggering re-evaluation of the memo's `fn` without changing any tracked dependency. The returned cleanup is stored as `node.stop` and called when the last sink detaches. This enables patterns like DOM observation (MutationObserver) where the memo re-derives its value in response to external events.
+
 ### Task (`src/nodes/task.ts`)
 
 **Graph node**: `TaskNode<T>` (source + sink)
@@ -208,6 +210,8 @@ An asynchronous derived computation. Like Memo but `fn` returns a `Promise` and 
 During dependency tracking, only the synchronous preamble of `fn` is tracked (before the first `await`). The promise resolution triggers propagation and flush asynchronously.
 
 `isPending()` returns `true` while a computation is in flight. `abort()` cancels the current computation manually. Errors are preserved like Memo, but old values are retained on errors (the last successful result remains accessible).
+
+**Watched lifecycle**: Same pattern as Memo — an optional `watched` callback receives `invalidate` and is invoked on first sink attachment. Calling `invalidate()` marks the node dirty and triggers re-execution, which aborts any in-flight computation via the existing `AbortController` mechanism before starting a new one.
 
 ### Effect (`src/nodes/effect.ts`)
 
@@ -247,13 +251,13 @@ A reactive array with stable keys and per-item reactivity. Each item becomes a `
 
 Collection implements two creation patterns that share the same `Collection<T>` interface:
 
-#### `createCollection(start, options?)` — externally driven
+#### `createCollection(watched, options?)` — externally driven
 
 **Graph node**: `MemoNode<T[]>` (source + sink, tracks item values)
 
-An externally-driven reactive collection with a watched lifecycle, mirroring `createSensor(start, options?)`. The `start` callback receives an `applyChanges(diffResult)` function for granular add/change/remove operations. Initial items are provided via `options.value` (default `[]`).
+An externally-driven reactive collection with a watched lifecycle, mirroring `createSensor(watched, options?)`. The `watched` callback receives an `applyChanges(diffResult)` function for granular add/change/remove operations. Initial items are provided via `options.value` (default `[]`).
 
-**Lazy lifecycle**: Like Sensor, the `start` callback is invoked on first sink attachment. The returned cleanup is stored as `node.stop` and called when the last sink detaches (via `unlink()`). The `startWatching()` guard ensures `start` fires before `link()` so synchronous mutations inside `start` update `node.value` before the activating effect reads it.
+**Lazy lifecycle**: Like Sensor, the `watched` callback is invoked on first sink attachment. The returned cleanup is stored as `node.stop` and called when the last sink detaches (via `unlink()`). The `startWatching()` guard ensures `watched` fires before `link()` so synchronous mutations inside `watched` update `node.value` before the activating effect reads it.
 
 **External mutation via `applyChanges`**: Additions create new item signals (via configurable `createItem` factory, default `createState`). Changes update existing `State` signals. Removals delete signals and keys. Structural changes null out `node.sources` to force edge re-establishment. The node uses `equals: () => false` since structural changes are managed externally rather than detected by diffing.
 

@@ -24,7 +24,7 @@ type CollectionChanges<T> = {
 type CollectionOptions<T extends {}> = {
     value?: T[];
     keyConfig?: KeyConfig<T>;
-    createItem?: (key: string, value: T) => Signal<T>;
+    createItem?: (value: T) => Signal<T>;
 };
 type CollectionCallback<T extends {}> = (apply: (changes: CollectionChanges<T>) => void) => Cleanup;
 /**
@@ -41,7 +41,7 @@ declare function deriveCollection<T extends {}, U extends {}>(source: Collection
 declare function deriveCollection<T extends {}, U extends {}>(source: CollectionSource<U>, callback: (sourceValue: U, abort: AbortSignal) => Promise<T>): Collection<T>;
 /**
  * Creates an externally-driven Collection with a watched lifecycle.
- * Items are managed by the start callback via `applyChanges(diffResult)`.
+ * Items are managed via the `applyChanges(changes)` helper passed to the watched callback.
  * The collection activates when first accessed by an effect and deactivates when no longer watched.
  *
  * @since 0.18.0
