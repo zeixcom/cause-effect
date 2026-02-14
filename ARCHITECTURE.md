@@ -265,14 +265,12 @@ An externally-driven reactive collection with a watched lifecycle, mirroring `cr
 
 #### `deriveCollection(source, callback)` — internally derived
 
-**Graph node**: `MemoNode<string[]>` (source + sink, tracks keys not values)
+**Graph node**: `MemoNode<T[]>` (source + sink, tracks item values)
 
 An internal factory (not exported from the public API) that creates a read-only derived transformation of a List or another Collection. Exposed to users via the `.deriveCollection(callback)` method on List and Collection. Each source item is individually memoized: sync callbacks create `Memo` signals, async callbacks create `Task` signals.
 
-**Two-level reactivity**: The derived collection's `MemoNode` tracks structural changes only — its `fn` (`syncKeys`) reads `source.keys()` to detect additions and removals. Value-level changes flow through the individual per-item `Memo`/`Task` signals, which independently track their source item.
+**Consistent with Store/List/createCollection**: The `MemoNode.value` is a `T[]` (cached computed values), and keys are tracked in a separate local `string[]` variable. The `equals` function uses shallow reference equality on array elements to prevent unnecessary downstream propagation when re-evaluation produces the same item references. The node starts `FLAG_DIRTY` to ensure the first `refresh()` establishes edges.
 
-**Key differences from Store/List**: The `MemoNode.value` is a `string[]` (the keys array), not the collection's actual values. The `equals` function is a shallow string array comparison (`keysEqual`). The node starts `FLAG_DIRTY` (unlike Store/List which start clean after initialization) to ensure the first `refresh()` establishes the edge from source to collection.
+**Two-path access with structural fallback**: Same pattern as Store/List — first `get()` uses `refresh()` to establish edges; subsequent reads use `untrack(buildValue)`. A `syncKeys()` step inside `buildValue` syncs the signals map with `source.keys()`. If keys changed, `syncKeys` nulls `node.sources` to force edge re-establishment via `refresh()`, ensuring new child signals are properly linked.
 
-**No `invalidateEdges`**: Unlike Store/List, the derived collection never needs to re-establish its source edge because it has exactly one source (the parent List or Collection) that never changes identity. Structural changes (adding/removing per-item signals) happen inside `syncKeys` without affecting the source edge.
-
-**Chaining**: `.deriveCollection()` creates a new derived collection from an existing one, forming a pipeline. Each level in the chain has its own `MemoNode` for structural tracking and its own set of per-item derived signals.
+**Chaining**: `.deriveCollection()` creates a new derived collection from an existing one, forming a pipeline. Each level in the chain has its own `MemoNode` for value caching and its own set of per-item derived signals.

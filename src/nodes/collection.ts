@@ -106,6 +106,7 @@ function deriveCollection<T extends {}, U extends {}>(
 
 	const isAsync = isAsyncFunction(callback)
 	const signals = new Map<string, Memo<T>>()
+	let keys: string[] = []
 
 	const addSignal = (key: string): void => {
 		const signal = isAsync
@@ -128,67 +129,100 @@ function deriveCollection<T extends {}, U extends {}>(
 		signals.set(key, signal as Memo<T>)
 	}
 
-	// Sync collection signals with source keys, reading source.keys()
+	// Sync signals map with source keys, reading source.keys()
 	// to establish a graph edge from source → this node.
-	// Intentionally side-effectful: mutates the private signals map inside what
-	// is conceptually a MemoNode.fn. The side effects are idempotent and scoped
-	// to private state — separating detection from application would add complexity.
-	function syncKeys(): string[] {
+	// Intentionally side-effectful: mutates the private signals map and keys
+	// array. The side effects are idempotent and scoped to private state.
+	function syncKeys(): void {
 		const nextKeys = Array.from(source.keys())
-		const prevKeys = node.value
 
-		if (!keysEqual(prevKeys, nextKeys)) {
-			const a = new Set(prevKeys)
+		if (!keysEqual(keys, nextKeys)) {
+			const a = new Set(keys)
 			const b = new Set(nextKeys)
 
-			for (const key of prevKeys) if (!b.has(key)) signals.delete(key)
+			for (const key of keys) if (!b.has(key)) signals.delete(key)
 			for (const key of nextKeys) if (!a.has(key)) addSignal(key)
-		}
+			keys = nextKeys
 
-		return nextKeys
+			// Force re-establishment of edges on next refresh() so new
+			// child signals are properly linked to this node
+			node.sources = null
+			node.sourcesTail = null
+		}
 	}
 
-	// Structural tracking node — not a general-purpose Memo.
-	// fn (syncKeys) reads source.keys() to detect additions/removals.
-	// Value is a string[] of keys, not the collection's actual values.
-	const node: MemoNode<string[]> = {
-		fn: syncKeys,
+	// Build current value from child signals; syncKeys runs first to
+	// ensure the signals map is up to date and — during refresh() —
+	// to establish the graph edge from source → this node.
+	function buildValue(): T[] {
+		syncKeys()
+		const result: T[] = []
+		for (const key of keys) {
+			try {
+				const v = signals.get(key)?.get()
+				if (v != null) result.push(v)
+			} catch (e) {
+				// Skip pending async items; rethrow real errors
+				if (!(e instanceof UnsetSignalValueError)) throw e
+			}
+		}
+		return result
+	}
+
+	// Shallow reference equality for value arrays — prevents unnecessary
+	// downstream propagation when re-evaluation produces the same item references
+	const valuesEqual = (a: T[], b: T[]): boolean => {
+		if (a.length !== b.length) return false
+		for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
+		return true
+	}
+
+	// Structural tracking node — mirrors the List/Store/createCollection pattern.
+	// fn (buildValue) syncs keys then reads child signals to produce T[].
+	// Keys are tracked separately in a local variable.
+	const node: MemoNode<T[]> = {
+		fn: buildValue,
 		value: [],
 		flags: FLAG_DIRTY,
 		sources: null,
 		sourcesTail: null,
 		sinks: null,
 		sinksTail: null,
-		equals: keysEqual,
+		equals: valuesEqual,
 		error: undefined,
 	}
 
-	// Ensure keys are synced, using the same pattern as List/Store
-	function ensureSynced(): string[] {
+	function ensureFresh(): void {
 		if (node.sources) {
 			if (node.flags) {
-				node.value = untrack(syncKeys)
+				node.value = untrack(buildValue)
 				node.flags = FLAG_CLEAN
+				// syncKeys may have nulled sources if keys changed —
+				// re-run with refresh() to establish edges to new child signals
+				if (!node.sources) {
+					node.flags = FLAG_DIRTY
+					refresh(node as unknown as SinkNode)
+					if (node.error) throw node.error
+				}
 			}
 		} else {
 			refresh(node as unknown as SinkNode)
 			if (node.error) throw node.error
 		}
-		return node.value
 	}
 
 	// Initialize signals for current source keys
 	const initialKeys = Array.from(source.keys())
 	for (const key of initialKeys) addSignal(key)
-	node.value = initialKeys
-	// Keep FLAG_DIRTY so the first refresh() establishes the edge to the source
+	keys = initialKeys
+	// Keep FLAG_DIRTY so the first refresh() establishes edges
 
 	const collection: Collection<T> = {
 		[Symbol.toStringTag]: TYPE_COLLECTION,
 		[Symbol.isConcatSpreadable]: true as const,
 
 		*[Symbol.iterator]() {
-			for (const key of node.value) {
+			for (const key of keys) {
 				const signal = signals.get(key)
 				if (signal) yield signal
 			}
@@ -196,32 +230,24 @@ function deriveCollection<T extends {}, U extends {}>(
 
 		get length() {
 			if (activeSink) link(node, activeSink)
-			return ensureSynced().length
+			ensureFresh()
+			return keys.length
 		},
 
 		keys() {
 			if (activeSink) link(node, activeSink)
-			return ensureSynced().values()
+			ensureFresh()
+			return keys.values()
 		},
 
 		get() {
 			if (activeSink) link(node, activeSink)
-			const currentKeys = ensureSynced()
-			const result: T[] = []
-			for (const key of currentKeys) {
-				try {
-					const v = signals.get(key)?.get()
-					if (v != null) result.push(v)
-				} catch (e) {
-					// Skip pending async items; rethrow real errors
-					if (!(e instanceof UnsetSignalValueError)) throw e
-				}
-			}
-			return result
+			ensureFresh()
+			return node.value
 		},
 
 		at(index: number) {
-			return signals.get(node.value[index])
+			return signals.get(keys[index])
 		},
 
 		byKey(key: string) {
@@ -229,11 +255,11 @@ function deriveCollection<T extends {}, U extends {}>(
 		},
 
 		keyAt(index: number) {
-			return node.value[index]
+			return keys[index]
 		},
 
 		indexOfKey(key: string) {
-			return node.value.indexOf(key)
+			return keys.indexOf(key)
 		},
 
 		deriveCollection<R extends {}>(
