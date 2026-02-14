@@ -1,9 +1,4 @@
-import {
-	type Collection,
-	createCollection,
-	createSensor,
-	SKIP_EQUALITY,
-} from '..'
+import { createMemo, type Memo } from '..'
 
 /* === Types === */
 
@@ -81,16 +76,13 @@ type ElementFromSelector<S extends string> = S extends `${string},${string}`
 	? ElementsFromSelectorArray<SplitByComma<S>>
 	: ElementFromSingleSelector<S>
 
-/* === Internal Functions === */
+type ElementChanges<E extends Element> = {
+	current: Set<E>
+	added: E[]
+	removed: E[]
+}
 
-/**
- * Check if a node is an Element
- *
- * @param {Node} node - node to check
- * @returns {boolean} - `true` if node is an element node, otherwise `false`
- */
-const isElement = /*#__PURE__*/ (node: Node): node is Element =>
-	node.nodeType === Node.ELEMENT_NODE
+/* === Internal Functions === */
 
 /**
  * Extract attribute names from a CSS selector
@@ -121,93 +113,61 @@ const extractAttributes = (selector: string): string[] => {
 /* === Exported Functions === */
 
 /**
- * Create a collection of elements from a parent node and a CSS selector.
+ * Observe changes to elements matching a CSS selector.
+ * Returns a Memo that tracks which elements were added and removed.
+ * The MutationObserver is lazily activated when an effect first reads
+ * the memo, and disconnected when no effects are watching.
  *
- * @since 0.15.0
+ * @since 0.16.0
  * @param parent - The parent node to search within
  * @param selector - The CSS selector to match elements
- * @returns A collection signal of elements
+ * @returns A Memo of element changes (current set, added, removed)
  */
-function createElementCollection<S extends string>(
+function observeSelectorChanges<S extends string>(
 	parent: ParentNode,
 	selector: S,
-): Collection<ElementFromSelector<S>>
-function createElementCollection<E extends Element>(
+): Memo<ElementChanges<ElementFromSelector<S>>>
+function observeSelectorChanges<E extends Element>(
 	parent: ParentNode,
 	selector: string,
-): Collection<E>
-function createElementCollection<S extends string>(
+): Memo<ElementChanges<E>>
+function observeSelectorChanges<S extends string>(
 	parent: ParentNode,
 	selector: S,
-): Collection<ElementFromSelector<S>> {
-	const findMatches = (nodes: NodeList) => {
-		const elements = Array.from(nodes).filter(isElement)
-		const found: ElementFromSelector<S>[] = []
-		for (const element of elements) {
-			if (element.matches(selector))
-				found.push(element as ElementFromSelector<S>)
-			found.push(
-				...Array.from(
-					element.querySelectorAll<ElementFromSelector<S>>(selector),
-				),
+): Memo<ElementChanges<ElementFromSelector<S>>> {
+	type E = ElementFromSelector<S>
+
+	return createMemo(
+		(prev: ElementChanges<E>) => {
+			const next = new Set(
+				Array.from(parent.querySelectorAll<E>(selector)),
 			)
-		}
-		return found
-	}
+			const added: E[] = []
+			const removed: E[] = []
 
-	return createCollection(
-		apply => {
-			const elements = Array.from(
-				parent.querySelectorAll<ElementFromSelector<S>>(selector),
-			)
-			apply({ add: elements })
+			for (const el of next) if (!prev.current.has(el)) added.push(el)
+			for (const el of prev.current) if (!next.has(el)) removed.push(el)
 
-			const observer = new MutationObserver(mutations => {
-				const added: ElementFromSelector<S>[] = []
-				const removed: ElementFromSelector<S>[] = []
-
-				for (const mutation of mutations) {
-					if (mutation.type === 'childList') {
-						if (mutation.addedNodes.length)
-							added.push(...findMatches(mutation.addedNodes))
-						if (mutation.removedNodes.length)
-							removed.push(...findMatches(mutation.removedNodes))
-					} else if (mutation.type === 'attributes') {
-						const target = mutation.target as ElementFromSelector<S>
-						if (isElement(target)) {
-							const wasMatching = elements.includes(target)
-							const isMatching = target.matches(selector)
-							if (wasMatching && !isMatching) removed.push(target)
-							else if (!wasMatching && isMatching)
-								added.push(target)
-						}
-					}
-				}
-
-				if (added.length || removed.length)
-					apply({ add: added, remove: removed })
-			})
-			const observerConfig: MutationObserverInit = {
-				childList: true,
-				subtree: true,
-			}
-			const observedAttributes = extractAttributes(selector)
-			if (observedAttributes.length) {
-				observerConfig.attributes = true
-				observerConfig.attributeFilter = observedAttributes
-			}
-			observer.observe(parent, observerConfig)
-			return () => observer.disconnect()
+			return { current: next, added, removed }
 		},
 		{
-			keyConfig: el => el.id ?? el.dataset.key,
-			createItem: (_key, element) =>
-				createSensor(() => () => {}, {
-					value: element,
-					equals: SKIP_EQUALITY,
-				}),
+			value: { current: new Set<E>(), added: [], removed: [] },
+			watched: invalidate => {
+				const observerConfig: MutationObserverInit = {
+					childList: true,
+					subtree: true,
+				}
+				const observedAttributes = extractAttributes(selector)
+				if (observedAttributes.length) {
+					observerConfig.attributes = true
+					observerConfig.attributeFilter = observedAttributes
+				}
+				const observer = new MutationObserver(() => invalidate())
+				observer.observe(parent, observerConfig)
+				return () => observer.disconnect()
+			},
 		},
 	)
 }
 
-export { createElementCollection }
+export { observeSelectorChanges, type ElementChanges }

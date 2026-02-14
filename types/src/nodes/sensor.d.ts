@@ -63,7 +63,7 @@ type SensorCallback<T extends {}> = (set: (next: T) => void) => Cleanup;
  * }, { value: node, equals: SKIP_EQUALITY });
  * ```
  */
-declare function createSensor<T extends {}>(start: SensorCallback<T>, options?: ComputedOptions<T>): Sensor<T>;
+declare function createSensor<T extends {}>(watched: SensorCallback<T>, options?: ComputedOptions<T>): Sensor<T>;
 /**
  * Checks if a value is a Sensor signal.
  *

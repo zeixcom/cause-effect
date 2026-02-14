@@ -51,8 +51,8 @@ type BaseStore<T extends UnknownRecord> = {
 				? State<T[K] & {}>
 				: State<T[K] & {}> | undefined
 	get(): T
-	set(newValue: T): void
-	update(fn: (oldValue: T) => T): void
+	set(next: T): void
+	update(fn: (prev: T) => T): void
 	add<K extends keyof T & string>(key: K, value: T[K]): K
 	remove(key: string): void
 }
@@ -70,21 +70,18 @@ type Store<T extends UnknownRecord> = BaseStore<T> & {
 /* === Functions === */
 
 /** Diff two records and return granular changes */
-function diffRecords<T extends UnknownRecord>(
-	oldObj: T,
-	newObj: T,
-): DiffResult {
+function diffRecords<T extends UnknownRecord>(prev: T, next: T): DiffResult {
 	// Guard against non-objects that can't be diffed properly with Object.keys and 'in' operator
-	const oldValid = isRecord(oldObj) || Array.isArray(oldObj)
-	const newValid = isRecord(newObj) || Array.isArray(newObj)
-	if (!oldValid || !newValid) {
+	const prevValid = isRecord(prev) || Array.isArray(prev)
+	const nextValid = isRecord(next) || Array.isArray(next)
+	if (!prevValid || !nextValid) {
 		// For non-objects or non-plain objects, treat as complete change if different
-		const changed = !Object.is(oldObj, newObj)
+		const changed = !Object.is(prev, next)
 		return {
 			changed,
-			add: changed && newValid ? newObj : {},
+			add: changed && nextValid ? next : {},
 			change: {},
-			remove: changed && oldValid ? oldObj : {},
+			remove: changed && prevValid ? prev : {},
 		}
 	}
 
@@ -95,25 +92,25 @@ function diffRecords<T extends UnknownRecord>(
 	const remove = {} as UnknownRecord
 	let changed = false
 
-	const oldKeys = Object.keys(oldObj)
-	const newKeys = Object.keys(newObj)
+	const prevKeys = Object.keys(prev)
+	const nextKeys = Object.keys(next)
 
 	// Pass 1: iterate new keys — find additions and changes
-	for (const key of newKeys) {
-		if (key in oldObj) {
-			if (!isEqual(oldObj[key], newObj[key], visited)) {
-				change[key] = newObj[key]
+	for (const key of nextKeys) {
+		if (key in prev) {
+			if (!isEqual(prev[key], next[key], visited)) {
+				change[key] = next[key]
 				changed = true
 			}
 		} else {
-			add[key] = newObj[key]
+			add[key] = next[key]
 			changed = true
 		}
 	}
 
 	// Pass 2: iterate old keys — find removals
-	for (const key of oldKeys) {
-		if (!(key in newObj)) {
+	for (const key of prevKeys) {
+		if (!(key in next)) {
 			remove[key] = undefined
 			changed = true
 		}
@@ -225,11 +222,11 @@ function createStore<T extends UnknownRecord>(
 		return changes.changed
 	}
 
-	const start = options?.watched
-	const subscribe = start
+	const watched = options?.watched
+	const subscribe = watched
 		? () => {
 				if (activeSink) {
-					if (!node.sinks) node.stop = start()
+					if (!node.sinks) node.stop = watched()
 					link(node, activeSink)
 				}
 			}
@@ -295,12 +292,11 @@ function createStore<T extends UnknownRecord>(
 			return node.value
 		},
 
-		set(newValue: T) {
+		set(next: T) {
 			// Use cached value if clean, recompute if dirty
-			const currentValue =
-				node.flags & FLAG_DIRTY ? buildValue() : node.value
+			const prev = node.flags & FLAG_DIRTY ? buildValue() : node.value
 
-			const changes = diffRecords(currentValue, newValue)
+			const changes = diffRecords(prev, next)
 			if (applyChanges(changes)) {
 				node.flags |= FLAG_DIRTY
 				for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)

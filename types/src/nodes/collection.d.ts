@@ -45,11 +45,11 @@ declare function deriveCollection<T extends {}, U extends {}>(source: Collection
  * The collection activates when first accessed by an effect and deactivates when no longer watched.
  *
  * @since 0.18.0
- * @param start - Callback invoked when the collection starts being watched, receives applyChanges helper
+ * @param watched - Callback invoked when the collection starts being watched, receives applyChanges helper
  * @param options - Optional configuration including initial value, key generation, and item signal creation
  * @returns A read-only Collection signal
  */
-declare function createCollection<T extends {}>(start: CollectionCallback<T>, options?: CollectionOptions<T>): Collection<T>;
+declare function createCollection<T extends {}>(watched: CollectionCallback<T>, options?: CollectionOptions<T>): Collection<T>;
 /**
  * Checks if a value is a Collection signal.
  *

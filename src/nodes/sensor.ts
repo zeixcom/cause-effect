@@ -87,10 +87,10 @@ type SensorCallback<T extends {}> = (set: (next: T) => void) => Cleanup
  * ```
  */
 function createSensor<T extends {}>(
-	start: SensorCallback<T>,
+	watched: SensorCallback<T>,
 	options?: ComputedOptions<T>,
 ): Sensor<T> {
-	validateCallback(TYPE_SENSOR, start, isSyncFunction)
+	validateCallback(TYPE_SENSOR, watched, isSyncFunction)
 	if (options?.value !== undefined)
 		validateSignalValue(TYPE_SENSOR, options.value, options?.guard)
 
@@ -108,7 +108,7 @@ function createSensor<T extends {}>(
 		get(): T {
 			if (activeSink) {
 				if (!node.sinks)
-					node.stop = start((next: T): void => {
+					node.stop = watched((next: T): void => {
 						validateSignalValue(TYPE_SENSOR, next, node.guard)
 						setState(node, next)
 					})

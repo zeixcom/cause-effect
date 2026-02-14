@@ -19,7 +19,7 @@ import {
 	TYPE_COLLECTION,
 	untrack,
 } from '../graph'
-import { isAsyncFunction, isObjectOfType } from '../util'
+import { isAsyncFunction, isObjectOfType, isSyncFunction } from '../util'
 import {
 	getKeyGenerator,
 	isList,
@@ -258,18 +258,18 @@ function deriveCollection<T extends {}, U extends {}>(
  * The collection activates when first accessed by an effect and deactivates when no longer watched.
  *
  * @since 0.18.0
- * @param start - Callback invoked when the collection starts being watched, receives applyChanges helper
+ * @param watched - Callback invoked when the collection starts being watched, receives applyChanges helper
  * @param options - Optional configuration including initial value, key generation, and item signal creation
  * @returns A read-only Collection signal
  */
 function createCollection<T extends {}>(
-	start: CollectionCallback<T>,
+	watched: CollectionCallback<T>,
 	options?: CollectionOptions<T>,
 ): Collection<T> {
 	const initialValue = options?.value ?? []
 	if (initialValue.length)
 		validateSignalValue(TYPE_COLLECTION, initialValue, Array.isArray)
-	validateCallback(TYPE_COLLECTION, start)
+	validateCallback(TYPE_COLLECTION, watched, isSyncFunction)
 
 	const signals = new Map<string, Signal<T>>()
 	const keys: string[] = []
@@ -379,7 +379,7 @@ function createCollection<T extends {}>(
 
 	function subscribe(): void {
 		if (activeSink) {
-			if (!node.sinks) node.stop = start(applyChanges)
+			if (!node.sinks) node.stop = watched(applyChanges)
 			link(node, activeSink)
 		}
 	}

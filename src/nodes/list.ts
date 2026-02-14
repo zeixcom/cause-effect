@@ -162,18 +162,18 @@ function getKeyGenerator<T extends {}>(
  * Avoids object conversion by working directly with arrays and keys.
  *
  * @since 0.18.0
- * @param {T[]} oldArray - The old array
- * @param {T[]} newArray - The new array
- * @param {string[]} currentKeys - Current keys array (may be sparse or shorter than oldArray)
+ * @param {T[]} prev - The old array
+ * @param {T[]} next - The new array
+ * @param {string[]} prevKeys - Current keys array (may be sparse or shorter than oldArray)
  * @param {(item: T) => string} generateKey - Function to generate keys for new items
  * @param {boolean} contentBased - When true, always use generateKey (content-based keys);
  *   when false, reuse positional keys from currentKeys (synthetic keys)
  * @returns {DiffResult & { newKeys: string[] }} The differences in DiffResult format plus updated keys array
  */
 function diffArrays<T>(
-	oldArray: T[],
-	newArray: T[],
-	currentKeys: string[],
+	prev: T[],
+	next: T[],
+	prevKeys: string[],
 	generateKey: (item: T) => string,
 	contentBased: boolean,
 ): DiffResult & { newKeys: string[] } {
@@ -181,41 +181,41 @@ function diffArrays<T>(
 	const add = {} as UnknownRecord
 	const change = {} as UnknownRecord
 	const remove = {} as UnknownRecord
-	const newKeys: string[] = []
+	const nextKeys: string[] = []
 	let changed = false
 
 	// Build a map of old values by key for quick lookup
-	const oldByKey = new Map<string, T>()
-	for (let i = 0; i < oldArray.length; i++) {
-		const key = currentKeys[i]
-		if (key && oldArray[i]) oldByKey.set(key, oldArray[i])
+	const prevByKey = new Map<string, T>()
+	for (let i = 0; i < prev.length; i++) {
+		const key = prevKeys[i]
+		if (key && prev[i]) prevByKey.set(key, prev[i])
 	}
 
 	// Track which old keys we've seen
 	const seenKeys = new Set<string>()
 
 	// Process new array and build new keys array
-	for (let i = 0; i < newArray.length; i++) {
-		const newValue = newArray[i]
+	for (let i = 0; i < next.length; i++) {
+		const newValue = next[i]
 		if (newValue === undefined) continue
 
 		// Content-based keys: always derive from item; synthetic keys: reuse by position
 		const key = contentBased
 			? generateKey(newValue)
-			: (currentKeys[i] ?? generateKey(newValue))
+			: (prevKeys[i] ?? generateKey(newValue))
 
 		if (seenKeys.has(key))
 			throw new DuplicateKeyError(TYPE_LIST, key, newValue)
 
-		newKeys.push(key)
+		nextKeys.push(key)
 		seenKeys.add(key)
 
 		// Check if this key existed before
-		if (!oldByKey.has(key)) {
+		if (!prevByKey.has(key)) {
 			add[key] = newValue
 			changed = true
 		} else {
-			const oldValue = oldByKey.get(key)
+			const oldValue = prevByKey.get(key)
 			if (!isEqual(oldValue, newValue, visited)) {
 				change[key] = newValue
 				changed = true
@@ -224,7 +224,7 @@ function diffArrays<T>(
 	}
 
 	// Find removed keys (existed in old but not in new)
-	for (const [key] of oldByKey) {
+	for (const [key] of prevByKey) {
 		if (!seenKeys.has(key)) {
 			remove[key] = null
 			changed = true
@@ -232,9 +232,9 @@ function diffArrays<T>(
 	}
 
 	// Detect reorder even when no values changed
-	if (!changed && !keysEqual(currentKeys, newKeys)) changed = true
+	if (!changed && !keysEqual(prevKeys, nextKeys)) changed = true
 
-	return { add, change, remove, newKeys, changed }
+	return { add, change, remove, newKeys: nextKeys, changed }
 }
 
 /**
@@ -337,11 +337,11 @@ function createList<T extends {}>(
 		return changes.changed
 	}
 
-	const start = options?.watched
-	const subscribe = start
+	const watched = options?.watched
+	const subscribe = watched
 		? () => {
 				if (activeSink) {
-					if (!node.sinks) node.stop = start()
+					if (!node.sinks) node.stop = watched()
 					link(node, activeSink)
 				}
 			}

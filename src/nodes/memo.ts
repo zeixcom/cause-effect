@@ -5,12 +5,15 @@ import {
 } from '../errors'
 import {
 	activeSink,
+	batchDepth,
 	type ComputedOptions,
 	DEFAULT_EQUALITY,
 	FLAG_DIRTY,
+	flush,
 	link,
 	type MemoCallback,
 	type MemoNode,
+	propagate,
 	refresh,
 	type SinkNode,
 	TYPE_MEMO,
@@ -92,12 +95,31 @@ function createMemo<T extends {}>(
 		sinksTail: null,
 		equals: options?.equals ?? DEFAULT_EQUALITY,
 		error: undefined,
+		stop: undefined,
 	}
+
+	const watched = options?.watched
+	const subscribe = watched
+		? () => {
+				if (activeSink) {
+					if (!node.sinks)
+						node.stop = watched(() => {
+							node.flags |= FLAG_DIRTY
+							for (let e = node.sinks; e; e = e.nextSink)
+								propagate(e.sink)
+							if (batchDepth === 0) flush()
+						})
+					link(node, activeSink)
+				}
+			}
+		: () => {
+				if (activeSink) link(node, activeSink)
+			}
 
 	return {
 		[Symbol.toStringTag]: TYPE_MEMO,
 		get() {
-			if (activeSink) link(node, activeSink)
+			subscribe()
 			refresh(node as unknown as SinkNode)
 			if (node.error) throw node.error
 			validateReadValue(TYPE_MEMO, node.value)

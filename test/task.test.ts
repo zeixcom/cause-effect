@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
 	createEffect,
 	createMemo,
+	createScope,
 	createState,
 	createTask,
 	isMemo,
@@ -390,6 +391,139 @@ describe('Task', () => {
 				// @ts-expect-error - Testing invalid input
 				createTask(async () => 42, { value: null })
 			}).toThrow('[Task] Signal value cannot be null or undefined')
+		})
+	})
+
+	describe('options.watched', () => {
+		test('should call watched on first effect access', () => {
+			let watchedCount = 0
+
+			const task = createTask(
+				async () => {
+					await wait(10)
+					return 1
+				},
+				{
+					value: 0,
+					watched: _invalidate => {
+						watchedCount++
+						return () => {}
+					},
+				},
+			)
+
+			expect(watchedCount).toBe(0)
+
+			const dispose = createScope(() => {
+				createEffect(() => {
+					void task.get()
+				})
+			})
+
+			expect(watchedCount).toBe(1)
+			dispose()
+		})
+
+		test('should call cleanup when last effect stops watching', () => {
+			let cleanedUp = false
+
+			const task = createTask(
+				async () => {
+					await wait(10)
+					return 1
+				},
+				{
+					value: 0,
+					watched: _invalidate => {
+						return () => {
+							cleanedUp = true
+						}
+					},
+				},
+			)
+
+			const dispose = createScope(() => {
+				createEffect(() => {
+					void task.get()
+				})
+			})
+
+			expect(cleanedUp).toBe(false)
+			dispose()
+			expect(cleanedUp).toBe(true)
+		})
+
+		test('should re-execute task when invalidate is called', async () => {
+			let externalValue = 10
+			let computeCount = 0
+			let invalidate!: () => void
+
+			const task = createTask(
+				async () => {
+					computeCount++
+					await wait(10)
+					return externalValue
+				},
+				{
+					value: 0,
+					watched: inv => {
+						invalidate = inv
+						return () => {}
+					},
+				},
+			)
+
+			let observed = 0
+			const dispose = createScope(() => {
+				createEffect(() => {
+					observed = task.get()
+				})
+			})
+
+			await wait(20)
+			expect(observed).toBe(10)
+			expect(computeCount).toBe(1)
+
+			externalValue = 20
+			invalidate()
+			await wait(20)
+			expect(observed).toBe(20)
+			expect(computeCount).toBe(2)
+
+			dispose()
+		})
+
+		test('should abort in-flight task when invalidate is called', async () => {
+			let wasAborted = false
+			let invalidate!: () => void
+
+			const task = createTask(
+				async (_prev, signal) => {
+					await wait(100)
+					if (signal.aborted) wasAborted = true
+					return 1
+				},
+				{
+					value: 0,
+					watched: inv => {
+						invalidate = inv
+						return () => {}
+					},
+				},
+			)
+
+			const dispose = createScope(() => {
+				createEffect(() => {
+					void task.get()
+				})
+			})
+
+			await wait(10) // task is in-flight
+			invalidate() // should trigger re-execution, aborting the current one
+			await wait(110)
+			expect(wasAborted).toBe(true)
+
+			dispose()
 		})
 	})
 })

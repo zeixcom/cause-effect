@@ -14,8 +14,8 @@ type BaseStore<T extends UnknownRecord> = {
     keys(): IterableIterator<string>;
     byKey<K extends keyof T & string>(key: K): T[K] extends readonly (infer U extends {})[] ? List<U> : T[K] extends UnknownRecord ? Store<T[K]> : T[K] extends unknown & {} ? State<T[K] & {}> : State<T[K] & {}> | undefined;
     get(): T;
-    set(newValue: T): void;
-    update(fn: (oldValue: T) => T): void;
+    set(next: T): void;
+    update(fn: (prev: T) => T): void;
     add<K extends keyof T & string>(key: K, value: T[K]): K;
     remove(key: string): void;
 };
