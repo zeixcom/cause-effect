@@ -161,6 +161,7 @@ const FLAG_CLEAN = 0
 const FLAG_CHECK = 1 << 0
 const FLAG_DIRTY = 1 << 1
 const FLAG_RUNNING = 1 << 2
+const FLAG_RELINK = 1 << 3
 
 /* === Module State === */
 
@@ -244,9 +245,19 @@ function unlink(edge: Edge): Edge | null {
 	if (prevSink) prevSink.nextSink = nextSink
 	else source.sinks = nextSink
 
-	if (!source.sinks && source.stop) {
-		source.stop()
-		source.stop = undefined
+	if (!source.sinks) {
+		if (source.stop) {
+			source.stop()
+			source.stop = undefined
+		}
+
+		// Cascade: if the source is also a sink (e.g. MemoNode, derived collection),
+		// trim its own sources so upstream watched callbacks can clean up
+		if ('sources' in source && source.sources) {
+			const sinkNode = source as SinkNode
+			sinkNode.sourcesTail = null
+			trimSources(sinkNode)
+		}
 	}
 
 	return nextSource
@@ -591,6 +602,7 @@ export {
 	SKIP_EQUALITY,
 	FLAG_CLEAN,
 	FLAG_DIRTY,
+	FLAG_RELINK,
 	flush,
 	link,
 	propagate,

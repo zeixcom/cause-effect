@@ -517,6 +517,19 @@ const user = createStore({ name: 'Alice' }, {
 })
 ```
 
+**Watched propagation through `deriveCollection()`**: When an effect reads a derived collection, the `watched` callback on the source List, Store, or Collection activates automatically — even through multiple levels of chaining. Mutations on the source do not tear down the watcher. When the last effect disposes, cleanup cascades upstream through all intermediate nodes.
+
+**Tip — conditional reads delay activation**: Dependencies are tracked based on which `.get()` calls actually execute. If a signal read is inside a branch that doesn't run yet (e.g., inside `match()`'s `ok` branch while a Task is pending), `watched` won't activate until that branch executes. Read signals eagerly before conditional logic to ensure immediate activation:
+
+```js
+createEffect(() => {
+  match([task, derived], { // derived is always tracked
+    ok: ([result, values]) => renderList(values, result),
+    nil: () => showLoading(),
+  })
+})
+```
+
 Memo and Task signals also support a `watched` option, but their callback receives an `invalidate` function that marks the signal dirty and triggers recomputation:
 
 ```js

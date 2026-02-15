@@ -9,6 +9,7 @@ import {
 	type Cleanup,
 	FLAG_CLEAN,
 	FLAG_DIRTY,
+	FLAG_RELINK,
 	link,
 	type MemoNode,
 	propagate,
@@ -129,13 +130,10 @@ function deriveCollection<T extends {}, U extends {}>(
 		signals.set(key, signal as Memo<T>)
 	}
 
-	// Sync signals map with source keys, reading source.keys()
-	// to establish a graph edge from source → this node.
+	// Sync signals map with the given keys.
 	// Intentionally side-effectful: mutates the private signals map and keys
-	// array. The side effects are idempotent and scoped to private state.
-	function syncKeys(): void {
-		const nextKeys = Array.from(source.keys())
-
+	// array. Sets FLAG_RELINK on the node if keys changed.
+	function syncKeys(nextKeys: string[]): void {
 		if (!keysEqual(keys, nextKeys)) {
 			const a = new Set(keys)
 			const b = new Set(nextKeys)
@@ -143,19 +141,15 @@ function deriveCollection<T extends {}, U extends {}>(
 			for (const key of keys) if (!b.has(key)) signals.delete(key)
 			for (const key of nextKeys) if (!a.has(key)) addSignal(key)
 			keys = nextKeys
-
-			// Force re-establishment of edges on next refresh() so new
-			// child signals are properly linked to this node
-			node.sources = null
-			node.sourcesTail = null
+			node.flags |= FLAG_RELINK
 		}
 	}
 
-	// Build current value from child signals; syncKeys runs first to
-	// ensure the signals map is up to date and — during refresh() —
-	// to establish the graph edge from source → this node.
+	// Build current value from child signals.
+	// Reads source.keys() to sync the signals map and — during refresh() —
+	// to establish a graph edge from source → this node.
 	function buildValue(): T[] {
-		syncKeys()
+		syncKeys(Array.from(source.keys()))
 		const result: T[] = []
 		for (const key of keys) {
 			try {
@@ -196,26 +190,40 @@ function deriveCollection<T extends {}, U extends {}>(
 		if (node.sources) {
 			if (node.flags) {
 				node.value = untrack(buildValue)
-				node.flags = FLAG_CLEAN
-				// syncKeys may have nulled sources if keys changed —
-				// re-run with refresh() to establish edges to new child signals
-				if (!node.sources) {
+				if (node.flags & FLAG_RELINK) {
+					// Keys changed — new child signals need graph edges.
+					// Tracked recompute so link() adds new edges and
+					// trimSources() removes stale ones without orphaning.
 					node.flags = FLAG_DIRTY
 					refresh(node as unknown as SinkNode)
 					if (node.error) throw node.error
+				} else {
+					node.flags = FLAG_CLEAN
 				}
 			}
-		} else {
+		} else if (node.sinks) {
+			// First access with a downstream subscriber — use refresh()
+			// to establish graph edges via recomputeMemo
 			refresh(node as unknown as SinkNode)
 			if (node.error) throw node.error
+		} else {
+			// No subscribers yet (e.g., chained deriveCollection init) —
+			// compute value without establishing graph edges to prevent
+			// premature watched activation on upstream sources.
+			// Keep FLAG_DIRTY so the first refresh() with a real subscriber
+			// will establish proper graph edges.
+			node.value = untrack(buildValue)
 		}
 	}
 
-	// Initialize signals for current source keys
-	const initialKeys = Array.from(source.keys())
+	// Initialize signals for current source keys — untrack to prevent
+	// triggering watched callbacks on upstream sources during construction.
+	// The first refresh() (triggered by an effect) will establish proper
+	// graph edges; this just populates the signals map for direct access.
+	const initialKeys = Array.from(untrack(() => source.keys()))
 	for (const key of initialKeys) addSignal(key)
 	keys = initialKeys
-	// Keep FLAG_DIRTY so the first refresh() establishes edges
+	// Keep FLAG_DIRTY so the first refresh() establishes edges.
 
 	const collection: Collection<T> = {
 		[Symbol.toStringTag]: TYPE_COLLECTION,
@@ -392,12 +400,8 @@ function createCollection<T extends {}>(
 							}
 						}
 
-						if (structural) {
-							node.sources = null
-							node.sourcesTail = null
-						}
 						// Mark DIRTY so next get() rebuilds; propagate to sinks
-						node.flags = FLAG_DIRTY
+						node.flags = FLAG_DIRTY | (structural ? FLAG_RELINK : 0)
 						for (let e = node.sinks; e; e = e.nextSink)
 							propagate(e.sink)
 					})
@@ -431,8 +435,18 @@ function createCollection<T extends {}>(
 			subscribe()
 			if (node.sources) {
 				if (node.flags) {
+					const relink = node.flags & FLAG_RELINK
 					node.value = untrack(buildValue)
-					node.flags = FLAG_CLEAN
+					if (relink) {
+						// Structural mutation added/removed child signals —
+						// tracked recompute so link() adds new edges and
+						// trimSources() removes stale ones without orphaning.
+						node.flags = FLAG_DIRTY
+						refresh(node as unknown as SinkNode)
+						if (node.error) throw node.error
+					} else {
+						node.flags = FLAG_CLEAN
+					}
 				}
 			} else {
 				refresh(node as unknown as SinkNode)

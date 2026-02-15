@@ -10,6 +10,7 @@ import {
 	type Cleanup,
 	FLAG_CLEAN,
 	FLAG_DIRTY,
+	FLAG_RELINK,
 	flush,
 	link,
 	type MemoNode,
@@ -263,7 +264,7 @@ function createList<T extends {}>(
 	// Structural tracking node — not a general-purpose Memo.
 	// On first get(): refresh() establishes edges from child signals.
 	// On subsequent get(): untrack(buildValue) rebuilds without re-linking.
-	// Mutation methods (add/remove/set/splice) null out sources to force re-establishment.
+	// Mutation methods set FLAG_RELINK to force re-establishment on next read.
 	const node: MemoNode<T[]> = {
 		fn: buildValue,
 		value,
@@ -325,10 +326,7 @@ function createList<T extends {}>(
 			structural = true
 		}
 
-		if (structural) {
-			node.sources = null
-			node.sourcesTail = null
-		}
+		if (structural) node.flags |= FLAG_RELINK
 
 		return changes.changed
 	}
@@ -380,8 +378,18 @@ function createList<T extends {}>(
 			if (node.sources) {
 				// Fast path: edges already established, rebuild value directly
 				if (node.flags) {
+					const relink = node.flags & FLAG_RELINK
 					node.value = untrack(buildValue)
-					node.flags = FLAG_CLEAN
+					if (relink) {
+						// Structural mutation added/removed child signals —
+						// tracked recompute so link() adds new edges and
+						// trimSources() removes stale ones without orphaning.
+						node.flags = FLAG_DIRTY
+						refresh(node as unknown as SinkNode)
+						if (node.error) throw node.error
+					} else {
+						node.flags = FLAG_CLEAN
+					}
 				}
 			} else {
 				// First access: use refresh() to establish child → list edges
@@ -441,9 +449,7 @@ function createList<T extends {}>(
 			if (!keys.includes(key)) keys.push(key)
 			validateSignalValue(`${TYPE_LIST} item for key "${key}"`, value)
 			signals.set(key, createState(value))
-			node.sources = null
-			node.sourcesTail = null
-			node.flags |= FLAG_DIRTY
+			node.flags |= FLAG_DIRTY | FLAG_RELINK
 			for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
 			if (batchDepth === 0) flush()
 			return key
@@ -459,9 +465,7 @@ function createList<T extends {}>(
 						? keyOrIndex
 						: keys.indexOf(key)
 				if (index >= 0) keys.splice(index, 1)
-				node.sources = null
-				node.sourcesTail = null
-				node.flags |= FLAG_DIRTY
+				node.flags |= FLAG_DIRTY | FLAG_RELINK
 				for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
 				if (batchDepth === 0) flush()
 			}

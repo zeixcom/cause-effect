@@ -77,7 +77,12 @@ Before a sink recomputes, the engine sets `activeSink = node`, ensuring all `.ge
 
 After a sink finishes recomputing, `trimSources()` removes any edges beyond `sourcesTail` — these are dependencies from the previous execution that were not accessed this time. This is how the graph adapts to conditional dependencies.
 
-`unlink()` removes an edge from the source's sink list. If the source's sink list becomes empty and the source has a `stop` callback, that callback is invoked — this is how lazy resources (Sensor, Collection, watched Store/List) are deallocated when no longer observed.
+`unlink()` removes an edge from the source's sink list. If the source's sink list becomes empty:
+
+1. **Watched cleanup**: If the source has a `stop` callback, it is invoked — this is how lazy resources (Sensor, Collection, watched Store/List) are deallocated when no longer observed.
+2. **Cascading cleanup**: If the source is also a sink (a MemoNode or TaskNode — identified by having a `sources` field), its own sources are trimmed via `trimSources()`. This recursively unlinks the node from its upstream dependencies, allowing their `stop` callbacks to fire if they also become unobserved.
+
+The cascade is critical for intermediate nodes like `deriveCollection`'s internal MemoNode: when the last effect unsubscribes from the derived collection, `unlink()` removes the effect→derived edge, which triggers cascade cleanup of the derived→List edge, which in turn fires the List's `stop` (the `watched` cleanup). Without the cascade, the List would retain a stale sink reference and never clean up its watcher. Recursion depth is bounded by graph depth since the graph is a DAG.
 
 ### Dependency Tracking Opt-Out: `untrack(fn)`
 
@@ -87,7 +92,7 @@ After a sink finishes recomputing, `trimSources()` removes any edges beyond `sou
 
 ### Flag-Based Dirty Tracking
 
-Each sink node has a `flags` field with four states:
+Each sink node has a `flags` field using a bitmap with five flags:
 
 | Flag | Value | Meaning |
 |------|-------|---------|
@@ -95,6 +100,11 @@ Each sink node has a `flags` field with four states:
 | `FLAG_CHECK` | 1 | A transitive dependency may have changed — verify before recomputing |
 | `FLAG_DIRTY` | 2 | A direct dependency changed — recomputation required |
 | `FLAG_RUNNING` | 4 | Currently executing (used for circular dependency detection and edge reuse) |
+| `FLAG_RELINK` | 8 | Structural change requires edge re-establishment on next read |
+
+The first four flags (`CLEAN`/`CHECK`/`DIRTY`/`RUNNING`) are used by the core graph engine in `propagate()` and `refresh()`. They are tested with bitmask operations that ignore higher bits, so `FLAG_RELINK` is invisible to the propagation and refresh machinery.
+
+`FLAG_RELINK` is used exclusively by composite signal types (Store, List, Collection, deriveCollection) that manage their own child signals. When a structural mutation adds or removes child signals, the node is flagged `FLAG_DIRTY | FLAG_RELINK`. On the next `get()`, the composite signal's fast path reads the flag: if `FLAG_RELINK` is set, it forces a tracked `refresh()` after rebuilding the value so that `recomputeMemo()` can call `link()` for new child signals and `trimSources()` for removed ones. This avoids the previous approach of nulling `node.sources`/`node.sourcesTail`, which orphaned edges in upstream sink lists. `FLAG_RELINK` is always cleared by `recomputeMemo()`, which assigns `node.flags = FLAG_RUNNING` (clearing all bits) at the start of recomputation.
 
 ### The `propagate(node)` Function
 
@@ -229,7 +239,7 @@ A reactive object where each property is its own signal. Properties are automati
 
 **Structural reactivity**: The internal `MemoNode` tracks edges from child signals to the store node. When consumers call `store.get()`, the node acts as both a source (to the consumer) and a sink (of its child signals). Changes to any child signal propagate through the store to its consumers.
 
-**Two-path access**: On first `get()`, `refresh()` executes `buildValue()` with `activeSink = storeNode`, establishing edges from each child signal to the store. Subsequent reads use a fast path: `untrack(buildValue)` rebuilds the value without re-establishing edges. Structural mutations (`add`/`remove`) call `invalidateEdges()` (nulling `node.sources`) to force re-establishment on the next read.
+**Two-path access with `FLAG_RELINK`**: On first `get()`, `refresh()` executes `buildValue()` with `activeSink = storeNode`, establishing edges from each child signal to the store. Subsequent reads use a fast path: `untrack(buildValue)` rebuilds the value without re-establishing edges. Structural mutations (`add`/`remove`/`set` with additions or removals) set `FLAG_DIRTY | FLAG_RELINK` on the node. The next `get()` detects `FLAG_RELINK` and forces a tracked `refresh()` after rebuilding the value, so `recomputeMemo()` links new child signals and trims removed ones without orphaning edges.
 
 **Diff-based updates**: `store.set(newObj)` diffs the new object against the current state, applying only the granular changes to child signals. This preserves identity of unchanged child signals and their downstream edges.
 
@@ -241,11 +251,11 @@ A reactive object where each property is its own signal. Properties are automati
 
 A reactive array with stable keys and per-item reactivity. Each item becomes a `State<T>` signal, keyed by a configurable key generation strategy (auto-increment, string prefix, or custom function).
 
-**Structural reactivity**: Uses the same `MemoNode` + `invalidateEdges` + two-path access pattern as Store. The `buildValue()` function reads all child signals in key order, establishing edges on the refresh path.
+**Structural reactivity**: Uses the same `MemoNode` + `FLAG_RELINK` + two-path access pattern as Store. The `buildValue()` function reads all child signals in key order, establishing edges on the refresh path.
 
 **Stable keys**: Keys survive sorting and reordering. `byKey(key)` returns a stable `State<T>` reference regardless of the item's current index. `sort()` reorders the keys array without destroying signals.
 
-**Diff-based updates**: `list.set(newArray)` uses `diffArrays()` to compute granular additions, changes, and removals. Changed items update their existing `State` signals; structural changes (add/remove) trigger `invalidateEdges()`.
+**Diff-based updates**: `list.set(newArray)` uses `diffArrays()` to compute granular additions, changes, and removals. Changed items update their existing `State` signals; structural changes (add/remove) set `FLAG_DIRTY | FLAG_RELINK`.
 
 ### Collection (`src/nodes/collection.ts`)
 
@@ -259,9 +269,9 @@ An externally-driven reactive collection with a watched lifecycle, mirroring `cr
 
 **Lazy lifecycle**: Like Sensor, the `watched` callback is invoked on first sink attachment. The returned cleanup is stored as `node.stop` and called when the last sink detaches (via `unlink()`). The `startWatching()` guard ensures `watched` fires before `link()` so synchronous mutations inside `watched` update `node.value` before the activating effect reads it.
 
-**External mutation via `applyChanges`**: Additions create new item signals (via configurable `createItem` factory, default `createState`). Changes update existing `State` signals. Removals delete signals and keys. Structural changes null out `node.sources` to force edge re-establishment. The node uses `equals: () => false` since structural changes are managed externally rather than detected by diffing.
+**External mutation via `applyChanges`**: Additions create new item signals (via configurable `createItem` factory, default `createState`). Changes update existing `State` signals. Removals delete signals and keys. Structural changes set `FLAG_DIRTY | FLAG_RELINK` to trigger edge re-establishment on the next read. The node uses `equals: () => false` since structural changes are managed externally rather than detected by diffing.
 
-**Two-path access**: Same pattern as Store/List — first `get()` uses `refresh()` to establish edges from child signals to the collection node; subsequent reads use `untrack(buildValue)` to avoid re-linking.
+**Two-path access with `FLAG_RELINK`**: Same pattern as Store/List — first `get()` uses `refresh()` to establish edges from child signals to the collection node; subsequent reads use `untrack(buildValue)` to avoid re-linking. When `FLAG_RELINK` is set, the next `get()` forces a tracked `refresh()` after rebuilding to link new child signals and trim removed ones.
 
 #### `deriveCollection(source, callback)` — internally derived
 
@@ -271,6 +281,18 @@ An internal factory (not exported from the public API) that creates a read-only 
 
 **Consistent with Store/List/createCollection**: The `MemoNode.value` is a `T[]` (cached computed values), and keys are tracked in a separate local `string[]` variable. The `equals` function uses shallow reference equality on array elements to prevent unnecessary downstream propagation when re-evaluation produces the same item references. The node starts `FLAG_DIRTY` to ensure the first `refresh()` establishes edges.
 
-**Two-path access with structural fallback**: Same pattern as Store/List — first `get()` uses `refresh()` to establish edges; subsequent reads use `untrack(buildValue)`. A `syncKeys()` step inside `buildValue` syncs the signals map with `source.keys()`. If keys changed, `syncKeys` nulls `node.sources` to force edge re-establishment via `refresh()`, ensuring new child signals are properly linked.
+**Initialization**: Source keys are read via `untrack(() => source.keys())` to populate the signals map for direct access (`at()`, `byKey()`, `keyAt()`, `[Symbol.iterator]()`) without triggering premature `watched` activation on the upstream source. The node stays `FLAG_DIRTY` so the first `refresh()` with a real subscriber establishes proper graph edges.
 
-**Chaining**: `.deriveCollection()` creates a new derived collection from an existing one, forming a pipeline. Each level in the chain has its own `MemoNode` for value caching and its own set of per-item derived signals.
+**Non-destructive `syncKeys()` with `FLAG_RELINK`**: Like Store/List/createCollection, `deriveCollection`'s `syncKeys()` sets `FLAG_RELINK` on the node when keys change, without touching the edge lists. This avoids orphaning edges in upstream sink lists, which would prevent the cascading cleanup in `unlink()` from reaching the source List's `watched` lifecycle. All four composite signal types now use the same `FLAG_RELINK` mechanism for structural edge invalidation.
+
+**Three-path `ensureFresh()`**: Access to the derived collection's value follows three distinct paths depending on the node's edge state:
+
+| Path | Condition | Behavior |
+|------|-----------|---------|
+| Fast path | `node.sources` exists | `untrack(buildValue)` rebuilds without re-linking. If `FLAG_RELINK` is set, forces a tracked `refresh()` to link new child signals and trim deleted ones. |
+| First subscriber | no `node.sources`, but `node.sinks` | `refresh()` via `recomputeMemo()` establishes all graph edges (source → derived, child signals → derived) in a single tracked pass. This is where `watched` activation propagates upstream. |
+| No subscriber | neither sources nor sinks | `untrack(buildValue)` computes the value without establishing edges. Keeps `FLAG_DIRTY` so the first real subscriber triggers the "first subscriber" path. Used during chained `deriveCollection` initialization. |
+
+The first-subscriber path is the key to `watched` lifecycle propagation: when an effect first reads a derived collection, `recomputeMemo()` sets `activeSink = derivedNode`, then `buildValue()` calls `source.keys()`, which triggers `subscribe()` on the upstream List with a non-null `activeSink`. This creates the List→derived edge and activates the List's `watched` callback. When the effect later disposes, the cascading cleanup in `unlink()` traverses effect→derived→List, firing the List's `stop` cleanup.
+
+**Chaining**: `.deriveCollection()` creates a new derived collection from an existing one, forming a pipeline. Each level in the chain has its own `MemoNode` for value caching and its own set of per-item derived signals. The "no subscriber" path in `ensureFresh()` ensures intermediate levels don't prematurely activate upstream `watched` callbacks during construction — activation cascades through the entire chain only when the terminal effect subscribes.

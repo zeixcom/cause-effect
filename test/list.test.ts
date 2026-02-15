@@ -3,9 +3,17 @@ import {
 	createEffect,
 	createList,
 	createMemo,
+	createScope,
+	createState,
+	createTask,
 	isList,
 	isMemo,
+	match,
 } from '../index.ts'
+
+/* === Utility Functions === */
+
+const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
 describe('List', () => {
 	describe('createList', () => {
@@ -435,6 +443,190 @@ describe('List', () => {
 			})
 
 			expect(watchedCalled).toBe(true)
+			dispose()
+		})
+
+		test('should activate watched via sync deriveCollection', () => {
+			let watchedCalled = false
+			let unwatchedCalled = false
+			const list = createList([1, 2, 3], {
+				watched: () => {
+					watchedCalled = true
+					return () => {
+						unwatchedCalled = true
+					}
+				},
+			})
+
+			const derived = list.deriveCollection((v: number) => v * 2)
+
+			expect(watchedCalled).toBe(false)
+
+			const dispose = createEffect(() => {
+				derived.get()
+			})
+
+			expect(watchedCalled).toBe(true)
+			expect(unwatchedCalled).toBe(false)
+
+			dispose()
+			expect(unwatchedCalled).toBe(true)
+		})
+
+		test('should activate watched via async deriveCollection', async () => {
+			let watchedCalled = false
+			let unwatchedCalled = false
+			const list = createList([1, 2, 3], {
+				watched: () => {
+					watchedCalled = true
+					return () => {
+						unwatchedCalled = true
+					}
+				},
+			})
+
+			const derived = list.deriveCollection(
+				async (v: number, _abort: AbortSignal) => v * 2,
+			)
+
+			expect(watchedCalled).toBe(false)
+
+			const dispose = createEffect(() => {
+				derived.get()
+			})
+
+			expect(watchedCalled).toBe(true)
+
+			await wait(10)
+
+			expect(unwatchedCalled).toBe(false)
+
+			dispose()
+			expect(unwatchedCalled).toBe(true)
+		})
+
+		test('should not tear down watched during list mutation via deriveCollection', () => {
+			let activations = 0
+			let deactivations = 0
+			const list = createList([1, 2], {
+				watched: () => {
+					activations++
+					return () => {
+						deactivations++
+					}
+				},
+			})
+
+			const derived = list.deriveCollection((v: number) => v * 2)
+
+			let result: number[] = []
+			const dispose = createEffect(() => {
+				result = derived.get()
+			})
+
+			expect(activations).toBe(1)
+			expect(deactivations).toBe(0)
+			expect(result).toEqual([2, 4])
+
+			// Add item — should NOT tear down and restart watched
+			list.add(3)
+			expect(result).toEqual([2, 4, 6])
+			expect(activations).toBe(1)
+			expect(deactivations).toBe(0)
+
+			// Remove item — should NOT tear down and restart watched
+			list.remove(0)
+			expect(activations).toBe(1)
+			expect(deactivations).toBe(0)
+
+			dispose()
+			expect(deactivations).toBe(1)
+		})
+
+		test('should delay watched activation for conditional reads', () => {
+			let watchedCalled = false
+			const list = createList([1, 2], {
+				watched: () => {
+					watchedCalled = true
+					return () => {}
+				},
+			})
+
+			const show = createState(false)
+
+			const dispose = createScope(() => {
+				createEffect(() => {
+					if (show.get()) {
+						list.get()
+					}
+				})
+			})
+
+			// Conditional read — list not accessed, watched should not fire
+			expect(watchedCalled).toBe(false)
+
+			// Flip condition — list is now accessed
+			show.set(true)
+			expect(watchedCalled).toBe(true)
+
+			dispose()
+		})
+
+		test('should activate watched via chained deriveCollection', () => {
+			let watchedCalled = false
+			const list = createList([1, 2, 3], {
+				watched: () => {
+					watchedCalled = true
+					return () => {}
+				},
+			})
+
+			const doubled = list.deriveCollection((v: number) => v * 2)
+			const quadrupled = doubled.deriveCollection((v: number) => v * 2)
+
+			expect(watchedCalled).toBe(false)
+
+			const dispose = createEffect(() => {
+				quadrupled.get()
+			})
+
+			expect(watchedCalled).toBe(true)
+			dispose()
+		})
+
+		test('should activate watched via deriveCollection read inside match()', async () => {
+			let watchedCalled = false
+			const list = createList([1, 2], {
+				watched: () => {
+					watchedCalled = true
+					return () => {}
+				},
+			})
+
+			const derived = list.deriveCollection((v: number) => v * 10)
+
+			const task = createTask(async () => {
+				await wait(10)
+				return 'done'
+			})
+
+			const dispose = createScope(() => {
+				createEffect(() => {
+					// Read derived BEFORE match to ensure subscription
+					const values = derived.get()
+					match([task], {
+						ok: () => {
+							void values
+						},
+						nil: () => {},
+					})
+				})
+			})
+
+			// watched should activate synchronously even though task is pending
+			expect(watchedCalled).toBe(true)
+
+			await wait(50)
 			dispose()
 		})
 	})
