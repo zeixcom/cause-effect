@@ -96,6 +96,7 @@ var FLAG_CLEAN = 0;
 var FLAG_CHECK = 1 << 0;
 var FLAG_DIRTY = 1 << 1;
 var FLAG_RUNNING = 1 << 2;
+var FLAG_RELINK = 1 << 3;
 var activeSink = null;
 var activeOwner = null;
 var queuedEffects = [];
@@ -154,9 +155,16 @@ function unlink(edge) {
     prevSink.nextSink = nextSink;
   else
     source.sinks = nextSink;
-  if (!source.sinks && source.stop) {
-    source.stop();
-    source.stop = undefined;
+  if (!source.sinks) {
+    if (source.stop) {
+      source.stop();
+      source.stop = undefined;
+    }
+    if ("sources" in source && source.sources) {
+      const sinkNode = source;
+      sinkNode.sourcesTail = null;
+      trimSources(sinkNode);
+    }
   }
   return nextSource;
 }
@@ -576,10 +584,8 @@ function createList(value, options) {
         keys.splice(index, 1);
       structural = true;
     }
-    if (structural) {
-      node.sources = null;
-      node.sourcesTail = null;
-    }
+    if (structural)
+      node.flags |= FLAG_RELINK;
     return changes.changed;
   };
   const watched = options?.watched;
@@ -619,8 +625,16 @@ function createList(value, options) {
       subscribe();
       if (node.sources) {
         if (node.flags) {
+          const relink = node.flags & FLAG_RELINK;
           node.value = untrack(buildValue);
-          node.flags = FLAG_CLEAN;
+          if (relink) {
+            node.flags = FLAG_DIRTY;
+            refresh(node);
+            if (node.error)
+              throw node.error;
+          } else {
+            node.flags = FLAG_CLEAN;
+          }
         }
       } else {
         refresh(node);
@@ -669,9 +683,7 @@ function createList(value, options) {
         keys.push(key);
       validateSignalValue(`${TYPE_LIST} item for key "${key}"`, value2);
       signals.set(key, createState(value2));
-      node.sources = null;
-      node.sourcesTail = null;
-      node.flags |= FLAG_DIRTY;
+      node.flags |= FLAG_DIRTY | FLAG_RELINK;
       for (let e = node.sinks;e; e = e.nextSink)
         propagate(e.sink);
       if (batchDepth === 0)
@@ -685,9 +697,7 @@ function createList(value, options) {
         const index = typeof keyOrIndex === "number" ? keyOrIndex : keys.indexOf(key);
         if (index >= 0)
           keys.splice(index, 1);
-        node.sources = null;
-        node.sourcesTail = null;
-        node.flags |= FLAG_DIRTY;
+        node.flags |= FLAG_DIRTY | FLAG_RELINK;
         for (let e = node.sinks;e; e = e.nextSink)
           propagate(e.sink);
         if (batchDepth === 0)
@@ -872,6 +882,7 @@ function deriveCollection(source, callback) {
     throw new TypeError(`[${TYPE_COLLECTION}] Invalid collection source: expected a List or Collection`);
   const isAsync = isAsyncFunction(callback);
   const signals = new Map;
+  let keys = [];
   const addSignal = (key) => {
     const signal = isAsync ? createTask(async (prev, abort) => {
       const sourceValue = source.byKey(key)?.get();
@@ -886,54 +897,84 @@ function deriveCollection(source, callback) {
     });
     signals.set(key, signal);
   };
-  function syncKeys() {
-    const nextKeys = Array.from(source.keys());
-    const prevKeys = node.value;
-    if (!keysEqual(prevKeys, nextKeys)) {
-      const a = new Set(prevKeys);
+  function syncKeys(nextKeys) {
+    if (!keysEqual(keys, nextKeys)) {
+      const a = new Set(keys);
       const b = new Set(nextKeys);
-      for (const key of prevKeys)
+      for (const key of keys)
         if (!b.has(key))
           signals.delete(key);
       for (const key of nextKeys)
         if (!a.has(key))
           addSignal(key);
+      keys = nextKeys;
+      node.flags |= FLAG_RELINK;
     }
-    return nextKeys;
   }
+  function buildValue() {
+    syncKeys(Array.from(source.keys()));
+    const result = [];
+    for (const key of keys) {
+      try {
+        const v = signals.get(key)?.get();
+        if (v != null)
+          result.push(v);
+      } catch (e) {
+        if (!(e instanceof UnsetSignalValueError))
+          throw e;
+      }
+    }
+    return result;
+  }
+  const valuesEqual = (a, b) => {
+    if (a.length !== b.length)
+      return false;
+    for (let i = 0;i < a.length; i++)
+      if (a[i] !== b[i])
+        return false;
+    return true;
+  };
   const node = {
-    fn: syncKeys,
+    fn: buildValue,
     value: [],
     flags: FLAG_DIRTY,
     sources: null,
     sourcesTail: null,
     sinks: null,
     sinksTail: null,
-    equals: keysEqual,
+    equals: valuesEqual,
     error: undefined
   };
-  function ensureSynced() {
+  function ensureFresh() {
     if (node.sources) {
       if (node.flags) {
-        node.value = untrack(syncKeys);
-        node.flags = FLAG_CLEAN;
+        node.value = untrack(buildValue);
+        if (node.flags & FLAG_RELINK) {
+          node.flags = FLAG_DIRTY;
+          refresh(node);
+          if (node.error)
+            throw node.error;
+        } else {
+          node.flags = FLAG_CLEAN;
+        }
       }
-    } else {
+    } else if (node.sinks) {
       refresh(node);
       if (node.error)
         throw node.error;
+    } else {
+      node.value = untrack(buildValue);
     }
-    return node.value;
   }
-  const initialKeys = Array.from(source.keys());
+  const initialKeys = Array.from(untrack(() => source.keys()));
   for (const key of initialKeys)
     addSignal(key);
-  node.value = initialKeys;
+  keys = initialKeys;
   const collection = {
     [Symbol.toStringTag]: TYPE_COLLECTION,
     [Symbol.isConcatSpreadable]: true,
     *[Symbol.iterator]() {
-      for (const key of node.value) {
+      for (const key of keys) {
         const signal = signals.get(key);
         if (signal)
           yield signal;
@@ -942,41 +983,32 @@ function deriveCollection(source, callback) {
     get length() {
       if (activeSink)
         link(node, activeSink);
-      return ensureSynced().length;
+      ensureFresh();
+      return keys.length;
     },
     keys() {
       if (activeSink)
         link(node, activeSink);
-      return ensureSynced().values();
+      ensureFresh();
+      return keys.values();
     },
     get() {
       if (activeSink)
         link(node, activeSink);
-      const currentKeys = ensureSynced();
-      const result = [];
-      for (const key of currentKeys) {
-        try {
-          const v = signals.get(key)?.get();
-          if (v != null)
-            result.push(v);
-        } catch (e) {
-          if (!(e instanceof UnsetSignalValueError))
-            throw e;
-        }
-      }
-      return result;
+      ensureFresh();
+      return node.value;
     },
     at(index) {
-      return signals.get(node.value[index]);
+      return signals.get(keys[index]);
     },
     byKey(key) {
       return signals.get(key);
     },
     keyAt(index) {
-      return node.value[index];
+      return keys[index];
     },
     indexOfKey(key) {
-      return node.value.indexOf(key);
+      return keys.indexOf(key);
     },
     deriveCollection(cb) {
       return deriveCollection(collection, cb);
@@ -1073,11 +1105,7 @@ function createCollection(watched, options) {
                 structural = true;
               }
             }
-            if (structural) {
-              node.sources = null;
-              node.sourcesTail = null;
-            }
-            node.flags = FLAG_DIRTY;
+            node.flags = FLAG_DIRTY | (structural ? FLAG_RELINK : 0);
             for (let e = node.sinks;e; e = e.nextSink)
               propagate(e.sink);
           });
@@ -1107,8 +1135,16 @@ function createCollection(watched, options) {
       subscribe();
       if (node.sources) {
         if (node.flags) {
+          const relink = node.flags & FLAG_RELINK;
           node.value = untrack(buildValue);
-          node.flags = FLAG_CLEAN;
+          if (relink) {
+            node.flags = FLAG_DIRTY;
+            refresh(node);
+            if (node.error)
+              throw node.error;
+          } else {
+            node.flags = FLAG_CLEAN;
+          }
         }
       } else {
         refresh(node);
@@ -1335,10 +1371,8 @@ function createStore(value, options) {
       signals.delete(key);
       structural = true;
     }
-    if (structural) {
-      node.sources = null;
-      node.sourcesTail = null;
-    }
+    if (structural)
+      node.flags |= FLAG_RELINK;
     return changes.changed;
   };
   const watched = options?.watched;
@@ -1375,8 +1409,16 @@ function createStore(value, options) {
       subscribe();
       if (node.sources) {
         if (node.flags) {
+          const relink = node.flags & FLAG_RELINK;
           node.value = untrack(buildValue);
-          node.flags = FLAG_CLEAN;
+          if (relink) {
+            node.flags = FLAG_DIRTY;
+            refresh(node);
+            if (node.error)
+              throw node.error;
+          } else {
+            node.flags = FLAG_CLEAN;
+          }
         }
       } else {
         refresh(node);
@@ -1403,9 +1445,7 @@ function createStore(value, options) {
       if (signals.has(key))
         throw new DuplicateKeyError(TYPE_STORE, key, value2);
       addSignal(key, value2);
-      node.sources = null;
-      node.sourcesTail = null;
-      node.flags |= FLAG_DIRTY;
+      node.flags |= FLAG_DIRTY | FLAG_RELINK;
       for (let e = node.sinks;e; e = e.nextSink)
         propagate(e.sink);
       if (batchDepth === 0)
@@ -1415,9 +1455,7 @@ function createStore(value, options) {
     remove(key) {
       const ok = signals.delete(key);
       if (ok) {
-        node.sources = null;
-        node.sourcesTail = null;
-        node.flags |= FLAG_DIRTY;
+        node.flags |= FLAG_DIRTY | FLAG_RELINK;
         for (let e = node.sinks;e; e = e.nextSink)
           propagate(e.sink);
         if (batchDepth === 0)

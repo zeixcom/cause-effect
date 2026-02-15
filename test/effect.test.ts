@@ -249,6 +249,23 @@ describe('match', () => {
 		}
 	})
 
+	test('should preserve tuple types in ok handler', () => {
+		const a = createState(1)
+		const b = createState('hello')
+		createEffect(() =>
+			match([a, b], {
+				ok: ([aVal, bVal]) => {
+					// If tuple types are preserved, aVal is number and bVal is string
+					// If widened, both would be string | number
+					const num: number = aVal
+					const str: string = bVal
+					expect(num).toBe(1)
+					expect(str).toBe('hello')
+				},
+			}),
+		)
+	})
+
 	test('should throw RequiredOwnerError when called outside an owner', () => {
 		expect(() => match([], { ok: () => {} })).toThrow(RequiredOwnerError)
 	})
