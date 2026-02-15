@@ -1,6 +1,6 @@
 # Cause & Effect
 
-Version 0.18.1
+Version 0.18.2
 
 **Cause & Effect** is a reactive state management primitives library for TypeScript. It provides the foundational building blocks for managing complex, dynamic, composite, and asynchronous state — correctly and performantly — in a unified signal graph.
 
@@ -514,6 +514,19 @@ const user = createStore({ name: 'Alice' }, {
     const ws = new WebSocket('/updates')
     return () => ws.close()
   }
+})
+```
+
+**Watched propagation through `deriveCollection()`**: When an effect reads a derived collection, the `watched` callback on the source List, Store, or Collection activates automatically — even through multiple levels of chaining. Mutations on the source do not tear down the watcher. When the last effect disposes, cleanup cascades upstream through all intermediate nodes.
+
+**Tip — conditional reads delay activation**: Dependencies are tracked based on which `.get()` calls actually execute. If a signal read is inside a branch that doesn't run yet (e.g., inside `match()`'s `ok` branch while a Task is pending), `watched` won't activate until that branch executes. Read signals eagerly before conditional logic to ensure immediate activation:
+
+```js
+createEffect(() => {
+  match([task, derived], { // derived is always tracked
+    ok: ([result, values]) => renderList(values, result),
+    nil: () => showLoading(),
+  })
 })
 ```
 

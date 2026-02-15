@@ -6,6 +6,7 @@ import {
 	type Cleanup,
 	FLAG_CLEAN,
 	FLAG_DIRTY,
+	FLAG_RELINK,
 	flush,
 	link,
 	type MemoNode,
@@ -168,7 +169,7 @@ function createStore<T extends UnknownRecord>(
 	// Structural tracking node — not a general-purpose Memo.
 	// On first get(): refresh() establishes edges from child signals.
 	// On subsequent get(): untrack(buildValue) rebuilds without re-linking.
-	// Mutation methods (add/remove/set) null out sources to force re-establishment.
+	// Mutation methods set FLAG_RELINK to force re-establishment on next read.
 	const node: MemoNode<T> = {
 		fn: buildValue,
 		value,
@@ -214,10 +215,7 @@ function createStore<T extends UnknownRecord>(
 			structural = true
 		}
 
-		if (structural) {
-			node.sources = null
-			node.sourcesTail = null
-		}
+		if (structural) node.flags |= FLAG_RELINK
 
 		return changes.changed
 	}
@@ -280,8 +278,18 @@ function createStore<T extends UnknownRecord>(
 				// from child signals using untrack to avoid creating spurious
 				// edges to the current effect/memo consumer
 				if (node.flags) {
+					const relink = node.flags & FLAG_RELINK
 					node.value = untrack(buildValue)
-					node.flags = FLAG_CLEAN
+					if (relink) {
+						// Structural mutation added/removed child signals —
+						// tracked recompute so link() adds new edges and
+						// trimSources() removes stale ones without orphaning.
+						node.flags = FLAG_DIRTY
+						refresh(node as unknown as SinkNode)
+						if (node.error) throw node.error
+					} else {
+						node.flags = FLAG_CLEAN
+					}
 				}
 			} else {
 				// First access: use refresh() to establish child → store edges
@@ -311,9 +319,7 @@ function createStore<T extends UnknownRecord>(
 			if (signals.has(key))
 				throw new DuplicateKeyError(TYPE_STORE, key, value)
 			addSignal(key, value)
-			node.sources = null
-			node.sourcesTail = null
-			node.flags |= FLAG_DIRTY
+			node.flags |= FLAG_DIRTY | FLAG_RELINK
 			for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
 			if (batchDepth === 0) flush()
 			return key
@@ -322,9 +328,7 @@ function createStore<T extends UnknownRecord>(
 		remove(key: string) {
 			const ok = signals.delete(key)
 			if (ok) {
-				node.sources = null
-				node.sourcesTail = null
-				node.flags |= FLAG_DIRTY
+				node.flags |= FLAG_DIRTY | FLAG_RELINK
 				for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
 				if (batchDepth === 0) flush()
 			}

@@ -168,6 +168,8 @@ const user = createStore({ name: 'Alice', email: 'alice@example.com' }, {
 2. Last effect stops watching → returned cleanup function executed
 3. New effect accesses signal → watched callback executed again
 
+**Watched propagation through `deriveCollection()`**: When an effect reads a derived collection, the `watched` callback on the source List, Store, or Collection activates automatically — even through multiple levels of `.deriveCollection()` chaining. The reactive graph establishes edges from effect → derived collection → source, and `watched` fires when the first edge reaches the source. Mutations (add, remove, sort) on the source do **not** tear down and restart `watched` — the watcher remains stable as long as at least one downstream effect is subscribed. When the last effect disposes, cleanup cascades upstream through all intermediate nodes.
+
 This pattern enables **lazy resource allocation** - resources are only consumed when actually needed and automatically freed when no longer used.
 
 ## Advanced Patterns and Best Practices
@@ -346,6 +348,28 @@ const display = createMemo(() => user.name.get() + user.email.get())
 4. **Async Race Conditions**: Trust automatic cancellation with AbortSignal
 5. **Circular Dependencies**: The graph detects and throws `CircularDependencyError`
 6. **Untracked `byKey()`/`at()` access**: On Store, List, and Collection, `byKey()`, `at()`, `keyAt()`, and `indexOfKey()` do **not** create graph edges. They are direct lookups that bypass structural tracking. An effect using only `collection.byKey('x')?.get()` will react to value changes of key `'x'`, but will **not** re-run if key `'x'` is added or removed. Use `get()`, `keys()`, or `length` to track structural changes.
+7. **Conditional reads delay `watched` activation**: Dependencies are tracked dynamically based on which `.get()` calls actually execute during each effect run. If a signal read is inside a branch that doesn't execute (e.g., inside the `ok` branch of `match()` while a Task is still pending), no edge is created and `watched` does not activate until that branch runs. **Fix:** read the signal eagerly before conditional logic:
+
+```typescript
+// Good: watched activates immediately, errors/nil in derived are also caught
+createEffect(() => {
+  match([task, derived], {
+    ok: ([result, values]) => renderList(values, result),
+    nil: () => showLoading(),
+  })
+})
+
+// Bad: watched only activates after task resolves
+createEffect(() => {
+  match([task], {
+    ok: ([result]) => {
+      const values = derived.get() // only tracked in this branch
+      renderList(values, result)
+    },
+    nil: () => showLoading(),
+  })
+})
+```
 
 ## Advanced Patterns
 
