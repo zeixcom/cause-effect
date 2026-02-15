@@ -1,6 +1,6 @@
 import { type Cleanup, type EffectCallback, type MaybeCleanup, type Signal } from '../graph';
 type MaybePromise<T> = T | Promise<T>;
-type MatchHandlers<T extends Signal<unknown & {}>[]> = {
+type MatchHandlers<T extends readonly Signal<unknown & {}>[]> = {
     ok: (values: {
         [K in keyof T]: T[K] extends Signal<infer V> ? V : never;
     }) => MaybePromise<MaybeCleanup>;
@@ -44,5 +44,5 @@ declare function createEffect(fn: EffectCallback): Cleanup;
  * @since 0.15.0
  * @throws RequiredOwnerError If called without an active owner.
  */
-declare function match<T extends Signal<unknown & {}>[]>(signals: T, handlers: MatchHandlers<T>): MaybeCleanup;
+declare function match<T extends readonly Signal<unknown & {}>[]>(signals: readonly [...T], handlers: MatchHandlers<T>): MaybeCleanup;
 export { type MaybePromise, type MatchHandlers, createEffect, match };
