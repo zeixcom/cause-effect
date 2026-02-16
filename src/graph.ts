@@ -156,6 +156,7 @@ const TYPE_SENSOR = 'Sensor'
 const TYPE_LIST = 'List'
 const TYPE_COLLECTION = 'Collection'
 const TYPE_STORE = 'Store'
+const TYPE_SLOT = 'Slot'
 
 const FLAG_CLEAN = 0
 const FLAG_CHECK = 1 << 0
@@ -617,6 +618,7 @@ export {
 	TYPE_MEMO,
 	TYPE_SENSOR,
 	TYPE_STATE,
+	TYPE_SLOT,
 	TYPE_STORE,
 	TYPE_TASK,
 	unlink,

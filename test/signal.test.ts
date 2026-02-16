@@ -6,6 +6,7 @@ import {
 	createMutableSignal,
 	createScope,
 	createSignal,
+	createSlot,
 	createState,
 	createStore,
 	createTask,
@@ -229,6 +230,7 @@ describe('isSignal', () => {
 			expect(isSignal(createTask(async () => 42))).toBe(true)
 			expect(isSignal(createStore({ a: 1 }))).toBe(true)
 			expect(isSignal(createList([1, 2, 3]))).toBe(true)
+			expect(isSignal(createSlot(createState(1)))).toBe(true)
 		})
 		cleanup()
 	})

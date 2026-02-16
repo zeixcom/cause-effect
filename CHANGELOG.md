@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Slot signal (`createSlot`, `isSlot`)**: A stable reactive source that delegates reads and writes to a swappable backing signal. Designed for integration layers (e.g. custom element systems) where a property position must switch its backing signal — from a local writable `State` to a parent-controlled `Memo` — without breaking existing subscribers. The slot object doubles as a property descriptor for `Object.defineProperty()`. `replace(nextSignal)` swaps the backing signal and invalidates downstream subscribers; `current()` returns the currently delegated signal. Options mirror State: optional `guard` and `equals`.
+
 ### Fixed
 
 - **`match()` now preserves tuple types**: The `ok` handler correctly receives per-position types (e.g., `[number, string]`) instead of a widened union (e.g., `(number | string)[]`). The `signals` parameter and `MatchHandlers` type now use `readonly [...T]` to preserve tuple inference.

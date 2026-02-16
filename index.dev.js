@@ -57,6 +57,13 @@ class InvalidCallbackError extends TypeError {
   }
 }
 
+class ReadonlySignalError extends Error {
+  constructor(where) {
+    super(`[${where}] Signal is read-only`);
+    this.name = "ReadonlySignalError";
+  }
+}
+
 class RequiredOwnerError extends Error {
   constructor(where) {
     super(`[${where}] Active owner is required`);
@@ -92,6 +99,7 @@ var TYPE_SENSOR = "Sensor";
 var TYPE_LIST = "List";
 var TYPE_COLLECTION = "Collection";
 var TYPE_STORE = "Store";
+var TYPE_SLOT = "Slot";
 var FLAG_CLEAN = 0;
 var FLAG_CHECK = 1 << 0;
 var FLAG_DIRTY = 1 << 1;
@@ -878,8 +886,6 @@ function isTask(value) {
 // src/nodes/collection.ts
 function deriveCollection(source, callback) {
   validateCallback(TYPE_COLLECTION, callback);
-  if (!isCollectionSource(source))
-    throw new TypeError(`[${TYPE_COLLECTION}] Invalid collection source: expected a List or Collection`);
   const isAsync = isAsyncFunction(callback);
   const signals = new Map;
   let keys = [];
@@ -1173,9 +1179,6 @@ function createCollection(watched, options) {
 }
 function isCollection(value) {
   return isObjectOfType(value, TYPE_COLLECTION);
-}
-function isCollectionSource(value) {
-  return isList(value) || isCollection(value);
 }
 // src/nodes/effect.ts
 function createEffect(fn) {
@@ -1496,6 +1499,7 @@ function createStore(value, options) {
 function isStore(value) {
   return isObjectOfType(value, TYPE_STORE);
 }
+
 // src/signal.ts
 function createComputed(callback, options) {
   return isAsyncFunction(callback) ? createTask(callback, options) : createMemo(callback, options);
@@ -1535,6 +1539,7 @@ function isSignal(value) {
     TYPE_MEMO,
     TYPE_TASK,
     TYPE_SENSOR,
+    TYPE_SLOT,
     TYPE_LIST,
     TYPE_COLLECTION,
     TYPE_STORE
@@ -1545,6 +1550,59 @@ function isSignal(value) {
 function isMutableSignal(value) {
   return isState(value) || isStore(value) || isList(value);
 }
+
+// src/nodes/slot.ts
+function createSlot(initialSignal, options) {
+  validateSignalValue(TYPE_SLOT, initialSignal, isSignal);
+  let delegated = initialSignal;
+  const guard = options?.guard;
+  const node = {
+    fn: () => delegated.get(),
+    value: undefined,
+    flags: FLAG_DIRTY,
+    sources: null,
+    sourcesTail: null,
+    sinks: null,
+    sinksTail: null,
+    equals: options?.equals ?? DEFAULT_EQUALITY,
+    error: undefined
+  };
+  const get = () => {
+    if (activeSink)
+      link(node, activeSink);
+    refresh(node);
+    if (node.error)
+      throw node.error;
+    return node.value;
+  };
+  const set = (next) => {
+    if (!isMutableSignal(delegated))
+      throw new ReadonlySignalError(TYPE_SLOT);
+    validateSignalValue(TYPE_SLOT, next, guard);
+    delegated.set(next);
+  };
+  const replace = (next) => {
+    validateSignalValue(TYPE_SLOT, next, isSignal);
+    delegated = next;
+    node.flags |= FLAG_DIRTY;
+    for (let e = node.sinks;e; e = e.nextSink)
+      propagate(e.sink);
+    if (batchDepth === 0)
+      flush();
+  };
+  return {
+    [Symbol.toStringTag]: TYPE_SLOT,
+    configurable: true,
+    enumerable: true,
+    get,
+    set,
+    replace,
+    current: () => delegated
+  };
+}
+function isSlot(value) {
+  return isObjectOfType(value, TYPE_SLOT);
+}
 export {
   valueString,
   untrack,
@@ -1552,6 +1610,7 @@ export {
   isTask,
   isStore,
   isState,
+  isSlot,
   isSignal,
   isSensor,
   isRecord,
@@ -1567,6 +1626,7 @@ export {
   createTask,
   createStore,
   createState,
+  createSlot,
   createSignal,
   createSensor,
   createScope,
@@ -1580,6 +1640,7 @@ export {
   UnsetSignalValueError,
   SKIP_EQUALITY,
   RequiredOwnerError,
+  ReadonlySignalError,
   NullishSignalValueError,
   InvalidSignalValueError,
   InvalidCallbackError,

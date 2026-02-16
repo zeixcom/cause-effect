@@ -20,6 +20,7 @@ Think of signals as **observable cells** in a spreadsheet:
 - **Store signals** are structured tables where individual columns (properties) are reactive
 - **List signals** are tables with stable row IDs that survive sorting and reordering
 - **Collection signals** are externally-fed reactive tables with a watched lifecycle (WebSocket, SSE), or derived tables from Lists/Collections via `.deriveCollection()`
+- **Slot signals** are stable cell references that delegate to a swappable backing cell — used by integration layers to swap a property's backing signal without breaking subscribers
 - **Effects** are event handlers that trigger side effects when cells change
 
 ## Architectural Deep Dive
@@ -37,7 +38,7 @@ The core of reactivity lies in the linked graph system (`src/graph.ts`):
 
 ```
 StateNode<T>  — source-only with equality + guard (State, Sensor)
-MemoNode<T>   — source + sink (Memo, Store, List, Collection)
+MemoNode<T>   — source + sink (Memo, Slot, Store, List, Collection)
 TaskNode<T>   — source + sink + async (Task)
 EffectNode    — sink + owner (Effect)
 Scope         — owner-only (createScope)
@@ -68,6 +69,14 @@ type Task<T extends {}> = {
   get(): T
   isPending(): boolean
   abort(): void
+}
+
+// Slot delegates to a swappable backing signal
+type Slot<T extends {}> = {
+  get(): T
+  set(next: T): void
+  replace<U extends T>(next: Signal<U>): void
+  current(): Signal<T>
 }
 
 // Collection interface
@@ -295,6 +304,21 @@ const userData = createTask(async (prev, abort) => {
   const response = await fetch(`/users/${id}`, { signal: abort })
   return response.json()
 })
+```
+
+**Slot (`createSlot`)**:
+- Property positions that must swap their backing signal without breaking subscribers
+- Integration layers (custom elements, component systems) using `Object.defineProperty()`
+- The slot object is a valid property descriptor (`get`, `set`, `configurable`, `enumerable`)
+
+```typescript
+const local = createState('default')
+const slot = createSlot(local)
+Object.defineProperty(element, 'label', slot)
+
+// Swap backing signal — subscribers re-run automatically
+const parentLabel = createMemo(() => parentState.get())
+slot.replace(parentLabel)
 ```
 
 ### Error Handling Strategies

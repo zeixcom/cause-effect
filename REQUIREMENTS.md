@@ -32,7 +32,7 @@ All signals enforce `T extends {}`, excluding `null` and `undefined` at the type
 Every signal type participates in the same dependency graph with the same propagation, batching, and cleanup semantics. Composite signals (Store, List, Collection) and async signals (Task) are first-class citizens, not afterthoughts. The goal is that all state which is derivable can be derived.
 
 ### Minimal Surface, Maximum Coverage
-The library ships 8 signal types — each justified by a distinct role in the graph and a distinct data structure it manages:
+The library ships 9 signal types — each justified by a distinct role in the graph and a distinct data structure it manages:
 
 | Type | Role | Data Structure |
 |------|------|----------------|
@@ -41,6 +41,7 @@ The library ships 8 signal types — each justified by a distinct role in the gr
 | **Memo** | Synchronous derivation | Single value (memoized) |
 | **Task** | Asynchronous derivation | Single value (memoized, cancellable) |
 | **Effect** | Side-effect sink | None (terminal) |
+| **Slot** | Stable delegation (integration layer) | Single value (swappable backing signal) |
 | **Store** | Reactive object | Keyed properties (proxy-based) |
 | **List** | Reactive array | Keyed items (stable identity) |
 | **Collection** | Reactive collection (external source or derived) | Keyed items (lazy lifecycle, item-level memoization) |
@@ -63,7 +64,7 @@ The library uses no browser-specific APIs in its core. Environment-specific beha
 | Usage | Target |
 |-------|--------|
 | Core signals only (State, Memo, Task, Effect) | Below 5 kB gzipped |
-| Full library (all 8 signal types + utilities) | Below 10 kB gzipped |
+| Full library (all 9 signal types + utilities) | Below 10 kB gzipped |
 
 The library must remain tree-shakable: importing only what you use should not pull in unrelated signal types.
 
@@ -79,7 +80,7 @@ The following are explicitly out of scope and will not be added to the library:
 - **Persistence**: No serialization, no local storage, no database integration. State enters and leaves the graph through signals; how it is stored is not this library's concern.
 - **Framework-specific bindings**: No React hooks, no Vue composables, no Angular decorators. Consuming libraries build their own integrations.
 - **DevTools protocol**: Debugging is straightforward by design — attaching an effect to any signal reveals its current value and update behavior. A dedicated debugging protocol adds complexity without proportional value.
-- **Additional signal types**: The 8 signal types are considered complete. New types would only be considered if major Web Platform changes shift the optimal way to achieve the library's existing goals.
+- **Additional signal types**: The 9 signal types are considered complete. New types would only be considered if major Web Platform changes shift the optimal way to achieve the library's existing goals.
 
 ## Stability
 

@@ -1,6 +1,6 @@
 /**
  * @name Cause & Effect
- * @version 0.18.1
+ * @version 0.18.2
  * @author Esther Brunner
  */
 
@@ -10,6 +10,7 @@ export {
 	InvalidCallbackError,
 	InvalidSignalValueError,
 	NullishSignalValueError,
+	ReadonlySignalError,
 	RequiredOwnerError,
 	UnsetSignalValueError,
 } from './src/errors'
@@ -58,6 +59,7 @@ export {
 	type SensorCallback,
 	type SensorOptions,
 } from './src/nodes/sensor'
+export { createSlot, isSlot, type Slot } from './src/nodes/slot'
 export {
 	createState,
 	isState,

@@ -27,6 +27,7 @@ Every signal type participates in the same dependency graph with the same propag
 | **Store** | Reactive object (keyed properties, proxy-based) | `createStore()` |
 | **List** | Reactive array (keyed items, stable identity) | `createList()` |
 | **Collection** | Reactive collection (external source or derived, item-level memoization) | `createCollection()` |
+| **Slot** | Stable delegation for integration layers (swappable backing signal) | `createSlot()` |
 | **Effect** | Side-effect sink (terminal) | `createEffect()` |
 
 ## Design Principles
@@ -322,6 +323,33 @@ const processed = users
   .deriveCollection(user => user.active ? `Active: ${user.name}` : `Inactive: ${user.name}`)
 ```
 
+### Slot
+
+A stable reactive source that delegates to a swappable backing signal. Designed for integration layers (e.g. custom element systems) where a property must switch its backing signal without breaking subscribers. The slot object doubles as a property descriptor for `Object.defineProperty()`:
+
+```js
+import { createState, createMemo, createSlot, createEffect } from '@zeix/cause-effect'
+
+const local = createState(1)
+const slot = createSlot(local)
+
+// Use as a property descriptor
+const target = {}
+Object.defineProperty(target, 'value', slot)
+
+createEffect(() => console.log(target.value)) // logs: 1
+
+// Swap the backing signal — subscribers re-run automatically
+const derived = createMemo(() => 42)
+slot.replace(derived) // logs: 42
+
+// Write through to the current backing signal
+slot.replace(local)
+target.value = 10 // sets local to 10
+```
+
+`replace()` and `current()` are available on the slot object but are not installed on the property — keep the slot reference for later control. Setting via the property forwards to the delegated signal; throws `ReadonlySignalError` if the current backing signal is read-only.
+
 ### Effect
 
 A side-effect sink that runs whenever the signals it reads change. Effects are terminal — they consume values but produce none. The returned function disposes the effect:
@@ -418,6 +446,10 @@ Does the data come from *outside* the reactive system?
         └─ Is it derived / read-only transformation of a `List` or `Collection`?
               └─ Yes → `.deriveCollection()`
                  (memoized + supports async mapping + chaining)
+
+Do you need a *stable property position* that can swap its backing signal?
+└─ Yes → `createSlot(existingSignal)`
+   (integration layers, custom elements, property descriptors)
 ```
 
 ## Advanced Usage

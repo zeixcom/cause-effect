@@ -178,7 +178,7 @@ Creates an ownership scope without an effect. The scope becomes `activeOwner` du
 
 ### State (`src/nodes/state.ts`)
 
-**Graph node**: `StateNode<T>` (source only)
+**Graph node**: `MemoNode<T>` (source + sink, single delegated dependency)
 
 A mutable value container. The simplest signal type — `get()` links and returns the value, `set()` validates, calls `setState()`, which propagates changes to dependents.
 
@@ -230,6 +230,18 @@ During dependency tracking, only the synchronous preamble of `fn` is tracked (be
 A side-effecting computation that runs immediately and re-runs when dependencies change. Effects are terminal — they have no value and no sinks. They are pushed onto the `queuedEffects` array during propagation and executed during `flush()`.
 
 Effects double as owners: they have a `cleanup` field and become `activeOwner` during execution. Child effects and scopes created during execution are automatically disposed when the parent effect re-runs or is disposed.
+
+### Slot (`src/nodes/slot.ts`)
+
+**Graph node**: `MemoNode<T>` (source + sink)
+
+A stable reactive source that delegates reads and writes to a swappable backing signal. Designed for integration layers (e.g. custom element systems) where a property position must switch its backing signal — from a local `State` to a parent-controlled `Memo`, for example — without breaking existing subscribers.
+
+The slot object doubles as a property descriptor: its `get`, `set`, `configurable`, and `enumerable` fields can be passed directly to `Object.defineProperty()`. Control methods (`replace()`, `current()`) live on the same object but are ignored by the property definition; integration code should retain the slot reference for later `replace()` calls.
+
+**Graph behavior**: Sinks link to the slot (stable across replacements). The slot links upstream to exactly one delegated signal at a time. On `replace(nextSignal)`, the slot updates its internal reference, flags sinks dirty via `propagate()`, and flushes. Re-running sinks call `slot.get()`, which triggers `refresh()` — dependency tracking (`link` + `trimSources`) re-subscribes to the new backing signal and drops stale edges to the old one. Setter calls forward to the delegated signal when writable; `ReadonlySignalError` is thrown otherwise.
+
+Options mirror State: optional `guard` and `equals`. Type-level replacement follows `replace<U extends T>(next)` — narrowing is allowed, widening is not.
 
 ### Store (`src/nodes/store.ts`)
 
