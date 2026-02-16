@@ -91,6 +91,18 @@ class InvalidCallbackError extends TypeError {
 	}
 }
 
+class ReadonlySignalError extends Error {
+	/**
+	 * Constructs a new ReadonlySignalError.
+	 *
+	 * @param where - The location where the error occurred.
+	 */
+	constructor(where: string) {
+		super(`[${where}] Signal is read-only`)
+		this.name = 'ReadonlySignalError'
+	}
+}
+
 /**
  * Error thrown when an API requiring an owner is called without one.
  */
@@ -159,6 +171,7 @@ export {
 	InvalidSignalValueError,
 	UnsetSignalValueError,
 	InvalidCallbackError,
+	ReadonlySignalError,
 	RequiredOwnerError,
 	DuplicateKeyError,
 	validateSignalValue,

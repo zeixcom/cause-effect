@@ -20,6 +20,7 @@ Cause & Effect is a reactive state management library for JavaScript/TypeScript 
 - **Store** (`createStore`): Proxy-based reactive objects with per-property State/Store signals
 - **List** (`createList`): Reactive arrays with stable keys and per-item State signals
 - **Collection** (`createCollection`): Reactive collections — either externally-driven with watched lifecycle, or derived from List/Collection with item-level memoization
+- **Slot** (`createSlot`): Stable delegation signal with swappable backing signal, designed for integration layers (property descriptors, custom elements)
 - **Effect** (`createEffect`): Side effects that react to signal changes
 
 ## Key Files Structure
@@ -34,6 +35,7 @@ Cause & Effect is a reactive state management library for JavaScript/TypeScript 
 - `src/nodes/store.ts` - createStore, isStore, Store type, diff, isEqual
 - `src/nodes/list.ts` - createList, isList, List type
 - `src/nodes/collection.ts` - createCollection, isCollection, Collection type, deriveCollection (internal)
+- `src/nodes/slot.ts` - createSlot, isSlot, Slot type
 - `src/util.ts` - Utility functions and type checks
 - `index.ts` - Entry point / main export file
 
@@ -47,8 +49,8 @@ Cause & Effect is a reactive state management library for JavaScript/TypeScript 
 - JSDoc comments for all public APIs
 
 ### Naming Conventions
-- Factory functions: `create*` (e.g., `createState`, `createMemo`, `createEffect`, `createStore`, `createList`, `createCollection`, `createSensor`)
-- Type predicates: `is*` (e.g., `isState`, `isMemo`, `isStore`, `isList`, `isCollection`, `isSensor`)
+- Factory functions: `create*` (e.g., `createState`, `createMemo`, `createEffect`, `createStore`, `createList`, `createCollection`, `createSensor`, `createSlot`)
+- Type predicates: `is*` (e.g., `isState`, `isMemo`, `isStore`, `isList`, `isCollection`, `isSensor`, `isSlot`)
 - Type constants: `TYPE_*` for internal type tags
 - Callback types: `*Callback` suffix (MemoCallback, TaskCallback, EffectCallback, SensorCallback, CollectionCallback, DeriveCollectionCallback)
 - Private variables: use descriptive names, no underscore prefix
@@ -148,6 +150,12 @@ const feed = createCollection<{ id: string; text: string }>((applyChanges) => {
   ws.onmessage = (e) => applyChanges(JSON.parse(e.data))
   return () => ws.close()
 }, { keyConfig: item => item.id })
+
+// Slot for stable property delegation
+const local = createState('default')
+const slot = createSlot(local)
+Object.defineProperty(element, 'label', slot)
+slot.replace(createMemo(() => parentState.get())) // swap backing signal
 ```
 
 ### Reactivity

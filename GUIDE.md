@@ -296,3 +296,25 @@ const windowSize = createSensor((set) => {
 ```
 
 The start callback runs lazily — only when an effect first reads the sensor. When no effects are watching, the cleanup runs automatically. When an effect reads it again, the start callback runs again. No manual setup/teardown.
+
+### Slot: stable property delegation
+
+If you are building a component system, you often need to expose signals as object properties via `Object.defineProperty()`. The challenge arises when a property must switch its backing signal — for example, from a local writable `State` to a parent-controlled read-only `Memo` — without breaking existing subscribers.
+
+`createSlot()` solves this by providing a stable reactive source that delegates to a swappable backing signal. The slot object itself is a valid property descriptor:
+
+```ts
+import { createState, createMemo, createSlot, createEffect } from '@zeix/cause-effect'
+
+const local = createState('default')
+const slot = createSlot(local)
+Object.defineProperty(element, 'label', slot)
+
+createEffect(() => console.log(element.label)) // logs: "default"
+
+// Parent provides a derived value — swap without breaking the effect
+const parentLabel = createMemo(() => `Parent: ${parentState.get()}`)
+slot.replace(parentLabel) // effect re-runs with new value
+```
+
+Setter calls forward to the current backing signal when it is writable. If the backing signal is read-only (e.g. a Memo), setting throws `ReadonlySignalError`. The `replace()` and `current()` methods are on the slot object but not on the installed property — keep the slot reference for later control.

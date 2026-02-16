@@ -100,10 +100,6 @@ function deriveCollection<T extends {}, U extends {}>(
 	callback: DeriveCollectionCallback<T, U>,
 ): Collection<T> {
 	validateCallback(TYPE_COLLECTION, callback)
-	if (!isCollectionSource(source))
-		throw new TypeError(
-			`[${TYPE_COLLECTION}] Invalid collection source: expected a List or Collection`,
-		)
 
 	const isAsync = isAsyncFunction(callback)
 	const signals = new Map<string, Memo<T>>()
