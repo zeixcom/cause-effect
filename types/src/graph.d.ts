@@ -119,6 +119,7 @@ declare const TYPE_COLLECTION = "Collection";
 declare const TYPE_STORE = "Store";
 declare const TYPE_SLOT = "Slot";
 declare const FLAG_CLEAN = 0;
+declare const FLAG_CHECK: number;
 declare const FLAG_DIRTY: number;
 declare const FLAG_RELINK: number;
 declare let activeSink: SinkNode | null;
@@ -217,4 +218,4 @@ declare function untrack<T>(fn: () => T): T;
  * ```
  */
 declare function createScope(fn: () => MaybeCleanup): Cleanup;
-export { type Cleanup, type ComputedOptions, type EffectCallback, type EffectNode, type MaybeCleanup, type MemoCallback, type MemoNode, type Scope, type Signal, type SignalOptions, type SinkNode, type StateNode, type TaskCallback, type TaskNode, activeOwner, activeSink, batch, batchDepth, createScope, DEFAULT_EQUALITY, SKIP_EQUALITY, FLAG_CLEAN, FLAG_DIRTY, FLAG_RELINK, flush, link, propagate, refresh, registerCleanup, runCleanup, runEffect, setState, trimSources, TYPE_COLLECTION, TYPE_LIST, TYPE_MEMO, TYPE_SENSOR, TYPE_STATE, TYPE_SLOT, TYPE_STORE, TYPE_TASK, unlink, untrack, };
+export { type Cleanup, type ComputedOptions, type EffectCallback, type EffectNode, type MaybeCleanup, type MemoCallback, type MemoNode, type Scope, type Signal, type SignalOptions, type SinkNode, type StateNode, type TaskCallback, type TaskNode, activeOwner, activeSink, batch, batchDepth, createScope, DEFAULT_EQUALITY, SKIP_EQUALITY, FLAG_CHECK, FLAG_CLEAN, FLAG_DIRTY, FLAG_RELINK, flush, link, propagate, refresh, registerCleanup, runCleanup, runEffect, setState, trimSources, TYPE_COLLECTION, TYPE_LIST, TYPE_MEMO, TYPE_SENSOR, TYPE_STATE, TYPE_SLOT, TYPE_STORE, TYPE_TASK, unlink, untrack, };

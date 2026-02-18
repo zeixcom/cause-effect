@@ -1,5 +1,6 @@
 import { describe, expect, mock, test } from 'bun:test'
 import {
+	batch,
 	createEffect,
 	createMemo,
 	createScope,
@@ -137,6 +138,209 @@ describe('createEffect', () => {
 			dispose()
 			source.set(2)
 			expect(innerRuns).toBe(2) // no longer reacting
+		})
+	})
+
+	describe('Watched memo equality', () => {
+		test('should skip effect re-run when watched memo recomputes to same value', () => {
+			let invalidate!: () => void
+			let effectCount = 0
+
+			// Memo whose computed value does not change on invalidation
+			const memo = createMemo(() => 42, {
+				value: 42,
+				watched: inv => {
+					invalidate = inv
+					return () => {}
+				},
+			})
+
+			const dispose = createScope(() => {
+				createEffect(() => {
+					void memo.get()
+					effectCount++
+				})
+			})
+
+			expect(effectCount).toBe(1)
+
+			// Invalidate — memo recomputes but returns same value (42)
+			invalidate()
+
+			// Because equals(42, 42) is true, the effect should NOT re-run
+			expect(effectCount).toBe(1)
+
+			dispose()
+		})
+
+		test('should re-run effect when watched memo recomputes to different value', () => {
+			let invalidate!: () => void
+			let effectCount = 0
+			let externalValue = 1
+
+			const memo = createMemo(() => externalValue, {
+				value: 0,
+				watched: inv => {
+					invalidate = inv
+					return () => {}
+				},
+			})
+
+			let observed = 0
+			const dispose = createScope(() => {
+				createEffect(() => {
+					observed = memo.get()
+					effectCount++
+				})
+			})
+
+			expect(effectCount).toBe(1)
+			expect(observed).toBe(1)
+
+			// Change external value and invalidate — memo returns a new value
+			externalValue = 99
+			invalidate()
+
+			expect(effectCount).toBe(2)
+			expect(observed).toBe(99)
+
+			dispose()
+		})
+
+		test('should respect custom equals to skip effect re-run', () => {
+			let invalidate!: () => void
+			let effectCount = 0
+			let externalValue = 3
+
+			// Custom equals: treat values as equal when they round to the same integer
+			const memo = createMemo(() => externalValue, {
+				value: 0,
+				equals: (a, b) => Math.floor(a) === Math.floor(b),
+				watched: inv => {
+					invalidate = inv
+					return () => {}
+				},
+			})
+
+			const dispose = createScope(() => {
+				createEffect(() => {
+					void memo.get()
+					effectCount++
+				})
+			})
+
+			expect(effectCount).toBe(1)
+
+			// External value changes slightly but rounds to same integer
+			externalValue = 3.7
+			invalidate()
+			expect(effectCount).toBe(1) // equals says same → effect skipped
+
+			// External value changes to a different integer
+			externalValue = 4.1
+			invalidate()
+			expect(effectCount).toBe(2) // equals says different → effect runs
+
+			dispose()
+		})
+
+		test('should skip effect re-run through memo chain when watched memo value unchanged', () => {
+			let invalidate!: () => void
+			let effectCount = 0
+
+			const watchedMemo = createMemo(() => 42, {
+				value: 42,
+				watched: inv => {
+					invalidate = inv
+					return () => {}
+				},
+			})
+
+			// Downstream memo that doubles the watched memo value
+			const doubled = createMemo(() => watchedMemo.get() * 2)
+
+			const dispose = createScope(() => {
+				createEffect(() => {
+					void doubled.get()
+					effectCount++
+				})
+			})
+
+			expect(effectCount).toBe(1)
+
+			// Invalidate — watchedMemo recomputes to same value, so doubled
+			// should also remain unchanged, and the effect should not re-run
+			invalidate()
+			expect(effectCount).toBe(1)
+
+			dispose()
+		})
+
+		test('should skip effect when invalidate is called inside batch and value unchanged', () => {
+			let invalidate!: () => void
+			let effectCount = 0
+
+			const memo = createMemo(() => 42, {
+				value: 42,
+				watched: inv => {
+					invalidate = inv
+					return () => {}
+				},
+			})
+
+			const dispose = createScope(() => {
+				createEffect(() => {
+					void memo.get()
+					effectCount++
+				})
+			})
+
+			expect(effectCount).toBe(1)
+
+			batch(() => {
+				invalidate()
+			})
+
+			// Value didn't change so effect should still be at 1
+			expect(effectCount).toBe(1)
+
+			dispose()
+		})
+
+		test('should still run effect for dirty state even when watched memo unchanged', () => {
+			let invalidate!: () => void
+			let effectCount = 0
+			const state = createState(1)
+
+			const memo = createMemo(() => 42, {
+				value: 42,
+				watched: inv => {
+					invalidate = inv
+					return () => {}
+				},
+			})
+
+			let observedState = 0
+			const dispose = createScope(() => {
+				createEffect(() => {
+					observedState = state.get()
+					void memo.get()
+					effectCount++
+				})
+			})
+
+			expect(effectCount).toBe(1)
+
+			// Change the state AND invalidate — effect must run because state changed
+			batch(() => {
+				state.set(2)
+				invalidate()
+			})
+
+			expect(effectCount).toBe(2)
+			expect(observedState).toBe(2)
+
+			dispose()
 		})
 	})
 

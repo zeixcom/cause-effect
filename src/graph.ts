@@ -292,11 +292,12 @@ function propagate(node: SinkNode, newFlag = FLAG_DIRTY): void {
 		for (let e = node.sinks; e; e = e.nextSink)
 			propagate(e.sink, FLAG_CHECK)
 	} else {
-		if (flags & FLAG_DIRTY) return
+		if ((flags & (FLAG_DIRTY | FLAG_CHECK)) >= newFlag) return
 
 		// Enqueue effect for later execution
-		node.flags = FLAG_DIRTY
-		queuedEffects.push(node as EffectNode)
+		const wasQueued = flags & (FLAG_DIRTY | FLAG_CHECK)
+		node.flags = newFlag
+		if (!wasQueued) queuedEffects.push(node as EffectNode)
 	}
 }
 
@@ -471,7 +472,7 @@ function flush(): void {
 	try {
 		for (let i = 0; i < queuedEffects.length; i++) {
 			const effect = queuedEffects[i]
-			if (effect.flags & FLAG_DIRTY) refresh(effect)
+			if (effect.flags & (FLAG_DIRTY | FLAG_CHECK)) refresh(effect)
 		}
 		queuedEffects.length = 0
 	} finally {
@@ -601,6 +602,7 @@ export {
 	createScope,
 	DEFAULT_EQUALITY,
 	SKIP_EQUALITY,
+	FLAG_CHECK,
 	FLAG_CLEAN,
 	FLAG_DIRTY,
 	FLAG_RELINK,

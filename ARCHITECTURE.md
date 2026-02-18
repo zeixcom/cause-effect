@@ -106,14 +106,14 @@ The first four flags (`CLEAN`/`CHECK`/`DIRTY`/`RUNNING`) are used by the core gr
 
 `FLAG_RELINK` is used exclusively by composite signal types (Store, List, Collection, deriveCollection) that manage their own child signals. When a structural mutation adds or removes child signals, the node is flagged `FLAG_DIRTY | FLAG_RELINK`. On the next `get()`, the composite signal's fast path reads the flag: if `FLAG_RELINK` is set, it forces a tracked `refresh()` after rebuilding the value so that `recomputeMemo()` can call `link()` for new child signals and `trimSources()` for removed ones. This avoids the previous approach of nulling `node.sources`/`node.sourcesTail`, which orphaned edges in upstream sink lists. `FLAG_RELINK` is always cleared by `recomputeMemo()`, which assigns `node.flags = FLAG_RUNNING` (clearing all bits) at the start of recomputation.
 
-### The `propagate(node)` Function
+### The `propagate(node, newFlag?)` Function
 
-When a source value changes, `propagate()` walks its sink list:
+When a source value changes, `propagate()` walks its sink list. The `newFlag` parameter defaults to `FLAG_DIRTY` but callers may pass `FLAG_CHECK` for speculative invalidation (e.g., watched callbacks where the source value may not have actually changed).
 
-- **Memo/Task sinks** (have `sinks` field): Flagged `DIRTY`. Their own sinks are recursively flagged `CHECK`. If the node has an in-flight `AbortController`, it is aborted immediately.
-- **Effect sinks** (no `sinks` field): Flagged `DIRTY` and pushed onto the `queuedEffects` array for later execution.
+- **Memo/Task sinks** (have `sinks` field): Flagged with `newFlag` (typically `DIRTY`). Their own sinks are recursively flagged `CHECK`. If the node has an in-flight `AbortController`, it is aborted immediately. Short-circuits if the node already carries an equal or higher flag.
+- **Effect sinks** (no `sinks` field): Flagged with `newFlag` and pushed onto the `queuedEffects` array. An effect is only enqueued once — subsequent propagations escalate the flag (e.g., `CHECK` → `DIRTY`) without re-enqueuing. The flag is assigned (not OR'd) to clear `FLAG_RUNNING`, preserving the existing pattern where a state update inside a running effect triggers a re-run.
 
-The two-level flagging (`DIRTY` for direct dependents, `CHECK` for transitive) avoids unnecessary recomputation. A `CHECK` node only recomputes if, upon inspection during `refresh()`, one of its sources turns out to have actually changed.
+The two-level flagging (`DIRTY` for direct dependents, `CHECK` for transitive) avoids unnecessary recomputation. A `CHECK` node only recomputes if, upon inspection during `refresh()`, one of its sources turns out to have actually changed. This applies equally to memo, task, and effect nodes.
 
 ### The `refresh(node)` Function
 
@@ -141,7 +141,7 @@ If `FLAG_RUNNING` is encountered, a `CircularDependencyError` is thrown.
 
 ### The `flush()` Function
 
-`flush()` iterates over `queuedEffects`, calling `refresh()` on each effect that is still `DIRTY`. A `flushing` guard prevents re-entrant flushes. Effects that were enqueued during the flush (due to async resolution or nested state changes) are processed in the same pass, since `flush()` reads the array length dynamically.
+`flush()` iterates over `queuedEffects`, calling `refresh()` on each effect that is still `DIRTY` or `CHECK`. A `flushing` guard prevents re-entrant flushes. Effects that were enqueued during the flush (due to async resolution or nested state changes) are processed in the same pass, since `flush()` reads the array length dynamically. Effects with only `FLAG_CHECK` enter `refresh()`, which walks their sources — if no source value actually changed, the effect is cleaned without running.
 
 ### Effect Lifecycle
 
@@ -209,7 +209,7 @@ The `error` field preserves thrown errors: if `fn` throws, the error is stored a
 
 **Reducer pattern**: The `prev` parameter enables state accumulation across recomputations without writable state.
 
-**Watched lifecycle**: An optional `watched` callback in options provides lazy external invalidation. The callback receives an `invalidate` function and is invoked on first sink attachment. Calling `invalidate()` marks the node `FLAG_DIRTY`, propagates to sinks, and flushes — triggering re-evaluation of the memo's `fn` without changing any tracked dependency. The returned cleanup is stored as `node.stop` and called when the last sink detaches. This enables patterns like DOM observation (MutationObserver) where the memo re-derives its value in response to external events.
+**Watched lifecycle**: An optional `watched` callback in options provides lazy external invalidation. The callback receives an `invalidate` function and is invoked on first sink attachment. Calling `invalidate()` calls `propagate(node)` on the memo itself, which marks it `FLAG_DIRTY` and propagates `FLAG_CHECK` to downstream sinks, then flushes. During flush, downstream effects verify the memo via `refresh()` — if the memo's `equals` function determines the recomputed value is unchanged, the effect is cleaned without running. The returned cleanup is stored as `node.stop` and called when the last sink detaches. This enables patterns like DOM observation (MutationObserver) where a memo re-derives its value in response to external events, with the `equals` check respected at every level of the graph.
 
 ### Task (`src/nodes/task.ts`)
 
@@ -221,7 +221,7 @@ During dependency tracking, only the synchronous preamble of `fn` is tracked (be
 
 `isPending()` returns `true` while a computation is in flight. `abort()` cancels the current computation manually. Errors are preserved like Memo, but old values are retained on errors (the last successful result remains accessible).
 
-**Watched lifecycle**: Same pattern as Memo — an optional `watched` callback receives `invalidate` and is invoked on first sink attachment. Calling `invalidate()` marks the node dirty and triggers re-execution, which aborts any in-flight computation via the existing `AbortController` mechanism before starting a new one.
+**Watched lifecycle**: Same pattern as Memo — an optional `watched` callback receives `invalidate` and is invoked on first sink attachment. Calling `invalidate()` calls `propagate(node)` on the task itself, which marks it dirty, aborts any in-flight computation eagerly via the `AbortController`, and propagates `FLAG_CHECK` to downstream sinks. Effects only re-run if the task's resolved value actually changes.
 
 ### Effect (`src/nodes/effect.ts`)
 

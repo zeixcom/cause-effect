@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.18.4
+
+### Fixed
+
+- **Watched `invalidate()` now respects `equals` at every graph level**: Previously, calling `invalidate()` from a Memo or Task `watched` callback propagated `FLAG_DIRTY` directly to effect sinks, causing unconditional re-runs even when the recomputed value was unchanged. Now `invalidate()` delegates to `propagate(node)`, which marks the node itself `FLAG_DIRTY` and propagates `FLAG_CHECK` to downstream sinks. During flush, effects verify their sources via `refresh()` — if the memo's `equals` function determines the value is unchanged, the effect is cleaned without running. This eliminates unnecessary effect executions for watched memos with custom equality or stable return values.
+
+### Changed
+
+- **`propagate()` supports `FLAG_CHECK` for effect nodes**: The effect branch of `propagate()` now respects the `newFlag` parameter instead of unconditionally setting `FLAG_DIRTY`. Effects are enqueued only on first notification; subsequent propagations escalate the flag (e.g., `CHECK` → `DIRTY`) without re-enqueuing.
+- **`flush()` processes `FLAG_CHECK` effects**: The flush loop now calls `refresh()` on effects with either `FLAG_DIRTY` or `FLAG_CHECK`, enabling the check-sources-first path for effects.
+- **Task `invalidate()` aborts eagerly**: Task watched callbacks now abort in-flight computations immediately during `propagate()` rather than deferring to `recomputeTask()`, consistent with the normal dependency-change path.
+
 ## 0.18.3
 
 ### Added
