@@ -110,9 +110,7 @@ function createMemo<T extends {}>(
 				if (activeSink) {
 					if (!node.sinks)
 						node.stop = watched(() => {
-							node.flags |= FLAG_DIRTY
-							for (let e = node.sinks; e; e = e.nextSink)
-								propagate(e.sink)
+							propagate(node as unknown as SinkNode)
 							if (batchDepth === 0) flush()
 						})
 					link(node, activeSink)

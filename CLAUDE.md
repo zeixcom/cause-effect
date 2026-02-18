@@ -126,7 +126,7 @@ The generic constraint `T extends {}` is crucial - it excludes `null` and `undef
 
 Computed signals implement smart memoization:
 - **Dependency Tracking**: Automatically tracks which signals are accessed during computation via `link()`
-- **Stale Detection**: Flag-based dirty checking (CLEAN, CHECK, DIRTY) — only recalculates when dependencies actually change
+- **Stale Detection**: Flag-based dirty checking (CLEAN, CHECK, DIRTY) — only recalculates when dependencies actually change. The `equals` check is respected at every graph level: when a memo recomputes to the same value, downstream memos *and* effects are cleaned without running.
 - **Async Support**: `createTask` handles Promise-based computations with automatic AbortController cancellation
 - **Error Handling**: Preserves error states and prevents cascade failures
 - **Reducer Capabilities**: Access to previous value enables state accumulation and transitions
@@ -274,7 +274,7 @@ const processed = todoList
 **Memo (`createMemo`)**:
 - Synchronous derived computations with memoization
 - Reducer pattern with previous value access
-- Optional `watched(invalidate)` callback for lazy external invalidation (e.g., MutationObserver)
+- Optional `watched(invalidate)` callback for lazy external invalidation (e.g., MutationObserver). Calling `invalidate()` marks the memo dirty and propagates `FLAG_CHECK` to sinks — effects only re-run if the memo's `equals` check determines the value actually changed.
 
 ```typescript
 const doubled = createMemo(() => count.get() * 2)
@@ -295,7 +295,7 @@ const runningTotal = createMemo(prev => prev + currentValue.get(), { value: 0 })
 
 **Task (`createTask`)**:
 - Async computations with automatic cancellation
-- Optional `watched(invalidate)` callback for lazy external invalidation
+- Optional `watched(invalidate)` callback for lazy external invalidation. Calling `invalidate()` eagerly aborts any in-flight computation and propagates `FLAG_CHECK` to sinks.
 
 ```typescript
 const userData = createTask(async (prev, abort) => {
