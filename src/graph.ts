@@ -580,6 +580,25 @@ function createScope(fn: () => MaybeCleanup): Cleanup {
 	}
 }
 
+/**
+ * Runs a callback without any active owner.
+ * Any scopes or effects created inside the callback will not be registered as
+ * children of the current active owner (e.g. a re-runnable effect). Use this
+ * when a component or resource manages its own lifecycle independently of the
+ * reactive graph.
+ *
+ * @since 0.18.5
+ */
+function unown<T>(fn: () => T): T {
+	const prev = activeOwner
+	activeOwner = null
+	try {
+		return fn()
+	} finally {
+		activeOwner = prev
+	}
+}
+
 export {
 	type Cleanup,
 	type ComputedOptions,
@@ -624,5 +643,6 @@ export {
 	TYPE_STORE,
 	TYPE_TASK,
 	unlink,
+	unown,
 	untrack,
 }
