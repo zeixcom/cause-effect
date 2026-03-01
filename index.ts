@@ -1,6 +1,6 @@
 /**
  * @name Cause & Effect
- * @version 0.18.4
+ * @version 0.18.5
  * @author Esther Brunner
  */
 
@@ -26,6 +26,7 @@ export {
 	type SignalOptions,
 	SKIP_EQUALITY,
 	type TaskCallback,
+	unown,
 	untrack,
 } from './src/graph'
 export {

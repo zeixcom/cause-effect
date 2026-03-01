@@ -218,4 +218,14 @@ declare function untrack<T>(fn: () => T): T;
  * ```
  */
 declare function createScope(fn: () => MaybeCleanup): Cleanup;
-export { type Cleanup, type ComputedOptions, type EffectCallback, type EffectNode, type MaybeCleanup, type MemoCallback, type MemoNode, type Scope, type Signal, type SignalOptions, type SinkNode, type StateNode, type TaskCallback, type TaskNode, activeOwner, activeSink, batch, batchDepth, createScope, DEFAULT_EQUALITY, SKIP_EQUALITY, FLAG_CHECK, FLAG_CLEAN, FLAG_DIRTY, FLAG_RELINK, flush, link, propagate, refresh, registerCleanup, runCleanup, runEffect, setState, trimSources, TYPE_COLLECTION, TYPE_LIST, TYPE_MEMO, TYPE_SENSOR, TYPE_STATE, TYPE_SLOT, TYPE_STORE, TYPE_TASK, unlink, untrack, };
+/**
+ * Runs a callback without any active owner.
+ * Any scopes or effects created inside the callback will not be registered as
+ * children of the current active owner (e.g. a re-runnable effect). Use this
+ * when a component or resource manages its own lifecycle independently of the
+ * reactive graph.
+ *
+ * @since 0.18.5
+ */
+declare function unown<T>(fn: () => T): T;
+export { type Cleanup, type ComputedOptions, type EffectCallback, type EffectNode, type MaybeCleanup, type MemoCallback, type MemoNode, type Scope, type Signal, type SignalOptions, type SinkNode, type StateNode, type TaskCallback, type TaskNode, activeOwner, activeSink, batch, batchDepth, createScope, DEFAULT_EQUALITY, SKIP_EQUALITY, FLAG_CHECK, FLAG_CLEAN, FLAG_DIRTY, FLAG_RELINK, flush, link, propagate, refresh, registerCleanup, runCleanup, runEffect, setState, trimSources, TYPE_COLLECTION, TYPE_LIST, TYPE_MEMO, TYPE_SENSOR, TYPE_STATE, TYPE_SLOT, TYPE_STORE, TYPE_TASK, unlink, unown, untrack, };

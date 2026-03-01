@@ -399,6 +399,15 @@ function createScope(fn) {
     activeOwner = prevOwner;
   }
 }
+function unown(fn) {
+  const prev = activeOwner;
+  activeOwner = null;
+  try {
+    return fn();
+  } finally {
+    activeOwner = prev;
+  }
+}
 // src/nodes/state.ts
 function createState(value, options) {
   validateSignalValue(TYPE_STATE, value, options?.guard);
@@ -1604,6 +1613,7 @@ function isSlot(value) {
 export {
   valueString,
   untrack,
+  unown,
   match,
   isTask,
   isStore,

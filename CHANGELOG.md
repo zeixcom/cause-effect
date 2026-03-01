@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.18.5
+
+### Added
+
+- **`unown(fn)` — escape hatch for DOM-owned component lifecycles**: Runs a callback with `activeOwner` set to `null`, preventing any `createScope` or `createEffect` calls inside from being registered as children of the current active owner. Use this in `connectedCallback` (or any external lifecycle hook) when a component manages its own cleanup independently via `disconnectedCallback` rather than through the reactive ownership tree.
+
+### Fixed
+
+- **Scope disposal bug when `connectedCallback` fires inside a re-runnable effect**: Previously, calling `createScope` inside a reactive effect (e.g. a list sync effect) registered the scope's `dispose` on that effect's cleanup list. When the effect re-ran — for example, because a `MutationObserver` fired — it called `runCleanup`, disposing all child scopes including those belonging to already-connected custom elements. This silently removed event listeners and reactive subscriptions from components that were still live in the DOM. Wrapping the `connectedCallback` body in `unown(() => createScope(...))` detaches the scope from the effect's ownership, so effect re-runs no longer dispose it.
+
 ## 0.18.4
 
 ### Fixed
