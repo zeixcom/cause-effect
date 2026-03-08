@@ -251,7 +251,8 @@ function deriveCollection<T extends {}, U extends {}>(
 		},
 
 		at(index: number) {
-			return signals.get(keys[index])
+			const key = keys[index]
+			return key !== undefined ? signals.get(key) : undefined
 		},
 
 		byKey(key: string) {
@@ -452,7 +453,8 @@ function createCollection<T extends {}>(
 		},
 
 		at(index: number) {
-			return signals.get(keys[index])
+			const key = keys[index]
+			return key !== undefined ? signals.get(key) : undefined
 		},
 
 		byKey(key: string) {

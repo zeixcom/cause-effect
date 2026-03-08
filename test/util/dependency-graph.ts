@@ -53,7 +53,8 @@ export function runGraph(
 ): number {
 	const rand = new Random('seed')
 	const { sources, layers } = graph
-	const leaves = layers[layers.length - 1]
+	// biome-ignore lint/style/noNonNullAssertion: test
+	const leaves = layers[layers.length - 1]!
 	const skipCount = Math.round(leaves.length * (1 - readFraction))
 	const readLeaves = removeElems(leaves, skipCount, rand)
 	const frameworkName = framework.name.toLowerCase()
@@ -65,7 +66,8 @@ export function runGraph(
 		for (let i = 0; i < iterations; i++) {
 			framework.withBatch(() => {
 				const sourceDex = i % sources.length
-				sources[sourceDex].write(i + sourceDex)
+				// biome-ignore lint/style/noNonNullAssertion: test
+				sources[sourceDex]!.write(i + sourceDex)
 			})
 
 			for (const leaf of readLeaves) {
@@ -87,7 +89,8 @@ export function runGraph(
         } */
 
 				const sourceDex = i % sources.length
-				sources[sourceDex].write(i + sourceDex)
+				// biome-ignore lint/style/noNonNullAssertion: test
+				sources[sourceDex]!.write(i + sourceDex)
 
 				for (const leaf of readLeaves) {
 					leaf.read()
@@ -153,7 +156,8 @@ function makeRow(
 	return sources.map((_, myDex) => {
 		const mySources: Computed<number>[] = []
 		for (let sourceDex = 0; sourceDex < nSources; sourceDex++) {
-			mySources.push(sources[(myDex + sourceDex) % sources.length])
+			// biome-ignore lint/style/noNonNullAssertion: test
+			mySources.push(sources[(myDex + sourceDex) % sources.length]!)
 		}
 
 		const staticNode = random.float() < staticFraction
@@ -170,7 +174,8 @@ function makeRow(
 			})
 		} else {
 			// dynamic node, drops one of the sources depending on the value of the first element
-			const first = mySources[0]
+			// biome-ignore lint/style/noNonNullAssertion: test
+			const first = mySources[0]!
 			const tail = mySources.slice(1)
 			const node = framework.computed(() => {
 				counter.count++
@@ -180,7 +185,8 @@ function makeRow(
 
 				for (let i = 0; i < tail.length; i++) {
 					if (shouldDrop && i === dropDex) continue
-					sum += tail[i].read()
+					// biome-ignore lint/style/noNonNullAssertion: test
+					sum += tail[i]!.read()
 				}
 
 				return sum

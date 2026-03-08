@@ -498,9 +498,12 @@ describe('Collection', () => {
 
 			const signals = [...doubled]
 			expect(signals).toHaveLength(3)
-			expect(signals[0].get()).toBe(2)
-			expect(signals[1].get()).toBe(4)
-			expect(signals[2].get()).toBe(6)
+			// biome-ignore lint/style/noNonNullAssertion: test
+			expect(signals[0]!.get()).toBe(2)
+			// biome-ignore lint/style/noNonNullAssertion: test
+			expect(signals[1]!.get()).toBe(4)
+			// biome-ignore lint/style/noNonNullAssertion: test
+			expect(signals[2]!.get()).toBe(6)
 		})
 
 		test('should react to source additions', () => {

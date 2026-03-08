@@ -323,7 +323,8 @@ describe('List', () => {
 			const list = createList([10, 20, 30])
 			const allKeys = [...list.keys()]
 			expect(allKeys).toHaveLength(3)
-			expect(list.byKey(allKeys[0])?.get()).toBe(10)
+			// biome-ignore lint/style/noNonNullAssertion: test
+			expect(list.byKey(allKeys[0]!)?.get()).toBe(10)
 		})
 	})
 
@@ -353,9 +354,12 @@ describe('List', () => {
 			const list = createList([10, 20, 30])
 			const signals = [...list]
 			expect(signals).toHaveLength(3)
-			expect(signals[0].get()).toBe(10)
-			expect(signals[1].get()).toBe(20)
-			expect(signals[2].get()).toBe(30)
+			// biome-ignore lint/style/noNonNullAssertion: test
+			expect(signals[0]!.get()).toBe(10)
+			// biome-ignore lint/style/noNonNullAssertion: test
+			expect(signals[1]!.get()).toBe(20)
+			// biome-ignore lint/style/noNonNullAssertion: test
+			expect(signals[2]!.get()).toBe(30)
 		})
 	})
 

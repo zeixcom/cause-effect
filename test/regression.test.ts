@@ -66,7 +66,8 @@ describe('Bundle size', () => {
 			entrypoints: ['./index.ts'],
 			minify: true,
 		})
-		const bytes = await result.outputs[0].arrayBuffer()
+		// biome-ignore lint/style/noNonNullAssertion: test
+		const bytes = await result.outputs[0]!.arrayBuffer()
 		check('bundleMinified', bytes.byteLength, BUNDLE_MARGIN, 'B')
 	})
 
@@ -75,7 +76,8 @@ describe('Bundle size', () => {
 			entrypoints: ['./index.ts'],
 			minify: true,
 		})
-		const bytes = await result.outputs[0].arrayBuffer()
+		// biome-ignore lint/style/noNonNullAssertion: test
+		const bytes = await result.outputs[0]!.arrayBuffer()
 		const gzipped = gzipSync(new Uint8Array(bytes)).byteLength
 		check('bundleGzipped', gzipped, BUNDLE_MARGIN, 'B')
 	})

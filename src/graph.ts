@@ -6,12 +6,12 @@ type SourceFields<T extends {}> = {
 	value: T
 	sinks: Edge | null
 	sinksTail: Edge | null
-	stop?: Cleanup
+	stop?: Cleanup | undefined
 }
 
 type OptionsFields<T extends {}> = {
 	equals: (a: T, b: T) => boolean
-	guard?: Guard<T>
+	guard?: Guard<T> | undefined
 }
 
 type SinkFields = {
@@ -323,7 +323,8 @@ function runCleanup(owner: OwnerNode): void {
 	if (!owner.cleanup) return
 
 	if (Array.isArray(owner.cleanup))
-		for (let i = 0; i < owner.cleanup.length; i++) owner.cleanup[i]()
+		// biome-ignore lint/style/noNonNullAssertion: index is always within bounds of a populated Cleanup[]
+		for (let i = 0; i < owner.cleanup.length; i++) owner.cleanup[i]!()
 	else owner.cleanup()
 	owner.cleanup = null
 }
@@ -471,7 +472,8 @@ function flush(): void {
 	flushing = true
 	try {
 		for (let i = 0; i < queuedEffects.length; i++) {
-			const effect = queuedEffects[i]
+			// biome-ignore lint/style/noNonNullAssertion: index is always within bounds of a populated EffectNode[]
+			const effect = queuedEffects[i]!
 			if (effect.flags & (FLAG_DIRTY | FLAG_CHECK)) refresh(effect)
 		}
 		queuedEffects.length = 0

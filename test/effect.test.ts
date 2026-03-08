@@ -414,7 +414,8 @@ describe('match', () => {
 				},
 				err: errors => {
 					errCount++
-					expect(errors[0].message).toBe('Too high')
+					// biome-ignore lint/style/noNonNullAssertion: test
+					expect(errors[0]!.message).toBe('Too high')
 				},
 			}),
 		)
