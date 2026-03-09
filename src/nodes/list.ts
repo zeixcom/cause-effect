@@ -189,7 +189,8 @@ function diffArrays<T>(
 	const prevByKey = new Map<string, T>()
 	for (let i = 0; i < prev.length; i++) {
 		const key = prevKeys[i]
-		if (key && prev[i]) prevByKey.set(key, prev[i])
+		const item = prev[i]
+		if (key && item !== undefined) prevByKey.set(key, item)
 	}
 
 	// Track which old keys we've seen
@@ -422,7 +423,8 @@ function createList<T extends {}>(
 		},
 
 		at(index: number) {
-			return signals.get(keys[index])
+			const key = keys[index]
+			return key !== undefined ? signals.get(key) : undefined
 		},
 
 		keys() {
@@ -458,6 +460,7 @@ function createList<T extends {}>(
 		remove(keyOrIndex: string | number) {
 			const key =
 				typeof keyOrIndex === 'number' ? keys[keyOrIndex] : keyOrIndex
+			if (key === undefined) return
 			const ok = signals.delete(key)
 			if (ok) {
 				const index =

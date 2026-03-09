@@ -1,0 +1,4 @@
+interface:
+  display_name: "Cause & Effect Developer"
+  short_description: "Expert developer for the @zeix/cause-effect reactive signals library"
+  default_prompt: "Use $cause-effect-dev to implement, debug, or explain code using the @zeix/cause-effect library."

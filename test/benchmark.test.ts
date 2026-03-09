@@ -298,7 +298,8 @@ for (const framework of [v18]) {
 				Object.fromEntries(heads.map(h => h.read()).entries()),
 			)
 			const splited = heads
-				.map((_, index) => framework.computed(() => mux.read()[index]))
+				// biome-ignore lint/style/noNonNullAssertion: test
+				.map((_, index) => framework.computed(() => mux.read()[index]!))
 				.map(x => framework.computed(() => x.read() + 1))
 
 			for (const x of splited) {
@@ -310,15 +311,19 @@ for (const framework of [v18]) {
 			return () => {
 				for (let i = 0; i < 10; i++) {
 					framework.withBatch(() => {
-						heads[i].write(i)
+						// biome-ignore lint/style/noNonNullAssertion: test
+						heads[i]!.write(i)
 					})
-					expect(splited[i].read()).toBe(i + 1)
+					// biome-ignore lint/style/noNonNullAssertion: test
+					expect(splited[i]!.read()).toBe(i + 1)
 				}
 				for (let i = 0; i < 10; i++) {
 					framework.withBatch(() => {
-						heads[i].write(i * 2)
+						// biome-ignore lint/style/noNonNullAssertion: test
+						heads[i]!.write(i * 2)
 					})
-					expect(splited[i].read()).toBe(i * 2 + 1)
+					// biome-ignore lint/style/noNonNullAssertion: test
+					expect(splited[i]!.read()).toBe(i * 2 + 1)
 				}
 			}
 		})
@@ -455,16 +460,19 @@ for (const framework of [v18]) {
 					})),
 				)
 				const E = framework.computed(() =>
-					hard(C.read() + A.read() + D.read()[0].x, 'E'),
+					// biome-ignore lint/style/noNonNullAssertion: test
+					hard(C.read() + A.read() + D.read()[0]!.x, 'E'),
 				)
 				const F = framework.computed(() =>
-					hard(D.read()[2].x || B.read(), 'F'),
+					// biome-ignore lint/style/noNonNullAssertion: test
+					hard(D.read()[2]!.x || B.read(), 'F'),
 				)
 				const G = framework.computed(
 					() =>
 						C.read() +
 						(C.read() || E.read() % 2) +
-						D.read()[4].x +
+						// biome-ignore lint/style/noNonNullAssertion: test
+						D.read()[4]!.x +
 						F.read(),
 				)
 				framework.effect(() => {
@@ -527,10 +535,16 @@ for (const framework of [v18]) {
 					prop3: framework.signal(3),
 					prop4: framework.signal(4),
 				}
-				let layer: Record<string, Computed<number>> = start
+				type CellxLayer = {
+					prop1: Computed<number>
+					prop2: Computed<number>
+					prop3: Computed<number>
+					prop4: Computed<number>
+				}
+				let layer: CellxLayer = start
 
 				for (let i = layers; i > 0; i--) {
-					const m = layer
+					const m: CellxLayer = layer
 					const s = {
 						prop1: framework.computed(() => m.prop2.read()),
 						prop2: framework.computed(
@@ -598,7 +612,7 @@ for (const framework of [v18]) {
 					end.prop4.read(),
 				]
 
-				return [before, after]
+				return [before, after] as [number[], number[]]
 			}
 
 			for (const layers in expected) {

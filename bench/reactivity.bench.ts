@@ -122,7 +122,8 @@ function setupMux(fw: ReactiveFramework) {
 		Object.fromEntries(heads.map(h => h.read()).entries()),
 	)
 	const splited = heads
-		.map((_, index) => fw.computed(() => mux.read()[index]))
+		// biome-ignore lint/style/noNonNullAssertion: fixed-size array
+		.map((_, index) => fw.computed(() => mux.read()[index]!))
 		.map(x => fw.computed(() => x.read() + 1))
 	for (const x of splited) {
 		fw.effect(() => {
@@ -133,7 +134,8 @@ function setupMux(fw: ReactiveFramework) {
 	return () => {
 		const idx = i % heads.length
 		fw.withBatch(() => {
-			heads[idx].write(++i)
+			// biome-ignore lint/style/noNonNullAssertion: fixed-size array
+			heads[idx]!.write(++i)
 		})
 	}
 }
@@ -211,10 +213,16 @@ function setupCellx(fw: ReactiveFramework, layers: number) {
 		prop3: fw.signal(3),
 		prop4: fw.signal(4),
 	}
-	let layer: Record<string, { read(): number }> = start
+	type CellxLayer = {
+		prop1: { read(): number }
+		prop2: { read(): number }
+		prop3: { read(): number }
+		prop4: { read(): number }
+	}
+	let layer: CellxLayer = start
 
 	for (let i = layers; i > 0; i--) {
-		const m = layer
+		const m: CellxLayer = layer
 		const s = {
 			prop1: fw.computed(() => m.prop2.read()),
 			prop2: fw.computed(() => m.prop1.read() - m.prop3.read()),
@@ -283,10 +291,13 @@ function setupMolWire(fw: ReactiveFramework) {
 	const D = fw.computed(() =>
 		numbers.map(i => ({ x: i + (A.read() % 2) - (B.read() % 2) })),
 	)
-	const E = fw.computed(() => hard(C.read() + A.read() + D.read()[0].x, 'E'))
-	const F = fw.computed(() => hard(D.read()[2].x || B.read(), 'F'))
+	// biome-ignore lint/style/noNonNullAssertion: fixed-size array
+	const E = fw.computed(() => hard(C.read() + A.read() + D.read()[0]!.x, 'E'))
+	// biome-ignore lint/style/noNonNullAssertion: fixed-size array
+	const F = fw.computed(() => hard(D.read()[2]!.x || B.read(), 'F'))
 	const G = fw.computed(
-		() => C.read() + (C.read() || E.read() % 2) + D.read()[4].x + F.read(),
+		// biome-ignore lint/style/noNonNullAssertion: fixed-size array
+		() => C.read() + (C.read() || E.read() % 2) + D.read()[4]!.x + F.read(),
 	)
 	fw.effect(() => {
 		hard(G.read(), 'H')

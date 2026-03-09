@@ -3,11 +3,11 @@ type SourceFields<T extends {}> = {
     value: T;
     sinks: Edge | null;
     sinksTail: Edge | null;
-    stop?: Cleanup;
+    stop?: Cleanup | undefined;
 };
 type OptionsFields<T extends {}> = {
     equals: (a: T, b: T) => boolean;
-    guard?: Guard<T>;
+    guard?: Guard<T> | undefined;
 };
 type SinkFields = {
     fn: unknown;

@@ -1,4 +1,4 @@
-# Cause & Effect v0.18 - Signal Graph Architecture
+# Cause & Effect - Signal Graph Architecture
 
 This document describes the reactive signal graph engine implemented in `src/graph.ts` and the node types built on top of it in `src/nodes/`.
 

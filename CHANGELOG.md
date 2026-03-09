@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.0
+
+### Changed
+
+- **Stricter TypeScript configuration**: Enabled `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `useUnknownInCatchVariables`, `noUncheckedSideEffectImports`, and `noFallthroughCasesInSwitch` in `tsconfig.json`. All internal array and indexed object accesses have been updated to satisfy these checks. Runtime behaviour is unchanged.
+- **`stop` on node types now typed as `Cleanup | undefined`**: The `stop` property in `SourceFields` (and by extension `StateNode`, `MemoNode`, `TaskNode`) is now declared `stop?: Cleanup | undefined` rather than `stop?: Cleanup`. Under `exactOptionalPropertyTypes`, this is required to allow clearing the property by assignment (`= undefined`) rather than deletion — preserving V8 hidden-class stability on hot-path nodes. Consumers reading `stop` from a node should already be handling `undefined` since the property is optional, but TypeScript will now surface this requirement explicitly.
+- **`guard` on options types now requires explicit presence**: Under `exactOptionalPropertyTypes`, passing `{ guard: undefined }` to `SignalOptions`, `ComputedOptions`, or `SensorOptions` is now a type error. Omit the property entirely to leave it unset.
+
 ## 0.18.5
 
 ### Added

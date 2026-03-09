@@ -322,10 +322,14 @@ describe('Store', () => {
 			const user = createStore({ name: 'John', age: 25 })
 			const entries = [...user]
 			expect(entries).toHaveLength(2)
-			expect(entries[0][0]).toBe('name')
-			expect(entries[0][1].get()).toBe('John')
-			expect(entries[1][0]).toBe('age')
-			expect(entries[1][1].get()).toBe(25)
+			// biome-ignore lint/style/noNonNullAssertion: test
+			expect(entries[0]![0]).toBe('name')
+			// biome-ignore lint/style/noNonNullAssertion: test
+			expect(entries[0]![1].get()).toBe('John')
+			// biome-ignore lint/style/noNonNullAssertion: test
+			expect(entries[1]![0]).toBe('age')
+			// biome-ignore lint/style/noNonNullAssertion: test
+			expect(entries[1]![1].get()).toBe(25)
 		})
 
 		test('should maintain property key ordering', () => {
