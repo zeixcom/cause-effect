@@ -399,6 +399,47 @@ createEffect(() => {
 })
 ```
 
+### Utilities
+
+Polymorphic factories and type predicates for generic and library-author code.
+
+**`createSignal(value)`** converts any value to its corresponding signal type:
+
+```ts
+import { createSignal } from '@zeix/cause-effect'
+
+createSignal(0)                          // → State<number>
+createSignal([1, 2, 3])                  // → List<number>
+createSignal({ x: 0 })                   // → Store<{ x: number }>
+createSignal(() => x.get() * 2)          // → Memo<number>
+createSignal(async (_, s) =>
+  fetch('/api', { signal: s }).then(r => r.json()))  // → Task<Response>
+```
+
+If the value is already a signal, it is returned unchanged.
+
+**`createMutableSignal(value)`** is the same, but restricted to mutable signals — returns `State`, `Store`, or `List`. Throws `InvalidSignalValueError` if passed a function or a read-only signal.
+
+**`createComputed(callback, options?)`** creates a `Memo` or `Task` by detecting whether the callback is async:
+
+```ts
+import { createComputed } from '@zeix/cause-effect'
+
+const doubled = createComputed(() => count.get() * 2)
+const data    = createComputed(async (_, signal) =>
+  fetch(url.get(), { signal }).then(r => r.json()))
+```
+
+**Type predicates**
+
+| Predicate | True for |
+|---|---|
+| `isSignal(value)` | Any signal (all 9 types) |
+| `isMutableSignal(value)` | `State`, `Store`, `List` — signals with `.set()` and `.update()` |
+| `isComputed(value)` | `Memo`, `Task` — derived signals |
+
+The `MutableSignal<T>` type is the corresponding TypeScript type for `isMutableSignal` — use it as a parameter type in generic code that accepts any writable signal.
+
 ## Choosing the Right Signal
 
 ```

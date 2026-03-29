@@ -178,7 +178,7 @@ Creates an ownership scope without an effect. The scope becomes `activeOwner` du
 
 ### State (`src/nodes/state.ts`)
 
-**Graph node**: `MemoNode<T>` (source + sink, single delegated dependency)
+**Graph node**: `StateNode<T>` (source only)
 
 A mutable value container. The simplest signal type — `get()` links and returns the value, `set()` validates, calls `setState()`, which propagates changes to dependents.
 

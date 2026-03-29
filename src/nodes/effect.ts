@@ -20,13 +20,22 @@ import {
 
 /* === Types === */
 
+/** A value that is either synchronous or a `Promise` — used for handler return types in `match()`. */
 type MaybePromise<T> = T | Promise<T>
 
+/**
+ * Handlers for all states of one or more signals passed to `match()`.
+ *
+ * @template T - Tuple of `Signal` types being matched
+ */
 type MatchHandlers<T extends readonly Signal<unknown & {}>[]> = {
+	/** Called when all signals have a value. Receives a tuple of resolved values. */
 	ok: (values: {
 		[K in keyof T]: T[K] extends Signal<infer V> ? V : never
 	}) => MaybePromise<MaybeCleanup>
+	/** Called when one or more signals hold an error. Defaults to `console.error`. */
 	err?: (errors: readonly Error[]) => MaybePromise<MaybeCleanup>
+	/** Called when one or more signals are unset (pending). */
 	nil?: () => MaybePromise<MaybeCleanup>
 }
 
@@ -88,10 +97,13 @@ function createEffect(fn: EffectCallback): Cleanup {
 }
 
 /**
- * Runs handlers based on the current values of signals.
+ * Reads one or more signals and dispatches to the appropriate handler based on their state.
  * Must be called within an active owner (effect or scope) so async cleanup can be registered.
  *
  * @since 0.15.0
+ * @param signals - Tuple of signals to read; all must have a value for `ok` to run.
+ * @param handlers - Object with an `ok` branch and optional `err` and `nil` branches.
+ * @returns An optional cleanup function if the active handler returns one.
  * @throws RequiredOwnerError If called without an active owner.
  */
 function match<T extends readonly Signal<unknown & {}>[]>(

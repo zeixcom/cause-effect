@@ -35,11 +35,9 @@ type Sensor<T extends {}> = {
 }
 
 /**
- * A callback function for sensors when the sensor starts being watched.
+ * Configuration options for `createSensor`.
  *
- * @template T - The type of value observed
- * @param set - A function to set the observed value
- * @returns A cleanup function when the sensor stops being watched
+ * @template T - The type of value produced by the sensor
  */
 type SensorOptions<T extends {}> = SignalOptions<T> & {
 	/**
@@ -49,6 +47,14 @@ type SensorOptions<T extends {}> = SignalOptions<T> & {
 	value?: T
 }
 
+/**
+ * Setup callback for `createSensor`. Invoked when the sensor gains its first downstream
+ * subscriber; receives a `set` function to push new values into the graph.
+ *
+ * @template T - The type of value produced by the sensor
+ * @param set - Updates the sensor value and propagates the change to subscribers
+ * @returns A cleanup function invoked when the sensor loses all subscribers
+ */
 type SensorCallback<T extends {}> = (set: (next: T) => void) => Cleanup
 
 /* === Exported Functions === */

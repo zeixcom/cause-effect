@@ -40,13 +40,33 @@ type DiffResult = {
 	remove: UnknownRecord
 }
 
+/**
+ * Key generation strategy for `createList` items.
+ * A string value is used as a prefix for auto-incremented keys (`prefix0`, `prefix1`, …).
+ * A function receives each item and returns a stable string key, or `undefined` to fall back to auto-increment.
+ *
+ * @template T - The type of items in the list
+ */
 type KeyConfig<T> = string | ((item: T) => string | undefined)
 
+/**
+ * Configuration options for `createList`.
+ *
+ * @template T - The type of items in the list
+ */
 type ListOptions<T extends {}> = {
+	/** Key generation strategy. A string prefix or a function `(item) => string | undefined`. Defaults to auto-increment. */
 	keyConfig?: KeyConfig<T>
+	/** Lifecycle callback invoked when the list gains its first downstream subscriber. Must return a cleanup function. */
 	watched?: () => Cleanup
 }
 
+/**
+ * A reactive ordered array with stable keys and per-item reactivity.
+ * Each item is a `State<T>` signal; structural changes (add/remove/sort) propagate reactively.
+ *
+ * @template T - The type of items in the list
+ */
 type List<T extends {}> = {
 	readonly [Symbol.toStringTag]: 'List'
 	readonly [Symbol.isConcatSpreadable]: true
@@ -240,8 +260,9 @@ function diffArrays<T>(
  *
  * @since 0.18.0
  * @param value - Initial array of items
- * @param options - Optional configuration for key generation and watch lifecycle
- * @returns A List signal
+ * @param options.keyConfig - Key generation strategy: string prefix or `(item) => string | undefined`. Defaults to auto-increment.
+ * @param options.watched - Lifecycle callback invoked on first subscriber; must return a cleanup function called on last unsubscribe.
+ * @returns A `List` signal with reactive per-item `State` signals
  */
 function createList<T extends {}>(
 	value: T[],

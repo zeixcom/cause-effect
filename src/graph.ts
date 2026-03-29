@@ -590,6 +590,8 @@ function createScope(fn: () => MaybeCleanup): Cleanup {
  * reactive graph.
  *
  * @since 0.18.5
+ * @param fn - The function to execute without an active owner
+ * @returns The return value of `fn`
  */
 function unown<T>(fn: () => T): T {
 	const prev = activeOwner

@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **`cause-effect` skill for consumer projects**: New Claude Code skill with self-contained API knowledge in `references/` — no library source access required. Covers three workflows: `use-api`, `debug`, and `answer-question`.
+
+### Changed
+
+- **`cause-effect-dev` skill restructured**: Refactored to progressive disclosure pattern with separate `workflows/` and `references/` modules. Scoped explicitly to library development; external references to `REQUIREMENTS.md`, `ARCHITECTURE.md`, and `src/` are now clearly library-repo-only.
+
 ## 1.0.0
 
 ### Changed
