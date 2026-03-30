@@ -150,15 +150,19 @@ user.name = 'Bob'   // only effects reading `user.name` re-run
 - You need to react to structural changes (items added, removed, reordered) as well as value changes
 
 **Key facts:**
-- Items are identified by a key; keys must be unique
+- Items are identified by a stable key; keys survive sorting and reordering
 - `byKey()`, `at()`, `keyAt()`, and `indexOfKey()` are direct lookups — they **do not create graph edges**
 - To react to structural changes, read `get()`, `keys()`, or `length` instead
+- To update an existing item, use `list.replace(key, value)` — **not** `byKey(key).set(value)`. `replace()` propagates to all subscribers; `byKey().set()` silently misses effects that subscribed via `keys()`, `length`, or the iterator
 
 ```typescript
-const todos = createList<Todo, 'id'>('id', [
-  { id: '1', text: 'Buy milk', done: false },
-])
-todos.push({ id: '2', text: 'Walk dog', done: false })
+const todos = createList(
+  [{ id: 't1', text: 'Buy milk', done: false }],
+  { keyConfig: todo => todo.id }
+)
+todos.add({ id: 't2', text: 'Walk dog', done: false })
+todos.replace('t1', { id: 't1', text: 'Buy milk', done: true }) // update in place
+todos.remove('t2')
 ```
 </List>
 

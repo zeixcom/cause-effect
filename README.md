@@ -242,7 +242,7 @@ items.splice(1, 1, 'orange')
 items.sort()
 ```
 
-Access items by key using `.byKey()` or by index using `.at()`. `.indexOfKey()` returns the current index of an item in the list, while `.keyAt()` returns the key of an item at a given position.
+Access items by key using `.byKey()` or by index using `.at()`. `.indexOfKey()` returns the current index of an item in the list, while `.keyAt()` returns the key of an item at a given position. To update an existing item, use `.replace(key, value)` — this propagates to all subscribers regardless of how they subscribed to the list.
 
 Keys are stable across reordering. Use `keyConfig` in options to control key generation:
 
@@ -260,10 +260,11 @@ const users = createList(
 const key = items.add('orange')
 items.sort()
 console.log(items.byKey(key)?.get()) // 'orange'
+items.replace(key, 'ORANGE')         // update in place
 console.log(items.indexOfKey(key))   // current index
 ```
 
-Lists have `.keys()`, `.add()`, and `.remove()` methods like stores. Additionally, they have `.sort()`, `.splice()`, and a reactive `.length` property. But unlike stores, deeply nested properties in items are not converted to individual signals.
+Lists have `.keys()`, `.add()`, and `.remove()` methods like stores. Additionally, they have `.replace()`, `.sort()`, `.splice()`, and a reactive `.length` property. But unlike stores, deeply nested properties in items are not converted to individual signals.
 
 ### Collection
 

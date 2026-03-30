@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+	batch,
 	createEffect,
 	createList,
 	createMemo,
@@ -206,6 +207,126 @@ describe('List', () => {
 			const list = createList(['a'])
 			expect(() => list.remove(5)).not.toThrow()
 			expect(list.get()).toEqual(['a'])
+		})
+	})
+
+	describe('replace', () => {
+		test('should update the item signal value', () => {
+			const list = createList(['a', 'b', 'c'])
+			// biome-ignore lint/style/noNonNullAssertion: index is within bounds
+			const key = list.keyAt(1)!
+			list.replace(key, 'B')
+			expect(list.byKey(key)?.get()).toBe('B')
+		})
+
+		test('structural subscriber via keys() re-runs after replace(); byKey().set() does NOT', () => {
+			const list = createList(['x', 'y'])
+			// biome-ignore lint/style/noNonNullAssertion: index is within bounds
+			const key = list.keyAt(0)!
+			let effectCount = 0
+
+			// This effect subscribes structurally via keys() only — no list.get() call
+			createEffect(() => {
+				void [...list.keys()]
+				effectCount++
+			})
+
+			expect(effectCount).toBe(1)
+
+			// replace() propagates through node.sinks — structural subscriber re-runs
+			list.replace(key, 'X')
+			expect(effectCount).toBe(2)
+
+			// byKey().set() does NOT propagate through node.sinks — structural subscriber does NOT re-run
+			list.byKey(key)?.set('XX')
+			expect(effectCount).toBe(2)
+		})
+
+		test('direct subscriber via byKey().get() re-runs after replace()', () => {
+			const list = createList(['a', 'b'])
+			// biome-ignore lint/style/noNonNullAssertion: index is within bounds
+			const key = list.keyAt(0)!
+			let lastValue = ''
+			let effectCount = 0
+
+			createEffect(() => {
+				// biome-ignore lint/style/noNonNullAssertion: key is valid
+				lastValue = list.byKey(key)!.get()
+				effectCount++
+			})
+
+			expect(effectCount).toBe(1)
+			expect(lastValue).toBe('a')
+
+			list.replace(key, 'A')
+			expect(effectCount).toBe(2)
+			expect(lastValue).toBe('A')
+		})
+
+		test('no-op on equal value (same reference)', () => {
+			const obj = { id: 1 }
+			const list = createList([obj])
+			// biome-ignore lint/style/noNonNullAssertion: index is within bounds
+			const key = list.keyAt(0)!
+			let effectCount = 0
+
+			createEffect(() => {
+				list.get()
+				effectCount++
+			})
+
+			expect(effectCount).toBe(1)
+
+			list.replace(key, obj)
+			expect(effectCount).toBe(1)
+		})
+
+		test('no-op on missing key — does not throw and does not trigger effects', () => {
+			const list = createList([1, 2, 3])
+			let effectCount = 0
+
+			createEffect(() => {
+				list.get()
+				effectCount++
+			})
+
+			expect(effectCount).toBe(1)
+			expect(() => list.replace('nonexistent', 99)).not.toThrow()
+			expect(effectCount).toBe(1)
+		})
+
+		test('batch compatibility — effects run only once inside batch()', () => {
+			const list = createList(['a', 'b', 'c'])
+			// biome-ignore lint/style/noNonNullAssertion: index is within bounds
+			const key0 = list.keyAt(0)!
+			// biome-ignore lint/style/noNonNullAssertion: index is within bounds
+			const key1 = list.keyAt(1)!
+			let effectCount = 0
+
+			createEffect(() => {
+				list.get()
+				effectCount++
+			})
+
+			expect(effectCount).toBe(1)
+
+			batch(() => {
+				list.replace(key0, 'A')
+				list.replace(key1, 'B')
+			})
+
+			expect(effectCount).toBe(2)
+			expect(list.get()).toEqual(['A', 'B', 'c'])
+		})
+
+		test('signal identity preserved — byKey() returns same signal before and after replace()', () => {
+			const list = createList([10, 20])
+			// biome-ignore lint/style/noNonNullAssertion: index is within bounds
+			const key = list.keyAt(0)!
+			const signalBefore = list.byKey(key)
+			list.replace(key, 99)
+			const signalAfter = list.byKey(key)
+			expect(signalBefore).toBe(signalAfter)
 		})
 	})
 

@@ -30,6 +30,22 @@ createEffect(() => {
 ```
 </direct_lookups_do_not_track>
 
+<bykey_set_does_not_propagate_to_structural_subscribers>
+**`byKey(key).set(value)` does not propagate through `listNode.sinks` unless `itemSignal → listNode` edges exist.** Those edges are established only when `recomputeMemo(listNode)` runs — which requires `list.get()` to have been called. Effects that subscribed via `list.keys()`, `list.length`, or the iterator link to `listNode.sinks` but never trigger `recomputeMemo`, so the item-level edges are never created.
+
+`list.replace(key, value)` is the correct API for imperative item mutations. It calls `signal.set(value)` (value path) then explicitly walks `node.sinks` (structural path), guaranteeing propagation regardless of edge state.
+
+```typescript
+// Wrong — misses structural subscribers if list.get() was never called
+list.byKey(key)?.set(newValue)
+
+// Correct — propagates through both paths unconditionally
+list.replace(key, newValue)
+```
+
+`byKey(key).set(value)` is safe only when the consuming effect directly reads `byKey(key).get()` inside its body, establishing a direct `itemSignal → effectNode` edge.
+</bykey_set_does_not_propagate_to_structural_subscribers>
+
 <conditional_reads_delay_watched>
 **Conditional signal reads delay `watched` activation.** The `watched` callback on a State or Sensor fires when the first downstream effect subscribes. If a signal is only read inside a branch that hasn't executed yet, `watched` does not fire until that branch runs.
 

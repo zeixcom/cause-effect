@@ -120,6 +120,9 @@ const users = createList(
   [{ id: 'alice', name: 'Alice' }],
   { keyConfig: u => u.id }
 )
+const key = users.add({ id: 'bob', name: 'Bob' })
+users.replace(key, { id: 'bob', name: 'Bobby' }) // update item, propagates to all subscribers
+users.remove(key)
 
 // Memo for synchronous derived values
 const doubled = createMemo(() => count.get() * 2)

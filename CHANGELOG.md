@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.2
+
+### Added
+
+- **`List.replace(key, value)` — guaranteed item mutation**: Updates the value of an existing item in place, propagating to all subscribers regardless of how they subscribed. `byKey(key).set(value)` only propagates through `itemSignal → listNode` edges, which are established lazily when `list.get()` is called; effects that subscribed via `list.keys()`, `list.length`, or the iterator never trigger that path and receive no notification. `replace()` closes this gap by also walking `node.sinks` directly — the same structural propagation path used by `add()`, `remove()`, and `sort()`. Signal identity is preserved: the `State<T>` returned by `byKey(key)` is the same object before and after. No-op if the key does not exist or the value is reference-equal to the current value.
+
 ## 1.0.1
 
 ### Added

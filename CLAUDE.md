@@ -30,7 +30,7 @@ Scope         — owner only (createScope)
 
 **`T extends {}` excludes `null` and `undefined` at the type level.** Every signal generic uses this constraint. Signals cannot hold nullish values — use a wrapper type or a union with a sentinel if you need to represent absence.
 
-**`byKey()`, `at()`, `keyAt()`, and `indexOfKey()` do NOT create graph edges.** They are direct lookups. An effect that only calls `collection.byKey('x')?.get()` will react to value changes of key `'x'` but will *not* re-run if that key is added or removed. To track structural changes, read `get()`, `keys()`, or `length`.
+**`byKey()`, `at()`, `keyAt()`, and `indexOfKey()` do NOT create graph edges.** They are direct lookups. An effect that only calls `collection.byKey('x')?.get()` will react to value changes of key `'x'` but will *not* re-run if that key is added or removed. To track structural changes, read `get()`, `keys()`, or `length`. When updating an existing item's value, use `list.replace(key, value)` rather than `byKey(key).set(value)`. `replace()` guarantees propagation to all subscribers regardless of graph edge state. `byKey(key).set(value)` is only safe for effects that directly call `byKey(key).get()` inside their body.
 
 **Conditional reads delay `watched` activation.** Dependencies are tracked only for `.get()` calls that actually execute during a given effect run. If a signal read is inside a branch that doesn't execute (e.g. the `ok` arm of `match()` while a Task is still pending), no edge is created and `watched` does not fire. Read signals eagerly before conditional logic when lifecycle activation matters:
 

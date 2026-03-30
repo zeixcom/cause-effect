@@ -36,6 +36,28 @@ createEffect(() => {
 ```
 </direct_lookups_do_not_track>
 
+<bykey_set_does_not_propagate_to_structural_subscribers>
+**`byKey(key).set(value)` does not propagate to effects that subscribed via `list.keys()`,
+`list.length`, or the iterator.** Those effects subscribe to the list's structural node but
+do not establish item-level edges, so a direct item signal mutation reaches them only if
+`list.get()` has previously been called to link the item signal to the list node.
+
+Use `list.replace(key, value)` for imperative item updates. It propagates through both paths
+— item-level edges and the structural node — regardless of how subscribers are attached.
+
+```typescript
+// Wrong — silently does nothing for effects that subscribed via list.keys()
+list.byKey(key)?.set(newValue)
+
+// Correct — guaranteed propagation to all subscribers
+list.replace(key, newValue)
+```
+
+`byKey(key).set(value)` is safe only when the consuming effect directly calls
+`byKey(key).get()` inside its body — that creates a direct edge from the item signal to the
+effect, bypassing the list node entirely.
+</bykey_set_does_not_propagate_to_structural_subscribers>
+
 <conditional_reads_delay_watched>
 **Conditional signal reads delay `watched` activation.** The `watched` callback on a State
 or Sensor fires when the first downstream effect subscribes. If a signal is only read inside
