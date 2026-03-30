@@ -4,8 +4,9 @@ import tseslint from 'typescript-eslint'
 
 /** @type {import('eslint').Linter.Config[]} */
 export default [
+	// Global ignores to prevent warnings about these files
 	{
-		ignores: ['index.js', '**/*.min.js'],
+		ignores: ['index.js', 'index.dev.js', 'types/**/*.d.ts', '**/*.min.js'],
 	},
 	{
 		files: ['**/*.{js,mjs,cjs,ts}'],

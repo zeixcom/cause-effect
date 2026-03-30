@@ -12,6 +12,10 @@
 		"moduleResolution": "bundler",
 		"allowImportingTsExtensions": true,
 		"verbatimModuleSyntax": true,
+		"erasableSyntaxOnly": true,
+		"isolatedModules": true,
+		"resolveJsonModule": true,
+		"types": ["bun-types"],
 
 		// Editor-only mode - no emit
 		"noEmit": true,
@@ -24,11 +28,16 @@
 		"useUnknownInCatchVariables": true,
 		"noUncheckedSideEffectImports": true,
 		"noFallthroughCasesInSwitch": true,
+		"forceConsistentCasingInFileNames": true,
 
 		// Some stricter flags (disabled by default)
 		"noUnusedLocals": false,
 		"noUnusedParameters": false,
 		"noPropertyAccessFromIndexSignature": false,
+
+		/* Performance */
+		"incremental": true,
+		"tsBuildInfoFile": "./.tsbuildinfo",
 	},
 	"include": ["./**/*.ts"],
 	"exclude": ["node_modules", "types", "index.js"],
