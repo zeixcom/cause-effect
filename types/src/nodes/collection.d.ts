@@ -1,7 +1,21 @@
 import { type Cleanup, type Signal } from '../graph';
 import { type KeyConfig, type List } from './list';
 type CollectionSource<T extends {}> = List<T> | Collection<T>;
+/**
+ * Transformation callback for `deriveCollection` — sync or async.
+ * Sync callbacks produce a `Memo<T>` per item; async callbacks produce a `Task<T>`
+ * with automatic cancellation when the source item changes.
+ *
+ * @template T - The type of derived items
+ * @template U - The type of source items
+ */
 type DeriveCollectionCallback<T extends {}, U extends {}> = ((sourceValue: U) => T) | ((sourceValue: U, abort: AbortSignal) => Promise<T>);
+/**
+ * A read-only reactive keyed collection with per-item reactivity.
+ * Created by `createCollection` (externally driven) or via `.deriveCollection()` on a `List` or `Collection`.
+ *
+ * @template T - The type of items in the collection
+ */
 type Collection<T extends {}> = {
     readonly [Symbol.toStringTag]: 'Collection';
     readonly [Symbol.isConcatSpreadable]: true;
@@ -16,16 +30,40 @@ type Collection<T extends {}> = {
     deriveCollection<R extends {}>(callback: (sourceValue: T, abort: AbortSignal) => Promise<R>): Collection<R>;
     readonly length: number;
 };
+/**
+ * Granular mutation descriptor passed to the `applyChanges` callback inside a `CollectionCallback`.
+ *
+ * @template T - The type of items in the collection
+ */
 type CollectionChanges<T> = {
+    /** Items to add. Each item is assigned a new key via the configured `keyConfig`. */
     add?: T[];
+    /** Items whose values have changed. Matched to existing entries by key. */
     change?: T[];
+    /** Items to remove. Matched to existing entries by key. */
     remove?: T[];
 };
+/**
+ * Configuration options for `createCollection`.
+ *
+ * @template T - The type of items in the collection
+ */
 type CollectionOptions<T extends {}> = {
+    /** Initial items. Defaults to `[]`. */
     value?: T[];
+    /** Key generation strategy. See `KeyConfig`. Defaults to auto-increment. */
     keyConfig?: KeyConfig<T>;
+    /** Factory for per-item signals. Defaults to `createState`. */
     createItem?: (value: T) => Signal<T>;
 };
+/**
+ * Setup callback for `createCollection`. Invoked when the collection gains its first downstream
+ * subscriber; receives an `applyChanges` function to push granular mutations into the graph.
+ *
+ * @template T - The type of items in the collection
+ * @param apply - Call with a `CollectionChanges` object to add, update, or remove items
+ * @returns A cleanup function invoked when the collection loses all subscribers
+ */
 type CollectionCallback<T extends {}> = (apply: (changes: CollectionChanges<T>) => void) => Cleanup;
 /**
  * Creates a derived Collection from a List or another Collection with item-level memoization.

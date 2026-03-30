@@ -1,7 +1,11 @@
 import { type Cleanup, TYPE_STORE } from '../graph';
 import { type List, type UnknownRecord } from './list';
 import { type State } from './state';
+/**
+ * Configuration options for `createStore`.
+ */
 type StoreOptions = {
+    /** Invoked when the store gains its first downstream subscriber; returns a cleanup called when the last one unsubscribes. */
     watched?: () => Cleanup;
 };
 type BaseStore<T extends UnknownRecord> = {
@@ -19,6 +23,13 @@ type BaseStore<T extends UnknownRecord> = {
     add<K extends keyof T & string>(key: K, value: T[K]): K;
     remove(key: string): void;
 };
+/**
+ * A reactive object with per-property reactivity.
+ * Each property is wrapped as a `State`, nested `Store`, or `List` signal, accessible directly via proxy.
+ * Updating one property only re-runs effects that read that property.
+ *
+ * @template T - The plain-object type whose properties become reactive signals
+ */
 type Store<T extends UnknownRecord> = BaseStore<T> & {
     [K in keyof T]: T[K] extends readonly (infer U extends {})[] ? List<U> : T[K] extends UnknownRecord ? Store<T[K]> : T[K] extends unknown & {} ? State<T[K] & {}> : State<T[K] & {}> | undefined;
 };
