@@ -4,6 +4,12 @@ import { type Memo } from './nodes/memo';
 import { type State } from './nodes/state';
 import { type Store } from './nodes/store';
 import { type Task } from './nodes/task';
+/**
+ * A readable and writable signal — the type union of `State`, `Store`, and `List`.
+ * Use as a parameter type for generic code that accepts any writable signal.
+ *
+ * @template T - The type of value held by the signal
+ */
 type MutableSignal<T extends {}> = {
     get(): T;
     set(value: T): void;

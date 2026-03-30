@@ -226,6 +226,8 @@ declare function createScope(fn: () => MaybeCleanup): Cleanup;
  * reactive graph.
  *
  * @since 0.18.5
+ * @param fn - The function to execute without an active owner
+ * @returns The return value of `fn`
  */
 declare function unown<T>(fn: () => T): T;
 export { type Cleanup, type ComputedOptions, type EffectCallback, type EffectNode, type MaybeCleanup, type MemoCallback, type MemoNode, type Scope, type Signal, type SignalOptions, type SinkNode, type StateNode, type TaskCallback, type TaskNode, activeOwner, activeSink, batch, batchDepth, createScope, DEFAULT_EQUALITY, SKIP_EQUALITY, FLAG_CHECK, FLAG_CLEAN, FLAG_DIRTY, FLAG_RELINK, flush, link, propagate, refresh, registerCleanup, runCleanup, runEffect, setState, trimSources, TYPE_COLLECTION, TYPE_LIST, TYPE_MEMO, TYPE_SENSOR, TYPE_STATE, TYPE_SLOT, TYPE_STORE, TYPE_TASK, unlink, unown, untrack, };

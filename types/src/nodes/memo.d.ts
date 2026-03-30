@@ -12,7 +12,6 @@ type Memo<T extends {}> = {
      * Recomputes if dependencies have changed since last access.
      * When called inside another reactive context, creates a dependency.
      * @returns The computed value
-     * @throws UnsetSignalValueError If the memo value is still unset when read.
      */
     get(): T;
 };
