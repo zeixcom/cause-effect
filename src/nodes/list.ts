@@ -82,6 +82,13 @@ type List<T extends {}> = {
 	indexOfKey(key: string): number
 	add(value: T): string
 	remove(keyOrIndex: string | number): void
+	/**
+	 * Updates an existing item by key, propagating to all subscribers.
+	 * No-op if the key does not exist or the value is reference-equal to the current value.
+	 * @param key - Stable key of the item to update
+	 * @param value - New value for the item
+	 */
+	replace(key: string, value: T): void
 	sort(compareFn?: (a: T, b: T) => number): void
 	splice(start: number, deleteCount?: number, ...items: T[]): T[]
 	deriveCollection<R extends {}>(
@@ -493,6 +500,17 @@ function createList<T extends {}>(
 				for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
 				if (batchDepth === 0) flush()
 			}
+		},
+
+		replace(key: string, value: T) {
+			const signal = signals.get(key)
+			if (!signal) return
+			validateSignalValue(`${TYPE_LIST} item for key "${key}"`, value)
+			if (signal.get() === value) return
+			signal.set(value)
+			node.flags |= FLAG_DIRTY
+			for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
+			if (batchDepth === 0) flush()
 		},
 
 		sort(compareFn?: (a: T, b: T) => number) {

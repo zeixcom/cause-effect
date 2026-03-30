@@ -253,6 +253,8 @@ A reactive object where each property is its own signal. Properties are automati
 
 **Two-path access with `FLAG_RELINK`**: On first `get()`, `refresh()` executes `buildValue()` with `activeSink = storeNode`, establishing edges from each child signal to the store. Subsequent reads use a fast path: `untrack(buildValue)` rebuilds the value without re-establishing edges. Structural mutations (`add`/`remove`/`set` with additions or removals) set `FLAG_DIRTY | FLAG_RELINK` on the node. The next `get()` detects `FLAG_RELINK` and forces a tracked `refresh()` after rebuilding the value, so `recomputeMemo()` links new child signals and trims removed ones without orphaning edges.
 
+**Same two-path propagation asymmetry as List**: `store.name.set(v)` (via proxy, equivalent to `byKey('name').set(v)`) propagates only if `childSignal → storeNode` edges exist — which requires `store.get()` to have been called at least once. Effects that subscribe only via `store.keys()` or the iterator, without ever calling `store.get()`, will not be notified of child signal mutations. In practice this is uncommon for Store because typical consumers either call `store.get()` (whole object) or `store.name.get()` (single property) — both of which establish the necessary edges. Effects that use `store.set({...})` rather than `store.name.set(v)` are always safe: `set()` explicitly propagates through `node.sinks` after `applyChanges()`.
+
 **Diff-based updates**: `store.set(newObj)` diffs the new object against the current state, applying only the granular changes to child signals. This preserves identity of unchanged child signals and their downstream edges.
 
 **Watched lifecycle**: An optional `watched` callback in options provides lazy resource allocation, following the same pattern as Sensor — activated on first sink, cleaned up when the last sink detaches.
@@ -268,6 +270,30 @@ A reactive array with stable keys and per-item reactivity. Each item becomes a `
 **Stable keys**: Keys survive sorting and reordering. `byKey(key)` returns a stable `State<T>` reference regardless of the item's current index. `sort()` reorders the keys array without destroying signals.
 
 **Diff-based updates**: `list.set(newArray)` uses `diffArrays()` to compute granular additions, changes, and removals. Changed items update their existing `State` signals; structural changes (add/remove) set `FLAG_DIRTY | FLAG_RELINK`.
+
+**Two propagation paths — and the asymmetry between them**
+
+The List node has two distinct propagation paths. Understanding when each applies is essential for correct usage and for implementing `replace()`:
+
+| Path | Trigger | How it works | When it fires |
+|------|---------|-------------|---------------|
+| Structural | `add()`, `remove()`, `sort()`, `splice()`, `set()` | Calls `propagate(e.sink)` directly on `node.sinks` | Always, as soon as any consumer has subscribed via `keys()`, `length`, `get()`, or iterator |
+| Value | `byKey(k).set(v)` on a raw item signal | `setState(itemNode)` → propagates to `itemNode.sinks` → listNode (if linked) → downstream | Only if `recomputeMemo(listNode)` has previously run with that item, establishing the `itemSignal → listNode` edge |
+
+The value path has a prerequisite: `list.get()` must have been called at least once after the item was present, so that `buildValue()` executed with `activeSink = listNode` and called `link(itemSignal, listNode)` for each item. This happens automatically for any consumer that reads `list.get()` directly. It does **not** happen for consumers that subscribe only via structural methods (`list.keys()`, `list.length`, the `[Symbol.iterator]`): those call `subscribe()` which links `listNode → effectNode`, but `buildValue()` is never run with `activeSink = listNode`, so no `itemSignal → listNode` edges are established.
+
+Consequence: code that calls `byKey(k).set(v)` to update an item will silently fail to notify effects that subscribe via structural accessors. The item signal propagates to nothing because `listNode` is absent from its sinks.
+
+**`list.replace(key, value)` — the correct API for item mutation with guaranteed propagation**
+
+To close this gap, `List` should expose a `replace(key, value)` method that combines both paths:
+
+1. Updates the item signal: `signals.get(key)?.set(value)` — this propagates through item signal edges to any consumers that subscribed directly (e.g. effects reading `byKey(k).get()`).
+2. Explicitly marks the list dirty and propagates through `node.sinks`: `node.flags |= FLAG_DIRTY; for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)` — this notifies structural consumers regardless of edge state.
+
+This mirrors what `list.set(newArray)` already does internally: `applyChanges()` calls `signal.set(val)` on changed items, then `list.set()` calls `propagate(e.sink)` on `node.sinks` unconditionally. `replace(key, value)` is a single-item version of the same invariant.
+
+`byKey(key).set(value)` remains valid for effects that subscribe directly to the item signal. It is **not** a safe pattern for effects that subscribe to the list via structural accessors. This asymmetry should be documented in the public API.
 
 ### Collection (`src/nodes/collection.ts`)
 

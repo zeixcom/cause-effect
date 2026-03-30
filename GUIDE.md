@@ -224,14 +224,11 @@ const todos = createList([
   { id: 't2', text: 'Build app', done: false }
 ], { keyConfig: todo => todo.id })
 
-// Get a stable reference to a specific item
-const first = todos.byKey('t1')
-
 todos.sort((a, b) => a.text.localeCompare(b.text))
-// first still points to "Learn signals", regardless of position
+// 'Learn signals' is still at key 't1', regardless of position
 
 // Update a single item without replacing the array
-first?.set({ id: 't1', text: 'Learn signals', done: true })
+todos.replace('t1', { id: 't1', text: 'Learn signals', done: true })
 ```
 
 Each item is its own signal. Sorting reorders keys without destroying signals or their downstream dependencies. Adding and removing items is granular — unaffected items and their effects don't re-run.

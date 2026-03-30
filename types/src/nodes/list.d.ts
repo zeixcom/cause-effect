@@ -48,6 +48,13 @@ type List<T extends {}> = {
     indexOfKey(key: string): number;
     add(value: T): string;
     remove(keyOrIndex: string | number): void;
+    /**
+     * Updates an existing item by key, propagating to all subscribers.
+     * No-op if the key does not exist or the value is reference-equal to the current value.
+     * @param key - Stable key of the item to update
+     * @param value - New value for the item
+     */
+    replace(key: string, value: T): void;
     sort(compareFn?: (a: T, b: T) => number): void;
     splice(start: number, deleteCount?: number, ...items: T[]): T[];
     deriveCollection<R extends {}>(callback: (sourceValue: T) => R): Collection<R>;
