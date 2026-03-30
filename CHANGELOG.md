@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## 1.0.1
 
 ### Added
 
@@ -11,6 +11,9 @@
 
 - **`cause-effect-dev` skill restructured**: Refactored to progressive disclosure pattern with separate `workflows/` and `references/` modules. Scoped explicitly to library development; external references to `REQUIREMENTS.md`, `ARCHITECTURE.md`, and `src/` are now clearly library-repo-only.
 - **Documentation alignment**: Corrected wrong graph node type for `State` in `ARCHITECTURE.md`; added missing `FLAG_RELINK` and `src/signal.ts` to `copilot-instructions.md`; updated `REQUIREMENTS.md` stability section to reflect 1.0 release; completed and corrected JSDoc across `Sensor`, `Memo`, `Store`, `List`, `Collection`, and utility types. No runtime behaviour changed.
+- **TypeScript 6 compatibility**: Added `erasableSyntaxOnly` to `tsconfig.json` (requires TS ≥5.8); replaced `@types/bun` with `bun-types` directly and added `"types": ["bun-types"]` to `tsconfig.json` to fix module resolution under TypeScript 6.
+- **Package management cleanup**: Added `typescript` to `devDependencies` (was only in `peerDependencies`, causing stale version installs); updated `peerDependencies` range to `>=5.8.0`; removed `package-lock.json` and gitignored npm/yarn/pnpm lockfiles — Bun is required for development.
+- **Zed editor configuration**: Disabled ESLint language server for JS/TS/TSX in `.zed/settings.json` — project uses Biome for linting.
 
 ## 1.0.0
 
