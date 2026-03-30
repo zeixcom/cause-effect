@@ -84,11 +84,11 @@ The following are explicitly out of scope and will not be added to the library:
 
 ## Stability
 
-Version 0.18 is the last pre-release before 1.0. The API surface — how signals are created and consumed — is considered stable. From 1.0 onward:
+The library is stable at 1.0.0. The API surface — how signals are created and consumed — will not change except under the following conditions:
 
-- **Breaking changes** are expected only if major new features of the Web Platform shift the optimal way to achieve the goals this library already does.
+- **Breaking changes** only if major new features of the Web Platform shift the optimal way to achieve the goals this library already covers.
 - **New features** are not expected. The signal type set is complete.
-- **Backward compatibility** becomes a concern at 1.0. Prior to that, all known consumers (Le Truc and one other library) are maintained by Zeix AG and can adapt to changes.
+- **Backward compatibility** is maintained from 1.0 onward.
 
 ## Success Criteria
 

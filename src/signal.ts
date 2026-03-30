@@ -22,6 +22,12 @@ import { isAsyncFunction, isFunction, isRecord, isUniformArray } from './util'
 
 /* === Types === */
 
+/**
+ * A readable and writable signal — the type union of `State`, `Store`, and `List`.
+ * Use as a parameter type for generic code that accepts any writable signal.
+ *
+ * @template T - The type of value held by the signal
+ */
 type MutableSignal<T extends {}> = {
 	get(): T
 	set(value: T): void

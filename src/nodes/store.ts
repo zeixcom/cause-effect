@@ -28,7 +28,11 @@ import { createState, type State } from './state'
 
 /* === Types === */
 
+/**
+ * Configuration options for `createStore`.
+ */
 type StoreOptions = {
+	/** Invoked when the store gains its first downstream subscriber; returns a cleanup called when the last one unsubscribes. */
 	watched?: () => Cleanup
 }
 
@@ -58,6 +62,13 @@ type BaseStore<T extends UnknownRecord> = {
 	remove(key: string): void
 }
 
+/**
+ * A reactive object with per-property reactivity.
+ * Each property is wrapped as a `State`, nested `Store`, or `List` signal, accessible directly via proxy.
+ * Updating one property only re-runs effects that read that property.
+ *
+ * @template T - The plain-object type whose properties become reactive signals
+ */
 type Store<T extends UnknownRecord> = BaseStore<T> & {
 	[K in keyof T]: T[K] extends readonly (infer U extends {})[]
 		? List<U>

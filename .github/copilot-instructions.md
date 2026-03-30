@@ -10,7 +10,7 @@ Cause & Effect is a reactive state management library for JavaScript/TypeScript 
 - **Nodes**: StateNode (source + equality), MemoNode (source + sink), TaskNode (source + sink + async), EffectNode (sink + owner)
 - **Edges**: Doubly-linked list connecting sources to sinks
 - **Operations**: `link()` creates edges, `propagate()` flags sinks dirty, `flush()` runs queued effects, `batch()` defers flushing
-- **Flags**: FLAG_CLEAN, FLAG_CHECK, FLAG_DIRTY, FLAG_RUNNING for efficient dirty checking
+- **Flags**: FLAG_CLEAN, FLAG_CHECK, FLAG_DIRTY, FLAG_RUNNING, FLAG_RELINK for efficient dirty checking
 
 ### Signal Types (all in `src/nodes/`)
 - **State** (`createState`): Mutable signals for values (`get`, `set`, `update`)
@@ -36,6 +36,7 @@ Cause & Effect is a reactive state management library for JavaScript/TypeScript 
 - `src/nodes/list.ts` - createList, isList, List type
 - `src/nodes/collection.ts` - createCollection, isCollection, Collection type, deriveCollection (internal)
 - `src/nodes/slot.ts` - createSlot, isSlot, Slot type
+- `src/signal.ts` - Polymorphic factories (createSignal, createMutableSignal, createComputed) and type predicates (isSignal, isMutableSignal, isComputed)
 - `src/util.ts` - Utility functions and type checks
 - `index.ts` - Entry point / main export file
 

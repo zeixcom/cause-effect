@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **`cause-effect` skill for consumer projects**: New Claude Code skill with self-contained API knowledge in `references/` — no library source access required. Covers three workflows: `use-api`, `debug`, and `answer-question`.
+- **`README.md` Utilities section**: Documents the previously undocumented `createSignal`, `createMutableSignal`, `createComputed` factories and `isSignal`, `isMutableSignal`, `isComputed` predicates exported from `index.ts`.
+
+### Changed
+
+- **`cause-effect-dev` skill restructured**: Refactored to progressive disclosure pattern with separate `workflows/` and `references/` modules. Scoped explicitly to library development; external references to `REQUIREMENTS.md`, `ARCHITECTURE.md`, and `src/` are now clearly library-repo-only.
+- **Documentation alignment**: Corrected wrong graph node type for `State` in `ARCHITECTURE.md`; added missing `FLAG_RELINK` and `src/signal.ts` to `copilot-instructions.md`; updated `REQUIREMENTS.md` stability section to reflect 1.0 release; completed and corrected JSDoc across `Sensor`, `Memo`, `Store`, `List`, `Collection`, and utility types. No runtime behaviour changed.
+
 ## 1.0.0
 
 ### Changed
