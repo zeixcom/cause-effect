@@ -1,6 +1,6 @@
 # Cause & Effect
 
-Version 1.0.2
+Version 1.1.0
 
 **Cause & Effect** is a reactive state management primitives library for TypeScript. It provides the foundational building blocks for managing complex, dynamic, composite, and asynchronous state — correctly and performantly — in a unified signal graph.
 
@@ -392,13 +392,39 @@ const userData = createTask(async (_, abort) => {
 })
 
 createEffect(() => {
-  match([userData], {
-    ok: ([user]) => console.log('User:', user),
+  match(userData, {
+    ok: user => console.log('User:', user),
     nil: () => console.log('Loading...'),
-    err: errors => console.error(errors[0])
+    err: error => console.error(error)
   })
 })
 ```
+
+**When to make a handler async.** The `ok` (and `err`) handler may return a `Promise`. Use this for *external* side effects whose result does not need to drive reactive state — sending analytics, writing to IndexedDB, triggering a toast notification, or any fire-and-forget call. A cleanup function returned by the resolved Promise is registered and called synchronously before the next re-run.
+
+**Do not set signal state inside an async handler.** If the async result needs to update the graph, model it as a `Task` instead. `Task` receives an `AbortSignal`, is auto-cancelled when its dependencies change, and exposes its pending / resolved / error states as first-class reactive values that compose naturally with `nil` and `err`.
+
+```js
+// ✗ Don't: async handler that writes back into the graph
+createEffect(() => match(trigger, {
+  ok: async () => {
+    const data = await fetch('/api/data').then(r => r.json())
+    result.set(data) // ← side-channel write, not tracked, no cancellation
+  }
+}))
+
+// ✓ Do: derive the async value as a Task, read it in match()
+const result = createTask(async (_, signal) =>
+  fetch('/api/data', { signal }).then(r => r.json()))
+
+createEffect(() => match(result, {
+  ok: data => render(data),
+  nil: () => showSpinner(),
+  err: e => showError(e)
+}))
+```
+
+**Stale-run rejections still reach `err`.** When a signal changes and the effect re-runs, the in-flight async handler from the previous run cannot be cancelled (the library did not initiate the underlying operation). If that stale operation eventually rejects, `err` will be called even though a newer run is already active. This is another reason to keep async handlers free of state writes — routing errors to `err` is safe when `err` is a pure side effect (logging, displaying a notification), but it becomes incorrect if `err` calls `.set()` on a signal that run 2 has already updated.
 
 ### Utilities
 

@@ -1,6 +1,6 @@
 /**
  * @name Cause & Effect
- * @version 1.0.2
+ * @version 1.1.0
  * @author Esther Brunner
  */
 
@@ -41,6 +41,7 @@ export {
 export {
 	createEffect,
 	type MatchHandlers,
+	type SingleMatchHandlers,
 	type MaybePromise,
 	match,
 } from './src/nodes/effect'

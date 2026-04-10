@@ -1229,10 +1229,14 @@ function createEffect(fn) {
   runEffect(node);
   return dispose;
 }
-function match(signals, handlers) {
+function match(signalOrSignals, handlers) {
   if (!activeOwner)
     throw new RequiredOwnerError("match");
-  const { ok, err = console.error, nil } = handlers;
+  const isSingle = !Array.isArray(signalOrSignals);
+  const signals = isSingle ? [signalOrSignals] : signalOrSignals;
+  const { nil } = handlers;
+  const ok = isSingle ? (values2) => handlers.ok(values2[0]) : (values2) => handlers.ok(values2);
+  const err = isSingle && handlers.err ? (errors2) => handlers.err(errors2[0]) : handlers.err ?? console.error;
   let errors;
   let pending = false;
   const values = new Array(signals.length);

@@ -139,3 +139,4 @@ test/regression-baseline.json
 
 # Claude
 .claude
+.DS_Store

@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.1.0
+
+### Added
+
+- **Single-signal overload for `match()`**: `match(signal, handlers)` now accepts a bare signal (not wrapped in an array). The `ok` handler receives the resolved value directly as `(value: T)`, and `err` receives a single `Error` rather than `readonly Error[]`. The existing tuple form is unchanged. This eliminates the boilerplate of wrapping a single source in `[source]`, destructuring `values[0]` in `ok`, and unwrapping `errors[0]!` in `err`.
+- **`SingleMatchHandlers<T>` type**: New exported type that describes the handler object for the single-signal overload. Counterpart to the existing `MatchHandlers<T>` for tuple usage.
+
+### Changed
+
+- **Async handler documentation**: Added `@remarks` to the `match()` JSDoc and an expanded section in `README.md` clarifying that async `ok`/`err` handlers are intended for external side effects only (logging, DOM writes, analytics). Any async work that needs to drive reactive state should use a `Task` node, which receives an `AbortSignal` and is auto-cancelled on re-run. Documents the known limitation that rejected async handlers from stale (superseded) runs still call `err`, since the library cannot cancel operations it did not initiate.
+
 ## 1.0.2
 
 ### Added
