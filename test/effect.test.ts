@@ -475,6 +475,94 @@ describe('match', () => {
 		expect(() => match([], { ok: () => {} })).toThrow(RequiredOwnerError)
 	})
 
+	describe('Single-signal overload', () => {
+		test('should call ok with unwrapped value', () => {
+			const s = createState(42)
+			let result = 0
+			createEffect(() =>
+				match(s, {
+					ok: value => {
+						result = value
+					},
+				}),
+			)
+			expect(result).toBe(42)
+			s.set(99)
+			expect(result).toBe(99)
+		})
+
+		test('should call nil handler when signal is unset', async () => {
+			const task = createTask(async () => {
+				await wait(50)
+				return 42
+			})
+			let okCount = 0
+			let nilCount = 0
+			createEffect(() =>
+				match(task, {
+					ok: value => {
+						okCount++
+						expect(value).toBe(42)
+					},
+					nil: () => {
+						nilCount++
+					},
+				}),
+			)
+			expect(okCount).toBe(0)
+			expect(nilCount).toBe(1)
+			await wait(60)
+			expect(okCount).toBeGreaterThan(0)
+			expect(nilCount).toBe(1)
+		})
+
+		test('should call err with unwrapped Error', () => {
+			const a = createState(1)
+			const b = createMemo(() => {
+				if (a.get() > 5) throw new Error('Too high')
+				return a.get() * 2
+			})
+			let okCount = 0
+			let errCount = 0
+			createEffect(() =>
+				match(b, {
+					ok: () => {
+						okCount++
+					},
+					err: error => {
+						errCount++
+						expect(error.message).toBe('Too high')
+					},
+				}),
+			)
+			expect(okCount).toBe(1)
+			a.set(6)
+			expect(errCount).toBe(1)
+			a.set(3)
+			expect(okCount).toBe(2)
+			expect(errCount).toBe(1)
+		})
+
+		test('should fall back to console.error for single signal without err handler', () => {
+			const originalConsoleError = console.error
+			const mockConsoleError = mock(() => {})
+			console.error = mockConsoleError
+
+			try {
+				const a = createState(1)
+				const b = createMemo(() => {
+					if (a.get() > 5) throw new Error('Too high')
+					return a.get() * 2
+				})
+				createEffect(() => match(b, { ok: () => {} }))
+				a.set(6)
+				expect(mockConsoleError).toHaveBeenCalled()
+			} finally {
+				console.error = originalConsoleError
+			}
+		})
+	})
+
 	test('should resolve multiple async tasks without waterfalls', async () => {
 		const a = createTask(async () => {
 			await wait(20)
