@@ -115,12 +115,13 @@ const dispose = createScope(() => {
 - You want property access (`element.name`) to participate in the reactive graph
 
 **Key facts:**
-- Has `get`, `set`, `configurable`, and `enumerable` fields
-- Can be passed directly to `Object.defineProperty`
-- Backed by a `State` internally
+- Has `get`, `set`, `configurable`, and `enumerable` fields — pass directly to `Object.defineProperty`
+- Delegates to a swappable backing signal (any signal type); use `replace(nextSignal)` to swap
+- Forwarding layer only — has no `update()` method
 
 ```typescript
-const nameSlot = createSlot(store, 'name')
+const nameState = createState('Alice')
+const nameSlot = createSlot(nameState)
 Object.defineProperty(element, 'name', nameSlot)
 ```
 </Slot>
@@ -241,9 +242,20 @@ Sensor and Task start unset. Use `match` to handle all states in one expression:
 
 ```typescript
 createEffect(() => {
-  match([task], {
-    ok: ([data]) => renderData(data),
-    err: ([error]) => renderError(error),
+  match(task, {
+    ok:  data  => renderData(data),
+    err: error => renderError(error),
+    nil: ()    => renderSpinner(),
+  })
+})
+```
+
+For two or more signals, use the tuple form — `ok` receives a typed tuple:
+
+```typescript
+createEffect(() => {
+  match([task, sensor], {
+    ok:  ([data, pos]) => render(data, pos),
     nil: () => renderSpinner(),
   })
 })

@@ -184,10 +184,10 @@ Use `match()` inside effects to handle all states declaratively:
 
 ```ts
 createEffect(() => {
-  match([user], {
-    ok: ([data]) => console.log('User:', data),
+  match(user, {
+    ok: data => console.log('User:', data),
     nil: () => console.log('Loading...'),
-    err: (errors) => console.error(errors[0])
+    err: error => console.error(error)
   })
 })
 ```

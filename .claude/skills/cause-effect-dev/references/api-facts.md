@@ -72,11 +72,13 @@ const doubled = createMemo((prev) => {
 ```
 
 **`Slot` is a property descriptor**
-- Has `get`, `set`, `configurable`, `enumerable` fields
-- Can be passed directly to `Object.defineProperty()`:
+- Has `get`, `set`, `configurable`, `enumerable` fields — pass directly to `Object.defineProperty()`
+- Delegates reads and writes to a swappable backing signal; use `replace(nextSignal)` to swap
+- Is a forwarding layer, not a value owner — has no `update()` method
 
 ```typescript
-const slot = createSlot(store, 'name')
+const nameState = createState('Alice')
+const slot = createSlot(nameState)
 Object.defineProperty(element, 'name', slot)
 ```
 
