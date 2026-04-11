@@ -70,8 +70,8 @@ fires on the first effect run:
 // Bad — `derived` is only read after `task` resolves to `ok`
 // `derived.watched` does not fire until the task has a value
 createEffect(() => {
-  match([task], {
-    ok: ([result]) => render(derived.get(), result),
+  match(task, {
+    ok: result => render(derived.get(), result),
     nil: () => showSpinner(),
   })
 })
@@ -179,8 +179,8 @@ createEffect(() => {
 
 // Correct — match handles the nil (unset) case explicitly
 createEffect(() => {
-  match([tick], {
-    ok:  ([timestamp]) => console.log('tick:', timestamp),
+  match(tick, {
+    ok:  timestamp => console.log('tick:', timestamp),
     nil: () => console.log('waiting for first tick…'),
   })
 })

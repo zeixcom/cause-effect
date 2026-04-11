@@ -139,22 +139,38 @@ const results = createTask(async (prev, signal) => {
 ```
 
 **`Slot` is a property descriptor**
-- Has `get`, `set`, `configurable`, `enumerable` fields
-- Can be passed directly to `Object.defineProperty()`:
+- Has `get`, `set`, `configurable`, `enumerable` fields — pass directly to `Object.defineProperty()`
+- Delegates reads and writes to a swappable backing signal; use `replace(nextSignal)` to swap
+- Is a forwarding layer, not a value owner — has no `update()` method
 
 ```typescript
-const nameSlot = createSlot(store, 'name')
+const nameState = createState('Alice')
+const nameSlot = createSlot(nameState)
 Object.defineProperty(element, 'name', nameSlot)
 ```
 </callback_patterns>
 
 <match_helper>
-`match` reads one or more Sensor/Task signals and routes to `ok` or `nil` based on whether
-all signals have a value. Use it to safely handle the unset state without try/catch:
+`match` reads one or more Sensor/Task signals and routes to `ok`, `nil`, or `err` based on
+whether all signals have a value. Use it to safely handle the unset state without try/catch.
+
+**Single-signal form** — `ok` receives the value directly, `err` receives a single `Error`:
 
 ```typescript
 import { match } from '@zeix/cause-effect'
 
+createEffect(() => {
+  match(task, {
+    ok:  data  => render(data),
+    nil: ()    => showSpinner(),
+    err: error => showError(error),
+  })
+})
+```
+
+**Tuple form** — for two or more signals; `ok` receives a typed tuple, `err` an `Error[]`:
+
+```typescript
 createEffect(() => {
   match([task, sensor], {
     ok:  ([taskResult, sensorValue]) => render(taskResult, sensorValue),
@@ -163,8 +179,8 @@ createEffect(() => {
 })
 ```
 
-Read signals you care about eagerly inside `match`'s array — not inside individual branches.
-See `non-obvious-behaviors.md → conditional-reads-delay-watched` for why.
+Read all signals you care about eagerly in the signals argument — not inside individual
+branches. See `non-obvious-behaviors.md → conditional-reads-delay-watched` for why.
 </match_helper>
 
 <lifecycle_summary>

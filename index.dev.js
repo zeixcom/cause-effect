@@ -1607,6 +1607,8 @@ function createSlot(initialSignal, options) {
     return node.value;
   };
   const set = (next) => {
+    if (isSlot(delegated))
+      return delegated.set(next);
     if (!isMutableSignal(delegated))
       throw new ReadonlySignalError(TYPE_SLOT);
     validateSignalValue(TYPE_SLOT, next, guard);

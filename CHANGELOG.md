@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.1
+
+### Fixed
+
+- **`Slot.set()` now forwards through Slot-to-Slot chains**: Previously, writing to a Slot whose backing signal was itself a Slot threw `ReadonlySignalError` because `isMutableSignal` does not include `Slot` (by design — a Slot wrapping a read-only signal is not mutable). `set()` now recursively delegates to the next Slot in the chain, allowing the terminal backing signal to determine write permissions. Chains of arbitrary depth are resolved correctly.
+
 ## 1.1.0
 
 ### Added

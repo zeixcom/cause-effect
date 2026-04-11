@@ -28,6 +28,9 @@ import { isObjectOfType } from '../util'
  * `get`, `set`, `configurable`, and `enumerable` are used by the property definition;
  * `replace()` and `current()` are kept on the slot object for integration-layer control.
  *
+ * Slots are not `MutableSignal`s: they are forwarding layers, not value owners.
+ * `set()` delegates to the backing signal; `update()` is intentionally absent.
+ *
  * @template T - The type of value held by the delegated signal.
  */
 type Slot<T extends {}> = {
@@ -51,10 +54,11 @@ type Slot<T extends {}> = {
 /**
  * Creates a slot signal that delegates its value to a swappable backing signal.
  *
- * A slot acts as a stable reactive source that can be used as a property descriptor
- * via `Object.defineProperty(target, key, slot)`. Subscribers link to the slot itself,
+ * A slot acts as a stable reactive source usable as a property descriptor via
+ * `Object.defineProperty(target, key, slot)`. Subscribers link to the slot itself,
  * so replacing the backing signal with `replace()` invalidates them without breaking
- * existing edges. Setter calls forward to the current backing signal when it is writable.
+ * existing edges. `set()` forwards to the current backing signal if it is writable;
+ * `update()` is absent — a slot is a forwarding layer, not a value owner.
  *
  * @since 0.18.3
  * @template T - The type of value held by the delegated signal.
@@ -93,10 +97,10 @@ function createSlot<T extends {}>(
 	}
 
 	const set = (next: T): void => {
+		if (isSlot(delegated)) return delegated.set(next)
 		if (!isMutableSignal(delegated))
 			throw new ReadonlySignalError(TYPE_SLOT)
 		validateSignalValue(TYPE_SLOT, next, guard)
-
 		delegated.set(next)
 	}
 

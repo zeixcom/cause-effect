@@ -103,6 +103,25 @@ describe('Slot', () => {
 		expect(runs).toBe(2)
 	})
 
+	test('should forward set through a Slot-to-Slot chain', () => {
+		const source = createState(1)
+		const inner = createSlot(source)
+		const outer = createSlot(inner)
+
+		outer.set(42)
+		expect(source.get()).toBe(42)
+		expect(outer.get()).toBe(42)
+	})
+
+	test('should throw ReadonlySignalError when chain terminates in a read-only signal', () => {
+		const source = createState(2)
+		const readonly = createMemo(() => source.get() * 2)
+		const inner = createSlot(readonly)
+		const outer = createSlot(inner)
+
+		expect(() => outer.set(99)).toThrow('[Slot] Signal is read-only')
+	})
+
 	test('should validate initial signal and replacement signal', () => {
 		expect(() => {
 			// @ts-expect-error: deliberate error test

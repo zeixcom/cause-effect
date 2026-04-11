@@ -55,8 +55,8 @@ Read all signals you care about eagerly — before any conditional logic — to 
 // Bad — `derived` is only read after `task` resolves to `ok`
 // `derived.watched` does not fire until the task has a value
 createEffect(() => {
-  match([task], {
-    ok: ([result]) => render(derived.get(), result),
+  match(task, {
+    ok: result => render(derived.get(), result),
     nil: () => showSpinner(),
   })
 })
@@ -149,8 +149,8 @@ createEffect(() => {
 
 // Correct — match handles the nil (unset) case explicitly
 createEffect(() => {
-  match([sensor], {
-    ok: ([timestamp]) => console.log(timestamp),
+  match(sensor, {
+    ok: timestamp => console.log(timestamp),
     nil: () => console.log('waiting for first value…'),
   })
 })
