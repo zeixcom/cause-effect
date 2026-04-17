@@ -194,11 +194,16 @@ function match(
 	try {
 		if (pending) out = nil?.()
 		else if (errors) out = err(errors)
-		else if (stale && signals.some(s => isTask(s) && s.isPending()))
+		else if (
+			stale &&
+			(isSingle
+				? isTask(signals[0]) && signals[0].isPending()
+				: signals.some(s => isTask(s) && s.isPending()))
+		)
 			out = stale()
 		else out = ok(values)
 	} catch (e) {
-		err([e instanceof Error ? e : new Error(String(e))])
+		out = err([e instanceof Error ? e : new Error(String(e))])
 	}
 
 	if (typeof out === 'function') return out

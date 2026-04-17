@@ -1,20 +1,32 @@
 # Changelog
 
-## [Unreleased]
+## 1.2.0
 
 ### Added
 
 - **`stale` handler for `match()`**: Both `MatchHandlers<T>` and `SingleMatchHandlers<T>` now accept an optional `stale?: () => MaybePromise<MaybeCleanup>` branch. It fires when all signals have a retained value but at least one `Task` signal is currently executing (`isPending() === true`). Routing precedence is `nil` > `err` > `stale` > `ok`; omitting `stale` falls back to `ok`, showing the retained value unchanged while the task re-fetches. Any cleanup returned by `stale` is registered on the owner and runs before the next handler dispatches — the right place to remove a refresh indicator or dim overlay. In React Query terms: `nil` maps to `isLoading` (no data yet); `stale` maps to `isFetching` with existing data.
 - **`isSignalOfType<T>(value, type)` utility**: New exported function that replaces `isObjectOfType` for signal type guards. Checks `value != null && value[Symbol.toStringTag] === type` directly — zero string allocations, O(1). All eight internal `is*()` guards (`isState`, `isMemo`, `isTask`, `isSensor`, `isSlot`, `isStore`, `isList`, `isCollection`) now use it.
+- **`DEEP_EQUALITY` equality preset**: New exported constant for deep structural comparison of plain objects and arrays. Uses `Object.is` as a fast path, then recursively compares array elements by index and own enumerable keys of plain-object records (`Object.getPrototypeOf(v) === Object.prototype`). Non-plain objects (class instances, `Map`, `Set`) are never structurally equal unless they are the same reference. Pass to the `equals` option to suppress propagation when a signal holding an object or array recomputes to a structurally identical value.
+- **`DEFAULT_EQUALITY` exported from `index.ts`**: The `===`-based equality preset was already used internally throughout the library but was not part of the public API. It is now exported, allowing callers to restore the default explicitly when composing or selectively overriding `SignalOptions`.
 
 ### Changed
 
 - **`isSignal` uses a module-level `Set` with direct `Symbol.toStringTag` access**: Previously allocated two strings per call via `Object.prototype.toString.call(value).slice(8, -1)` and scanned an inline array with `Array.includes()`. Now checks `SIGNAL_TYPES.has(value[Symbol.toStringTag])` — one hash lookup, zero allocations, `Set` built once at module load.
 - **`isRecord` uses a prototype check instead of `Object.prototype.toString`**: Previously `Object.prototype.toString.call(value) === '[object Object]'`, which returns `true` for class instances without a custom `Symbol.toStringTag`. Now checks `Object.getPrototypeOf(value) === Object.prototype`, which excludes class instances. Affects `createSignal` and `createMutableSignal`: a class instance with no `Symbol.toStringTag` previously resolved to a `Store`; now it falls through to `createState`. Class instances are not plain records, so this is the correct behavior.
+- **`isEqual` / `DEEP_EQUALITY` cycle detection removed**: Previously, the deep equality function in `list.ts` and `store.ts` allocated a `WeakSet` on every `List.set()` / `Store.set()` call, added both operands before recursing, and threw `CircularDependencyError` on a circular reference. The `try/finally` block cleaned up the `WeakSet` entries after each call. All of this is removed — the implementation is now plain recursion (`deepEqual` in `graph.ts`) with no allocations. Circular data causes a stack overflow rather than a thrown error. Signal values are expected to be plain JSON-like data; circular references are a programming error.
+- **Equality presets unified in `graph.ts`**: `DEFAULT_EQUALITY`, `SKIP_EQUALITY`, and `DEEP_EQUALITY` are all defined in `graph.ts` alongside `SignalOptions`. Previously `isEqual` (the deep equality implementation) lived in `list.ts` as a private function and was imported by `store.ts`. Both files now import `DEEP_EQUALITY` from `graph.ts`; the `CircularDependencyError` import in `list.ts` is removed.
 
 ### Deprecated
 
 - **`isObjectOfType(value, type)`**: Marked `@deprecated`. Allocates two strings per call (`Object.prototype.toString.call()` plus a template literal). Use `isSignalOfType(value, type)` for signal type guards instead. The function remains exported for backward compatibility and will be removed in a future release.
+- **`isEqual`**: Deprecated alias for `DEEP_EQUALITY`. Previously the private deep equality implementation in `list.ts`, now re-exported from `index.ts` as a deprecated alias pointing to `DEEP_EQUALITY` in `graph.ts`. Replace all uses with `DEEP_EQUALITY`.
+
+### Fixed
+
+- **`createScope` effect leak on throw**: Previously, if `fn()` threw after creating child effects, `dispose` was never created or registered with the parent owner — child effects leaked and continued running indefinitely. Now `dispose` is created before the `try` block and registered with `prevOwner` in the `finally` clause, so cleanup always executes regardless of whether `fn()` throws.
+- **`list.replace()` spurious dependency edge**: Previously, calling `replace()` from inside an effect linked the item signal to the calling effect as a dependency (via the unguarded `signal.get()` equality check). The effect re-ran — and permanently acquired the dependency — after each `replace()` call. Now the check uses `untrack(() => signal.get())`, so no edge is created during the early-exit test.
+- **`list.splice()` signal corruption on same-key replace**: Previously, splicing out an item and inserting a new item with the same content-based key left the key in `keys` but absent from `signals` — `byKey()` returned `undefined` silently. Now `splice` detects the key overlap and routes to `change` instead of an add+remove pair.
+- **`match()` `err` cleanup silently dropped on thrown errors**: Previously, the catch branch called `err([...])` without capturing the return value — cleanup functions or `Promise<MaybeCleanup>` returned by `err` were silently discarded (memory leak in the error path). Now `out = err([...])` captures the return value for cleanup registration, matching the try-branch behavior.
 
 ## 1.1.1
 

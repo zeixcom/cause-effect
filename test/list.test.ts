@@ -328,6 +328,21 @@ describe('List', () => {
 			const signalAfter = list.byKey(key)
 			expect(signalBefore).toBe(signalAfter)
 		})
+
+		test('replace() inside an effect does not cause the effect to re-run', () => {
+			const list = createList(['a', 'b', 'c'])
+			// biome-ignore lint/style/noNonNullAssertion: index is within bounds
+			const key = list.keyAt(0)!
+			let effectCount = 0
+			createEffect((): undefined => {
+				effectCount++
+				list.replace(key, 'A')
+			})
+			expect(effectCount).toBe(1) // ran once on creation
+			expect(list.byKey(key)?.get()).toBe('A')
+			// replace() must NOT have linked the item signal to this effect
+			expect(effectCount).toBe(1)
+		})
 	})
 
 	describe('sort', () => {
@@ -399,6 +414,20 @@ describe('List', () => {
 			expect(() => list.splice(1, 0, { id: 'a', val: 3 })).toThrow(
 				'already exists',
 			)
+		})
+
+		test('splice replacing an item with the same key keeps byKey() defined', () => {
+			const list = createList(
+				[
+					{ id: 'x', val: 1 },
+					{ id: 'y', val: 2 },
+				],
+				{ keyConfig: item => item.id },
+			)
+			// splice out { id: 'x', val: 1 } and insert a new { id: 'x', val: 99 }
+			list.splice(0, 1, { id: 'x', val: 99 })
+			expect(list.byKey('x')).toBeDefined()
+			expect(list.byKey('x')?.get()).toEqual({ id: 'x', val: 99 })
 		})
 	})
 

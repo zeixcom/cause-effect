@@ -1,4 +1,5 @@
 import { CircularDependencyError, type Guard } from './errors'
+import { isRecord } from './util'
 
 /* === Internal Types === */
 
@@ -166,6 +167,11 @@ const FLAG_RELINK = 1 << 3
 
 /* === Module State === */
 
+// activeSink, activeOwner, and batchDepth are exported as mutable `let` bindings.
+// Importers read the live value via ESM live binding semantics — this only works in
+// native ESM and bundlers that preserve live bindings (Rollup, esbuild ESM mode).
+// A pre-bundled CJS output would snapshot these at import time, silently breaking
+// dependency tracking and batching. The library is ESM-only by design (see REQUIREMENTS.md).
 let activeSink: SinkNode | null = null
 let activeOwner: OwnerNode | null = null
 const queuedEffects: EffectNode[] = []
@@ -174,6 +180,10 @@ let flushing = false
 
 /* === Utility Functions === */
 
+/**
+ * Default strict equality (`===`) — identical to the implicit default for all signals.
+ * Pass explicitly to make the equality strategy visible when composing or overriding signal options.
+ */
 const DEFAULT_EQUALITY = <T extends {}>(a: T, b: T): boolean => a === b
 
 /**
@@ -193,6 +203,60 @@ const DEFAULT_EQUALITY = <T extends {}>(a: T, b: T): boolean => a === b
  * ```
  */
 const SKIP_EQUALITY = (_a?: unknown, _b?: unknown): boolean => false
+
+const deepEqual = (a: unknown, b: unknown): boolean => {
+	if (Object.is(a, b)) return true
+	if (typeof a !== typeof b) return false
+	if (
+		a == null ||
+		typeof a !== 'object' ||
+		b == null ||
+		typeof b !== 'object'
+	)
+		return false
+
+	const aIsArray = Array.isArray(a)
+	if (aIsArray !== Array.isArray(b)) return false
+
+	if (aIsArray) {
+		const aa = a as unknown[]
+		const ba = b as unknown[]
+		if (aa.length !== ba.length) return false
+		for (let i = 0; i < aa.length; i++)
+			if (!deepEqual(aa[i], ba[i])) return false
+		return true
+	}
+
+	if (isRecord(a) && isRecord(b)) {
+		const aKeys = Object.keys(a)
+		if (aKeys.length !== Object.keys(b).length) return false
+		for (const key of aKeys) {
+			if (!(key in b)) return false
+			if (!deepEqual(a[key], b[key])) return false
+		}
+		return true
+	}
+
+	return false
+}
+
+/**
+ * Deep structural equality check for plain objects and arrays.
+ * Use when a signal holds an object or array and you want to avoid unnecessary
+ * downstream propagation when the value re-evaluates to a structurally identical result.
+ *
+ * @example
+ * ```ts
+ * const point = createState({ x: 0, y: 0 }, { equals: DEEP_EQUALITY });
+ * point.set({ x: 0, y: 0 }); // no propagation — structurally equal
+ * ```
+ */
+const DEEP_EQUALITY = <T extends {}>(a: T, b: T): boolean => deepEqual(a, b)
+
+/**
+ * @deprecated Use {@link DEEP_EQUALITY} instead.
+ */
+const isEqual = DEEP_EQUALITY
 
 /* === Link Management === */
 
@@ -570,15 +634,15 @@ function createScope(fn: () => MaybeCleanup): Cleanup {
 	const prevOwner = activeOwner
 	const scope: Scope = { cleanup: null }
 	activeOwner = scope
+	const dispose = () => runCleanup(scope)
 
 	try {
 		const out = fn()
 		if (typeof out === 'function') registerCleanup(scope, out)
-		const dispose = () => runCleanup(scope)
-		if (prevOwner) registerCleanup(prevOwner, dispose)
 		return dispose
 	} finally {
 		activeOwner = prevOwner
+		if (prevOwner) registerCleanup(prevOwner, dispose)
 	}
 }
 
@@ -603,6 +667,19 @@ function unown<T>(fn: () => T): T {
 	}
 }
 
+function makeSubscribe(node: SourceNode, onWatch?: () => Cleanup): () => void {
+	return onWatch
+		? () => {
+				if (activeSink) {
+					if (!node.sinks) node.stop = onWatch()
+					link(node, activeSink)
+				}
+			}
+		: () => {
+				if (activeSink) link(node, activeSink)
+			}
+}
+
 export {
 	type Cleanup,
 	type ComputedOptions,
@@ -624,6 +701,8 @@ export {
 	batchDepth,
 	createScope,
 	DEFAULT_EQUALITY,
+	DEEP_EQUALITY,
+	isEqual,
 	SKIP_EQUALITY,
 	FLAG_CHECK,
 	FLAG_CLEAN,
@@ -631,6 +710,7 @@ export {
 	FLAG_RELINK,
 	flush,
 	link,
+	makeSubscribe,
 	propagate,
 	refresh,
 	registerCleanup,

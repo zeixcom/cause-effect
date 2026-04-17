@@ -1,14 +1,14 @@
 import { DuplicateKeyError, validateSignalValue } from '../errors'
 import {
-	activeSink,
 	batch,
 	batchDepth,
 	type Cleanup,
+	DEEP_EQUALITY,
 	FLAG_CLEAN,
 	FLAG_DIRTY,
 	FLAG_RELINK,
 	flush,
-	link,
+	makeSubscribe,
 	type MemoNode,
 	propagate,
 	refresh,
@@ -20,7 +20,6 @@ import { isSignalOfType, isRecord } from '../util'
 import {
 	createList,
 	type DiffResult,
-	isEqual,
 	type List,
 	type UnknownRecord,
 } from './list'
@@ -83,22 +82,6 @@ type Store<T extends UnknownRecord> = BaseStore<T> & {
 
 /** Diff two records and return granular changes */
 function diffRecords<T extends UnknownRecord>(prev: T, next: T): DiffResult {
-	// Guard against non-objects that can't be diffed properly with Object.keys and 'in' operator
-	const prevValid = isRecord(prev) || Array.isArray(prev)
-	const nextValid = isRecord(next) || Array.isArray(next)
-	if (!prevValid || !nextValid) {
-		// For non-objects or non-plain objects, treat as complete change if different
-		const changed = !Object.is(prev, next)
-		return {
-			changed,
-			add: changed && nextValid ? next : {},
-			change: {},
-			remove: changed && prevValid ? prev : {},
-		}
-	}
-
-	const visited = new WeakSet()
-
 	const add = {} as UnknownRecord
 	const change = {} as UnknownRecord
 	const remove = {} as UnknownRecord
@@ -110,7 +93,7 @@ function diffRecords<T extends UnknownRecord>(prev: T, next: T): DiffResult {
 	// Pass 1: iterate new keys — find additions and changes
 	for (const key of nextKeys) {
 		if (key in prev) {
-			if (!isEqual(prev[key], next[key], visited)) {
+			if (!DEEP_EQUALITY(prev[key] as {}, next[key] as {})) {
 				change[key] = next[key]
 				changed = true
 			}
@@ -189,7 +172,7 @@ function createStore<T extends UnknownRecord>(
 		sourcesTail: null,
 		sinks: null,
 		sinksTail: null,
-		equals: isEqual,
+		equals: DEEP_EQUALITY,
 		error: undefined,
 	}
 
@@ -231,17 +214,7 @@ function createStore<T extends UnknownRecord>(
 		return changes.changed
 	}
 
-	const watched = options?.watched
-	const subscribe = watched
-		? () => {
-				if (activeSink) {
-					if (!node.sinks) node.stop = watched()
-					link(node, activeSink)
-				}
-			}
-		: () => {
-				if (activeSink) link(node, activeSink)
-			}
+	const subscribe = makeSubscribe(node, options?.watched)
 
 	// --- Initialize ---
 	for (const key of Object.keys(value)) addSignal(key, value[key])

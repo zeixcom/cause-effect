@@ -233,6 +233,15 @@ A side-effecting computation that runs immediately and re-runs when dependencies
 
 Effects double as owners: they have a `cleanup` field and become `activeOwner` during execution. Child effects and scopes created during execution are automatically disposed when the parent effect re-runs or is disposed.
 
+**`match(signal(s), handlers)`** is the ergonomic companion to `createEffect`. It reads one or more signals inside the effect and dispatches to a handler based on signal state, following this precedence:
+
+1. **`nil`** — one or more signals are unset (pending, no value yet).
+2. **`err`** — one or more signals hold an error (and none are nil).
+3. **`stale`** — all signals have a retained value but at least one `Task` is currently executing (`isPending() === true`). If `stale` is omitted, falls back to `ok`, preserving the last resolved value during re-fetches.
+4. **`ok`** — all signals have a resolved value.
+
+Any cleanup returned by a handler is registered on the active owner and runs before the next dispatch. `match()` must be called within an active owner (effect or scope); it throws `RequiredOwnerError` otherwise.
+
 ### Slot (`src/nodes/slot.ts`)
 
 **Graph node**: `MemoNode<T>` (source + sink)
@@ -241,7 +250,7 @@ A stable reactive source that delegates reads and writes to a swappable backing 
 
 The slot object doubles as a property descriptor: its `get`, `set`, `configurable`, and `enumerable` fields can be passed directly to `Object.defineProperty()`. Control methods (`replace()`, `current()`) live on the same object but are ignored by the property definition; integration code should retain the slot reference for later `replace()` calls.
 
-**Graph behavior**: Sinks link to the slot (stable across replacements). The slot links upstream to exactly one delegated signal at a time. On `replace(nextSignal)`, the slot updates its internal reference, flags sinks dirty via `propagate()`, and flushes. Re-running sinks call `slot.get()`, which triggers `refresh()` — dependency tracking (`link` + `trimSources`) re-subscribes to the new backing signal and drops stale edges to the old one. Setter calls forward to the delegated signal when writable; `ReadonlySignalError` is thrown otherwise.
+**Graph behavior**: Sinks link to the slot (stable across replacements). The slot links upstream to exactly one delegated signal at a time. On `replace(nextSignal)`, the slot updates its internal reference, flags sinks dirty via `propagate()`, and flushes. Re-running sinks call `slot.get()`, which triggers `refresh()` — dependency tracking (`link` + `trimSources`) re-subscribes to the new backing signal and drops stale edges to the old one. Setter calls forward to the delegated signal when writable; if the delegated signal is itself a `Slot`, the call chains recursively through it before checking writability. `ReadonlySignalError` is thrown if the terminal signal is read-only.
 
 Options mirror State: optional `guard` and `equals`. Type-level replacement follows `replace<U extends T>(next)` — narrowing is allowed, widening is not.
 
@@ -286,16 +295,16 @@ The value path has a prerequisite: `list.get()` must have been called at least o
 
 Consequence: code that calls `byKey(k).set(v)` to update an item will silently fail to notify effects that subscribe via structural accessors. The item signal propagates to nothing because `listNode` is absent from its sinks.
 
-**`list.replace(key, value)` — the correct API for item mutation with guaranteed propagation**
+**`list.replace(key, value)` — item mutation with guaranteed propagation**
 
-To close this gap, `List` should expose a `replace(key, value)` method that combines both paths:
+`replace(key, value)` combines both propagation paths in a single operation:
 
-1. Updates the item signal: `signals.get(key)?.set(value)` — this propagates through item signal edges to any consumers that subscribed directly (e.g. effects reading `byKey(k).get()`).
-2. Explicitly marks the list dirty and propagates through `node.sinks`: `node.flags |= FLAG_DIRTY; for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)` — this notifies structural consumers regardless of edge state.
+1. Updates the item signal via `signal.set(value)` — this propagates through item signal edges to any consumers subscribed directly (e.g. effects reading `byKey(k).get()`).
+2. Marks the list dirty and propagates through `node.sinks` — this notifies structural consumers regardless of edge state, mirroring what `list.set(newArray)` does internally.
 
-This mirrors what `list.set(newArray)` already does internally: `applyChanges()` calls `signal.set(val)` on changed items, then `list.set()` calls `propagate(e.sink)` on `node.sinks` unconditionally. `replace(key, value)` is a single-item version of the same invariant.
+An early-exit guard (`untrack(() => signal.get()) === value`) prevents unnecessary propagation when the new value is reference-equal to the current one, without creating a dependency edge from the calling effect to the item signal. If the key does not exist the call is a no-op.
 
-`byKey(key).set(value)` remains valid for effects that subscribe directly to the item signal. It is **not** a safe pattern for effects that subscribe to the list via structural accessors. This asymmetry should be documented in the public API.
+`byKey(key).set(value)` remains valid for effects that subscribe directly to the item signal. It is **not** a safe pattern for effects that subscribe to the list via structural accessors.
 
 ### Collection (`src/nodes/collection.ts`)
 
@@ -345,3 +354,7 @@ The first-subscriber path is the key to `watched` lifecycle propagation: when an
 | `stale` handler signature | Thunk `() => MaybePromise<MaybeCleanup>` — no arguments | Receive stale value `(value: T)`; receive `pending: boolean` | The reset concern (e.g. hiding a spinner) belongs to the returned cleanup, not to `ok`. Passing the value would mix stale-display and value-display concerns. `ok` handles value display exclusively. |
 | `stale` fallback when handler is absent | Call `ok` with the stale values | Call `nil` (hide content while re-loading) | Preserves backward compatibility — existing callers continue to see stale values in `ok` during re-fetches. |
 | `stale` scope | Both single-signal and tuple overloads | Single-signal only | Symmetrical with `nil`: fires if any Task in the signal set is pending. Same precedence rule applies in both contexts. |
+| Equality strategy naming | SCREAMING_SNAKE_CASE constants (`DEFAULT_EQUALITY`, `SKIP_EQUALITY`, `DEEP_EQUALITY`) for all public equality presets | camelCase function names (e.g. `skipEqual`, `deepEqual`); adding `SHALLOW_EQUALITY` | These are named option values, not utility functions callers invoke directly — the constant convention matches their role as strategy sentinels. `is`-prefix avoided because it is reserved for type guards in this library. All three live in `graph.ts` alongside `SignalOptions`. `SHALLOW_EQUALITY` was rejected: "one level deep" has no canonical definition across arrays, string arrays, and records — users needing shallow equality write a one-liner; `keysEqual` and `valuesEqual` exist precisely because the right shallow check is type-specific. |
+| `isEqual` placement | Implementation in `graph.ts`; public preset exported as `DEEP_EQUALITY` from `graph.ts` | `util.ts` (blocked by circular import: `errors.ts` → `util.ts`); keep in `list.ts` | `isEqual` needs `CircularDependencyError`, which lives in `errors.ts`; `errors.ts` already imports `util.ts`, so `util.ts` cannot import back. `graph.ts` already imports `CircularDependencyError` and is the correct home for all equality constants. |
+| `isEqual` public export | Deprecated alias re-exported from `index.ts` pointing to the implementation in `graph.ts` | Remove immediately | No known downstream consumers, but it was part of the public API — a deprecation cycle is the correct path to removal. |
+| Cycle detection in `isEqual` / `DEEP_EQUALITY` | No cycle detection — plain recursion, no `WeakSet` | (a) Keep `WeakSet` per call; (b) import `fast-deep-equal` or `dequal` | `WeakSet` allocation on every `List.set()` / `Store.set()` call is unnecessary overhead for the common case (plain JSON-like signal values). Circular signal data is a user bug; a stack overflow is an acceptable outcome. Importing an external package for a 20-line function contradicts the zero-dependency policy and bundle-size constraints. `DEEP_EQUALITY` has never shipped; deprecated `isEqual` has no known consumers — no major version required. |

@@ -60,16 +60,6 @@ type List<T extends {}> = {
     deriveCollection<R extends {}>(callback: (sourceValue: T) => R): Collection<R>;
     deriveCollection<R extends {}>(callback: (sourceValue: T, abort: AbortSignal) => Promise<R>): Collection<R>;
 };
-/**
- * Checks if two values are equal with cycle detection
- *
- * @since 0.15.0
- * @param a - First value to compare
- * @param b - Second value to compare
- * @param visited - Set to track visited objects for cycle detection
- * @returns Whether the two values are equal
- */
-declare function isEqual<T>(a: T, b: T, visited?: WeakSet<object>): boolean;
 /** Shallow equality check for string arrays */
 declare function keysEqual(a: string[], b: string[]): boolean;
 declare function getKeyGenerator<T extends {}>(keyConfig?: KeyConfig<T>): [(item: T) => string, boolean];
@@ -91,4 +81,4 @@ declare function createList<T extends {}>(value: T[], options?: ListOptions<T>):
  * @returns True if the value is a List
  */
 declare function isList<T extends {}>(value: unknown): value is List<T>;
-export { type DiffResult, type KeyConfig, type List, type ListOptions, type UnknownRecord, createList, isEqual, isList, getKeyGenerator, keysEqual, TYPE_LIST, };
+export { type DiffResult, type KeyConfig, type List, type ListOptions, type UnknownRecord, createList, isList, getKeyGenerator, keysEqual, TYPE_LIST, };

@@ -869,4 +869,24 @@ describe('match', () => {
 			expect(okCount).toBe(2)
 		})
 	})
+
+	describe('err handler cleanup', () => {
+		test('cleanup returned by err is called when ok handler throws', () => {
+			const source = createState(1)
+			let cleanupCount = 0
+			createEffect(() =>
+				match(source, {
+					ok: () => {
+						throw new Error('ok failed')
+					},
+					err: () => () => {
+						cleanupCount++
+					},
+				}),
+			)
+			expect(cleanupCount).toBe(0) // no cleanup on first run
+			source.set(2) // re-run should call previous cleanup
+			expect(cleanupCount).toBe(1)
+		})
+	})
 })

@@ -18,6 +18,7 @@ type Task<T extends {}> = {
     get(): T;
     /**
      * Checks if the task is currently executing.
+     * Used by `match()` to route to the `stale` handler when the task has a retained value.
      * @returns True if a computation is in progress
      */
     isPending(): boolean;

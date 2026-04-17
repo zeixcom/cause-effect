@@ -238,14 +238,20 @@ Use `Store` for a fixed set of named properties on a single object. Use `List` o
 <common_patterns>
 
 <loading_state>
-Sensor and Task start unset. Use `match` to handle all states in one expression:
+Sensor and Task start unset. Use `match` to handle all states in one expression.
+
+Routing precedence: `nil` > `err` > `stale` > `ok`. `stale` fires when all signals have a retained value but at least one Task is re-fetching — omitting it falls back to `ok`:
 
 ```typescript
 createEffect(() => {
   match(task, {
-    ok:  data  => renderData(data),
-    err: error => renderError(error),
-    nil: ()    => renderSpinner(),
+    ok:    data  => renderData(data),
+    stale: ()    => {
+      dimContent()
+      return clearDimmed
+    },
+    err:   error => renderError(error),
+    nil:   ()    => renderSpinner(),
   })
 })
 ```

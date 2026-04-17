@@ -1,3 +1,7 @@
+/* === Constants === */
+
+const ASYNC_FUNCTION_PROTO = Object.getPrototypeOf(async function () {})
+
 /* === Utility Functions === */
 
 function isFunction<T>(fn: unknown): fn is (...args: unknown[]) => T {
@@ -7,13 +11,13 @@ function isFunction<T>(fn: unknown): fn is (...args: unknown[]) => T {
 function isAsyncFunction<T>(
 	fn: unknown,
 ): fn is (...args: unknown[]) => Promise<T> {
-	return isFunction(fn) && fn.constructor.name === 'AsyncFunction'
+	return isFunction(fn) && Object.getPrototypeOf(fn) === ASYNC_FUNCTION_PROTO
 }
 
 function isSyncFunction<T extends unknown & { then?: undefined }>(
 	fn: unknown,
 ): fn is (...args: unknown[]) => T {
-	return isFunction(fn) && fn.constructor.name !== 'AsyncFunction'
+	return isFunction(fn) && Object.getPrototypeOf(fn) !== ASYNC_FUNCTION_PROTO
 }
 
 /**
@@ -41,6 +45,9 @@ function isRecord<T extends Record<string, unknown>>(
 	)
 }
 
+/**
+ * @deprecated Use Array.isArray(value) && value.every(guard) instead.
+ */
 function isUniformArray<T>(
 	value: unknown,
 	guard: (item: T) => item is T & {} = (item): item is T & {} => item != null,
@@ -48,6 +55,9 @@ function isUniformArray<T>(
 	return Array.isArray(value) && value.every(guard)
 }
 
+/**
+ * @deprecated
+ */
 function valueString(value: unknown): string {
 	return typeof value === 'string'
 		? `"${value}"`
