@@ -16,7 +16,7 @@ import {
 	TYPE_STORE,
 	untrack,
 } from '../graph'
-import { isObjectOfType, isRecord } from '../util'
+import { isSignalOfType, isRecord } from '../util'
 import {
 	createList,
 	type DiffResult,
@@ -385,7 +385,7 @@ function createStore<T extends UnknownRecord>(
  * @returns True if the value is a Store
  */
 function isStore<T extends UnknownRecord>(value: unknown): value is Store<T> {
-	return isObjectOfType(value, TYPE_STORE)
+	return isSignalOfType(value, TYPE_STORE)
 }
 
 /* === Exports === */

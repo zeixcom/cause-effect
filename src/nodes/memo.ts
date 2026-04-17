@@ -18,7 +18,7 @@ import {
 	type SinkNode,
 	TYPE_MEMO,
 } from '../graph'
-import { isObjectOfType, isSyncFunction } from '../util'
+import { isSignalOfType, isSyncFunction } from '../util'
 
 /* === Types === */
 
@@ -139,7 +139,7 @@ function createMemo<T extends {}>(
  * @returns True if the value is a Memo
  */
 function isMemo<T extends {} = unknown & {}>(value: unknown): value is Memo<T> {
-	return isObjectOfType(value, TYPE_MEMO)
+	return isSignalOfType(value, TYPE_MEMO)
 }
 
 export { createMemo, isMemo, type Memo }

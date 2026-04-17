@@ -192,6 +192,24 @@ createEffect(() => {
 })
 ```
 
+When the user ID changes and a new fetch starts, the previous result is retained until the new one resolves. `nil` fires only when there is no value at all — the initial fetch before any result. For the re-fetch case, add a `stale` handler:
+
+```ts
+createEffect(() => {
+  match(user, {
+    ok: data => renderUser(data),
+    nil: () => showSpinner(),
+    stale: () => {
+      dimContent()       // overlay a refresh indicator over stale content
+      return clearDimmed // called automatically before ok or err fires next
+    },
+    err: error => showError(error)
+  })
+})
+```
+
+In React Query terms: `nil` maps to `isLoading` (no data yet); `stale` maps to `isFetching` with existing data. The cleanup returned by `stale` runs before the next handler dispatch — it is the right place to remove the refresh indicator. Omitting `stale` falls back to `ok`, showing the retained value unchanged while re-fetching.
+
 ### Store: per-property reactivity
 
 In React, updating one property of an object re-renders everything that reads the object. In Vue, `reactive()` gives you per-property tracking — `createStore()` works the same way:

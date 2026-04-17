@@ -1,5 +1,21 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **`stale` handler for `match()`**: Both `MatchHandlers<T>` and `SingleMatchHandlers<T>` now accept an optional `stale?: () => MaybePromise<MaybeCleanup>` branch. It fires when all signals have a retained value but at least one `Task` signal is currently executing (`isPending() === true`). Routing precedence is `nil` > `err` > `stale` > `ok`; omitting `stale` falls back to `ok`, showing the retained value unchanged while the task re-fetches. Any cleanup returned by `stale` is registered on the owner and runs before the next handler dispatches — the right place to remove a refresh indicator or dim overlay. In React Query terms: `nil` maps to `isLoading` (no data yet); `stale` maps to `isFetching` with existing data.
+- **`isSignalOfType<T>(value, type)` utility**: New exported function that replaces `isObjectOfType` for signal type guards. Checks `value != null && value[Symbol.toStringTag] === type` directly — zero string allocations, O(1). All eight internal `is*()` guards (`isState`, `isMemo`, `isTask`, `isSensor`, `isSlot`, `isStore`, `isList`, `isCollection`) now use it.
+
+### Changed
+
+- **`isSignal` uses a module-level `Set` with direct `Symbol.toStringTag` access**: Previously allocated two strings per call via `Object.prototype.toString.call(value).slice(8, -1)` and scanned an inline array with `Array.includes()`. Now checks `SIGNAL_TYPES.has(value[Symbol.toStringTag])` — one hash lookup, zero allocations, `Set` built once at module load.
+- **`isRecord` uses a prototype check instead of `Object.prototype.toString`**: Previously `Object.prototype.toString.call(value) === '[object Object]'`, which returns `true` for class instances without a custom `Symbol.toStringTag`. Now checks `Object.getPrototypeOf(value) === Object.prototype`, which excludes class instances. Affects `createSignal` and `createMutableSignal`: a class instance with no `Symbol.toStringTag` previously resolved to a `Store`; now it falls through to `createState`. Class instances are not plain records, so this is the correct behavior.
+
+### Deprecated
+
+- **`isObjectOfType(value, type)`**: Marked `@deprecated`. Allocates two strings per call (`Object.prototype.toString.call()` plus a template literal). Use `isSignalOfType(value, type)` for signal type guards instead. The function remains exported for backward compatibility and will be removed in a future release.
+
 ## 1.1.1
 
 ### Fixed
