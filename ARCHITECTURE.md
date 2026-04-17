@@ -239,7 +239,7 @@ A stable reactive source that delegates reads and writes to a swappable backing 
 
 The slot object doubles as a property descriptor: its `get`, `set`, `configurable`, and `enumerable` fields can be passed directly to `Object.defineProperty()`. Control methods (`replace()`, `current()`) live on the same object but are ignored by the property definition; integration code should retain the slot reference for later `replace()` calls.
 
-**Graph behavior**: Sinks link to the slot (stable across replacements). The slot links upstream to exactly one delegated signal at a time. On `replace(nextSignal)`, the slot updates its internal reference, flags sinks dirty via `propagate()`, and flushes. Re-running sinks call `slot.get()`, which triggers `refresh()` — dependency tracking (`link` + `trimSources`) re-subscribes to the new backing signal and drops stale edges to the old one. Setter calls forward to the delegated signal when writable; `ReadonlySignalError` is thrown otherwise.
+**Graph behavior**: Sinks link to the slot (stable across replacements). The slot links upstream to exactly one delegated signal at a time. On `replace(nextSignal)`, the slot updates its internal reference, flags sinks dirty via `propagate()`, and flushes. Re-running sinks call `slot.get()`, which triggers `refresh()` — dependency tracking (`link` + `trimSources`) re-subscribes to the new backing signal and drops stale edges to the old one. Setter calls forward to the delegated signal when writable; if the delegated signal is itself a `Slot`, the call chains recursively through it before checking writability. `ReadonlySignalError` is thrown if the terminal signal is read-only.
 
 Options mirror State: optional `guard` and `equals`. Type-level replacement follows `replace<U extends T>(next)` — narrowing is allowed, widening is not.
 
@@ -284,16 +284,16 @@ The value path has a prerequisite: `list.get()` must have been called at least o
 
 Consequence: code that calls `byKey(k).set(v)` to update an item will silently fail to notify effects that subscribe via structural accessors. The item signal propagates to nothing because `listNode` is absent from its sinks.
 
-**`list.replace(key, value)` — the correct API for item mutation with guaranteed propagation**
+**`list.replace(key, value)` — item mutation with guaranteed propagation**
 
-To close this gap, `List` should expose a `replace(key, value)` method that combines both paths:
+`replace(key, value)` combines both propagation paths in a single operation:
 
-1. Updates the item signal: `signals.get(key)?.set(value)` — this propagates through item signal edges to any consumers that subscribed directly (e.g. effects reading `byKey(k).get()`).
-2. Explicitly marks the list dirty and propagates through `node.sinks`: `node.flags |= FLAG_DIRTY; for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)` — this notifies structural consumers regardless of edge state.
+1. Updates the item signal via `signal.set(value)` — this propagates through item signal edges to any consumers subscribed directly (e.g. effects reading `byKey(k).get()`).
+2. Marks the list dirty and propagates through `node.sinks` — this notifies structural consumers regardless of edge state, mirroring what `list.set(newArray)` does internally.
 
-This mirrors what `list.set(newArray)` already does internally: `applyChanges()` calls `signal.set(val)` on changed items, then `list.set()` calls `propagate(e.sink)` on `node.sinks` unconditionally. `replace(key, value)` is a single-item version of the same invariant.
+An early-exit guard (`signal.get() === value`) prevents unnecessary propagation when the new value is reference-equal to the current one. If the key does not exist the call is a no-op.
 
-`byKey(key).set(value)` remains valid for effects that subscribe directly to the item signal. It is **not** a safe pattern for effects that subscribe to the list via structural accessors. This asymmetry should be documented in the public API.
+`byKey(key).set(value)` remains valid for effects that subscribe directly to the item signal. It is **not** a safe pattern for effects that subscribe to the list via structural accessors.
 
 ### Collection (`src/nodes/collection.ts`)
 

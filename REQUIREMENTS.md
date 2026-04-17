@@ -48,6 +48,32 @@ The library ships 9 signal types — each justified by a distinct role in the gr
 
 This set is considered **complete**. The principle for inclusion is: does this type represent a fundamentally different data structure or role in the graph that cannot be correctly or performantly expressed as a composition of existing types?
 
+### Graph Utilities
+
+Five utilities complete the public API alongside the signal types:
+
+| Utility | Role |
+|---------|------|
+| `batch(fn)` | Defer effect execution until the end of the batch |
+| `untrack(fn)` | Read signals without creating dependency edges |
+| `unown(fn)` | Detach child scopes and effects from the current owner |
+| `createScope(fn)` | Create a standalone ownership scope without a computation |
+| `match(signal(s), handlers)` | Conditional dispatch on signal state (`ok` / `err` / `nil`) |
+
+`match()` belongs conceptually with `createEffect`: both deal with side-effectful reactions to state changes. `match()` is the primary ergonomic API for conditional effect branching over pending or errored signals, and is designed to be used inside effects.
+
+### Utility Function Exports
+
+A small set of utility functions is exported for the benefit of library authors:
+
+| Function | Status |
+|----------|--------|
+| `isFunction`, `isRecord`, `valueString` | Intentionally stable — used by Le Truc. Will not be removed before v2.0. |
+| `isAsyncFunction`, `isObjectOfType` | Deprecated. Candidates for removal in v2.0. |
+| `isEqual` | Internal helper exposed accidentally. Candidate for removal in v2.0. |
+
+Type guards for all 9 signal types (`isState`, `isMemo`, `isTask`, `isSensor`, `isSlot`, `isList`, `isCollection`, `isStore`) are intentionally exported and stable.
+
 ## Runtime Environments
 
 - All evergreen browsers
@@ -84,10 +110,10 @@ The following are explicitly out of scope and will not be added to the library:
 
 ## Stability
 
-The library is stable at 1.0.0. The API surface — how signals are created and consumed — will not change except under the following conditions:
+The library is stable at 1.0.0. New features are added reluctantly — bundle size and conceptual simplicity are the gatekeeping criteria. The signal type set (9 types) is considered complete; new types would only be considered if major Web Platform changes shift the optimal way to achieve the library's existing goals.
 
-- **Breaking changes** only if major new features of the Web Platform shift the optimal way to achieve the goals this library already covers.
-- **New features** are not expected. The signal type set is complete.
+- **Breaking changes** require a major version bump, and only if major new features of the Web Platform shift the optimal way to achieve the goals this library already covers.
+- **New non-breaking features** may be added when they fill a genuine gap that consuming libraries would otherwise have to implement themselves, fit within the existing mental model, and do not add conceptual weight.
 - **Backward compatibility** is maintained from 1.0 onward.
 
 ## Success Criteria
