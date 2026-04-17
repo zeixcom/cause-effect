@@ -20,7 +20,7 @@ import {
 	TYPE_COLLECTION,
 	untrack,
 } from '../graph'
-import { isAsyncFunction, isObjectOfType, isSyncFunction } from '../util'
+import { isAsyncFunction, isSignalOfType, isSyncFunction } from '../util'
 import {
 	getKeyGenerator,
 	isList,
@@ -530,7 +530,7 @@ function createCollection<T extends {}>(
  * @returns True if the value is a Collection
  */
 function isCollection<T extends {}>(value: unknown): value is Collection<T> {
-	return isObjectOfType(value, TYPE_COLLECTION)
+	return isSignalOfType(value, TYPE_COLLECTION)
 }
 
 /**

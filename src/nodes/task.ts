@@ -18,7 +18,7 @@ import {
 	type TaskNode,
 	TYPE_TASK,
 } from '../graph'
-import { isAsyncFunction, isObjectOfType } from '../util'
+import { isAsyncFunction, isSignalOfType } from '../util'
 
 /* === Types === */
 
@@ -43,6 +43,7 @@ type Task<T extends {}> = {
 
 	/**
 	 * Checks if the task is currently executing.
+	 * Used by `match()` to route to the `stale` handler when the task has a retained value.
 	 * @returns True if a computation is in progress
 	 */
 	isPending(): boolean
@@ -166,7 +167,7 @@ function createTask<T extends {}>(
  * @returns True if the value is a Task
  */
 function isTask<T extends {} = unknown & {}>(value: unknown): value is Task<T> {
-	return isObjectOfType(value, TYPE_TASK)
+	return isSignalOfType(value, TYPE_TASK)
 }
 
 export { createTask, isTask, type Task }

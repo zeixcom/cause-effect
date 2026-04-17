@@ -34,6 +34,19 @@ type MutableSignal<T extends {}> = {
 	update(callback: (value: T) => T): void
 }
 
+/* === Constants === */
+
+const SIGNAL_TYPES = new Set([
+	TYPE_STATE,
+	TYPE_MEMO,
+	TYPE_TASK,
+	TYPE_SENSOR,
+	TYPE_SLOT,
+	TYPE_LIST,
+	TYPE_COLLECTION,
+	TYPE_STORE,
+])
+
 /* === Factory Functions === */
 
 /**
@@ -124,18 +137,12 @@ function isComputed<T extends {}>(value: unknown): value is Memo<T> {
  * @returns True if value is a Signal, false otherwise
  */
 function isSignal<T extends {}>(value: unknown): value is Signal<T> {
-	const signalsTypes = [
-		TYPE_STATE,
-		TYPE_MEMO,
-		TYPE_TASK,
-		TYPE_SENSOR,
-		TYPE_SLOT,
-		TYPE_LIST,
-		TYPE_COLLECTION,
-		TYPE_STORE,
-	]
-	const typeStyle = Object.prototype.toString.call(value).slice(8, -1)
-	return signalsTypes.includes(typeStyle)
+	return (
+		value != null &&
+		SIGNAL_TYPES.has(
+			(value as Record<symbol, unknown>)[Symbol.toStringTag] as string,
+		)
+	)
 }
 
 /**

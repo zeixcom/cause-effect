@@ -88,6 +88,7 @@ export {
 	isAsyncFunction,
 	isFunction,
 	isObjectOfType,
+	isSignalOfType,
 	isRecord,
 	valueString,
 } from './src/util'

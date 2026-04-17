@@ -395,9 +395,26 @@ createEffect(() => {
   match(userData, {
     ok: user => console.log('User:', user),
     nil: () => console.log('Loading...'),
-    err: error => console.error(error)
+    err: error => console.error(error),
+    stale: () => console.log('Refreshing...')
   })
 })
+```
+
+**Handler routing precedence: `nil` > `err` > `stale` > `ok`.** `nil` fires when any signal has no value yet (Task still in its first computation, no initial value provided). `err` fires when any signal holds an error. `stale` fires when all signals have a value but at least one Task signal is currently re-computing — i.e. it has a retained value from a previous resolution but its dependencies changed and a new computation is in flight. If `stale` is omitted, `ok` is called instead, preserving backward compatibility for callers that don't need to distinguish stale from fresh values.
+
+**`stale` is a thunk — it receives no arguments.** The retained value is intentionally withheld: the stale display concern (e.g. dimming the current content, showing a progress bar) belongs to the cleanup returned by `stale`, not to a second rendering of the value. The cleanup returned by `stale` runs synchronously before the next dispatch, so it is the right place to reset any stale indicator:
+
+```js
+createEffect(() => match(userData, {
+  ok: user => renderUser(user),
+  nil: () => showSpinner(),
+  stale: () => {
+    dimContent()           // show stale indicator
+    return clearDimmed     // called when ok or err fires next
+  },
+  err: e => showError(e)
+}))
 ```
 
 **When to make a handler async.** The `ok` (and `err`) handler may return a `Promise`. Use this for *external* side effects whose result does not need to drive reactive state — sending analytics, writing to IndexedDB, triggering a toast notification, or any fire-and-forget call. A cleanup function returned by the resolved Promise is registered and called synchronously before the next re-run.

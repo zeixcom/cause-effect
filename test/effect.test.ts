@@ -590,6 +590,159 @@ describe('match', () => {
 		expect(result).toBe(30)
 	})
 
+	describe('stale handler', () => {
+		// stale fires when: task.get() succeeds (retained value) AND task.isPending() is true.
+		// recomputeTask() sets node.controller synchronously, so isPending() = true immediately
+		// after the first get() call that triggers recomputation.
+		test('should call stale on initial run when task has a seeded value and is computing', async () => {
+			const task = createTask(async () => {
+				await wait(50)
+				return 99
+			}, { value: 42 })
+			let okCount = 0
+			let staleCount = 0
+
+			createEffect(() =>
+				match(task, {
+					ok: () => { okCount++ },
+					stale: () => { staleCount++ },
+				}),
+			)
+
+			// First run: task has 42 (seeded) but is computing → stale
+			expect(staleCount).toBe(1)
+			expect(okCount).toBe(0)
+
+			await wait(60)
+			// Resolved to 99 (changed): ok
+			expect(okCount).toBe(1)
+			expect(staleCount).toBe(1)
+		})
+
+		test('should call stale when another dependency changes while task is still pending', async () => {
+			const other = createState(0)
+			const task = createTask(async () => {
+				await wait(100)
+				return 42
+			}, { value: 0 })
+			const log: string[] = []
+
+			createEffect(() => {
+				const o = other.get()
+				match(task, {
+					ok: v => { log.push(`ok:${v}:${o}`) },
+					stale: () => { log.push(`stale:${o}`) },
+				})
+			})
+
+			// Initial run: task has seeded value 0, computing → stale
+			expect(log).toEqual(['stale:0'])
+
+			// While task is still in flight, another dependency changes → effect re-runs FLAG_DIRTY
+			other.set(1)
+			expect(log).toEqual(['stale:0', 'stale:1'])
+
+			await wait(110)
+			// Task resolved: effect re-runs, isPending() = false → ok
+			expect(log[log.length - 1]).toMatch(/^ok:42:/)
+		})
+
+		test('should fall back to ok when stale handler is absent', async () => {
+			const task = createTask(async () => {
+				await wait(50)
+				return 99
+			}, { value: 42 })
+			let okCount = 0
+
+			createEffect(() =>
+				match(task, {
+					ok: () => { okCount++ },
+				}),
+			)
+
+			// No stale handler: falls back to ok even while pending
+			expect(okCount).toBe(1)
+			await wait(60)
+			// Resolved to 99 (different value): ok again
+			expect(okCount).toBe(2)
+		})
+
+		test('should call stale for tuple overload when any task is re-computing', async () => {
+			const a = createState(10)
+			const task = createTask(async () => {
+				await wait(50)
+				return 99
+			}, { value: 0 })
+			let okCount = 0
+			let staleCount = 0
+
+			createEffect(() =>
+				match([a, task], {
+					ok: () => { okCount++ },
+					stale: () => { staleCount++ },
+				}),
+			)
+
+			// First run: task has seeded value 0, computing → stale
+			expect(staleCount).toBe(1)
+			expect(okCount).toBe(0)
+
+			await wait(60)
+			// Task resolved to 99: ok (with a=10)
+			expect(okCount).toBe(1)
+			expect(staleCount).toBe(1)
+		})
+
+		test('nil takes precedence over stale', async () => {
+			// One task unresolved (no initial value → nil), one task with seeded value (stale)
+			const staleTask = createTask(async () => {
+				await wait(200)
+				return 42
+			}, { value: 0 })
+			const nilTask = createTask(async () => {
+				await wait(200)
+				return 99
+			})
+			let nilCount = 0
+			let staleCount = 0
+			let okCount = 0
+
+			createEffect(() =>
+				match([staleTask, nilTask], {
+					ok: () => { okCount++ },
+					nil: () => { nilCount++ },
+					stale: () => { staleCount++ },
+				}),
+			)
+
+			// nilTask throws UnsetSignalValueError → pending = true → nil wins over stale
+			expect(nilCount).toBe(1)
+			expect(staleCount).toBe(0)
+			expect(okCount).toBe(0)
+		})
+
+		test('stale cleanup runs before next dispatch', async () => {
+			const task = createTask(async () => {
+				await wait(50)
+				return 99
+			}, { value: 42 })
+			let cleanupCount = 0
+
+			createEffect(() =>
+				match(task, {
+					ok: () => {},
+					stale: () => () => { cleanupCount++ },
+				}),
+			)
+
+			// First run: stale → cleanup function registered
+			expect(cleanupCount).toBe(0)
+			await wait(60)
+			// Task resolved (42 → 99): effect re-runs, cleanup runs first, then ok
+			expect(cleanupCount).toBe(1)
+		})
+	})
+
 	describe('Async Handlers', () => {
 		test('should not register cleanup from stale async handler after disposal', async () => {
 			let cleanupRegistered = false

@@ -15,7 +15,7 @@ import {
 	TYPE_SLOT,
 } from '../graph'
 import { isMutableSignal, isSignal } from '../signal'
-import { isObjectOfType } from '../util'
+import { isSignalOfType } from '../util'
 
 /* === Types === */
 
@@ -132,7 +132,7 @@ function createSlot<T extends {}>(
  * @returns True if the value is a Slot
  */
 function isSlot<T extends {} = unknown & {}>(value: unknown): value is Slot<T> {
-	return isObjectOfType(value, TYPE_SLOT)
+	return isSignalOfType(value, TYPE_SLOT)
 }
 
 export { createSlot, isSlot, type Slot }
