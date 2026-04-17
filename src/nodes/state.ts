@@ -8,7 +8,7 @@ import {
 	setState,
 	TYPE_STATE,
 } from '../graph'
-import { isObjectOfType } from '../util'
+import { isSignalOfType } from '../util'
 
 /* === Types === */
 
@@ -129,7 +129,7 @@ function createState<T extends {}>(
 function isState<T extends {} = unknown & {}>(
 	value: unknown,
 ): value is State<T> {
-	return isObjectOfType(value, TYPE_STATE)
+	return isSignalOfType(value, TYPE_STATE)
 }
 
 export { createState, isState, type State, type UpdateCallback }

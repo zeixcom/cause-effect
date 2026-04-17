@@ -16,14 +16,29 @@ function isSyncFunction<T extends unknown & { then?: undefined }>(
 	return isFunction(fn) && fn.constructor.name !== 'AsyncFunction'
 }
 
+/**
+ * @deprecated Use `isSignalOfType()` for signal type guards.
+ * This function allocates two strings per call and will be removed in a future release.
+ */
 function isObjectOfType<T>(value: unknown, type: string): value is T {
 	return Object.prototype.toString.call(value) === `[object ${type}]`
+}
+
+function isSignalOfType<T>(value: unknown, type: string): value is T {
+	return (
+		value != null &&
+		(value as Record<symbol, unknown>)[Symbol.toStringTag] === type
+	)
 }
 
 function isRecord<T extends Record<string, unknown>>(
 	value: unknown,
 ): value is T {
-	return isObjectOfType(value, 'Object')
+	return (
+		value !== null &&
+		typeof value === 'object' &&
+		Object.getPrototypeOf(value) === Object.prototype
+	)
 }
 
 function isUniformArray<T>(
@@ -48,6 +63,7 @@ export {
 	isAsyncFunction,
 	isSyncFunction,
 	isObjectOfType,
+	isSignalOfType,
 	isRecord,
 	isUniformArray,
 	valueString,

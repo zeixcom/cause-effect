@@ -20,7 +20,7 @@ import {
 	TYPE_LIST,
 	untrack,
 } from '../graph'
-import { isFunction, isObjectOfType, isRecord } from '../util'
+import { isFunction, isSignalOfType, isRecord } from '../util'
 import {
 	type Collection,
 	type CollectionSource,
@@ -615,7 +615,7 @@ function createList<T extends {}>(
  * @returns True if the value is a List
  */
 function isList<T extends {}>(value: unknown): value is List<T> {
-	return isObjectOfType(value, TYPE_LIST)
+	return isSignalOfType(value, TYPE_LIST)
 }
 
 /* === Exports === */

@@ -13,7 +13,7 @@ import {
 	setState,
 	TYPE_SENSOR,
 } from '../graph'
-import { isObjectOfType, isSyncFunction } from '../util'
+import { isSignalOfType, isSyncFunction } from '../util'
 
 /* === Types === */
 
@@ -143,7 +143,7 @@ function createSensor<T extends {}>(
 function isSensor<T extends {} = unknown & {}>(
 	value: unknown,
 ): value is Sensor<T> {
-	return isObjectOfType(value, TYPE_SENSOR)
+	return isSignalOfType(value, TYPE_SENSOR)
 }
 
 export {

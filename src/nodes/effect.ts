@@ -17,6 +17,7 @@ import {
 	type Signal,
 	trimSources,
 } from '../graph'
+import { isTask } from './task'
 
 /* === Types === */
 
@@ -37,6 +38,8 @@ type MatchHandlers<T extends readonly Signal<unknown & {}>[]> = {
 	err?: (errors: readonly Error[]) => MaybePromise<MaybeCleanup>
 	/** Called when one or more signals are unset (pending). */
 	nil?: () => MaybePromise<MaybeCleanup>
+	/** Called when all signals have a (stale) value but one or more Task signals are re-computing. Falls back to `ok` if absent. */
+	stale?: () => MaybePromise<MaybeCleanup>
 }
 
 /**
@@ -51,6 +54,8 @@ type SingleMatchHandlers<T extends {}> = {
 	err?: (error: Error) => MaybePromise<MaybeCleanup>
 	/** Called when the signal is unset (pending). */
 	nil?: () => MaybePromise<MaybeCleanup>
+	/** Called when the signal has a (stale) value but the Task is re-computing. Falls back to `ok` if absent. */
+	stale?: () => MaybePromise<MaybeCleanup>
 }
 
 /* === Exported Functions === */
@@ -116,7 +121,7 @@ function createEffect(fn: EffectCallback): Cleanup {
  *
  * @since 1.1
  * @param signal - A single signal to read.
- * @param handlers - Object with an `ok` branch (receives the value directly) and optional `err` and `nil` branches.
+ * @param handlers - Object with an `ok` branch (receives the value directly) and optional `err`, `nil`, and `stale` branches.
  * @returns An optional cleanup function if the active handler returns one.
  * @throws RequiredOwnerError If called without an active owner.
  */
@@ -130,7 +135,7 @@ function match<T extends {}>(
  *
  * @since 0.15.0
  * @param signals - Tuple of signals to read; all must have a value for `ok` to run.
- * @param handlers - Object with an `ok` branch and optional `err` and `nil` branches.
+ * @param handlers - Object with an `ok` branch and optional `err`, `nil`, and `stale` branches. Routing precedence: `nil` > `err` > `stale` > `ok`.
  * @returns An optional cleanup function if the active handler returns one.
  * @throws RequiredOwnerError If called without an active owner.
  *
@@ -159,7 +164,7 @@ function match(
 	const isSingle = !Array.isArray(signalOrSignals)
 	const signals = isSingle ? [signalOrSignals] : signalOrSignals
 
-	const { nil } = handlers
+	const { nil, stale } = handlers
 	const ok = isSingle
 		? (values: unknown[]) => handlers.ok(values[0])
 		: (values: unknown[]) => handlers.ok(values)
@@ -189,6 +194,8 @@ function match(
 	try {
 		if (pending) out = nil?.()
 		else if (errors) out = err(errors)
+		else if (stale && signals.some(s => isTask(s) && s.isPending()))
+			out = stale()
 		else out = ok(values)
 	} catch (e) {
 		err([e instanceof Error ? e : new Error(String(e))])

@@ -30,7 +30,8 @@
 	"scripts": {
 		"build": "bunx tsc --project tsconfig.build.json && bun build index.ts --outdir ./ --minify && bun build index.ts --outfile index.dev.js",
 		"bench": "bun run bench/reactivity.bench.ts",
-		"test": "bun test",
+		"test": "bun test --path-ignore-patterns=**/regression*",
+		"regression": "bun test test/regression.test.ts",
 		"lint": "bunx biome lint --write"
 	}
 }
