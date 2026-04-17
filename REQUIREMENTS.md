@@ -58,7 +58,7 @@ Five utilities complete the public API alongside the signal types:
 | `untrack(fn)` | Read signals without creating dependency edges |
 | `unown(fn)` | Detach child scopes and effects from the current owner |
 | `createScope(fn)` | Create a standalone ownership scope without a computation |
-| `match(signal(s), handlers)` | Conditional dispatch on signal state (`ok` / `err` / `nil`) |
+| `match(signal(s), handlers)` | Conditional dispatch on signal state (`nil` > `err` > `stale` > `ok`) |
 
 `match()` belongs conceptually with `createEffect`: both deal with side-effectful reactions to state changes. `match()` is the primary ergonomic API for conditional effect branching over pending or errored signals, and is designed to be used inside effects.
 
@@ -68,11 +68,12 @@ A small set of utility functions is exported for the benefit of library authors:
 
 | Function | Status |
 |----------|--------|
+| `isSignalOfType(value, type)` | Intentionally stable — the canonical signal type guard primitive. Zero allocations (`Symbol.toStringTag` direct check). |
 | `isFunction`, `isRecord`, `valueString` | Intentionally stable — used by Le Truc. Will not be removed before v2.0. |
-| `isAsyncFunction`, `isObjectOfType` | Deprecated. Candidates for removal in v2.0. |
+| `isAsyncFunction`, `isObjectOfType` | Deprecated. Candidates for removal in v2.0. (`isSignalOfType` replaces `isObjectOfType` for signal guards.) |
 | `isEqual` | Internal helper exposed accidentally. Candidate for removal in v2.0. |
 
-Type guards for all 9 signal types (`isState`, `isMemo`, `isTask`, `isSensor`, `isSlot`, `isList`, `isCollection`, `isStore`) are intentionally exported and stable.
+Type guards for all 8 signal types (`isState`, `isMemo`, `isTask`, `isSensor`, `isSlot`, `isList`, `isCollection`, `isStore`) are intentionally exported and stable.
 
 ## Runtime Environments
 

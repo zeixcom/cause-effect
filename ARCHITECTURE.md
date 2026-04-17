@@ -233,6 +233,15 @@ A side-effecting computation that runs immediately and re-runs when dependencies
 
 Effects double as owners: they have a `cleanup` field and become `activeOwner` during execution. Child effects and scopes created during execution are automatically disposed when the parent effect re-runs or is disposed.
 
+**`match(signal(s), handlers)`** is the ergonomic companion to `createEffect`. It reads one or more signals inside the effect and dispatches to a handler based on signal state, following this precedence:
+
+1. **`nil`** — one or more signals are unset (pending, no value yet).
+2. **`err`** — one or more signals hold an error (and none are nil).
+3. **`stale`** — all signals have a retained value but at least one `Task` is currently executing (`isPending() === true`). If `stale` is omitted, falls back to `ok`, preserving the last resolved value during re-fetches.
+4. **`ok`** — all signals have a resolved value.
+
+Any cleanup returned by a handler is registered on the active owner and runs before the next dispatch. `match()` must be called within an active owner (effect or scope); it throws `RequiredOwnerError` otherwise.
+
 ### Slot (`src/nodes/slot.ts`)
 
 **Graph node**: `MemoNode<T>` (source + sink)
