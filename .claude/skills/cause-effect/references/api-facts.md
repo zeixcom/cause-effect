@@ -151,19 +151,28 @@ Object.defineProperty(element, 'name', nameSlot)
 </callback_patterns>
 
 <match_helper>
-`match` reads one or more Sensor/Task signals and routes to `ok`, `nil`, or `err` based on
-whether all signals have a value. Use it to safely handle the unset state without try/catch.
+`match` reads one or more Sensor/Task signals and routes to a handler based on signal state.
 
-**Single-signal form** — `ok` receives the value directly, `err` receives a single `Error`:
+**Routing precedence:** `nil` > `err` > `stale` > `ok`
+
+**Handlers:**
+- `nil` — at least one signal has no value yet (loading)
+- `err` — at least one signal has an error
+- `stale` — all signals have a value but at least one Task is re-fetching (`isPending() === true`). Omitting `stale` falls back to `ok`, showing retained data unchanged. Cleanup returned by `stale` runs before the next handler fires.
+- `ok` — all signals have a settled value
+
+**Single-signal form** — `ok` receives the value directly, `err` a single `Error`:
 
 ```typescript
-import { match } from '@zeix/cause-effect'
-
 createEffect(() => {
   match(task, {
-    ok:  data  => render(data),
-    nil: ()    => showSpinner(),
-    err: error => showError(error),
+    ok:    data  => render(data),
+    stale: ()    => {
+      dimContent()
+      return clearDimmed
+    },
+    nil:   ()    => showSpinner(),
+    err:   error => showError(error),
   })
 })
 ```
@@ -173,14 +182,13 @@ createEffect(() => {
 ```typescript
 createEffect(() => {
   match([task, sensor], {
-    ok:  ([taskResult, sensorValue]) => render(taskResult, sensorValue),
+    ok:  ([result, value]) => render(result, value),
     nil: () => showSpinner(),
   })
 })
 ```
 
-Read all signals you care about eagerly in the signals argument — not inside individual
-branches. See `non-obvious-behaviors.md → conditional-reads-delay-watched` for why.
+Read all signals eagerly in the signals argument — not inside branches. See `non-obvious-behaviors.md → conditional-reads-delay-watched`.
 </match_helper>
 
 <lifecycle_summary>
