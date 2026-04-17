@@ -1,14 +1,5 @@
-/**
- * @deprecated
- */
 declare function isFunction<T>(fn: unknown): fn is (...args: unknown[]) => T;
-/**
- * @deprecated
- */
 declare function isAsyncFunction<T>(fn: unknown): fn is (...args: unknown[]) => Promise<T>;
-/**
- * @deprecated
- */
 declare function isSyncFunction<T extends unknown & {
     then?: undefined;
 }>(fn: unknown): fn is (...args: unknown[]) => T;
@@ -18,12 +9,9 @@ declare function isSyncFunction<T extends unknown & {
  */
 declare function isObjectOfType<T>(value: unknown, type: string): value is T;
 declare function isSignalOfType<T>(value: unknown, type: string): value is T;
-/**
- * @deprecated
- */
 declare function isRecord<T extends Record<string, unknown>>(value: unknown): value is T;
 /**
- * @deprecated
+ * @deprecated Use Array.isArray(value) && value.every(guard) instead.
  */
 declare function isUniformArray<T>(value: unknown, guard?: (item: T) => item is T & {}): value is T[];
 /**

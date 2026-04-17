@@ -116,6 +116,42 @@ var batchDepth = 0;
 var flushing = false;
 var DEFAULT_EQUALITY = (a, b) => a === b;
 var SKIP_EQUALITY = (_a, _b) => false;
+var deepEqual = (a, b) => {
+  if (Object.is(a, b))
+    return true;
+  if (typeof a !== typeof b)
+    return false;
+  if (a == null || typeof a !== "object" || b == null || typeof b !== "object")
+    return false;
+  const aIsArray = Array.isArray(a);
+  if (aIsArray !== Array.isArray(b))
+    return false;
+  if (aIsArray) {
+    const aa = a;
+    const ba = b;
+    if (aa.length !== ba.length)
+      return false;
+    for (let i = 0;i < aa.length; i++)
+      if (!deepEqual(aa[i], ba[i]))
+        return false;
+    return true;
+  }
+  if (isRecord(a) && isRecord(b)) {
+    const aKeys = Object.keys(a);
+    if (aKeys.length !== Object.keys(b).length)
+      return false;
+    for (const key of aKeys) {
+      if (!(key in b))
+        return false;
+      if (!deepEqual(a[key], b[key]))
+        return false;
+    }
+    return true;
+  }
+  return false;
+};
+var DEEP_EQUALITY = (a, b) => deepEqual(a, b);
+var isEqual = DEEP_EQUALITY;
 function isValidEdge(checkEdge, node) {
   const sourcesTail = node.sourcesTail;
   if (sourcesTail) {
@@ -458,52 +494,6 @@ function isState(value) {
 }
 
 // src/nodes/list.ts
-function isEqual(a, b, visited) {
-  if (Object.is(a, b))
-    return true;
-  if (typeof a !== typeof b)
-    return false;
-  if (a == null || typeof a !== "object" || b == null || typeof b !== "object")
-    return false;
-  if (!visited)
-    visited = new WeakSet;
-  if (visited.has(a) || visited.has(b))
-    throw new CircularDependencyError("isEqual");
-  visited.add(a);
-  visited.add(b);
-  try {
-    const aIsArray = Array.isArray(a);
-    if (aIsArray !== Array.isArray(b))
-      return false;
-    if (aIsArray) {
-      const aa = a;
-      const ba = b;
-      if (aa.length !== ba.length)
-        return false;
-      for (let i = 0;i < aa.length; i++)
-        if (!isEqual(aa[i], ba[i], visited))
-          return false;
-      return true;
-    }
-    if (isRecord(a) && isRecord(b)) {
-      const aKeys = Object.keys(a);
-      const bKeys = Object.keys(b);
-      if (aKeys.length !== bKeys.length)
-        return false;
-      for (const key of aKeys) {
-        if (!(key in b))
-          return false;
-        if (!isEqual(a[key], b[key], visited))
-          return false;
-      }
-      return true;
-    }
-    return false;
-  } finally {
-    visited.delete(a);
-    visited.delete(b);
-  }
-}
 function keysEqual(a, b) {
   if (a.length !== b.length)
     return false;
@@ -521,7 +511,6 @@ function getKeyGenerator(keyConfig) {
   ];
 }
 function diffArrays(prev, next, prevKeys, generateKey, contentBased) {
-  const visited = new WeakSet;
   const add = {};
   const change = {};
   const remove = {};
@@ -547,7 +536,7 @@ function diffArrays(prev, next, prevKeys, generateKey, contentBased) {
     if (!prevByKey.has(key)) {
       add[key] = val;
       changed = true;
-    } else if (!isEqual(prevByKey.get(key), val, visited)) {
+    } else if (!DEEP_EQUALITY(prevByKey.get(key), val)) {
       change[key] = val;
       changed = true;
     }
@@ -576,7 +565,7 @@ function createList(value, options) {
     sourcesTail: null,
     sinks: null,
     sinksTail: null,
-    equals: isEqual,
+    equals: DEEP_EQUALITY,
     error: undefined
   };
   const applyChanges = (changes) => {
@@ -1294,7 +1283,6 @@ function isSensor(value) {
 }
 // src/nodes/store.ts
 function diffRecords(prev, next) {
-  const visited = new WeakSet;
   const add = {};
   const change = {};
   const remove = {};
@@ -1303,7 +1291,7 @@ function diffRecords(prev, next) {
   const nextKeys = Object.keys(next);
   for (const key of nextKeys) {
     if (key in prev) {
-      if (!isEqual(prev[key], next[key], visited)) {
+      if (!DEEP_EQUALITY(prev[key], next[key])) {
         change[key] = next[key];
         changed = true;
       }
@@ -1347,7 +1335,7 @@ function createStore(value, options) {
     sourcesTail: null,
     sinks: null,
     sinksTail: null,
-    equals: isEqual,
+    equals: DEEP_EQUALITY,
     error: undefined
   };
   const applyChanges = (changes) => {
@@ -1639,5 +1627,7 @@ export {
   NullishSignalValueError,
   InvalidSignalValueError,
   InvalidCallbackError,
+  DEFAULT_EQUALITY,
+  DEEP_EQUALITY,
   CircularDependencyError
 };

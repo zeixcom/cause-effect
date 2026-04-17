@@ -1,12 +1,9 @@
-import {
-	CircularDependencyError,
-	DuplicateKeyError,
-	validateSignalValue,
-} from '../errors'
+import { DuplicateKeyError, validateSignalValue } from '../errors'
 import {
 	batch,
 	batchDepth,
 	type Cleanup,
+	DEEP_EQUALITY,
 	FLAG_CLEAN,
 	FLAG_DIRTY,
 	FLAG_RELINK,
@@ -100,68 +97,6 @@ type List<T extends {}> = {
 
 /* === Functions === */
 
-/**
- * Checks if two values are equal with cycle detection
- *
- * @since 0.15.0
- * @param a - First value to compare
- * @param b - Second value to compare
- * @param visited - Set to track visited objects for cycle detection
- * @returns Whether the two values are equal
- */
-function isEqual<T>(a: T, b: T, visited?: WeakSet<object>): boolean {
-	// Fast paths
-	if (Object.is(a, b)) return true
-	if (typeof a !== typeof b) return false
-	if (
-		a == null ||
-		typeof a !== 'object' ||
-		b == null ||
-		typeof b !== 'object'
-	)
-		return false
-
-	// Cycle detection (only allocate WeakSet when both values are objects)
-	if (!visited) visited = new WeakSet()
-	if (visited.has(a as object) || visited.has(b as object))
-		throw new CircularDependencyError('isEqual')
-	visited.add(a)
-	visited.add(b)
-
-	try {
-		const aIsArray = Array.isArray(a)
-		if (aIsArray !== Array.isArray(b)) return false
-
-		if (aIsArray) {
-			const aa = a as unknown[]
-			const ba = b as unknown[]
-			if (aa.length !== ba.length) return false
-			for (let i = 0; i < aa.length; i++)
-				if (!isEqual(aa[i], ba[i], visited)) return false
-			return true
-		}
-
-		if (isRecord(a) && isRecord(b)) {
-			const aKeys = Object.keys(a)
-			const bKeys = Object.keys(b)
-
-			if (aKeys.length !== bKeys.length) return false
-			for (const key of aKeys) {
-				if (!(key in b)) return false
-				if (!isEqual(a[key], b[key], visited)) return false
-			}
-			return true
-		}
-
-		// For non-records/non-arrays, they are only equal if they are the same reference
-		// (which would have been caught by Object.is at the beginning)
-		return false
-	} finally {
-		visited.delete(a)
-		visited.delete(b)
-	}
-}
-
 /** Shallow equality check for string arrays */
 function keysEqual(a: string[], b: string[]): boolean {
 	if (a.length !== b.length) return false
@@ -197,14 +132,13 @@ function getKeyGenerator<T extends {}>(
  *   when false, reuse positional keys from currentKeys (synthetic keys)
  * @returns The differences in DiffResult format plus updated keys array
  */
-function diffArrays<T>(
+function diffArrays<T extends {}>(
 	prev: T[],
 	next: T[],
 	prevKeys: string[],
 	generateKey: (item: T) => string,
 	contentBased: boolean,
 ): DiffResult & { newKeys: string[] } {
-	const visited = new WeakSet()
 	const add = {} as UnknownRecord
 	const change = {} as UnknownRecord
 	const remove = {} as UnknownRecord
@@ -241,7 +175,7 @@ function diffArrays<T>(
 		if (!prevByKey.has(key)) {
 			add[key] = val
 			changed = true
-		} else if (!isEqual(prevByKey.get(key), val, visited)) {
+		} else if (!DEEP_EQUALITY(prevByKey.get(key)!, val)) {
 			change[key] = val
 			changed = true
 		}
@@ -301,7 +235,7 @@ function createList<T extends {}>(
 		sourcesTail: null,
 		sinks: null,
 		sinksTail: null,
-		equals: isEqual,
+		equals: DEEP_EQUALITY,
 		error: undefined,
 	}
 
@@ -615,7 +549,6 @@ export {
 	type ListOptions,
 	type UnknownRecord,
 	createList,
-	isEqual,
 	isList,
 	getKeyGenerator,
 	keysEqual,

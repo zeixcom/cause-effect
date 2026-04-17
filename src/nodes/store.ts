@@ -3,6 +3,7 @@ import {
 	batch,
 	batchDepth,
 	type Cleanup,
+	DEEP_EQUALITY,
 	FLAG_CLEAN,
 	FLAG_DIRTY,
 	FLAG_RELINK,
@@ -19,7 +20,6 @@ import { isSignalOfType, isRecord } from '../util'
 import {
 	createList,
 	type DiffResult,
-	isEqual,
 	type List,
 	type UnknownRecord,
 } from './list'
@@ -82,8 +82,6 @@ type Store<T extends UnknownRecord> = BaseStore<T> & {
 
 /** Diff two records and return granular changes */
 function diffRecords<T extends UnknownRecord>(prev: T, next: T): DiffResult {
-	const visited = new WeakSet()
-
 	const add = {} as UnknownRecord
 	const change = {} as UnknownRecord
 	const remove = {} as UnknownRecord
@@ -95,7 +93,7 @@ function diffRecords<T extends UnknownRecord>(prev: T, next: T): DiffResult {
 	// Pass 1: iterate new keys — find additions and changes
 	for (const key of nextKeys) {
 		if (key in prev) {
-			if (!isEqual(prev[key], next[key], visited)) {
+			if (!DEEP_EQUALITY(prev[key] as {}, next[key] as {})) {
 				change[key] = next[key]
 				changed = true
 			}
@@ -174,7 +172,7 @@ function createStore<T extends UnknownRecord>(
 		sourcesTail: null,
 		sinks: null,
 		sinksTail: null,
-		equals: isEqual,
+		equals: DEEP_EQUALITY,
 		error: undefined,
 	}
 

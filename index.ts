@@ -19,6 +19,8 @@ export {
 	type Cleanup,
 	type ComputedOptions,
 	createScope,
+	DEFAULT_EQUALITY,
+	DEEP_EQUALITY,
 	type EffectCallback,
 	type MaybeCleanup,
 	type MemoCallback,
@@ -47,7 +49,6 @@ export {
 } from './src/nodes/effect'
 export {
 	createList,
-	isEqual,
 	isList,
 	type KeyConfig,
 	type List,
@@ -92,3 +93,6 @@ export {
 	isRecord,
 	valueString,
 } from './src/util'
+
+/** @deprecated Use `DEEP_EQUALITY` instead. */
+export { isEqual } from './src/graph'
