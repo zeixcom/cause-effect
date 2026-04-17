@@ -166,6 +166,11 @@ const FLAG_RELINK = 1 << 3
 
 /* === Module State === */
 
+// activeSink, activeOwner, and batchDepth are exported as mutable `let` bindings.
+// Importers read the live value via ESM live binding semantics — this only works in
+// native ESM and bundlers that preserve live bindings (Rollup, esbuild ESM mode).
+// A pre-bundled CJS output would snapshot these at import time, silently breaking
+// dependency tracking and batching. The library is ESM-only by design (see REQUIREMENTS.md).
 let activeSink: SinkNode | null = null
 let activeOwner: OwnerNode | null = null
 const queuedEffects: EffectNode[] = []
@@ -570,15 +575,15 @@ function createScope(fn: () => MaybeCleanup): Cleanup {
 	const prevOwner = activeOwner
 	const scope: Scope = { cleanup: null }
 	activeOwner = scope
+	const dispose = () => runCleanup(scope)
 
 	try {
 		const out = fn()
 		if (typeof out === 'function') registerCleanup(scope, out)
-		const dispose = () => runCleanup(scope)
-		if (prevOwner) registerCleanup(prevOwner, dispose)
 		return dispose
 	} finally {
 		activeOwner = prevOwner
+		if (prevOwner) registerCleanup(prevOwner, dispose)
 	}
 }
 
@@ -601,6 +606,19 @@ function unown<T>(fn: () => T): T {
 	} finally {
 		activeOwner = prev
 	}
+}
+
+function makeSubscribe(node: SourceNode, onWatch?: () => Cleanup): () => void {
+	return onWatch
+		? () => {
+				if (activeSink) {
+					if (!node.sinks) node.stop = onWatch()
+					link(node, activeSink)
+				}
+			}
+		: () => {
+				if (activeSink) link(node, activeSink)
+			}
 }
 
 export {
@@ -631,6 +649,7 @@ export {
 	FLAG_RELINK,
 	flush,
 	link,
+	makeSubscribe,
 	propagate,
 	refresh,
 	registerCleanup,

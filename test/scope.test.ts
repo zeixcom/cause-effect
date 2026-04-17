@@ -188,4 +188,26 @@ describe('createScope', () => {
 		})
 		expect(() => dispose()).not.toThrow()
 	})
+
+	test('should dispose child effects even when fn() throws', () => {
+		const source = createState(0)
+		let count = 0
+		const outerDispose = createScope(() => {
+			try {
+				createScope(() => {
+					createEffect((): undefined => {
+						source.get()
+						count++
+					})
+					throw new Error('oops')
+				})
+			} catch (_) {}
+		})
+		expect(count).toBe(1) // effect ran once during setup
+		source.set(1)
+		expect(count).toBe(2) // effect re-runs before outer dispose
+		outerDispose()
+		source.set(2)
+		expect(count).toBe(2) // effect must NOT re-run after outer dispose
+	})
 })

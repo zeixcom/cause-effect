@@ -11,6 +11,7 @@ import {
 	FLAG_DIRTY,
 	FLAG_RELINK,
 	link,
+	makeSubscribe,
 	type MemoNode,
 	propagate,
 	refresh,
@@ -386,64 +387,58 @@ function createCollection<T extends {}>(
 	node.value = value
 	node.flags = FLAG_DIRTY // First refresh() will establish child edges
 
-	function subscribe(): void {
-		if (activeSink) {
-			if (!node.sinks)
-				node.stop = watched((changes: CollectionChanges<T>): void => {
-					const { add, change, remove } = changes
-					if (!add?.length && !change?.length && !remove?.length)
-						return
-					let structural = false
+	const onChanges = (changes: CollectionChanges<T>): void => {
+		const { add, change, remove } = changes
+		if (!add?.length && !change?.length && !remove?.length) return
+		let structural = false
 
-					batch(() => {
-						// Additions
-						if (add) {
-							for (const item of add) {
-								const key = generateKey(item)
-								signals.set(key, itemFactory(item))
-								itemToKey.set(item, key)
-								if (!keys.includes(key)) keys.push(key)
-								structural = true
-							}
-						}
+		batch(() => {
+			// Additions
+			if (add) {
+				for (const item of add) {
+					const key = generateKey(item)
+					signals.set(key, itemFactory(item))
+					itemToKey.set(item, key)
+					if (!keys.includes(key)) keys.push(key)
+					structural = true
+				}
+			}
 
-						// Changes — only for State signals
-						if (change) {
-							for (const item of change) {
-								const key = resolveKey(item)
-								if (!key) continue
-								const signal = signals.get(key)
-								if (signal && isState(signal)) {
-									// Update reverse map: remove old reference, add new
-									itemToKey.delete(signal.get())
-									signal.set(item)
-									itemToKey.set(item, key)
-								}
-							}
-						}
+			// Changes — only for State signals
+			if (change) {
+				for (const item of change) {
+					const key = resolveKey(item)
+					if (!key) continue
+					const signal = signals.get(key)
+					if (signal && isState(signal)) {
+						// Update reverse map: remove old reference, add new
+						itemToKey.delete(signal.get())
+						signal.set(item)
+						itemToKey.set(item, key)
+					}
+				}
+			}
 
-						// Removals
-						if (remove) {
-							for (const item of remove) {
-								const key = resolveKey(item)
-								if (!key) continue
-								itemToKey.delete(item)
-								signals.delete(key)
-								const index = keys.indexOf(key)
-								if (index !== -1) keys.splice(index, 1)
-								structural = true
-							}
-						}
+			// Removals
+			if (remove) {
+				for (const item of remove) {
+					const key = resolveKey(item)
+					if (!key) continue
+					itemToKey.delete(item)
+					signals.delete(key)
+					const index = keys.indexOf(key)
+					if (index !== -1) keys.splice(index, 1)
+					structural = true
+				}
+			}
 
-						// Mark DIRTY so next get() rebuilds; propagate to sinks
-						node.flags = FLAG_DIRTY | (structural ? FLAG_RELINK : 0)
-						for (let e = node.sinks; e; e = e.nextSink)
-							propagate(e.sink)
-					})
-				})
-			link(node, activeSink)
-		}
+			// Mark DIRTY so next get() rebuilds; propagate to sinks
+			node.flags = FLAG_DIRTY | (structural ? FLAG_RELINK : 0)
+			for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
+		})
 	}
+
+	const subscribe = makeSubscribe(node, () => watched(onChanges))
 
 	const collection: Collection<T> = {
 		[Symbol.toStringTag]: TYPE_COLLECTION,
@@ -533,26 +528,12 @@ function isCollection<T extends {}>(value: unknown): value is Collection<T> {
 	return isSignalOfType(value, TYPE_COLLECTION)
 }
 
-/**
- * Checks if a value is a valid Collection source (List or Collection).
- *
- * @since 0.17.2
- * @param value - The value to check
- * @returns True if the value is a List or Collection
- */
-function isCollectionSource<T extends {}>(
-	value: unknown,
-): value is CollectionSource<T> {
-	return isList(value) || isCollection(value)
-}
-
 /* === Exports === */
 
 export {
 	createCollection,
 	deriveCollection,
 	isCollection,
-	isCollectionSource,
 	type Collection,
 	type CollectionCallback,
 	type CollectionChanges,

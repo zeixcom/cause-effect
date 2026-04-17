@@ -4,7 +4,6 @@ import {
 	validateSignalValue,
 } from '../errors'
 import {
-	activeSink,
 	batch,
 	batchDepth,
 	type Cleanup,
@@ -12,7 +11,7 @@ import {
 	FLAG_DIRTY,
 	FLAG_RELINK,
 	flush,
-	link,
+	makeSubscribe,
 	type MemoNode,
 	propagate,
 	refresh,
@@ -306,21 +305,6 @@ function createList<T extends {}>(
 		error: undefined,
 	}
 
-	const toRecord = (array: T[]): Record<string, T> => {
-		const record = {} as Record<string, T>
-		for (let i = 0; i < array.length; i++) {
-			const val = array[i]
-			if (val === undefined) continue
-			let key = keys[i]
-			if (!key) {
-				key = generateKey(val)
-				keys[i] = key
-			}
-			record[key] = val
-		}
-		return record
-	}
-
 	const applyChanges = (changes: DiffResult): boolean => {
 		let structural = false
 
@@ -360,22 +344,17 @@ function createList<T extends {}>(
 		return changes.changed
 	}
 
-	const watched = options?.watched
-	const subscribe = watched
-		? () => {
-				if (activeSink) {
-					if (!node.sinks) node.stop = watched()
-					link(node, activeSink)
-				}
-			}
-		: () => {
-				if (activeSink) link(node, activeSink)
-			}
+	const subscribe = makeSubscribe(node, options?.watched)
 
 	// --- Initialize ---
-	const initRecord = toRecord(value)
-	for (const key in initRecord) {
-		const val = initRecord[key]
+	for (let i = 0; i < value.length; i++) {
+		const val = value[i]
+		if (val === undefined) continue
+		let key = keys[i]
+		if (!key) {
+			key = generateKey(val)
+			keys[i] = key
+		}
 		validateSignalValue(`${TYPE_LIST} item for key "${key}"`, val)
 		signals.set(key, createState(val))
 	}
@@ -506,7 +485,7 @@ function createList<T extends {}>(
 			const signal = signals.get(key)
 			if (!signal) return
 			validateSignalValue(`${TYPE_LIST} item for key "${key}"`, value)
-			if (signal.get() === value) return
+			if (untrack(() => signal.get()) === value) return
 			signal.set(value)
 			node.flags |= FLAG_DIRTY
 			for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
@@ -561,25 +540,34 @@ function createList<T extends {}>(
 
 			// Build new key order
 			const newOrder = keys.slice(0, actualStart)
+			const change = {} as Record<string, T>
 
 			for (const item of items) {
 				const key = generateKey(item)
-				if (signals.has(key) && !(key in remove))
+				if (key in remove) {
+					// Same key removed and re-inserted: route to change, not add+remove
+					delete remove[key]
+					change[key] = item
+				} else if (signals.has(key)) {
 					throw new DuplicateKeyError(TYPE_LIST, key, item)
+				} else {
+					add[key] = item
+				}
 				newOrder.push(key)
-				add[key] = item
 			}
 
 			newOrder.push(...keys.slice(actualStart + actualDeleteCount))
 
 			const changed = !!(
-				Object.keys(add).length || Object.keys(remove).length
+				Object.keys(add).length ||
+				Object.keys(remove).length ||
+				Object.keys(change).length
 			)
 
 			if (changed) {
 				applyChanges({
 					add,
-					change: {},
+					change,
 					remove,
 					changed,
 				})

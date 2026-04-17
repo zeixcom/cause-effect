@@ -4,13 +4,12 @@ import {
 	validateSignalValue,
 } from '../errors'
 import {
-	activeSink,
 	batchDepth,
 	type ComputedOptions,
 	DEFAULT_EQUALITY,
 	FLAG_DIRTY,
 	flush,
-	link,
+	makeSubscribe,
 	type MemoCallback,
 	type MemoNode,
 	propagate,
@@ -104,20 +103,16 @@ function createMemo<T extends {}>(
 	}
 
 	const watched = options?.watched
-	const subscribe = watched
-		? () => {
-				if (activeSink) {
-					if (!node.sinks)
-						node.stop = watched(() => {
-							propagate(node as unknown as SinkNode)
-							if (batchDepth === 0) flush()
-						})
-					link(node, activeSink)
-				}
-			}
-		: () => {
-				if (activeSink) link(node, activeSink)
-			}
+	const subscribe = makeSubscribe(
+		node,
+		watched
+			? () =>
+					watched(() => {
+						propagate(node as unknown as SinkNode)
+						if (batchDepth === 0) flush()
+					})
+			: undefined,
+	)
 
 	return {
 		[Symbol.toStringTag]: TYPE_MEMO,

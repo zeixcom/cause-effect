@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## 1.2.0
 
 ### Added
 
@@ -15,6 +15,13 @@
 ### Deprecated
 
 - **`isObjectOfType(value, type)`**: Marked `@deprecated`. Allocates two strings per call (`Object.prototype.toString.call()` plus a template literal). Use `isSignalOfType(value, type)` for signal type guards instead. The function remains exported for backward compatibility and will be removed in a future release.
+
+### Fixed
+
+- **`createScope` effect leak on throw**: Previously, if `fn()` threw after creating child effects, `dispose` was never created or registered with the parent owner — child effects leaked and continued running indefinitely. Now `dispose` is created before the `try` block and registered with `prevOwner` in the `finally` clause, so cleanup always executes regardless of whether `fn()` throws.
+- **`list.replace()` spurious dependency edge**: Previously, calling `replace()` from inside an effect linked the item signal to the calling effect as a dependency (via the unguarded `signal.get()` equality check). The effect re-ran — and permanently acquired the dependency — after each `replace()` call. Now the check uses `untrack(() => signal.get())`, so no edge is created during the early-exit test.
+- **`list.splice()` signal corruption on same-key replace**: Previously, splicing out an item and inserting a new item with the same content-based key left the key in `keys` but absent from `signals` — `byKey()` returned `undefined` silently. Now `splice` detects the key overlap and routes to `change` instead of an add+remove pair.
+- **`match()` `err` cleanup silently dropped on thrown errors**: Previously, the catch branch called `err([...])` without capturing the return value — cleanup functions or `Promise<MaybeCleanup>` returned by `err` were silently discarded (memory leak in the error path). Now `out = err([...])` captures the return value for cleanup registration, matching the try-branch behavior.
 
 ## 1.1.1
 

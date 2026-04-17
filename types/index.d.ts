@@ -15,4 +15,4 @@ export { createState, isState, type State, type UpdateCallback, } from './src/no
 export { createStore, isStore, type Store, type StoreOptions, } from './src/nodes/store';
 export { createTask, isTask, type Task } from './src/nodes/task';
 export { createComputed, createMutableSignal, createSignal, isComputed, isMutableSignal, isSignal, type MutableSignal, } from './src/signal';
-export { isAsyncFunction, isFunction, isObjectOfType, isRecord, valueString, } from './src/util';
+export { isAsyncFunction, isFunction, isObjectOfType, isSignalOfType, isRecord, valueString, } from './src/util';

@@ -15,6 +15,8 @@ type MatchHandlers<T extends readonly Signal<unknown & {}>[]> = {
     err?: (errors: readonly Error[]) => MaybePromise<MaybeCleanup>;
     /** Called when one or more signals are unset (pending). */
     nil?: () => MaybePromise<MaybeCleanup>;
+    /** Called when all signals have a (stale) value but one or more Task signals are re-computing. Falls back to `ok` if absent. */
+    stale?: () => MaybePromise<MaybeCleanup>;
 };
 /**
  * Handlers for a single signal passed to `match()`.
@@ -28,6 +30,8 @@ type SingleMatchHandlers<T extends {}> = {
     err?: (error: Error) => MaybePromise<MaybeCleanup>;
     /** Called when the signal is unset (pending). */
     nil?: () => MaybePromise<MaybeCleanup>;
+    /** Called when the signal has a (stale) value but the Task is re-computing. Falls back to `ok` if absent. */
+    stale?: () => MaybePromise<MaybeCleanup>;
 };
 /**
  * Creates a reactive effect that automatically runs when its dependencies change.
@@ -65,7 +69,7 @@ declare function createEffect(fn: EffectCallback): Cleanup;
  *
  * @since 1.1
  * @param signal - A single signal to read.
- * @param handlers - Object with an `ok` branch (receives the value directly) and optional `err` and `nil` branches.
+ * @param handlers - Object with an `ok` branch (receives the value directly) and optional `err`, `nil`, and `stale` branches.
  * @returns An optional cleanup function if the active handler returns one.
  * @throws RequiredOwnerError If called without an active owner.
  */
@@ -76,7 +80,7 @@ declare function match<T extends {}>(signal: Signal<T>, handlers: SingleMatchHan
  *
  * @since 0.15.0
  * @param signals - Tuple of signals to read; all must have a value for `ok` to run.
- * @param handlers - Object with an `ok` branch and optional `err` and `nil` branches.
+ * @param handlers - Object with an `ok` branch and optional `err`, `nil`, and `stale` branches. Routing precedence: `nil` > `err` > `stale` > `ok`.
  * @returns An optional cleanup function if the active handler returns one.
  * @throws RequiredOwnerError If called without an active owner.
  *

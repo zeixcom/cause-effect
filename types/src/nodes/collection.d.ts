@@ -96,12 +96,4 @@ declare function createCollection<T extends {}>(watched: CollectionCallback<T>, 
  * @returns True if the value is a Collection
  */
 declare function isCollection<T extends {}>(value: unknown): value is Collection<T>;
-/**
- * Checks if a value is a valid Collection source (List or Collection).
- *
- * @since 0.17.2
- * @param value - The value to check
- * @returns True if the value is a List or Collection
- */
-declare function isCollectionSource<T extends {}>(value: unknown): value is CollectionSource<T>;
-export { createCollection, deriveCollection, isCollection, isCollectionSource, type Collection, type CollectionCallback, type CollectionChanges, type CollectionOptions, type CollectionSource, type DeriveCollectionCallback, };
+export { createCollection, deriveCollection, isCollection, type Collection, type CollectionCallback, type CollectionChanges, type CollectionOptions, type CollectionSource, type DeriveCollectionCallback, };

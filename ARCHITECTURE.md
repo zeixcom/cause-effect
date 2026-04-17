@@ -302,7 +302,7 @@ Consequence: code that calls `byKey(k).set(v)` to update an item will silently f
 1. Updates the item signal via `signal.set(value)` — this propagates through item signal edges to any consumers subscribed directly (e.g. effects reading `byKey(k).get()`).
 2. Marks the list dirty and propagates through `node.sinks` — this notifies structural consumers regardless of edge state, mirroring what `list.set(newArray)` does internally.
 
-An early-exit guard (`signal.get() === value`) prevents unnecessary propagation when the new value is reference-equal to the current one. If the key does not exist the call is a no-op.
+An early-exit guard (`untrack(() => signal.get()) === value`) prevents unnecessary propagation when the new value is reference-equal to the current one, without creating a dependency edge from the calling effect to the item signal. If the key does not exist the call is a no-op.
 
 `byKey(key).set(value)` remains valid for effects that subscribe directly to the item signal. It is **not** a safe pattern for effects that subscribe to the list via structural accessors.
 

@@ -1,18 +1,22 @@
 // src/util.ts
+var ASYNC_FUNCTION_PROTO = Object.getPrototypeOf(async function() {});
 function isFunction(fn) {
   return typeof fn === "function";
 }
 function isAsyncFunction(fn) {
-  return isFunction(fn) && fn.constructor.name === "AsyncFunction";
+  return isFunction(fn) && Object.getPrototypeOf(fn) === ASYNC_FUNCTION_PROTO;
 }
 function isSyncFunction(fn) {
-  return isFunction(fn) && fn.constructor.name !== "AsyncFunction";
+  return isFunction(fn) && Object.getPrototypeOf(fn) !== ASYNC_FUNCTION_PROTO;
 }
 function isObjectOfType(value, type) {
   return Object.prototype.toString.call(value) === `[object ${type}]`;
 }
+function isSignalOfType(value, type) {
+  return value != null && value[Symbol.toStringTag] === type;
+}
 function isRecord(value) {
-  return isObjectOfType(value, "Object");
+  return value !== null && typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype;
 }
 function isUniformArray(value, guard = (item) => item != null) {
   return Array.isArray(value) && value.every(guard);
@@ -387,16 +391,16 @@ function createScope(fn) {
   const prevOwner = activeOwner;
   const scope = { cleanup: null };
   activeOwner = scope;
+  const dispose = () => runCleanup(scope);
   try {
     const out = fn();
     if (typeof out === "function")
       registerCleanup(scope, out);
-    const dispose = () => runCleanup(scope);
-    if (prevOwner)
-      registerCleanup(prevOwner, dispose);
     return dispose;
   } finally {
     activeOwner = prevOwner;
+    if (prevOwner)
+      registerCleanup(prevOwner, dispose);
   }
 }
 function unown(fn) {
@@ -407,6 +411,18 @@ function unown(fn) {
   } finally {
     activeOwner = prev;
   }
+}
+function makeSubscribe(node, onWatch) {
+  return onWatch ? () => {
+    if (activeSink) {
+      if (!node.sinks)
+        node.stop = onWatch();
+      link(node, activeSink);
+    }
+  } : () => {
+    if (activeSink)
+      link(node, activeSink);
+  };
 }
 // src/nodes/state.ts
 function createState(value, options) {
@@ -438,7 +454,7 @@ function createState(value, options) {
   };
 }
 function isState(value) {
-  return isObjectOfType(value, TYPE_STATE);
+  return isSignalOfType(value, TYPE_STATE);
 }
 
 // src/nodes/list.ts
@@ -563,21 +579,6 @@ function createList(value, options) {
     equals: isEqual,
     error: undefined
   };
-  const toRecord = (array) => {
-    const record = {};
-    for (let i = 0;i < array.length; i++) {
-      const val = array[i];
-      if (val === undefined)
-        continue;
-      let key = keys[i];
-      if (!key) {
-        key = generateKey(val);
-        keys[i] = key;
-      }
-      record[key] = val;
-    }
-    return record;
-  };
   const applyChanges = (changes) => {
     let structural = false;
     for (const key in changes.add) {
@@ -608,20 +609,16 @@ function createList(value, options) {
       node.flags |= FLAG_RELINK;
     return changes.changed;
   };
-  const watched = options?.watched;
-  const subscribe = watched ? () => {
-    if (activeSink) {
-      if (!node.sinks)
-        node.stop = watched();
-      link(node, activeSink);
+  const subscribe = makeSubscribe(node, options?.watched);
+  for (let i = 0;i < value.length; i++) {
+    const val = value[i];
+    if (val === undefined)
+      continue;
+    let key = keys[i];
+    if (!key) {
+      key = generateKey(val);
+      keys[i] = key;
     }
-  } : () => {
-    if (activeSink)
-      link(node, activeSink);
-  };
-  const initRecord = toRecord(value);
-  for (const key in initRecord) {
-    const val = initRecord[key];
     validateSignalValue(`${TYPE_LIST} item for key "${key}"`, val);
     signals.set(key, createState(val));
   }
@@ -732,7 +729,7 @@ function createList(value, options) {
       if (!signal)
         return;
       validateSignalValue(`${TYPE_LIST} item for key "${key}"`, value2);
-      if (signal.get() === value2)
+      if (untrack(() => signal.get()) === value2)
         return;
       signal.set(value2);
       node.flags |= FLAG_DIRTY;
@@ -769,19 +766,25 @@ function createList(value, options) {
         }
       }
       const newOrder = keys.slice(0, actualStart);
+      const change = {};
       for (const item of items) {
         const key = generateKey(item);
-        if (signals.has(key) && !(key in remove))
+        if (key in remove) {
+          delete remove[key];
+          change[key] = item;
+        } else if (signals.has(key)) {
           throw new DuplicateKeyError(TYPE_LIST, key, item);
+        } else {
+          add[key] = item;
+        }
         newOrder.push(key);
-        add[key] = item;
       }
       newOrder.push(...keys.slice(actualStart + actualDeleteCount));
-      const changed = !!(Object.keys(add).length || Object.keys(remove).length);
+      const changed = !!(Object.keys(add).length || Object.keys(remove).length || Object.keys(change).length);
       if (changed) {
         applyChanges({
           add,
-          change: {},
+          change,
           remove,
           changed
         });
@@ -801,7 +804,7 @@ function createList(value, options) {
   return list;
 }
 function isList(value) {
-  return isObjectOfType(value, TYPE_LIST);
+  return isSignalOfType(value, TYPE_LIST);
 }
 
 // src/nodes/memo.ts
@@ -822,20 +825,11 @@ function createMemo(fn, options) {
     stop: undefined
   };
   const watched = options?.watched;
-  const subscribe = watched ? () => {
-    if (activeSink) {
-      if (!node.sinks)
-        node.stop = watched(() => {
-          propagate(node);
-          if (batchDepth === 0)
-            flush();
-        });
-      link(node, activeSink);
-    }
-  } : () => {
-    if (activeSink)
-      link(node, activeSink);
-  };
+  const subscribe = makeSubscribe(node, watched ? () => watched(() => {
+    propagate(node);
+    if (batchDepth === 0)
+      flush();
+  }) : undefined);
   return {
     [Symbol.toStringTag]: TYPE_MEMO,
     get() {
@@ -849,7 +843,7 @@ function createMemo(fn, options) {
   };
 }
 function isMemo(value) {
-  return isObjectOfType(value, TYPE_MEMO);
+  return isSignalOfType(value, TYPE_MEMO);
 }
 
 // src/nodes/task.ts
@@ -871,20 +865,11 @@ function createTask(fn, options) {
     stop: undefined
   };
   const watched = options?.watched;
-  const subscribe = watched ? () => {
-    if (activeSink) {
-      if (!node.sinks)
-        node.stop = watched(() => {
-          propagate(node);
-          if (batchDepth === 0)
-            flush();
-        });
-      link(node, activeSink);
-    }
-  } : () => {
-    if (activeSink)
-      link(node, activeSink);
-  };
+  const subscribe = makeSubscribe(node, watched ? () => watched(() => {
+    propagate(node);
+    if (batchDepth === 0)
+      flush();
+  }) : undefined);
   return {
     [Symbol.toStringTag]: TYPE_TASK,
     get() {
@@ -905,7 +890,7 @@ function createTask(fn, options) {
   };
 }
 function isTask(value) {
-  return isObjectOfType(value, TYPE_TASK);
+  return isSignalOfType(value, TYPE_TASK);
 }
 
 // src/nodes/collection.ts
@@ -1092,59 +1077,54 @@ function createCollection(watched, options) {
   }
   node.value = value;
   node.flags = FLAG_DIRTY;
-  function subscribe() {
-    if (activeSink) {
-      if (!node.sinks)
-        node.stop = watched((changes) => {
-          const { add, change, remove } = changes;
-          if (!add?.length && !change?.length && !remove?.length)
-            return;
-          let structural = false;
-          batch(() => {
-            if (add) {
-              for (const item of add) {
-                const key = generateKey(item);
-                signals.set(key, itemFactory(item));
-                itemToKey.set(item, key);
-                if (!keys.includes(key))
-                  keys.push(key);
-                structural = true;
-              }
-            }
-            if (change) {
-              for (const item of change) {
-                const key = resolveKey(item);
-                if (!key)
-                  continue;
-                const signal = signals.get(key);
-                if (signal && isState(signal)) {
-                  itemToKey.delete(signal.get());
-                  signal.set(item);
-                  itemToKey.set(item, key);
-                }
-              }
-            }
-            if (remove) {
-              for (const item of remove) {
-                const key = resolveKey(item);
-                if (!key)
-                  continue;
-                itemToKey.delete(item);
-                signals.delete(key);
-                const index = keys.indexOf(key);
-                if (index !== -1)
-                  keys.splice(index, 1);
-                structural = true;
-              }
-            }
-            node.flags = FLAG_DIRTY | (structural ? FLAG_RELINK : 0);
-            for (let e = node.sinks;e; e = e.nextSink)
-              propagate(e.sink);
-          });
-        });
-      link(node, activeSink);
-    }
-  }
+  const onChanges = (changes) => {
+    const { add, change, remove } = changes;
+    if (!add?.length && !change?.length && !remove?.length)
+      return;
+    let structural = false;
+    batch(() => {
+      if (add) {
+        for (const item of add) {
+          const key = generateKey(item);
+          signals.set(key, itemFactory(item));
+          itemToKey.set(item, key);
+          if (!keys.includes(key))
+            keys.push(key);
+          structural = true;
+        }
+      }
+      if (change) {
+        for (const item of change) {
+          const key = resolveKey(item);
+          if (!key)
+            continue;
+          const signal = signals.get(key);
+          if (signal && isState(signal)) {
+            itemToKey.delete(signal.get());
+            signal.set(item);
+            itemToKey.set(item, key);
+          }
+        }
+      }
+      if (remove) {
+        for (const item of remove) {
+          const key = resolveKey(item);
+          if (!key)
+            continue;
+          itemToKey.delete(item);
+          signals.delete(key);
+          const index = keys.indexOf(key);
+          if (index !== -1)
+            keys.splice(index, 1);
+          structural = true;
+        }
+      }
+      node.flags = FLAG_DIRTY | (structural ? FLAG_RELINK : 0);
+      for (let e = node.sinks;e; e = e.nextSink)
+        propagate(e.sink);
+    });
+  };
+  const subscribe = makeSubscribe(node, () => watched(onChanges));
   const collection = {
     [Symbol.toStringTag]: TYPE_COLLECTION,
     [Symbol.isConcatSpreadable]: true,
@@ -1205,7 +1185,7 @@ function createCollection(watched, options) {
   return collection;
 }
 function isCollection(value) {
-  return isObjectOfType(value, TYPE_COLLECTION);
+  return isSignalOfType(value, TYPE_COLLECTION);
 }
 // src/nodes/effect.ts
 function createEffect(fn) {
@@ -1234,7 +1214,7 @@ function match(signalOrSignals, handlers) {
     throw new RequiredOwnerError("match");
   const isSingle = !Array.isArray(signalOrSignals);
   const signals = isSingle ? [signalOrSignals] : signalOrSignals;
-  const { nil } = handlers;
+  const { nil, stale } = handlers;
   const ok = isSingle ? (values2) => handlers.ok(values2[0]) : (values2) => handlers.ok(values2);
   const err = isSingle && handlers.err ? (errors2) => handlers.err(errors2[0]) : handlers.err ?? console.error;
   let errors;
@@ -1259,10 +1239,12 @@ function match(signalOrSignals, handlers) {
       out = nil?.();
     else if (errors)
       out = err(errors);
+    else if (stale && (isSingle ? isTask(signals[0]) && signals[0].isPending() : signals.some((s) => isTask(s) && s.isPending())))
+      out = stale();
     else
       out = ok(values);
   } catch (e) {
-    err([e instanceof Error ? e : new Error(String(e))]);
+    out = err([e instanceof Error ? e : new Error(String(e))]);
   }
   if (typeof out === "function")
     return out;
@@ -1308,21 +1290,10 @@ function createSensor(watched, options) {
   };
 }
 function isSensor(value) {
-  return isObjectOfType(value, TYPE_SENSOR);
+  return isSignalOfType(value, TYPE_SENSOR);
 }
 // src/nodes/store.ts
 function diffRecords(prev, next) {
-  const prevValid = isRecord(prev) || Array.isArray(prev);
-  const nextValid = isRecord(next) || Array.isArray(next);
-  if (!prevValid || !nextValid) {
-    const changed2 = !Object.is(prev, next);
-    return {
-      changed: changed2,
-      add: changed2 && nextValid ? next : {},
-      change: {},
-      remove: changed2 && prevValid ? prev : {}
-    };
-  }
   const visited = new WeakSet;
   const add = {};
   const change = {};
@@ -1409,17 +1380,7 @@ function createStore(value, options) {
       node.flags |= FLAG_RELINK;
     return changes.changed;
   };
-  const watched = options?.watched;
-  const subscribe = watched ? () => {
-    if (activeSink) {
-      if (!node.sinks)
-        node.stop = watched();
-      link(node, activeSink);
-    }
-  } : () => {
-    if (activeSink)
-      link(node, activeSink);
-  };
+  const subscribe = makeSubscribe(node, options?.watched);
   for (const key of Object.keys(value))
     addSignal(key, value[key]);
   const store = {
@@ -1528,10 +1489,20 @@ function createStore(value, options) {
   });
 }
 function isStore(value) {
-  return isObjectOfType(value, TYPE_STORE);
+  return isSignalOfType(value, TYPE_STORE);
 }
 
 // src/signal.ts
+var SIGNAL_TYPES = new Set([
+  TYPE_STATE,
+  TYPE_MEMO,
+  TYPE_TASK,
+  TYPE_SENSOR,
+  TYPE_SLOT,
+  TYPE_LIST,
+  TYPE_COLLECTION,
+  TYPE_STORE
+]);
 function createComputed(callback, options) {
   return isAsyncFunction(callback) ? createTask(callback, options) : createMemo(callback, options);
 }
@@ -1565,18 +1536,7 @@ function isComputed(value) {
   return isMemo(value) || isTask(value);
 }
 function isSignal(value) {
-  const signalsTypes = [
-    TYPE_STATE,
-    TYPE_MEMO,
-    TYPE_TASK,
-    TYPE_SENSOR,
-    TYPE_SLOT,
-    TYPE_LIST,
-    TYPE_COLLECTION,
-    TYPE_STORE
-  ];
-  const typeStyle = Object.prototype.toString.call(value).slice(8, -1);
-  return signalsTypes.includes(typeStyle);
+  return value != null && SIGNAL_TYPES.has(value[Symbol.toStringTag]);
 }
 function isMutableSignal(value) {
   return isState(value) || isStore(value) || isList(value);
@@ -1634,7 +1594,7 @@ function createSlot(initialSignal, options) {
   };
 }
 function isSlot(value) {
-  return isObjectOfType(value, TYPE_SLOT);
+  return isSignalOfType(value, TYPE_SLOT);
 }
 export {
   valueString,
@@ -1645,6 +1605,7 @@ export {
   isStore,
   isState,
   isSlot,
+  isSignalOfType,
   isSignal,
   isSensor,
   isRecord,

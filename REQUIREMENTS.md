@@ -69,9 +69,8 @@ A small set of utility functions is exported for the benefit of library authors:
 | Function | Status |
 |----------|--------|
 | `isSignalOfType(value, type)` | Intentionally stable — the canonical signal type guard primitive. Zero allocations (`Symbol.toStringTag` direct check). |
-| `isFunction`, `isRecord`, `valueString` | Intentionally stable — used by Le Truc. Will not be removed before v2.0. |
-| `isAsyncFunction`, `isObjectOfType` | Deprecated. Candidates for removal in v2.0. (`isSignalOfType` replaces `isObjectOfType` for signal guards.) |
-| `isEqual` | Internal helper exposed accidentally. Candidate for removal in v2.0. |
+| `isFunction`, `isRecord`, `valueString` | Intentionally stable — used by Le Truc. |
+| `isObjectOfType` | Deprecated. Will be removed in v2.0. (`isSignalOfType` replaces `isObjectOfType` for signal guards.) |
 
 Type guards for all 8 signal types (`isState`, `isMemo`, `isTask`, `isSensor`, `isSlot`, `isList`, `isCollection`, `isStore`) are intentionally exported and stable.
 
