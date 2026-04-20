@@ -45,6 +45,7 @@ type TaskNode<T extends {}> = SourceFields<T> &
 	SinkFields &
 	AsyncFields & {
 		fn: (prev: T, abort: AbortSignal) => Promise<T>
+		pendingNode: StateNode<boolean>
 	}
 
 type EffectNode = SinkFields &
@@ -449,33 +450,41 @@ function recomputeTask(node: TaskNode<unknown & {}>): void {
 		trimSources(node)
 	}
 
+	setState(node.pendingNode, true)
+
 	promise.then(
 		next => {
 			if (controller.signal.aborted) return
 
 			node.controller = undefined
-			if (node.error || !node.equals(next, node.value)) {
-				node.value = next
-				node.error = undefined
-				for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
-				if (batchDepth === 0) flush()
-			}
+			batch(() => {
+				if (node.error || !node.equals(next, node.value)) {
+					node.value = next
+					node.error = undefined
+					for (let e = node.sinks; e; e = e.nextSink)
+						propagate(e.sink)
+				}
+				setState(node.pendingNode, false)
+			})
 		},
 		(err: unknown) => {
 			if (controller.signal.aborted) return
 
 			node.controller = undefined
 			const error = err instanceof Error ? err : new Error(String(err))
-			if (
-				!node.error ||
-				error.name !== node.error.name ||
-				error.message !== node.error.message
-			) {
-				// We don't clear old value on errors
-				node.error = error
-				for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
-				if (batchDepth === 0) flush()
-			}
+			batch(() => {
+				if (
+					!node.error ||
+					error.name !== node.error.name ||
+					error.message !== node.error.message
+				) {
+					// We don't clear old value on errors
+					node.error = error
+					for (let e = node.sinks; e; e = e.nextSink)
+						propagate(e.sink)
+				}
+				setState(node.pendingNode, false)
+			})
 		},
 	)
 

@@ -29,6 +29,7 @@ type MemoNode<T extends {}> = SourceFields<T> & OptionsFields<T> & SinkFields & 
 };
 type TaskNode<T extends {}> = SourceFields<T> & OptionsFields<T> & SinkFields & AsyncFields & {
     fn: (prev: T, abort: AbortSignal) => Promise<T>;
+    pendingNode: StateNode<boolean>;
 };
 type EffectNode = SinkFields & OwnerFields & {
     fn: EffectCallback;
@@ -125,6 +126,10 @@ declare const FLAG_RELINK: number;
 declare let activeSink: SinkNode | null;
 declare let activeOwner: OwnerNode | null;
 declare let batchDepth: number;
+/**
+ * Default strict equality (`===`) — identical to the implicit default for all signals.
+ * Pass explicitly to make the equality strategy visible when composing or overriding signal options.
+ */
 declare const DEFAULT_EQUALITY: <T extends {}>(a: T, b: T) => boolean;
 /**
  * Equality function that always returns false, causing propagation on every update.
@@ -143,6 +148,17 @@ declare const DEFAULT_EQUALITY: <T extends {}>(a: T, b: T) => boolean;
  * ```
  */
 declare const SKIP_EQUALITY: (_a?: unknown, _b?: unknown) => boolean;
+/**
+ * Deep structural equality check for plain objects and arrays.
+ * Use when a signal holds an object or array and you want to avoid unnecessary
+ * downstream propagation when the value re-evaluates to a structurally identical result.
+ *
+ * @example
+ * ```ts
+ * const point = createState({ x: 0, y: 0 }, { equals: DEEP_EQUALITY });
+ * point.set({ x: 0, y: 0 }); // no propagation — structurally equal
+ * ```
+ */
 declare const DEEP_EQUALITY: <T extends {}>(a: T, b: T) => boolean;
 /**
  * @deprecated Use {@link DEEP_EQUALITY} instead.
