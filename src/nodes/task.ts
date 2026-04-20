@@ -16,6 +16,8 @@ import {
 	type TaskCallback,
 	type TaskNode,
 	TYPE_TASK,
+	type StateNode,
+	setState,
 } from '../graph'
 import { isAsyncFunction, isSignalOfType } from '../util'
 
@@ -109,6 +111,13 @@ function createTask<T extends {}>(
 	if (options?.value !== undefined)
 		validateSignalValue(TYPE_TASK, options.value, options?.guard)
 
+	const pendingNode: StateNode<boolean> = {
+		value: false,
+		sinks: null,
+		sinksTail: null,
+		equals: DEFAULT_EQUALITY,
+	}
+
 	const node: TaskNode<T> = {
 		fn,
 		value: options?.value as T,
@@ -121,6 +130,7 @@ function createTask<T extends {}>(
 		controller: undefined,
 		error: undefined,
 		stop: undefined,
+		pendingNode,
 	}
 
 	const watched = options?.watched
@@ -135,6 +145,8 @@ function createTask<T extends {}>(
 			: undefined,
 	)
 
+	const pendingSubscribe = makeSubscribe(pendingNode)
+
 	return {
 		[Symbol.toStringTag]: TYPE_TASK,
 		get(): T {
@@ -145,11 +157,13 @@ function createTask<T extends {}>(
 			return node.value
 		},
 		isPending(): boolean {
-			return !!node.controller
+			pendingSubscribe()
+			return node.pendingNode.value
 		},
 		abort(): void {
 			node.controller?.abort()
 			node.controller = undefined
+			setState(node.pendingNode, false)
 		},
 	}
 }

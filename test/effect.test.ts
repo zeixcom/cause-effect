@@ -721,6 +721,79 @@ describe('match', () => {
 			expect(okCount).toBe(0)
 		})
 
+		test('should call stale on re-fetch after task has previously resolved', async () => {
+			const source = createState(1)
+			const task = createTask(
+				async () => {
+					const val = source.get()
+					await wait(50)
+					return val * 10
+				},
+				{ value: 0 },
+			)
+			const log: string[] = []
+
+			createEffect(() =>
+				match(task, {
+					ok: v => {
+						log.push(`ok:${v}`)
+					},
+					stale: () => {
+						log.push('stale')
+					},
+				}),
+			)
+
+			expect(log).toEqual(['stale'])
+
+			await wait(60)
+			expect(log).toEqual(['stale', 'ok:10'])
+
+			// Core bug: source changes → task re-fetches → stale must fire
+			source.set(2)
+			expect(log).toEqual(['stale', 'ok:10', 'stale'])
+
+			await wait(60)
+			expect(log).toEqual(['stale', 'ok:10', 'stale', 'ok:20'])
+		})
+
+		test('should transition stale → ok when re-fetch resolves to same value', async () => {
+			const source = createState(1)
+			const task = createTask(
+				async () => {
+					source.get()
+					await wait(50)
+					return 42
+				},
+				{ value: 42 },
+			)
+			const log: string[] = []
+
+			createEffect(() =>
+				match(task, {
+					ok: () => {
+						log.push('ok')
+					},
+					stale: () => {
+						log.push('stale')
+					},
+				}),
+			)
+
+			expect(log).toEqual(['stale'])
+
+			await wait(60)
+			// Resolved to 42 (same as seed) — stale → ok transition must fire
+			expect(log).toEqual(['stale', 'ok'])
+
+			source.set(2)
+			expect(log).toEqual(['stale', 'ok', 'stale'])
+
+			await wait(60)
+			// Re-resolves to 42 again (value unchanged) — must still transition to ok
+			expect(log).toEqual(['stale', 'ok', 'stale', 'ok'])
+		})
+
 		test('stale cleanup runs before next dispatch', async () => {
 			const task = createTask(async () => {
 				await wait(50)

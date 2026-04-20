@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.1
+
+### Fixed
+
+- **`match()` `stale` handler not firing on re-fetches**: Previously, `stale` only fired on the first effect run when a task had a seeded value and its initial fetch was in progress. On subsequent re-fetches (when a task source dependency changed), the effect silently became `FLAG_CLEAN` without running: `propagate(taskNode)` sent only `FLAG_CHECK` to downstream effects, so `refresh(effectNode)` called `refresh(taskNode)` → `recomputeTask()`, which returned synchronously with no value change — the effect saw no `FLAG_DIRTY` and was cleaned without executing. Now `recomputeTask()` calls `setState(node.pendingNode, true)` immediately after the synchronous fn preamble. This propagates `FLAG_DIRTY` to subscribed effects mid-refresh, causing the source-check loop in `refresh()` to break and run the effect, which then routes to `stale` as expected.
+- **`task.isPending()` is now reactive**: Previously a plain boolean read (`!!node.controller`) that created no graph edges. Now backed by an internal `pendingNode: StateNode<boolean>` and subscribed via `makeSubscribe` — calling `isPending()` inside a reactive context (effect, `match()`) creates a dependency edge. The effect re-runs when the task transitions from not-pending to pending (fetch starts) in addition to when it transitions from pending to not-pending (fetch resolves, handled by value propagation). Effects that do not call `isPending()` are unaffected. Promise `.then`/`.catch` handlers reset `pendingNode` to `false` inside a `batch()` alongside any value propagation to prevent double effect runs.
+
 ## 1.2.0
 
 ### Added

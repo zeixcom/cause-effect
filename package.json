@@ -1,6 +1,6 @@
 {
 	"name": "@zeix/cause-effect",
-	"version": "1.2.0",
+	"version": "1.2.1",
 	"author": "Esther Brunner",
 	"type": "module",
 	"main": "index.js",
