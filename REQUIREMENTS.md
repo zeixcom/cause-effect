@@ -57,7 +57,7 @@ Five utilities complete the public API alongside the signal types:
 | `batch(fn)` | Defer effect execution until the end of the batch |
 | `untrack(fn)` | Read signals without creating dependency edges |
 | `unown(fn)` | Detach child scopes and effects from the current owner |
-| `createScope(fn)` | Create a standalone ownership scope without a computation |
+| `createScope(fn, options?)` | Create a standalone ownership scope without a computation; `ScopeOptions { root?: boolean }` — set `root: true` to opt out of parent registration (for external-lifecycle owners such as web components) |
 | `match(signal(s), handlers)` | Conditional dispatch on signal state (`nil` > `err` > `stale` > `ok`) |
 
 `match()` belongs conceptually with `createEffect`: both deal with side-effectful reactions to state changes. `match()` is the primary ergonomic API for conditional effect branching over pending or errored signals, and is designed to be used inside effects.

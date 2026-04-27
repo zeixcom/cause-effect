@@ -95,7 +95,7 @@ const results = createTask(async (prev, signal) => {
 - **Must be created inside an owner** (`createScope` or another effect) — throws `RequiredOwnerError` otherwise
 - Runs immediately on creation, then re-runs on dependency changes
 - Returns a `Cleanup` function; calling it disposes the effect and all its children
-- Use `unown` inside `connectedCallback` / `disconnectedCallback` when the DOM manages the element's lifetime
+- Use `createScope(fn, { root: true })` in `connectedCallback` for DOM-managed lifetimes — the returned `dispose` goes in `disconnectedCallback`; the scope is never silently disposed by a re-running outer effect
 
 ```typescript
 const dispose = createScope(() => {

@@ -31,7 +31,7 @@ Read the specific section in references/non-obvious-behaviors.md or references/e
 If the symptom does not match a known gotcha, read references/api-facts.md to confirm:
 - Signal generics use `T extends {}` (no `null` or `undefined`)
 - `createEffect` is inside an owner (`createScope` or another effect)
-- `unown` is used only for DOM-owned lifecycles, not to bypass ownership generally
+- For DOM-owned lifecycles involving a scope: use `createScope(fn, { root: true })`, not `unown(() => createScope(fn))`. `unown` is still correct for non-scope cases (e.g. detaching a single `createEffect`)
 - `batch` is used if multiple state writes should coalesce
 
 ## Step 4: Inspect library source (last resort)

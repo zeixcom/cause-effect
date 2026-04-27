@@ -117,9 +117,10 @@ const dispose = createScope(() => {
 })
 ```
 
-**Exception:** use `unown` when the DOM manages the element's lifetime (e.g. inside
-`connectedCallback`/`disconnectedCallback`) and you intentionally want to bypass owner
-registration.
+**Exception:** use `createScope(fn, { root: true })` when the DOM manages the element's
+lifetime (e.g. inside `connectedCallback`/`disconnectedCallback`) and you intentionally
+want to bypass owner registration. `unown(() => createScope(fn))` achieves the same effect
+but is the legacy pattern.
 </RequiredOwnerError>
 
 <CircularDependencyError>

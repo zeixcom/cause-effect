@@ -426,7 +426,7 @@ function untrack(fn) {
     activeSink = prev;
   }
 }
-function createScope(fn) {
+function createScope(fn, options) {
   const prevOwner = activeOwner;
   const scope = { cleanup: null };
   activeOwner = scope;
@@ -438,7 +438,7 @@ function createScope(fn) {
     return dispose;
   } finally {
     activeOwner = prevOwner;
-    if (prevOwner)
+    if (!options?.root && prevOwner)
       registerCleanup(prevOwner, dispose);
   }
 }

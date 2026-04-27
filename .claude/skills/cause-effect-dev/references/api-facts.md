@@ -16,11 +16,11 @@ const value = createState<{ data: string } | never>({ data: '' })
 </type_constraint>
 
 <core_functions>
-**`createScope(fn)`**
+**`createScope(fn, options?)`**
 - Returns a single `Cleanup` function
-- `fn` receives no arguments
-- `fn` may return an optional cleanup that runs when the scope is disposed
-- Used to group effects and control their lifetime
+- `fn` receives no arguments and may return an optional cleanup that runs when the scope is disposed
+- Used to group effects and control their shared lifetime
+- `options.root = true` (`ScopeOptions`) — suppresses parent-owner registration; the returned `dispose` is the sole teardown mechanism. Use for scopes whose lifecycle is controlled externally (e.g. a web component's `disconnectedCallback`)
 
 **`createEffect(fn)`**
 - Returns a `Cleanup` function
@@ -40,7 +40,8 @@ const value = createState<{ data: string } | never>({ data: '' })
 
 **`unown(fn)`**
 - Runs `fn` without registering cleanups in the current owner (nulls `activeOwner`)
-- Use in `connectedCallback` and similar DOM lifecycle hooks where the DOM — not the reactive graph — owns the element's lifetime
+- For creating a scope with an external lifecycle authority, prefer `createScope(fn, { root: true })` — it is equivalent to `unown(() => createScope(fn))` but more readable
+- Use `unown` directly when detaching non-scope computations from the current owner
 </core_functions>
 
 <options>
@@ -91,7 +92,7 @@ Object.defineProperty(element, 'name', slot)
 <lifecycle_summary>
 | Function | Must be in owner? | Returns | Re-runs on dependency change? |
 |---|---|---|---|
-| `createScope(fn)` | No | `Cleanup` | No (fn runs once) |
+| `createScope(fn, options?)` | No | `Cleanup` | No (fn runs once) |
 | `createEffect(fn)` | **Yes** | `Cleanup` | Yes |
 | `createMemo(fn)` | No | `Memo<T>` | Lazily (on read) |
 | `createTask(fn)` | No | `Task<T>` | Yes (async) |

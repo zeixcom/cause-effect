@@ -24,6 +24,7 @@ export {
 	type EffectCallback,
 	type MaybeCleanup,
 	type MemoCallback,
+	type ScopeOptions,
 	type Signal,
 	type SignalOptions,
 	SKIP_EQUALITY,

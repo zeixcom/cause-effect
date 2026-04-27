@@ -19,10 +19,11 @@ const selected = createState<{ id: string } | { id: never }>({ id: '' })
 </type_constraint>
 
 <core_functions>
-**`createScope(fn)`**
+**`createScope(fn, options?)`**
 - Returns a single `Cleanup` function
 - `fn` receives no arguments and may return an optional cleanup
 - Use to group effects and control their shared lifetime
+- `options.root = true` (`ScopeOptions`) — suppresses parent-owner registration; the returned `dispose` is the sole teardown mechanism. Use when an external authority (e.g. a web component's `disconnectedCallback`) manages the scope's lifetime
 
 ```typescript
 const dispose = createScope(() => {
@@ -67,16 +68,18 @@ createEffect(() => {
 
 **`unown(fn)`**
 - Runs `fn` without registering cleanups in the current owner
-- Use in `connectedCallback` and similar DOM lifecycle methods where the DOM —
-  not the reactive graph — manages the element's lifetime
+- For DOM-managed lifecycles involving a scope, prefer `createScope(fn, { root: true })` — it is equivalent to `unown(() => createScope(fn))` but more readable
+- Use `unown` directly when detaching a single computation (e.g. `createEffect`) rather than a full scope
 
 ```typescript
 connectedCallback() {
-  // cleanup is tied to disconnectedCallback, not to a reactive owner
-  this.#cleanup = unown(() => createEffect(() => this.render()))
+  // preferred: createScope with root: true
+  this.#dispose = createScope(() => {
+    createEffect(() => this.render())
+  }, { root: true })
 }
 disconnectedCallback() {
-  this.#cleanup?.()
+  this.#dispose?.()
 }
 ```
 </core_functions>
@@ -194,7 +197,7 @@ Read all signals eagerly in the signals argument — not inside branches. See `n
 <lifecycle_summary>
 | Function | Requires owner? | Returns | Reactive? |
 |---|---|---|---|
-| `createScope(fn)` | No | `Cleanup` | No (fn runs once) |
+| `createScope(fn, options?)` | No | `Cleanup` | No (fn runs once) |
 | `createEffect(fn)` | **Yes** | `Cleanup` | Yes — re-runs on dependency change |
 | `createMemo(fn)` | No | `Memo<T>` | Lazy — recomputes on read if stale |
 | `createTask(fn)` | No | `Task<T>` | Yes — re-runs async on dependency change |
