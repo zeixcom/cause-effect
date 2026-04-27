@@ -1,6 +1,6 @@
 # Cause & Effect
 
-Version 1.2.2
+Version 1.3.0
 
 **Cause & Effect** is a reactive state management primitives library for TypeScript. It provides the foundational building blocks for managing complex, dynamic, composite, and asynchronous state — correctly and performantly — in a unified signal graph.
 
