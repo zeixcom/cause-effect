@@ -29,6 +29,205 @@ count.set(5) // logs: "5 doubled is 10"
 
 If you've written a `computed` in Vue or a `useMemo` in React, this should feel immediately familiar. The difference is that there is no component, no template, no JSX — just reactive primitives composing directly.
 
+## Coming from State Management Libraries
+
+If you work in a React codebase, you're likely using one or more of these libraries alongside the framework. This section maps their concepts to Cause & Effect equivalents and calls out what the library handles automatically that you would otherwise write by hand.
+
+### Redux Toolkit
+
+| Redux Toolkit | Cause & Effect |
+|---|---|
+| State field in `createSlice` | `createState()` |
+| `createSelector` (Reselect) | `createMemo()` |
+| `createAsyncThunk` | `createTask()` |
+| `createEntityAdapter` | `createList()` |
+| `pending` / `fulfilled` / `rejected` | `nil` / `ok` / `err` in `match()` |
+
+**Async.** With `createAsyncThunk`, you handle `pending`, `fulfilled`, and `rejected` in `extraReducers` and manage loading state manually. The stale case — re-fetching while retaining previous data — is not a built-in state; you must keep `data` populated while simultaneously setting `status: 'loading'`, and coordinate those two fields correctly on every code path:
+
+```ts
+// Redux Toolkit: you manage the state machine
+const slice = createSlice({
+  name: 'user',
+  initialState: { data: null, status: 'idle', error: null },
+  extraReducers: builder => {
+    builder
+      .addCase(fetchUser.pending,   state => { state.status = 'loading' })
+      .addCase(fetchUser.fulfilled, (state, action) => {
+        state.data = action.payload; state.status = 'idle'
+      })
+      .addCase(fetchUser.rejected,  (state, action) => {
+        state.status = 'error'; state.error = action.error.message
+      })
+  }
+})
+```
+
+```ts
+// Cause & Effect: Task manages all states; match() routes them
+const userId = createState(1)
+const user = createTask(async (prev, abort) => {
+  const res = await fetch(`/api/users/${userId.get()}`, { signal: abort })
+  return res.json()
+})
+
+createEffect(() => match(user, {
+  nil:   () => showSpinner(),
+  stale: () => dimContent(),      // re-fetching with retained data — automatic
+  ok:    data => renderUser(data),
+  err:   e => showError(e),
+}))
+```
+
+When `userId` changes, the in-flight request is cancelled automatically via the `AbortSignal`. The `stale` state fires during re-fetch with the retained previous value — no `data`/`status` coordination needed.
+
+**Derived state.** Reselect's `createSelector` requires explicit input selectors to memoize derived values. `createMemo()` tracks dependencies by reading — any signal accessed inside the memo is automatically a dependency. When the memo recomputes to the same value, downstream effects don't re-run, stopping propagation through the graph without any selector discipline:
+
+```ts
+// Redux Toolkit: explicit input selectors
+const selectFiltered = createSelector(
+  state => state.items,
+  state => state.filter,
+  (items, filter) => items.filter(i => i.type === filter)
+)
+```
+
+```ts
+// Cause & Effect: dependencies are tracked by reading
+const filtered = createMemo(() =>
+  items.get().filter(i => i.type === filter.get())
+)
+```
+
+**Collections.** `createEntityAdapter` normalizes items into `{ ids, entities }` with CRUD helpers. Every selector over `selectAll` returns a new array reference when any entity changes, re-rendering every subscribed component. `createList()` gives each item its own signal — effects subscribed to one item don't re-run when another changes, and stable keys survive sorting:
+
+```ts
+const todos = createList(initialTodos, { keyConfig: t => t.id })
+todos.replace('t1', { ...todo, done: true }) // only effects reading 't1' re-run
+todos.sort((a, b) => a.text.localeCompare(b.text)) // 't1' still points to the same signal
+```
+
+---
+
+### Zustand
+
+| Zustand | Cause & Effect |
+|---|---|
+| `create(set => ({ ... }))` | `createState()` / `createStore()` |
+| Async function calling `set()` | `createTask()` |
+| Manual `loading` / `error` flags | `match(nil/err/stale/ok)` |
+| `subscribeWithSelector` | `createMemo()` |
+
+Zustand has no async primitive. You write async functions in the store and call `set()` after each `await`, manually managing loading, error, and stale state as separate fields. There is no `AbortSignal` integration — if you trigger a fetch twice in quick succession, both are in flight and the slower one wins:
+
+```ts
+// Zustand: write the state machine yourself, manage race conditions manually
+create(set => ({
+  data: null, status: 'idle', error: null,
+  fetch: async (id) => {
+    set({ status: 'loading' })  // must NOT clear data here — stale case
+    try {
+      set({ data: await fetchUser(id), status: 'idle' })
+    } catch (e) {
+      set({ status: 'error', error: e })
+    }
+  }
+}))
+```
+
+With `createTask()`, reactive dependencies replace the manual trigger, the previous in-flight request is cancelled automatically when dependencies change, and `match()` encodes the state machine structurally. Most Zustand users pair it with TanStack Query for server state precisely to get these guarantees — `createTask()` provides them for all async, not just HTTP.
+
+---
+
+### Jotai
+
+Jotai's mental model is closest to Cause & Effect: atoms are independent, composable reactive cells that auto-track dependencies. The main gaps are in async cancellation, the stale state, and collection structural integrity.
+
+| Jotai | Cause & Effect |
+|---|---|
+| `atom(value)` | `createState()` |
+| `atom(get => ...)` | `createMemo()` |
+| `atom(async (get) => ...)` | `createTask()` |
+| `atomFamily(key)` | `list.byKey(key)` |
+| Keys atom + `atomFamily` | `createList()` |
+| `loadable(atom)` | `match(nil/err/ok)` |
+
+**Async.** Jotai async atoms have no `AbortSignal`. When a dependency changes while a fetch is in flight, the previous promise is abandoned — not cancelled. Responses can arrive out of order. The `loadable` utility provides explicit pending/error/data states, but has no stale case: when re-fetching, state transitions back to `'loading'` and data clears:
+
+```ts
+// Jotai: no cancellation; stale state not available
+const userAtom = atom(async (get) => {
+  const id = get(idAtom)
+  return fetch(`/api/users/${id}`).then(r => r.json())
+  // if idAtom changes mid-flight, previous fetch is abandoned — not cancelled
+})
+const loadable = useAtomValue(loadable(userAtom))
+// loadable.state: 'loading' | 'hasData' | 'hasError' — no 'stale'
+```
+
+`createTask()` passes an `AbortSignal` and cancels previous computations automatically. `match()` routes `stale` separately from `nil` so previous data is retained and displayed during re-fetch.
+
+**Collections.** `atomFamily` creates a stable atom per key, equivalent to `list.byKey(key)`. But there is no structural atom — adding or removing keys requires coordinating writes to a separate keys atom and `atomFamily`, and keeping them in sync is your responsibility:
+
+```ts
+// Jotai: two atoms to keep consistent manually
+const keysAtom = atom<string[]>([])
+const itemFamily = atomFamily((id: string) => atom<Item | null>(null))
+
+store.set(keysAtom, [...store.get(keysAtom), newId])
+store.set(itemFamily(newId), newItem)  // forget one → structural inconsistency
+```
+
+```ts
+// Cause & Effect: one operation, invariant maintained
+const items = createList(initialItems, { keyConfig: i => i.id })
+items.add(newItem)  // keys and item signal created atomically
+```
+
+---
+
+### TanStack Query
+
+TanStack Query is a server-state cache, not a general state manager. It handles HTTP caching, request deduplication, background refetch, and cache invalidation — patterns that are outside Cause & Effect's scope. Its query states map directly to `match()` handlers:
+
+| TanStack Query | `match()` handler |
+|---|---|
+| `isPending` — first fetch, no data | `nil` |
+| `isFetching` with `data` retained | `stale` |
+| `isError` | `err` |
+| `data` resolved | `ok` |
+
+```ts
+// TanStack Query: data is User | undefined in all branches
+const { data, isPending, isFetching, isError, error } = useQuery({
+  queryKey: ['user', userId],
+  queryFn: ({ signal }) => fetch(`/api/users/${userId}`, { signal }).then(r => r.json()),
+})
+if (isPending) return <Spinner />
+if (isError) return <Error error={error} />
+return <Profile user={data!} />  // ! required — TypeScript cannot narrow further
+```
+
+```ts
+// Cause & Effect: value is User inside ok — no assertion needed
+const userId = createState(1)
+const user = createTask(async (prev, abort) => {
+  const res = await fetch(`/api/users/${userId.get()}`, { signal: abort })
+  return res.json()
+})
+
+createEffect(() => match(user, {
+  nil:   () => showSpinner(),
+  err:   e => showError(e),
+  stale: () => dimContent(),
+  ok:    u => renderProfile(u),  // u: User, guaranteed
+}))
+```
+
+**Where TanStack Query still wins.** For HTTP server state specifically — caching identical requests across components, background refetch intervals, tag-based cache invalidation, optimistic mutations, paginated and infinite queries — TanStack Query remains the better tool. The two libraries compose well: feed query results into a `createState()` or `createSensor()` and let Cause & Effect handle derived computation and local state on top.
+
+**Where `createTask()` fills the gap.** TanStack Query is designed for fetch-based server state. For client-side async — IndexedDB reads, WebWorker results, WebSocket-derived values, or any async derivation that depends on other signals — `createTask()` provides the same `AbortSignal`, stale-state, and type-safe routing that TanStack Query provides for HTTP, but for any async operation in the graph.
+
 ## What Works Differently
 
 ### Dependencies are tracked, not declared

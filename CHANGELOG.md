@@ -1,5 +1,18 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+- Improved type inference for `createList` and `createCollection` when providing a custom `createItem` factory (e.g. `createStore`). The generic type of the returned item signal is now properly inferred without requiring type assertions.
+
+## 1.3.0
+
+### Added
+
+- **`SlotDescriptor` support for bi-directional derivations**: `createSlot()` and `Slot#replace()` now accept a duck-typed `SlotDescriptor<T>` object (`{ get(): T, set?(next: T): void }`) in addition to a `Signal<T>`. This allows establishing stable, native reactive edges for derived `{ get, set }` pairs without the need for an intermediary `Computed` signal, which prevents edge corruption during cascading graph updates. If a descriptor omits the `set` function, the slot safely behaves as read-only.
+- **Configurable `itemEquals` for `List` and `Collection`**: Added an `itemEquals` option to both `ListOptions` and `CollectionOptions`. It defaults to `DEEP_EQUALITY`. This prevents spurious reactive propagation when spread-based updates (`list.replace(key, { ...item.get(), field: newValue })`) produce structurally identical items.
+- **Configurable `createItem` factory for `List`**: Added a `createItem?: (value: T) => MutableSignal<T>` option to `ListOptions`, bringing it to parity with `CollectionOptions`. This allows backing list items with custom mutable signals, such as `createStore` for granular, per-property reactivity within a list. `List` methods like `at()`, `byKey()`, and its iterator now correctly return `MutableSignal<T>` instead of strictly `State<T>`.
+
 ## 1.2.1
 
 ### Fixed

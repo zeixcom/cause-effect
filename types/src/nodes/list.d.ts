@@ -1,6 +1,6 @@
 import { type Cleanup, TYPE_LIST } from '../graph';
 import { type Collection } from './collection';
-import { type State } from './state';
+import type { MutableSignal } from '../signal';
 type UnknownRecord = Record<string, unknown>;
 type DiffResult = {
     changed: boolean;
@@ -21,29 +21,33 @@ type KeyConfig<T> = string | ((item: T) => string | undefined);
  *
  * @template T - The type of items in the list
  */
-type ListOptions<T extends {}> = {
+type ListOptions<T extends {}, S extends MutableSignal<T> = MutableSignal<T>> = {
     /** Key generation strategy. A string prefix or a function `(item) => string | undefined`. Defaults to auto-increment. */
     keyConfig?: KeyConfig<T>;
     /** Lifecycle callback invoked when the list gains its first downstream subscriber. Must return a cleanup function. */
     watched?: () => Cleanup;
+    /** Equality function for item state signals. Defaults to reference equality (`===`). */
+    itemEquals?: (a: T, b: T) => boolean;
+    /** Factory for per-item signals. Defaults to `createState`. */
+    createItem?: (value: T) => S;
 };
 /**
  * A reactive ordered array with stable keys and per-item reactivity.
- * Each item is a `State<T>` signal; structural changes (add/remove/sort) propagate reactively.
+ * Each item is a `MutableSignal<T>`; structural changes (add/remove/sort) propagate reactively.
  *
  * @template T - The type of items in the list
  */
-type List<T extends {}> = {
+type List<T extends {}, S extends MutableSignal<T> = MutableSignal<T>> = {
     readonly [Symbol.toStringTag]: 'List';
     readonly [Symbol.isConcatSpreadable]: true;
-    [Symbol.iterator](): IterableIterator<State<T>>;
+    [Symbol.iterator](): IterableIterator<S>;
     readonly length: number;
     get(): T[];
     set(next: T[]): void;
     update(fn: (prev: T[]) => T[]): void;
-    at(index: number): State<T> | undefined;
+    at(index: number): S | undefined;
     keys(): IterableIterator<string>;
-    byKey(key: string): State<T> | undefined;
+    byKey(key: string): S | undefined;
     keyAt(index: number): string | undefined;
     indexOfKey(key: string): number;
     add(value: T): string;
@@ -70,9 +74,9 @@ declare function getKeyGenerator<T extends {}>(keyConfig?: KeyConfig<T>): [(item
  * @param value - Initial array of items
  * @param options.keyConfig - Key generation strategy: string prefix or `(item) => string | undefined`. Defaults to auto-increment.
  * @param options.watched - Lifecycle callback invoked on first subscriber; must return a cleanup function called on last unsubscribe.
- * @returns A `List` signal with reactive per-item `State` signals
+ * @returns A `List` signal with reactive per-item `MutableSignal`s
  */
-declare function createList<T extends {}>(value: T[], options?: ListOptions<T>): List<T>;
+declare function createList<T extends {}, S extends MutableSignal<T> = MutableSignal<T>>(value: T[], options?: ListOptions<T, S>): List<T, S>;
 /**
  * Checks if a value is a List signal.
  *
@@ -80,5 +84,5 @@ declare function createList<T extends {}>(value: T[], options?: ListOptions<T>):
  * @param value - The value to check
  * @returns True if the value is a List
  */
-declare function isList<T extends {}>(value: unknown): value is List<T>;
+declare function isList<T extends {}, S extends MutableSignal<T> = MutableSignal<T>>(value: unknown): value is List<T, S>;
 export { type DiffResult, type KeyConfig, type List, type ListOptions, type UnknownRecord, createList, isList, getKeyGenerator, keysEqual, TYPE_LIST, };

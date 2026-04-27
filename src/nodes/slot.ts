@@ -14,10 +14,22 @@ import {
 	type SinkNode,
 	TYPE_SLOT,
 } from '../graph'
-import { isMutableSignal, isSignal } from '../signal'
+import { isSignal } from '../signal'
 import { isSignalOfType } from '../util'
 
 /* === Types === */
+
+/**
+ * A descriptor for a derived reactive value with an optional setter.
+ *
+ * @template T - The type of value
+ */
+type SlotDescriptor<T extends {}> = {
+	/** Reads the value, tracking dependencies. */
+	get(): T
+	/** Optional setter to update the source value. */
+	set?(next: T): void
+}
 
 /**
  * A signal that delegates its value to a swappable backing signal.
@@ -44,9 +56,23 @@ type Slot<T extends {}> = {
 	/** Writes a value to the delegated signal. Throws `ReadonlySignalError` if the delegated signal is read-only. */
 	set(next: T): void
 	/** Swaps the backing signal, invalidating all downstream subscribers. Narrowing (`U extends T`) is allowed. */
-	replace<U extends T>(next: Signal<U>): void
+	replace<U extends T>(next: Signal<U> | SlotDescriptor<U>): void
 	/** Returns the currently delegated signal. */
-	current(): Signal<T>
+	current(): Signal<T> | SlotDescriptor<T>
+}
+
+/* === Internal Functions === */
+
+function isSignalOrDescriptor<T extends {}>(
+	value: unknown,
+): value is Signal<T> | SlotDescriptor<T> {
+	if (isSignal(value)) return true
+	return (
+		value !== null &&
+		typeof value === 'object' &&
+		'get' in value &&
+		typeof (value as any).get === 'function'
+	)
 }
 
 /* === Exported Functions === */
@@ -69,12 +95,12 @@ type Slot<T extends {}> = {
  * @returns A `Slot<T>` object usable both as a property descriptor and as a reactive signal.
  */
 function createSlot<T extends {}>(
-	initialSignal: Signal<T>,
+	initialSignal: Signal<T> | SlotDescriptor<T>,
 	options?: SignalOptions<T>,
 ): Slot<T> {
-	validateSignalValue(TYPE_SLOT, initialSignal, isSignal)
+	validateSignalValue(TYPE_SLOT, initialSignal, isSignalOrDescriptor)
 
-	let delegated = initialSignal as Signal<T>
+	let delegated = initialSignal
 	const guard = options?.guard
 
 	const node: MemoNode<T> = {
@@ -98,14 +124,21 @@ function createSlot<T extends {}>(
 
 	const set = (next: T): void => {
 		if (isSlot(delegated)) return delegated.set(next)
-		if (!isMutableSignal(delegated))
+		if (
+			'set' in delegated &&
+			typeof (delegated as any).set === 'function'
+		) {
+			validateSignalValue(TYPE_SLOT, next, guard)
+			;(delegated as any).set(next)
+		} else {
 			throw new ReadonlySignalError(TYPE_SLOT)
-		validateSignalValue(TYPE_SLOT, next, guard)
-		delegated.set(next)
+		}
 	}
 
-	const replace = <U extends T>(next: Signal<U>): void => {
-		validateSignalValue(TYPE_SLOT, next, isSignal)
+	const replace = <U extends T>(
+		next: Signal<U> | SlotDescriptor<U>,
+	): void => {
+		validateSignalValue(TYPE_SLOT, next, isSignalOrDescriptor)
 
 		delegated = next
 		node.flags |= FLAG_DIRTY
@@ -135,4 +168,4 @@ function isSlot<T extends {} = unknown & {}>(value: unknown): value is Slot<T> {
 	return isSignalOfType(value, TYPE_SLOT)
 }
 
-export { createSlot, isSlot, type Slot }
+export { createSlot, isSlot, type Slot, type SlotDescriptor }

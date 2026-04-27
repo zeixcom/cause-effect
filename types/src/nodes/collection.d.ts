@@ -16,14 +16,14 @@ type DeriveCollectionCallback<T extends {}, U extends {}> = ((sourceValue: U) =>
  *
  * @template T - The type of items in the collection
  */
-type Collection<T extends {}> = {
+type Collection<T extends {}, S extends Signal<T> = Signal<T>> = {
     readonly [Symbol.toStringTag]: 'Collection';
     readonly [Symbol.isConcatSpreadable]: true;
-    [Symbol.iterator](): IterableIterator<Signal<T>>;
+    [Symbol.iterator](): IterableIterator<S>;
     keys(): IterableIterator<string>;
     get(): T[];
-    at(index: number): Signal<T> | undefined;
-    byKey(key: string): Signal<T> | undefined;
+    at(index: number): S | undefined;
+    byKey(key: string): S | undefined;
     keyAt(index: number): string | undefined;
     indexOfKey(key: string): number;
     deriveCollection<R extends {}>(callback: (sourceValue: T) => R): Collection<R>;
@@ -48,13 +48,15 @@ type CollectionChanges<T> = {
  *
  * @template T - The type of items in the collection
  */
-type CollectionOptions<T extends {}> = {
+type CollectionOptions<T extends {}, S extends Signal<T> = Signal<T>> = {
     /** Initial items. Defaults to `[]`. */
     value?: T[];
     /** Key generation strategy. See `KeyConfig`. Defaults to auto-increment. */
     keyConfig?: KeyConfig<T>;
     /** Factory for per-item signals. Defaults to `createState`. */
-    createItem?: (value: T) => Signal<T>;
+    createItem?: (value: T) => S;
+    /** Equality function for default item state signals. Defaults to deep equality. Ignored if `createItem` is provided. */
+    itemEquals?: (a: T, b: T) => boolean;
 };
 /**
  * Setup callback for `createCollection`. Invoked when the collection gains its first downstream
@@ -87,7 +89,7 @@ declare function deriveCollection<T extends {}, U extends {}>(source: Collection
  * @param options - Optional configuration including initial value, key generation, and item signal creation
  * @returns A read-only Collection signal
  */
-declare function createCollection<T extends {}>(watched: CollectionCallback<T>, options?: CollectionOptions<T>): Collection<T>;
+declare function createCollection<T extends {}, S extends Signal<T> = Signal<T>>(watched: CollectionCallback<T>, options?: CollectionOptions<T, S>): Collection<T, S>;
 /**
  * Checks if a value is a Collection signal.
  *
@@ -95,5 +97,5 @@ declare function createCollection<T extends {}>(watched: CollectionCallback<T>, 
  * @param value - The value to check
  * @returns True if the value is a Collection
  */
-declare function isCollection<T extends {}>(value: unknown): value is Collection<T>;
+declare function isCollection<T extends {}, S extends Signal<T> = Signal<T>>(value: unknown): value is Collection<T, S>;
 export { createCollection, deriveCollection, isCollection, type Collection, type CollectionCallback, type CollectionChanges, type CollectionOptions, type CollectionSource, type DeriveCollectionCallback, };

@@ -6,6 +6,7 @@ import {
 	createMemo,
 	createScope,
 	createState,
+	createStore,
 	createTask,
 	isList,
 	isMemo,
@@ -557,6 +558,35 @@ describe('List', () => {
 		})
 	})
 
+	describe('options.itemEquals', () => {
+		test('should use DEEP_EQUALITY by default for object items', () => {
+			const list = createList([{ a: 1 }, { a: 2 }])
+			const item = list.at(0)!
+			let count = 0
+			createEffect(() => {
+				item.get()
+				count++
+			})
+			expect(count).toBe(1)
+			list.replace(list.keyAt(0)!, { a: 1 })
+			expect(count).toBe(1)
+		})
+		test('should allow custom itemEquals', () => {
+			const list = createList([{ id: 1, val: 'a' }], {
+				itemEquals: (a, b) => a.id === b.id,
+			})
+			const item = list.at(0)!
+			let count = 0
+			createEffect(() => {
+				item.get()
+				count++
+			})
+			list.replace(list.keyAt(0)!, { id: 1, val: 'b' })
+			expect(count).toBe(1)
+			expect(item.get().val).toBe('a')
+		})
+	})
+
 	describe('options.watched', () => {
 		test('should call watched on first subscriber and cleanup on last unsubscribe', () => {
 			let watchedCalled = false
@@ -800,4 +830,22 @@ describe('List', () => {
 			}).toThrow()
 		})
 	})
+})
+
+test('Type Inference for custom createItem', () => {
+	// This test primarily checks compilation types but also runtime presence
+	type TodoItem = { id: string, text: string, done: boolean }
+	const list = createList([], {
+		keyConfig: 'todo',
+		createItem: createStore<TodoItem>,
+	})
+	
+	const byKey = list.byKey('todo0')
+	// Runtime check
+	expect(byKey).toBeUndefined()
+	
+	// Type check
+	type Expect<T extends true> = T
+	type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y ? 1 : 2) ? true : false
+	type _Test = Expect<Equal<typeof byKey, ReturnType<typeof createStore<TodoItem>> | undefined>>
 })

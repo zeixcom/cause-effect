@@ -16,14 +16,15 @@ import {
 	TYPE_LIST,
 	untrack,
 } from '../graph'
-import { isFunction, isSignalOfType, isRecord } from '../util'
+import { isFunction, isSignalOfType } from '../util'
 import {
 	type Collection,
 	type CollectionSource,
 	type DeriveCollectionCallback,
 	deriveCollection,
 } from './collection'
-import { createState, type State } from './state'
+import { createState } from './state'
+import type { MutableSignal } from '../signal'
 
 /* === Types === */
 
@@ -50,30 +51,37 @@ type KeyConfig<T> = string | ((item: T) => string | undefined)
  *
  * @template T - The type of items in the list
  */
-type ListOptions<T extends {}> = {
+type ListOptions<
+	T extends {},
+	S extends MutableSignal<T> = MutableSignal<T>,
+> = {
 	/** Key generation strategy. A string prefix or a function `(item) => string | undefined`. Defaults to auto-increment. */
 	keyConfig?: KeyConfig<T>
 	/** Lifecycle callback invoked when the list gains its first downstream subscriber. Must return a cleanup function. */
 	watched?: () => Cleanup
+	/** Equality function for item state signals. Defaults to reference equality (`===`). */
+	itemEquals?: (a: T, b: T) => boolean
+	/** Factory for per-item signals. Defaults to `createState`. */
+	createItem?: (value: T) => S
 }
 
 /**
  * A reactive ordered array with stable keys and per-item reactivity.
- * Each item is a `State<T>` signal; structural changes (add/remove/sort) propagate reactively.
+ * Each item is a `MutableSignal<T>`; structural changes (add/remove/sort) propagate reactively.
  *
  * @template T - The type of items in the list
  */
-type List<T extends {}> = {
+type List<T extends {}, S extends MutableSignal<T> = MutableSignal<T>> = {
 	readonly [Symbol.toStringTag]: 'List'
 	readonly [Symbol.isConcatSpreadable]: true
-	[Symbol.iterator](): IterableIterator<State<T>>
+	[Symbol.iterator](): IterableIterator<S>
 	readonly length: number
 	get(): T[]
 	set(next: T[]): void
 	update(fn: (prev: T[]) => T[]): void
-	at(index: number): State<T> | undefined
+	at(index: number): S | undefined
 	keys(): IterableIterator<string>
-	byKey(key: string): State<T> | undefined
+	byKey(key: string): S | undefined
 	keyAt(index: number): string | undefined
 	indexOfKey(key: string): number
 	add(value: T): string
@@ -138,6 +146,7 @@ function diffArrays<T extends {}>(
 	prevKeys: string[],
 	generateKey: (item: T) => string,
 	contentBased: boolean,
+	itemEquals: (a: T, b: T) => boolean,
 ): DiffResult & { newKeys: string[] } {
 	const add = {} as UnknownRecord
 	const change = {} as UnknownRecord
@@ -175,7 +184,7 @@ function diffArrays<T extends {}>(
 		if (!prevByKey.has(key)) {
 			add[key] = val
 			changed = true
-		} else if (!DEEP_EQUALITY(prevByKey.get(key)!, val)) {
+		} else if (!itemEquals(prevByKey.get(key)!, val)) {
 			change[key] = val
 			changed = true
 		}
@@ -202,18 +211,23 @@ function diffArrays<T extends {}>(
  * @param value - Initial array of items
  * @param options.keyConfig - Key generation strategy: string prefix or `(item) => string | undefined`. Defaults to auto-increment.
  * @param options.watched - Lifecycle callback invoked on first subscriber; must return a cleanup function called on last unsubscribe.
- * @returns A `List` signal with reactive per-item `State` signals
+ * @returns A `List` signal with reactive per-item `MutableSignal`s
  */
-function createList<T extends {}>(
-	value: T[],
-	options?: ListOptions<T>,
-): List<T> {
+function createList<
+	T extends {},
+	S extends MutableSignal<T> = MutableSignal<T>,
+>(value: T[], options?: ListOptions<T, S>): List<T, S> {
 	validateSignalValue(TYPE_LIST, value, Array.isArray)
 
-	const signals = new Map<string, State<T>>()
+	const signals = new Map<string, S>()
 	let keys: string[] = []
 
 	const [generateKey, contentBased] = getKeyGenerator(options?.keyConfig)
+	const itemEquals = options?.itemEquals ?? DEEP_EQUALITY
+	const itemFactory = (options?.createItem ??
+		((item: T) => createState(item, { equals: itemEquals }))) as (
+		value: T,
+	) => S
 
 	// --- Internal helpers ---
 
@@ -246,7 +260,7 @@ function createList<T extends {}>(
 		for (const key in changes.add) {
 			const val = changes.add[key] as T
 			validateSignalValue(`${TYPE_LIST} item for key "${key}"`, val)
-			signals.set(key, createState(val))
+			signals.set(key, itemFactory(val))
 			structural = true
 		}
 
@@ -290,7 +304,7 @@ function createList<T extends {}>(
 			keys[i] = key
 		}
 		validateSignalValue(`${TYPE_LIST} item for key "${key}"`, val)
-		signals.set(key, createState(val))
+		signals.set(key, itemFactory(val))
 	}
 
 	// Starts clean: mutation methods (add/remove/set/splice) explicitly call
@@ -299,7 +313,7 @@ function createList<T extends {}>(
 	node.flags = 0
 
 	// --- List object ---
-	const list: List<T> = {
+	const list: List<T, S> = {
 		[Symbol.toStringTag]: TYPE_LIST,
 		[Symbol.isConcatSpreadable]: true as const,
 
@@ -349,6 +363,7 @@ function createList<T extends {}>(
 				keys,
 				generateKey,
 				contentBased,
+				itemEquals,
 			)
 			if (changes.changed) {
 				keys = changes.newKeys
@@ -391,7 +406,7 @@ function createList<T extends {}>(
 				throw new DuplicateKeyError(TYPE_LIST, key, value)
 			if (!keys.includes(key)) keys.push(key)
 			validateSignalValue(`${TYPE_LIST} item for key "${key}"`, value)
-			signals.set(key, createState(value))
+			signals.set(key, itemFactory(value))
 			node.flags |= FLAG_DIRTY | FLAG_RELINK
 			for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
 			if (batchDepth === 0) flush()
@@ -419,7 +434,13 @@ function createList<T extends {}>(
 			const signal = signals.get(key)
 			if (!signal) return
 			validateSignalValue(`${TYPE_LIST} item for key "${key}"`, value)
-			if (untrack(() => signal.get()) === value) return
+			if (
+				itemEquals(
+					untrack(() => signal.get()),
+					value,
+				)
+			)
+				return
 			signal.set(value)
 			node.flags |= FLAG_DIRTY
 			for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
@@ -536,7 +557,9 @@ function createList<T extends {}>(
  * @param value - The value to check
  * @returns True if the value is a List
  */
-function isList<T extends {}>(value: unknown): value is List<T> {
+function isList<T extends {}, S extends MutableSignal<T> = MutableSignal<T>>(
+	value: unknown,
+): value is List<T, S> {
 	return isSignalOfType(value, TYPE_LIST)
 }
 
