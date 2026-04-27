@@ -16,7 +16,7 @@ import {
 	TYPE_LIST,
 	untrack,
 } from '../graph'
-import { isFunction, isSignalOfType, isRecord } from '../util'
+import { isFunction, isSignalOfType } from '../util'
 import {
 	type Collection,
 	type CollectionSource,
@@ -55,6 +55,8 @@ type ListOptions<T extends {}> = {
 	keyConfig?: KeyConfig<T>
 	/** Lifecycle callback invoked when the list gains its first downstream subscriber. Must return a cleanup function. */
 	watched?: () => Cleanup
+	/** Equality function for item state signals. Defaults to reference equality (`===`). */
+	itemEquals?: (a: T, b: T) => boolean
 }
 
 /**
@@ -138,6 +140,7 @@ function diffArrays<T extends {}>(
 	prevKeys: string[],
 	generateKey: (item: T) => string,
 	contentBased: boolean,
+	itemEquals: (a: T, b: T) => boolean,
 ): DiffResult & { newKeys: string[] } {
 	const add = {} as UnknownRecord
 	const change = {} as UnknownRecord
@@ -175,7 +178,7 @@ function diffArrays<T extends {}>(
 		if (!prevByKey.has(key)) {
 			add[key] = val
 			changed = true
-		} else if (!DEEP_EQUALITY(prevByKey.get(key)!, val)) {
+		} else if (!itemEquals(prevByKey.get(key)!, val)) {
 			change[key] = val
 			changed = true
 		}
@@ -214,6 +217,7 @@ function createList<T extends {}>(
 	let keys: string[] = []
 
 	const [generateKey, contentBased] = getKeyGenerator(options?.keyConfig)
+	const itemEquals = options?.itemEquals ?? DEEP_EQUALITY
 
 	// --- Internal helpers ---
 
@@ -246,7 +250,7 @@ function createList<T extends {}>(
 		for (const key in changes.add) {
 			const val = changes.add[key] as T
 			validateSignalValue(`${TYPE_LIST} item for key "${key}"`, val)
-			signals.set(key, createState(val))
+			signals.set(key, createState(val, { equals: itemEquals }))
 			structural = true
 		}
 
@@ -290,7 +294,7 @@ function createList<T extends {}>(
 			keys[i] = key
 		}
 		validateSignalValue(`${TYPE_LIST} item for key "${key}"`, val)
-		signals.set(key, createState(val))
+		signals.set(key, createState(val, { equals: itemEquals }))
 	}
 
 	// Starts clean: mutation methods (add/remove/set/splice) explicitly call
@@ -349,6 +353,7 @@ function createList<T extends {}>(
 				keys,
 				generateKey,
 				contentBased,
+				itemEquals,
 			)
 			if (changes.changed) {
 				keys = changes.newKeys
@@ -391,7 +396,7 @@ function createList<T extends {}>(
 				throw new DuplicateKeyError(TYPE_LIST, key, value)
 			if (!keys.includes(key)) keys.push(key)
 			validateSignalValue(`${TYPE_LIST} item for key "${key}"`, value)
-			signals.set(key, createState(value))
+			signals.set(key, createState(value, { equals: itemEquals }))
 			node.flags |= FLAG_DIRTY | FLAG_RELINK
 			for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
 			if (batchDepth === 0) flush()
@@ -419,7 +424,13 @@ function createList<T extends {}>(
 			const signal = signals.get(key)
 			if (!signal) return
 			validateSignalValue(`${TYPE_LIST} item for key "${key}"`, value)
-			if (untrack(() => signal.get()) === value) return
+			if (
+				itemEquals(
+					untrack(() => signal.get()),
+					value,
+				)
+			)
+				return
 			signal.set(value)
 			node.flags |= FLAG_DIRTY
 			for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)

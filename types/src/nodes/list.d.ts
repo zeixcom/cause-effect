@@ -26,6 +26,8 @@ type ListOptions<T extends {}> = {
     keyConfig?: KeyConfig<T>;
     /** Lifecycle callback invoked when the list gains its first downstream subscriber. Must return a cleanup function. */
     watched?: () => Cleanup;
+    /** Equality function for item state signals. Defaults to reference equality (`===`). */
+    itemEquals?: (a: T, b: T) => boolean;
 };
 /**
  * A reactive ordered array with stable keys and per-item reactivity.

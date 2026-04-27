@@ -513,7 +513,7 @@ function getKeyGenerator(keyConfig) {
     contentBased
   ];
 }
-function diffArrays(prev, next, prevKeys, generateKey, contentBased) {
+function diffArrays(prev, next, prevKeys, generateKey, contentBased, itemEquals) {
   const add = {};
   const change = {};
   const remove = {};
@@ -539,7 +539,7 @@ function diffArrays(prev, next, prevKeys, generateKey, contentBased) {
     if (!prevByKey.has(key)) {
       add[key] = val;
       changed = true;
-    } else if (!DEEP_EQUALITY(prevByKey.get(key), val)) {
+    } else if (!itemEquals(prevByKey.get(key), val)) {
       change[key] = val;
       changed = true;
     }
@@ -559,6 +559,7 @@ function createList(value, options) {
   const signals = new Map;
   let keys = [];
   const [generateKey, contentBased] = getKeyGenerator(options?.keyConfig);
+  const itemEquals = options?.itemEquals ?? DEEP_EQUALITY;
   const buildValue = () => keys.map((key) => signals.get(key)?.get()).filter((v) => v !== undefined);
   const node = {
     fn: buildValue,
@@ -576,7 +577,7 @@ function createList(value, options) {
     for (const key in changes.add) {
       const val = changes.add[key];
       validateSignalValue(`${TYPE_LIST} item for key "${key}"`, val);
-      signals.set(key, createState(val));
+      signals.set(key, createState(val, { equals: itemEquals }));
       structural = true;
     }
     if (Object.keys(changes.change).length) {
@@ -612,7 +613,7 @@ function createList(value, options) {
       keys[i] = key;
     }
     validateSignalValue(`${TYPE_LIST} item for key "${key}"`, val);
-    signals.set(key, createState(val));
+    signals.set(key, createState(val, { equals: itemEquals }));
   }
   node.value = value;
   node.flags = 0;
@@ -654,7 +655,7 @@ function createList(value, options) {
     },
     set(next) {
       const prev = node.flags & FLAG_DIRTY ? buildValue() : node.value;
-      const changes = diffArrays(prev, next, keys, generateKey, contentBased);
+      const changes = diffArrays(prev, next, keys, generateKey, contentBased, itemEquals);
       if (changes.changed) {
         keys = changes.newKeys;
         applyChanges(changes);
@@ -692,7 +693,7 @@ function createList(value, options) {
       if (!keys.includes(key))
         keys.push(key);
       validateSignalValue(`${TYPE_LIST} item for key "${key}"`, value2);
-      signals.set(key, createState(value2));
+      signals.set(key, createState(value2, { equals: itemEquals }));
       node.flags |= FLAG_DIRTY | FLAG_RELINK;
       for (let e = node.sinks;e; e = e.nextSink)
         propagate(e.sink);
@@ -721,7 +722,7 @@ function createList(value, options) {
       if (!signal)
         return;
       validateSignalValue(`${TYPE_LIST} item for key "${key}"`, value2);
-      if (untrack(() => signal.get()) === value2)
+      if (itemEquals(untrack(() => signal.get()), value2))
         return;
       signal.set(value2);
       node.flags |= FLAG_DIRTY;
