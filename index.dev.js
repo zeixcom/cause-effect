@@ -1545,8 +1545,13 @@ function isMutableSignal(value) {
 }
 
 // src/nodes/slot.ts
+function isSignalOrDescriptor(value) {
+  if (isSignal(value))
+    return true;
+  return value !== null && typeof value === "object" && "get" in value && typeof value.get === "function";
+}
 function createSlot(initialSignal, options) {
-  validateSignalValue(TYPE_SLOT, initialSignal, isSignal);
+  validateSignalValue(TYPE_SLOT, initialSignal, isSignalOrDescriptor);
   let delegated = initialSignal;
   const guard = options?.guard;
   const node = {
@@ -1571,13 +1576,15 @@ function createSlot(initialSignal, options) {
   const set = (next) => {
     if (isSlot(delegated))
       return delegated.set(next);
-    if (!isMutableSignal(delegated))
+    if ("set" in delegated && typeof delegated.set === "function") {
+      validateSignalValue(TYPE_SLOT, next, guard);
+      delegated.set(next);
+    } else {
       throw new ReadonlySignalError(TYPE_SLOT);
-    validateSignalValue(TYPE_SLOT, next, guard);
-    delegated.set(next);
+    }
   };
   const replace = (next) => {
-    validateSignalValue(TYPE_SLOT, next, isSignal);
+    validateSignalValue(TYPE_SLOT, next, isSignalOrDescriptor);
     delegated = next;
     node.flags |= FLAG_DIRTY;
     for (let e = node.sinks;e; e = e.nextSink)

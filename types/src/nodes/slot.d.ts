@@ -1,5 +1,16 @@
 import { type Signal, type SignalOptions } from '../graph';
 /**
+ * A descriptor for a derived reactive value with an optional setter.
+ *
+ * @template T - The type of value
+ */
+type SlotDescriptor<T extends {}> = {
+    /** Reads the value, tracking dependencies. */
+    get(): T;
+    /** Optional setter to update the source value. */
+    set?(next: T): void;
+};
+/**
  * A signal that delegates its value to a swappable backing signal.
  *
  * Slots provide a stable reactive source at a fixed position (e.g. an object property)
@@ -24,9 +35,9 @@ type Slot<T extends {}> = {
     /** Writes a value to the delegated signal. Throws `ReadonlySignalError` if the delegated signal is read-only. */
     set(next: T): void;
     /** Swaps the backing signal, invalidating all downstream subscribers. Narrowing (`U extends T`) is allowed. */
-    replace<U extends T>(next: Signal<U>): void;
+    replace<U extends T>(next: Signal<U> | SlotDescriptor<U>): void;
     /** Returns the currently delegated signal. */
-    current(): Signal<T>;
+    current(): Signal<T> | SlotDescriptor<T>;
 };
 /**
  * Creates a slot signal that delegates its value to a swappable backing signal.
@@ -45,7 +56,7 @@ type Slot<T extends {}> = {
  * @param options.guard - Type guard to validate values passed to `set()`.
  * @returns A `Slot<T>` object usable both as a property descriptor and as a reactive signal.
  */
-declare function createSlot<T extends {}>(initialSignal: Signal<T>, options?: SignalOptions<T>): Slot<T>;
+declare function createSlot<T extends {}>(initialSignal: Signal<T> | SlotDescriptor<T>, options?: SignalOptions<T>): Slot<T>;
 /**
  * Checks if a value is a Slot signal.
  *
@@ -54,4 +65,4 @@ declare function createSlot<T extends {}>(initialSignal: Signal<T>, options?: Si
  * @returns True if the value is a Slot
  */
 declare function isSlot<T extends {} = unknown & {}>(value: unknown): value is Slot<T>;
-export { createSlot, isSlot, type Slot };
+export { createSlot, isSlot, type Slot, type SlotDescriptor };
