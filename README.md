@@ -6,6 +6,13 @@ Version 1.3.0
 
 It is deliberately **not a framework**. It has no opinions about rendering, persistence, or application architecture. It is a thin, trustworthy layer over JavaScript that provides the comfort and guarantees of fine-grained reactivity while avoiding the common pitfalls of imperative code.
 
+## Documentation
+
+- [Guide for Framework Developers](GUIDE.md) - Conceptual differences, mental models, and comparisons
+- [Advanced Patterns & Recipes](RECIPES.md) - Multi-step wizards, nested collections, and batching
+- [Signal Graph Architecture](ARCHITECTURE.md) - Core data structures, graph engine, and ownership
+- [React Integration](REACT_INTEGRATION.md) - Why it's out of scope and how you'd build one
+
 ## Who Is This For?
 
 **Library authors** building on TypeScript — frontend or backend — who need a solid reactive foundation. The library is designed so that consuming libraries do not have to implement their own reactive primitives. Patterns like external data feeds, async derivations, and keyed collections are handled correctly within a unified graph rather than bolted on as ad-hoc extensions.
