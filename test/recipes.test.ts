@@ -38,12 +38,6 @@ describe("Recipes", () => {
       }
     }
 
-    function prevStep() {
-      if (currentStep.get() > 1) {
-        currentStep.update(s => s - 1);
-      }
-    }
-
     expect(wizardState.get()).toEqual({ step: 1, canProceed: false, isComplete: false, progress: 50 });
     
     nextStep();
