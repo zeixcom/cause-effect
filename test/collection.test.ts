@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test'
-import {
+import {  describe, expect, test } from 'bun:test'
+import { createStore, 
 	batch,
 	type CollectionChanges,
 	createCollection,
@@ -601,4 +601,22 @@ describe('Collection', () => {
 			expect(() => mapped.get()).toThrow('bad item')
 		})
 	})
+})
+
+test('Type Inference for custom createItem', () => {
+	// This test primarily checks compilation types but also runtime presence
+	type TodoItem = { id: string, text: string, done: boolean }
+	const col = createCollection(() => () => {}, {
+		keyConfig: 'todo',
+		createItem: createStore<TodoItem>,
+	})
+	
+	const byKey = col.byKey('todo0')
+	// Runtime check
+	expect(byKey).toBeUndefined()
+	
+	// Type check
+	type Expect<T extends true> = T
+	type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y ? 1 : 2) ? true : false
+	type _Test = Expect<Equal<typeof byKey, ReturnType<typeof createStore<TodoItem>> | undefined>>
 })

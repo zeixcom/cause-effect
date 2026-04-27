@@ -6,6 +6,119 @@ import {
 	unown,
 } from '../index.ts'
 
+describe('createScope with root option', () => {
+
+	test('root scope is not registered on enclosing scope', () => {
+		let rootCleanupRan = false
+		const outerDispose = createScope(() => {
+			createScope(() => {
+				return () => { rootCleanupRan = true }
+			}, { root: true })
+		})
+		outerDispose()
+		expect(rootCleanupRan).toBe(false)
+	})
+
+	test('root scope is not registered on enclosing effect', () => {
+		const trigger = createState(0)
+		let rootCleanupRuns = 0
+
+		const outerDispose = createScope(() => {
+			createEffect((): undefined => {
+				trigger.get()
+				createScope(() => {
+					return () => { rootCleanupRuns++ }
+				}, { root: true })
+			})
+		})
+
+		expect(rootCleanupRuns).toBe(0)
+		trigger.set(1)
+		expect(rootCleanupRuns).toBe(0)
+		trigger.set(2)
+		expect(rootCleanupRuns).toBe(0)
+
+		outerDispose()
+	})
+
+	test('effects inside a root survive outer effect re-runs (Le Truc regression)', () => {
+		const listChange = createState(0)
+		let componentEffectRuns = 0
+		let componentCleanupRuns = 0
+
+		const connectComponent = () =>
+			createScope(() => {
+				createEffect((): undefined => {
+					componentEffectRuns++
+				})
+				return () => { componentCleanupRuns++ }
+			}, { root: true })
+
+		const outerDispose = createScope(() => {
+			createEffect((): undefined => {
+				listChange.get()
+				if (listChange.get() === 0) connectComponent()
+			})
+		})
+
+		expect(componentEffectRuns).toBe(1)
+		expect(componentCleanupRuns).toBe(0)
+
+		listChange.set(1)
+		expect(componentEffectRuns).toBe(1)
+		expect(componentCleanupRuns).toBe(0)
+
+		outerDispose()
+	})
+
+	test('dispose returned from root scope still works', () => {
+		let cleanupRan = false
+		const dispose = createScope(() => {
+			return () => { cleanupRan = true }
+		}, { root: true })
+		expect(cleanupRan).toBe(false)
+		dispose()
+		expect(cleanupRan).toBe(true)
+	})
+
+	test('effects inside root still run reactively', () => {
+		const source = createState('a')
+		let effectRuns = 0
+
+		const dispose = createScope(() => {
+			createEffect((): undefined => {
+				source.get()
+				effectRuns++
+			})
+		}, { root: true })
+
+		expect(effectRuns).toBe(1)
+		source.set('b')
+		expect(effectRuns).toBe(2)
+
+		dispose()
+		source.set('c')
+		expect(effectRuns).toBe(2)
+	})
+
+	test('activeOwner is restored correctly even when fn throws', () => {
+		let postCleanupRan = false
+		const outerDispose = createScope(() => {
+			try {
+				createScope(() => { throw new Error('boom') }, { root: true })
+			} catch {
+				// swallow
+			}
+			createScope(() => {
+				return () => { postCleanupRan = true }
+			})
+		})
+		outerDispose()
+		expect(postCleanupRan).toBe(true)
+	})
+
+})
+
 describe('unown', () => {
 
 	test('should return the value of the callback', () => {

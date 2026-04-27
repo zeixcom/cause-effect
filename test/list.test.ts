@@ -6,6 +6,7 @@ import {
 	createMemo,
 	createScope,
 	createState,
+	createStore,
 	createTask,
 	isList,
 	isMemo,
@@ -469,6 +470,15 @@ describe('List', () => {
 			expect(list.byKey(key)?.get()).toBe(10)
 		})
 
+		test('byKey allows mutation of item', () => {
+			const list = createList([{ id: 'w1', val: 1 }], {
+				keyConfig: w => w.id,
+			})
+			expect(list.byKey('w1')?.get()).toEqual({ id: 'w1', val: 1 })
+			list.byKey('w1')?.update(v => ({ ...v, val: 2 }))
+			expect(list.byKey('w1')?.get()).toEqual({ id: 'w1', val: 2 })
+		})
+
 		test('keys should return iterator of all keys', () => {
 			const list = createList([10, 20, 30])
 			const allKeys = [...list.keys()]
@@ -829,4 +839,30 @@ describe('List', () => {
 			}).toThrow()
 		})
 	})
+})
+
+test('Type Inference for custom createItem', () => {
+	// This test primarily checks compilation types but also runtime presence
+	type TodoItem = { id: string; text: string; done: boolean }
+	const list = createList([], {
+		keyConfig: 'todo',
+		createItem: createStore<TodoItem>,
+	})
+
+	const byKey = list.byKey('todo0')
+	// Runtime check
+	expect(byKey).toBeUndefined()
+
+	// Type check
+	type Expect<T extends true> = T
+	type Equal<X, Y> =
+		(<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2
+			? true
+			: false
+	type _Test = Expect<
+		Equal<
+			typeof byKey,
+			ReturnType<typeof createStore<TodoItem>> | undefined
+		>
+	>
 })

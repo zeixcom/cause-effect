@@ -170,9 +170,11 @@ Cleanup functions are stored on the `cleanup` field of owner nodes. The field is
 
 `registerCleanup()` promotes from `null` → function → array as needed. `runCleanup()` executes all registered cleanups and resets the field to `null`.
 
-### `createScope(fn)`
+### `createScope(fn, options?)`
 
-Creates an ownership scope without an effect. The scope becomes `activeOwner` during `fn` execution. Returns a `dispose` function. If the scope is created inside another owner, its disposal is automatically registered on the parent.
+Creates an ownership scope without an effect. The scope becomes `activeOwner` during `fn` execution. Returns a `dispose` function. Unless `options.root` is `true`, the scope's disposal is automatically registered on the parent owner (if any).
+
+`{ root: true }` (via `ScopeOptions`) suppresses that registration, making the returned `dispose` the sole mechanism for tearing down the scope. This is the correct pattern for any owner with an external lifecycle authority (e.g. a web component whose `disconnectedCallback` is the only teardown point) — without it, a scope created inside a re-runnable effect would be disposed on the next effect re-run.
 
 ## Signal Types
 
@@ -358,3 +360,4 @@ The first-subscriber path is the key to `watched` lifecycle propagation: when an
 | `isEqual` placement | Implementation in `graph.ts`; public preset exported as `DEEP_EQUALITY` from `graph.ts` | `util.ts` (blocked by circular import: `errors.ts` → `util.ts`); keep in `list.ts` | `isEqual` needs `CircularDependencyError`, which lives in `errors.ts`; `errors.ts` already imports `util.ts`, so `util.ts` cannot import back. `graph.ts` already imports `CircularDependencyError` and is the correct home for all equality constants. |
 | `isEqual` public export | Deprecated alias re-exported from `index.ts` pointing to the implementation in `graph.ts` | Remove immediately | No known downstream consumers, but it was part of the public API — a deprecation cycle is the correct path to removal. |
 | Cycle detection in `isEqual` / `DEEP_EQUALITY` | No cycle detection — plain recursion, no `WeakSet` | (a) Keep `WeakSet` per call; (b) import `fast-deep-equal` or `dequal` | `WeakSet` allocation on every `List.set()` / `Store.set()` call is unnecessary overhead for the common case (plain JSON-like signal values). Circular signal data is a user bug; a stack overflow is an acceptable outcome. Importing an external package for a 20-line function contradicts the zero-dependency policy and bundle-size constraints. `DEEP_EQUALITY` has never shipped; deprecated `isEqual` has no known consumers — no major version required. |
+| `createScope` root option | `ScopeOptions { root?: boolean }` as second argument to `createScope` | Standalone `createRoot(fn)` export | One-line implementation difference; extending the existing function avoids adding a new export. `ScopeOptions` follows the `*Options` pattern used by every other creation function in the library (`SignalOptions`, `ListOptions`, `SensorOptions`, etc.). Positional boolean (`createScope(fn, true)`) was rejected: readable only with IDE hover support; an options object is self-documenting in code review. |

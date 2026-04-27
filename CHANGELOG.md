@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.1
+
+### Added
+- `createScope` now accepts an optional `ScopeOptions` second argument; `{ root: true }` creates a root scope that is not registered on the current parent owner – the returned `dispose` is the sole teardown mechanism. Export new `ScopeOptions` type.
+
+### Changed
+- Improved type inference for `createList` and `createCollection` when providing a custom `createItem` factory (e.g. `createStore`). The generic type of the returned item signal is now properly inferred without requiring type assertions.
+
 ## 1.3.0
 
 ### Added

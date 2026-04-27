@@ -13,7 +13,7 @@ Read references/signal-types.md. Match the task to the appropriate signal(s) usi
 
 Before writing any `createEffect` call, confirm there is an active owner in scope:
 - Top-level effects must be wrapped in `createScope`
-- Effects in Web Component lifecycle methods that use DOM-managed lifetime should use `unown`
+- Effects in Web Component lifecycle methods that use DOM-managed lifetime: use `createScope(fn, { root: true })` — the returned `dispose` goes in `disconnectedCallback`. This suppresses parent-owner registration so the scope is never disposed by a re-running outer effect
 
 See references/api-facts.md → `<core_functions>` for the rules.
 

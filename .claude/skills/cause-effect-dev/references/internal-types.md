@@ -29,7 +29,7 @@ Two independent global pointers are maintained by `src/graph.ts`:
 - Set to the currently-running Effect or Scope
 - Any cleanup registered while `activeOwner` is set is attached to that owner
 - Nulled by `unown(fn)` — cleanups registered inside `fn` are not owned by the current context
-- Use `unown` in `connectedCallback` for nodes whose lifecycle is managed by the DOM, not by the reactive graph
+- For web component `connectedCallback`, prefer `createScope(fn, { root: true })` over `unown(() => createScope(fn))` — both suppress parent registration, but `{ root: true }` is clearer at the call site
 </global_pointers>
 
 <ownership_vs_tracking>

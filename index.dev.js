@@ -1,5 +1,5 @@
 // src/util.ts
-var ASYNC_FUNCTION_PROTO = Object.getPrototypeOf(async function() {});
+var ASYNC_FUNCTION_PROTO = Object.getPrototypeOf(async () => {});
 function isFunction(fn) {
   return typeof fn === "function";
 }
@@ -426,7 +426,7 @@ function untrack(fn) {
     activeSink = prev;
   }
 }
-function createScope(fn) {
+function createScope(fn, options) {
   const prevOwner = activeOwner;
   const scope = { cleanup: null };
   activeOwner = scope;
@@ -438,7 +438,7 @@ function createScope(fn) {
     return dispose;
   } finally {
     activeOwner = prevOwner;
-    if (prevOwner)
+    if (!options?.root && prevOwner)
       registerCleanup(prevOwner, dispose);
   }
 }
@@ -1047,7 +1047,9 @@ function createCollection(watched, options) {
   const itemToKey = new Map;
   const [generateKey, contentBased] = getKeyGenerator(options?.keyConfig);
   const resolveKey = (item) => itemToKey.get(item) ?? (contentBased ? generateKey(item) : undefined);
-  const itemFactory = options?.createItem ?? ((item) => createState(item, { equals: options?.itemEquals ?? DEEP_EQUALITY }));
+  const itemFactory = options?.createItem ?? ((item) => createState(item, {
+    equals: options?.itemEquals ?? DEEP_EQUALITY
+  }));
   function buildValue() {
     const result = [];
     for (const key of keys) {

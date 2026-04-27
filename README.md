@@ -1,10 +1,17 @@
 # Cause & Effect
 
-Version 1.3.0
+Version 1.3.1
 
 **Cause & Effect** is a reactive state management primitives library for TypeScript. It provides the foundational building blocks for managing complex, dynamic, composite, and asynchronous state — correctly and performantly — in a unified signal graph.
 
 It is deliberately **not a framework**. It has no opinions about rendering, persistence, or application architecture. It is a thin, trustworthy layer over JavaScript that provides the comfort and guarantees of fine-grained reactivity while avoiding the common pitfalls of imperative code.
+
+## Documentation
+
+- [Guide for Framework Developers](GUIDE.md) - Conceptual differences, mental models, and comparisons
+- [Advanced Patterns & Recipes](RECIPES.md) - Multi-step wizards, nested collections, and batching
+- [Signal Graph Architecture](ARCHITECTURE.md) - Core data structures, graph engine, and ownership
+- [React Integration](REACT_INTEGRATION.md) - Why it's out of scope and how you'd build one
 
 ## Who Is This For?
 

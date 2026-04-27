@@ -1,6 +1,6 @@
 /**
  * @name Cause & Effect
- * @version 1.3.0
+ * @version 1.3.1
  * @author Esther Brunner
  */
 
@@ -24,6 +24,7 @@ export {
 	type EffectCallback,
 	type MaybeCleanup,
 	type MemoCallback,
+	type ScopeOptions,
 	type Signal,
 	type SignalOptions,
 	SKIP_EQUALITY,

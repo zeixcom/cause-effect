@@ -121,6 +121,21 @@ type ComputedOptions<T extends {}> = SignalOptions<T> & {
 }
 
 /**
+ * Options for configuring scope behavior.
+ */
+type ScopeOptions = {
+	/**
+	 * When `true`, the scope is not registered on the current parent owner.
+	 * The returned `dispose` function becomes the sole mechanism for tearing down the scope.
+	 *
+	 * Use this for scopes with an external lifecycle authority (e.g. a web component
+	 * whose `disconnectedCallback` is the teardown point) — without it, a scope created
+	 * inside a re-runnable effect would be silently disposed on the next effect re-run.
+	 */
+	root?: boolean
+}
+
+/**
  * A callback function for memos that computes a value based on the previous value.
  *
  * @template T - The type of value computed
@@ -619,27 +634,46 @@ function untrack<T>(fn: () => T): T {
 /**
  * Creates a new ownership scope for managing cleanup of nested effects and resources.
  * All effects created within the scope will be automatically disposed when the scope is disposed.
- * Scopes can be nested - disposing a parent scope disposes all child scopes.
+ * Scopes can be nested — disposing a parent scope disposes all child scopes.
+ *
+ * By default, if the scope is created inside another owner (an effect or a parent scope),
+ * its disposal is automatically registered on that owner. Pass `{ root: true }` to suppress
+ * this registration, making the returned `dispose` the sole teardown mechanism — required
+ * when an external lifecycle authority (such as a web component's `disconnectedCallback`)
+ * is responsible for cleanup.
  *
  * @param fn - The function to execute within the scope, may return a cleanup function
+ * @param options - Optional scope configuration
  * @returns A dispose function that cleans up the scope
  *
- * @example
+ * @example Standard (owned) scope:
  * ```ts
  * const dispose = createScope(() => {
  *   const count = createState(0);
- *
- *   createEffect(() => {
- *     console.log(count.get());
- *   });
- *
+ *   createEffect(() => { console.log(count.get()); });
  *   return () => console.log('Scope disposed');
  * });
+ * dispose();
+ * ```
  *
- * dispose(); // Cleans up the effect and runs cleanup callbacks
+ * @example Root scope for a web component:
+ * ```ts
+ * class MyElement extends HTMLElement {
+ *   #dispose?: () => void;
+ *
+ *   connectedCallback() {
+ *     this.#dispose = createScope(() => {
+ *       createEffect(() => { this.textContent = label.get(); });
+ *     }, { root: true });
+ *   }
+ *
+ *   disconnectedCallback() {
+ *     this.#dispose?.();
+ *   }
+ * }
  * ```
  */
-function createScope(fn: () => MaybeCleanup): Cleanup {
+function createScope(fn: () => MaybeCleanup, options?: ScopeOptions): Cleanup {
 	const prevOwner = activeOwner
 	const scope: Scope = { cleanup: null }
 	activeOwner = scope
@@ -651,7 +685,7 @@ function createScope(fn: () => MaybeCleanup): Cleanup {
 		return dispose
 	} finally {
 		activeOwner = prevOwner
-		if (prevOwner) registerCleanup(prevOwner, dispose)
+		if (!options?.root && prevOwner) registerCleanup(prevOwner, dispose)
 	}
 }
 
@@ -698,6 +732,7 @@ export {
 	type MemoCallback,
 	type MemoNode,
 	type Scope,
+	type ScopeOptions,
 	type Signal,
 	type SignalOptions,
 	type SinkNode,

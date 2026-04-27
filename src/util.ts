@@ -1,6 +1,6 @@
 /* === Constants === */
 
-const ASYNC_FUNCTION_PROTO = Object.getPrototypeOf(async function () {})
+const ASYNC_FUNCTION_PROTO = Object.getPrototypeOf(async () => {})
 
 /* === Utility Functions === */
 

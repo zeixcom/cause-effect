@@ -50,14 +50,14 @@ type DeriveCollectionCallback<T extends {}, U extends {}> =
  *
  * @template T - The type of items in the collection
  */
-type Collection<T extends {}> = {
+type Collection<T extends {}, S extends Signal<T> = Signal<T>> = {
 	readonly [Symbol.toStringTag]: 'Collection'
 	readonly [Symbol.isConcatSpreadable]: true
-	[Symbol.iterator](): IterableIterator<Signal<T>>
+	[Symbol.iterator](): IterableIterator<S>
 	keys(): IterableIterator<string>
 	get(): T[]
-	at(index: number): Signal<T> | undefined
-	byKey(key: string): Signal<T> | undefined
+	at(index: number): S | undefined
+	byKey(key: string): S | undefined
 	keyAt(index: number): string | undefined
 	indexOfKey(key: string): number
 	deriveCollection<R extends {}>(
@@ -88,13 +88,13 @@ type CollectionChanges<T> = {
  *
  * @template T - The type of items in the collection
  */
-type CollectionOptions<T extends {}> = {
+type CollectionOptions<T extends {}, S extends Signal<T> = Signal<T>> = {
 	/** Initial items. Defaults to `[]`. */
 	value?: T[]
 	/** Key generation strategy. See `KeyConfig`. Defaults to auto-increment. */
 	keyConfig?: KeyConfig<T>
 	/** Factory for per-item signals. Defaults to `createState`. */
-	createItem?: (value: T) => Signal<T>
+	createItem?: (value: T) => S
 	/** Equality function for default item state signals. Defaults to deep equality. Ignored if `createItem` is provided. */
 	itemEquals?: (a: T, b: T) => boolean
 }
@@ -328,15 +328,15 @@ function deriveCollection<T extends {}, U extends {}>(
  * @param options - Optional configuration including initial value, key generation, and item signal creation
  * @returns A read-only Collection signal
  */
-function createCollection<T extends {}>(
+function createCollection<T extends {}, S extends Signal<T> = Signal<T>>(
 	watched: CollectionCallback<T>,
-	options?: CollectionOptions<T>,
-): Collection<T> {
+	options?: CollectionOptions<T, S>,
+): Collection<T, S> {
 	const value = options?.value ?? []
 	if (value.length) validateSignalValue(TYPE_COLLECTION, value, Array.isArray)
 	validateCallback(TYPE_COLLECTION, watched, isSyncFunction)
 
-	const signals = new Map<string, Signal<T>>()
+	const signals = new Map<string, S>()
 	const keys: string[] = []
 	const itemToKey = new Map<T, string>()
 
@@ -345,10 +345,11 @@ function createCollection<T extends {}>(
 	const resolveKey = (item: T): string | undefined =>
 		itemToKey.get(item) ?? (contentBased ? generateKey(item) : undefined)
 
-	const itemFactory =
-		options?.createItem ??
+	const itemFactory = (options?.createItem ??
 		((item: T) =>
-			createState(item, { equals: options?.itemEquals ?? DEEP_EQUALITY }))
+			createState(item, {
+				equals: options?.itemEquals ?? DEEP_EQUALITY,
+			}))) as (value: T) => S
 
 	// Build current value from child signals
 	function buildValue(): T[] {
@@ -440,7 +441,7 @@ function createCollection<T extends {}>(
 
 	const subscribe = makeSubscribe(node, () => watched(onChanges))
 
-	const collection: Collection<T> = {
+	const collection: Collection<T, S> = {
 		[Symbol.toStringTag]: TYPE_COLLECTION,
 		[Symbol.isConcatSpreadable]: true as const,
 
@@ -524,7 +525,9 @@ function createCollection<T extends {}>(
  * @param value - The value to check
  * @returns True if the value is a Collection
  */
-function isCollection<T extends {}>(value: unknown): value is Collection<T> {
+function isCollection<T extends {}, S extends Signal<T> = Signal<T>>(
+	value: unknown,
+): value is Collection<T, S> {
 	return isSignalOfType(value, TYPE_COLLECTION)
 }
 
