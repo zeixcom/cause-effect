@@ -560,6 +560,7 @@ function createList(value, options) {
   let keys = [];
   const [generateKey, contentBased] = getKeyGenerator(options?.keyConfig);
   const itemEquals = options?.itemEquals ?? DEEP_EQUALITY;
+  const itemFactory = options?.createItem ?? ((item) => createState(item, { equals: itemEquals }));
   const buildValue = () => keys.map((key) => signals.get(key)?.get()).filter((v) => v !== undefined);
   const node = {
     fn: buildValue,
@@ -577,7 +578,7 @@ function createList(value, options) {
     for (const key in changes.add) {
       const val = changes.add[key];
       validateSignalValue(`${TYPE_LIST} item for key "${key}"`, val);
-      signals.set(key, createState(val, { equals: itemEquals }));
+      signals.set(key, itemFactory(val));
       structural = true;
     }
     if (Object.keys(changes.change).length) {
@@ -613,7 +614,7 @@ function createList(value, options) {
       keys[i] = key;
     }
     validateSignalValue(`${TYPE_LIST} item for key "${key}"`, val);
-    signals.set(key, createState(val, { equals: itemEquals }));
+    signals.set(key, itemFactory(val));
   }
   node.value = value;
   node.flags = 0;
@@ -693,7 +694,7 @@ function createList(value, options) {
       if (!keys.includes(key))
         keys.push(key);
       validateSignalValue(`${TYPE_LIST} item for key "${key}"`, value2);
-      signals.set(key, createState(value2, { equals: itemEquals }));
+      signals.set(key, itemFactory(value2));
       node.flags |= FLAG_DIRTY | FLAG_RELINK;
       for (let e = node.sinks;e; e = e.nextSink)
         propagate(e.sink);
@@ -1046,7 +1047,7 @@ function createCollection(watched, options) {
   const itemToKey = new Map;
   const [generateKey, contentBased] = getKeyGenerator(options?.keyConfig);
   const resolveKey = (item) => itemToKey.get(item) ?? (contentBased ? generateKey(item) : undefined);
-  const itemFactory = options?.createItem ?? createState;
+  const itemFactory = options?.createItem ?? ((item) => createState(item, { equals: options?.itemEquals ?? DEEP_EQUALITY }));
   function buildValue() {
     const result = [];
     for (const key of keys) {

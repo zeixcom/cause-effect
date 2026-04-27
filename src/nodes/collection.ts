@@ -18,17 +18,12 @@ import {
 	type Signal,
 	type SinkNode,
 	SKIP_EQUALITY,
+	DEEP_EQUALITY,
 	TYPE_COLLECTION,
 	untrack,
 } from '../graph'
 import { isAsyncFunction, isSignalOfType, isSyncFunction } from '../util'
-import {
-	getKeyGenerator,
-	isList,
-	type KeyConfig,
-	keysEqual,
-	type List,
-} from './list'
+import { getKeyGenerator, type KeyConfig, keysEqual, type List } from './list'
 import { createMemo, type Memo } from './memo'
 import { createState, isState } from './state'
 import { createTask } from './task'
@@ -100,6 +95,8 @@ type CollectionOptions<T extends {}> = {
 	keyConfig?: KeyConfig<T>
 	/** Factory for per-item signals. Defaults to `createState`. */
 	createItem?: (value: T) => Signal<T>
+	/** Equality function for default item state signals. Defaults to deep equality. Ignored if `createItem` is provided. */
+	itemEquals?: (a: T, b: T) => boolean
 }
 
 /**
@@ -348,7 +345,10 @@ function createCollection<T extends {}>(
 	const resolveKey = (item: T): string | undefined =>
 		itemToKey.get(item) ?? (contentBased ? generateKey(item) : undefined)
 
-	const itemFactory = options?.createItem ?? createState
+	const itemFactory =
+		options?.createItem ??
+		((item: T) =>
+			createState(item, { equals: options?.itemEquals ?? DEEP_EQUALITY }))
 
 	// Build current value from child signals
 	function buildValue(): T[] {
