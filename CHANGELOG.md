@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+- Improved type inference for `createList` and `createCollection` when providing a custom `createItem` factory (e.g. `createStore`). The generic type of the returned item signal is now properly inferred without requiring type assertions.
+
 ## 1.3.0
 
 ### Added

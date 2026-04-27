@@ -1047,7 +1047,9 @@ function createCollection(watched, options) {
   const itemToKey = new Map;
   const [generateKey, contentBased] = getKeyGenerator(options?.keyConfig);
   const resolveKey = (item) => itemToKey.get(item) ?? (contentBased ? generateKey(item) : undefined);
-  const itemFactory = options?.createItem ?? ((item) => createState(item, { equals: options?.itemEquals ?? DEEP_EQUALITY }));
+  const itemFactory = options?.createItem ?? ((item) => createState(item, {
+    equals: options?.itemEquals ?? DEEP_EQUALITY
+  }));
   function buildValue() {
     const result = [];
     for (const key of keys) {

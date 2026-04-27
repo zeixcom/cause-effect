@@ -6,6 +6,7 @@ import {
 	createMemo,
 	createScope,
 	createState,
+	createStore,
 	createTask,
 	isList,
 	isMemo,
@@ -829,4 +830,22 @@ describe('List', () => {
 			}).toThrow()
 		})
 	})
+})
+
+test('Type Inference for custom createItem', () => {
+	// This test primarily checks compilation types but also runtime presence
+	type TodoItem = { id: string, text: string, done: boolean }
+	const list = createList([], {
+		keyConfig: 'todo',
+		createItem: createStore<TodoItem>,
+	})
+	
+	const byKey = list.byKey('todo0')
+	// Runtime check
+	expect(byKey).toBeUndefined()
+	
+	// Type check
+	type Expect<T extends true> = T
+	type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y ? 1 : 2) ? true : false
+	type _Test = Expect<Equal<typeof byKey, ReturnType<typeof createStore<TodoItem>> | undefined>>
 })
