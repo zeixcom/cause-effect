@@ -1,5 +1,5 @@
 // src/util.ts
-var ASYNC_FUNCTION_PROTO = Object.getPrototypeOf(async function() {});
+var ASYNC_FUNCTION_PROTO = Object.getPrototypeOf(async () => {});
 function isFunction(fn) {
   return typeof fn === "function";
 }
