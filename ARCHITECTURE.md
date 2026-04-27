@@ -246,13 +246,13 @@ Any cleanup returned by a handler is registered on the active owner and runs bef
 
 **Graph node**: `MemoNode<T>` (source + sink)
 
-A stable reactive source that delegates reads and writes to a swappable backing signal. Designed for integration layers (e.g. custom element systems) where a property position must switch its backing signal — from a local `State` to a parent-controlled `Memo`, for example — without breaking existing subscribers.
+A stable reactive source that delegates reads and writes to a swappable backing signal or `SlotDescriptor`. Designed for integration layers (e.g. custom element systems) where a property position must switch its backing source — from a local `State` to a parent-controlled derived descriptor, for example — without breaking existing subscribers.
 
 The slot object doubles as a property descriptor: its `get`, `set`, `configurable`, and `enumerable` fields can be passed directly to `Object.defineProperty()`. Control methods (`replace()`, `current()`) live on the same object but are ignored by the property definition; integration code should retain the slot reference for later `replace()` calls.
 
-**Graph behavior**: Sinks link to the slot (stable across replacements). The slot links upstream to exactly one delegated signal at a time. On `replace(nextSignal)`, the slot updates its internal reference, flags sinks dirty via `propagate()`, and flushes. Re-running sinks call `slot.get()`, which triggers `refresh()` — dependency tracking (`link` + `trimSources`) re-subscribes to the new backing signal and drops stale edges to the old one. Setter calls forward to the delegated signal when writable; if the delegated signal is itself a `Slot`, the call chains recursively through it before checking writability. `ReadonlySignalError` is thrown if the terminal signal is read-only.
+**Graph behavior**: Sinks link to the slot (stable across replacements). The slot links upstream to exactly one delegated signal or `SlotDescriptor` at a time. On `replace(next)`, the slot updates its internal reference, flags sinks dirty via `propagate()`, and flushes. Re-running sinks call `slot.get()`, which triggers `refresh()` — dependency tracking (`link` + `trimSources`) re-subscribes to the new backing source and drops stale edges to the old one. Setter calls forward to the delegated source when writable; if the delegated source is itself a `Slot`, the call chains recursively through it before checking writability. `ReadonlySignalError` is thrown if the terminal source is read-only (e.g. a `Memo` or a descriptor without a `set` function).
 
-Options mirror State: optional `guard` and `equals`. Type-level replacement follows `replace<U extends T>(next)` — narrowing is allowed, widening is not.
+Options mirror State: optional `guard` and `equals`. Type-level replacement follows `replace<U extends T>(next)` — narrowing is allowed, widening is not. `createSlot` and `replace` accept native bi-directional derivations via duck-typed `SlotDescriptor` objects mapping to `{ get(): T, set?(next: T): void }`.
 
 ### Store (`src/nodes/store.ts`)
 
@@ -274,13 +274,13 @@ A reactive object where each property is its own signal. Properties are automati
 
 **Graph node**: `MemoNode<T[]>` (source + sink, used for structural reactivity)
 
-A reactive array with stable keys and per-item reactivity. Each item becomes a `State<T>` signal, keyed by a configurable key generation strategy (auto-increment, string prefix, or custom function).
+A reactive array with stable keys and per-item reactivity. Each item becomes a `MutableSignal<T>` (via a configurable `createItem` factory, defaulting to `createState`), keyed by a configurable key generation strategy (auto-increment, string prefix, or custom function). An optional `itemEquals` parameter configures equality checking for default item signals (defaults to `DEEP_EQUALITY`).
 
 **Structural reactivity**: Uses the same `MemoNode` + `FLAG_RELINK` + two-path access pattern as Store. The `buildValue()` function reads all child signals in key order, establishing edges on the refresh path.
 
-**Stable keys**: Keys survive sorting and reordering. `byKey(key)` returns a stable `State<T>` reference regardless of the item's current index. `sort()` reorders the keys array without destroying signals.
+**Stable keys**: Keys survive sorting and reordering. `byKey(key)` returns a stable `MutableSignal<T>` reference regardless of the item's current index. `sort()` reorders the keys array without destroying signals.
 
-**Diff-based updates**: `list.set(newArray)` uses `diffArrays()` to compute granular additions, changes, and removals. Changed items update their existing `State` signals; structural changes (add/remove) set `FLAG_DIRTY | FLAG_RELINK`.
+**Diff-based updates**: `list.set(newArray)` uses `diffArrays()` to compute granular additions, changes, and removals. Changed items update their existing item signals; structural changes (add/remove) set `FLAG_DIRTY | FLAG_RELINK`.
 
 **Two propagation paths — and the asymmetry between them**
 
@@ -318,7 +318,7 @@ An externally-driven reactive collection with a watched lifecycle, mirroring `cr
 
 **Lazy lifecycle**: Like Sensor, the `watched` callback is invoked on first sink attachment. The returned cleanup is stored as `node.stop` and called when the last sink detaches (via `unlink()`). The `startWatching()` guard ensures `watched` fires before `link()` so synchronous mutations inside `watched` update `node.value` before the activating effect reads it.
 
-**External mutation via `applyChanges`**: Additions create new item signals (via configurable `createItem` factory, default `createState`). Changes update existing `State` signals. Removals delete signals and keys. Structural changes set `FLAG_DIRTY | FLAG_RELINK` to trigger edge re-establishment on the next read. The node uses `equals: () => false` since structural changes are managed externally rather than detected by diffing.
+**External mutation via `applyChanges`**: Additions create new item signals (via configurable `createItem` factory, which defaults to `createState` with `itemEquals` defaulting to `DEEP_EQUALITY`). Changes update existing item signals. Removals delete signals and keys. Structural changes set `FLAG_DIRTY | FLAG_RELINK` to trigger edge re-establishment on the next read. The node uses `equals: () => false` since structural changes are managed externally rather than detected by diffing.
 
 **Two-path access with `FLAG_RELINK`**: Same pattern as Store/List — first `get()` uses `refresh()` to establish edges from child signals to the collection node; subsequent reads use `untrack(buildValue)` to avoid re-linking. When `FLAG_RELINK` is set, the next `get()` forces a tracked `refresh()` after rebuilding to link new child signals and trim removed ones.
 

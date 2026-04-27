@@ -1,6 +1,6 @@
 /**
  * @name Cause & Effect
- * @version 1.2.1
+ * @version 1.3.0
  * @author Esther Brunner
  */
 
@@ -62,7 +62,12 @@ export {
 	type SensorCallback,
 	type SensorOptions,
 } from './src/nodes/sensor'
-export { createSlot, isSlot, type Slot } from './src/nodes/slot'
+export {
+	createSlot,
+	isSlot,
+	type Slot,
+	type SlotDescriptor,
+} from './src/nodes/slot'
 export {
 	createState,
 	isState,

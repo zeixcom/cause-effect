@@ -55,6 +55,8 @@ type CollectionOptions<T extends {}> = {
     keyConfig?: KeyConfig<T>;
     /** Factory for per-item signals. Defaults to `createState`. */
     createItem?: (value: T) => Signal<T>;
+    /** Equality function for default item state signals. Defaults to deep equality. Ignored if `createItem` is provided. */
+    itemEquals?: (a: T, b: T) => boolean;
 };
 /**
  * Setup callback for `createCollection`. Invoked when the collection gains its first downstream

@@ -134,4 +134,39 @@ describe('Slot', () => {
 			slot.replace(42)
 		}).toThrow(InvalidSignalValueError)
 	})
+
+	describe('SlotDescriptor', () => {
+		test('should support creating from a `{ get, set }` descriptor', () => {
+			const state = createState(1)
+			const slot = createSlot({
+				get: () => state.get() * 2,
+				set: (val: number) => state.set(val / 2),
+			})
+			
+			expect(slot.get()).toBe(2)
+			
+			let runs = 0
+			createEffect(() => {
+				slot.get()
+				runs++
+			})
+			expect(runs).toBe(1)
+			
+			state.set(5)
+			expect(runs).toBe(2)
+			expect(slot.get()).toBe(10)
+			
+			slot.set(100)
+			expect(state.get()).toBe(50)
+			expect(runs).toBe(3)
+			expect(slot.get()).toBe(100)
+		})
+
+		test('should support read-only `{ get }` descriptor', () => {
+			const state = createState(1)
+			const slot = createSlot({ get: () => state.get() * 2 })
+			expect(slot.get()).toBe(2)
+			expect(() => slot.set(100)).toThrow('[Slot] Signal is read-only')
+		})
+	})
 })
