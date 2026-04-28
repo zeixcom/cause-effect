@@ -17,7 +17,7 @@ External APIs have their own lifecycles. A `mousemove` listener, `MutationObserv
 
 ## Internal Behavior
 
-`src/nodes/sensor.ts` uses a `StateNode<T>` plus `makeSubscribe()` from `src/graph.ts`. The watched callback runs only when `node.sinks` is empty and the first consumer arrives. Its cleanup is stored as `node.stop` and invoked from `unlink()` when the last sink leaves.
+`src/nodes/sensor.ts` uses a `StateNode<T>`. When `get()` runs with an `activeSink` present and `node.sinks` is still empty, it starts the watched callback directly for that first consumer. The returned cleanup is stored on `node.stop`, and when the last sink disconnects, `unlink()` invokes that stop handler so the external subscription is torn down lazily.
 
 `src/nodes/slot.ts` wraps a `MemoNode<T>` whose `fn` simply delegates to the current signal or slot descriptor. The important detail is that subscribers link to the slot node, not directly to the delegated source. When `replace(next)` runs, the slot invalidates downstream sinks, and the next refresh rebuilds edges to the new source.
 
