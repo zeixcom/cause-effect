@@ -135,6 +135,113 @@ describe('Slot', () => {
 		}).toThrow(InvalidSignalValueError)
 	})
 
+	describe('Consumer disconnect and reconnect', () => {
+		test('should return fresh value when new consumer reads after all consumers disconnected', () => {
+			const state = createState(1)
+			const slot = createSlot(state)
+
+			let seen = 0
+			const dispose = createEffect(() => {
+				seen = slot.get()
+			})
+			expect(seen).toBe(1)
+
+			state.set(2)
+			expect(seen).toBe(2)
+
+			// All consumers disconnect — State→SlotMemo edge is pruned via cascade
+			dispose()
+
+			// State update while unwatched
+			state.set(3)
+
+			// New consumer reconnects — should see fresh value 3, not stale 2
+			let seen2 = 0
+			const dispose2 = createEffect(() => {
+				seen2 = slot.get()
+			})
+			expect(seen2).toBe(3)
+
+			dispose2()
+		})
+
+		test('should propagate state updates after consumers disconnect and reconnect', () => {
+			const state = createState(1)
+			const slot = createSlot(state)
+
+			let runs = 0
+			let seen = 0
+			const dispose = createEffect(() => {
+				seen = slot.get()
+				runs++
+			})
+			expect(runs).toBe(1)
+			expect(seen).toBe(1)
+
+			state.set(2)
+			expect(runs).toBe(2)
+			expect(seen).toBe(2)
+
+			// All consumers disconnect
+			dispose()
+			state.set(3)
+
+			// New consumer reconnects
+			const dispose2 = createEffect(() => {
+				seen = slot.get()
+				runs++
+			})
+			// Expect fresh value on connect
+			expect(runs).toBe(3)
+			expect(seen).toBe(3)
+
+			// Propagation must still work after reconnect
+			state.set(4)
+			expect(runs).toBe(4)
+			expect(seen).toBe(4)
+
+			dispose2()
+		})
+
+		test('should propagate through Slot wrapping a Memo after consumer disconnect and reconnect', () => {
+			const state = createState(1)
+			const derived = createMemo(() => state.get() * 10)
+			const slot = createSlot(derived)
+
+			let runs = 0
+			let seen = 0
+			const dispose = createEffect(() => {
+				seen = slot.get()
+				runs++
+			})
+			expect(runs).toBe(1)
+			expect(seen).toBe(10)
+
+			state.set(2)
+			expect(runs).toBe(2)
+			expect(seen).toBe(20)
+
+			// Disconnect and mutate while unwatched
+			dispose()
+			state.set(3)
+
+			// Reconnect
+			const dispose2 = createEffect(() => {
+				seen = slot.get()
+				runs++
+			})
+			expect(runs).toBe(3)
+			expect(seen).toBe(30)
+
+			// Propagation must continue
+			state.set(4)
+			expect(runs).toBe(4)
+			expect(seen).toBe(40)
+
+			dispose2()
+		})
+	})
+
 	describe('SlotDescriptor', () => {
 		test('should support creating from a `{ get, set }` descriptor', () => {
 			const state = createState(1)
