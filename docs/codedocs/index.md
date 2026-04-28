@@ -31,7 +31,7 @@ user.update(value => ({ ...value, age: 31 }))
 
 ## Installation
 
-" "bun"]}>
+<Tabs items={["npm", "pnpm", "yarn", "bun"]}>
 <Tab value="npm">
 
 ```bash
