@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.2
+
+### Fixed
+
+- **Stale value and lost propagation after all consumers of a `Slot` or `Memo` disconnect and reconnect**: Previously, when the last `Effect` unsubscribed from a `Slot` (or any intermediate `MemoNode`), `unlink` correctly cascaded into the `MemoNode` via `trimSources` — pruning the upstream `State → MemoNode` edge — but left `flags` as `FLAG_CLEAN`. On reconnect, `refresh()` saw `FLAG_CLEAN` and returned immediately without calling `recomputeMemo`: the source edge was never re-established, the node returned its stale cached value, and subsequent `State.set()` calls did not propagate at all (the source's sink list no longer contained the `MemoNode`). Now `sinkNode.flags |= FLAG_DIRTY` is set after the cascade `trimSources` in `unlink` (`src/graph.ts`). The next `refresh()` triggers `recomputeMemo`, which re-runs `fn` with `activeSink = node`, re-links the upstream edge via `link()`, and returns a fresh value. Downstream propagation then works correctly for the lifetime of the new consumer.
+
 ## 1.3.1
 
 ### Added

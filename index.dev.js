@@ -212,6 +212,7 @@ function unlink(edge) {
       const sinkNode = source;
       sinkNode.sourcesTail = null;
       trimSources(sinkNode);
+      sinkNode.flags |= FLAG_DIRTY;
     }
   }
   return nextSource;
