@@ -1,0 +1,4 @@
+interface:
+  display_name: "Changelog Keeper"
+  short_description: "Maintain Keep a Changelog format and entries"
+  default_prompt: "Use $changelog-keeper to update CHANGELOG.md after recent code changes."

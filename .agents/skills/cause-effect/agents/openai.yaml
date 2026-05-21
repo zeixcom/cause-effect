@@ -1,0 +1,4 @@
+interface:
+  display_name: "Cause & Effect"
+  short_description: "Expert guidance for using the @zeix/cause-effect reactive signals library in your project"
+  default_prompt: "Use $cause-effect to implement reactive patterns, debug unexpected behavior, or answer questions about the @zeix/cause-effect public API."
