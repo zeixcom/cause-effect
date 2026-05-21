@@ -1,382 +1,71 @@
 # Cause & Effect - Signal Graph Architecture
 
-This document describes the reactive signal graph engine implemented in `src/graph.ts` and the node types built on top of it in `src/nodes/`.
+This document provides a high-level overview of the reactive signal graph engine. For detailed architectural decisions, see the [ADR directory](adr/).
 
 ## Overview
 
-The engine maintains a directed acyclic graph (DAG) of signal nodes connected by edges. Nodes come in two roles: **sources** produce values, **sinks** consume them. Some nodes (Memo, Task, Store, List, Collection) are both source and sink. Edges are created and destroyed automatically as computations run, ensuring the graph always reflects the true dependency structure.
+The engine maintains a directed acyclic graph (DAG) of signal nodes connected by edges. Nodes are either **sources** (produce values) or **sinks** (consume values); some types (Memo, Task, Store, List, Collection) are both. Edges are created and destroyed automatically as computations run, ensuring the graph always reflects true runtime dependencies.
 
 The design optimizes for three properties:
 
-1. **Minimal work**: Only dirty nodes recompute; unchanged values stop propagation.
-2. **Minimal memory**: Edges are stored as doubly-linked lists embedded in nodes, avoiding separate data structures.
-3. **Correctness**: Dynamic dependency tracking means the graph never has stale edges.
+1. **Minimal work**: Only dirty nodes recompute; unchanged values stop propagation
+2. **Minimal memory**: Edges stored as doubly-linked lists embedded in nodes
+3. **Correctness**: Dynamic dependency tracking means the graph never has stale edges
 
-## Core Data Structures
+## Core Concepts
 
-### Edges
-
-An `Edge` connects a source to a sink. Each edge participates in two linked lists simultaneously:
-
-```
-type Edge = {
-  source: SourceNode       // the node being depended on
-  sink: SinkNode           // the node that depends on source
-  nextSource: Edge | null  // next edge in the sink's source list
-  prevSink: Edge | null    // previous edge in the source's sink list
-  nextSink: Edge | null    // next edge in the source's sink list
-}
-```
-
-Each source maintains a singly-linked list of its sinks (`sinks` → `sinksTail`), threaded through `nextSink`/`prevSink`. Each sink maintains a singly-linked list of its sources (`sources` → `sourcesTail`), threaded through `nextSource`. The `prevSink` pointer enables O(1) removal from the source's sink list.
-
-### Node Field Mixins
-
-Nodes are composed from field groups rather than using class inheritance:
-
-| Mixin | Fields | Purpose |
-|-------|--------|---------|
-| `SourceFields<T>` | `value`, `sinks`, `sinksTail`, `stop?` | Holds a value and tracks dependents |
-| `OptionsFields<T>` | `equals`, `guard?` | Equality check and type validation |
-| `SinkFields` | `fn`, `flags`, `sources`, `sourcesTail` | Holds a computation and tracks dependencies |
-| `OwnerFields` | `cleanup` | Manages disposal of child effects/scopes |
-| `AsyncFields` | `controller`, `error` | AbortController for async cancellation |
-
-### Concrete Node Types
-
-| Node | Composed From | Role |
-|------|---------------|------|
-| `StateNode<T>` | SourceFields + OptionsFields | Source only |
-| `MemoNode<T>` | SourceFields + OptionsFields + SinkFields + `error` | Source + Sink |
-| `TaskNode<T>` | SourceFields + OptionsFields + SinkFields + AsyncFields | Source + Sink |
-| `EffectNode` | SinkFields + OwnerFields | Sink only |
-| `Scope` | OwnerFields | Owner only (not in graph) |
-
-## Automatic Dependency Tracking
-
-### The `activeSink` Protocol
-
-A module-level variable `activeSink` points to the sink node currently executing its computation. When a signal's `.get()` method is called, it checks `activeSink` and, if non-null, calls `link(source, activeSink)` to establish an edge.
-
-```
-signal.get()
-  └─ if (activeSink) link(thisNode, activeSink)
-```
-
-Before a sink recomputes, the engine sets `activeSink = node`, ensuring all `.get()` calls during execution are captured. After execution, `activeSink` is restored.
-
-### Edge Creation: `link(source, sink)`
-
-`link()` creates a new edge from source to sink, appending it to both the source's sink list and the sink's source list. It includes three fast-path optimizations:
-
-1. **Same source as last**: If `sink.sourcesTail.source === source`, the edge already exists — skip.
-2. **Edge reuse during recomputation**: When `FLAG_RUNNING` is set, `link()` checks if the next existing edge in the sink's source list already points to this source. If so, it advances the `sourcesTail` pointer instead of creating a new edge. This handles the common case where dependencies are the same across recomputations.
-3. **Duplicate sink check**: If the source's last sink edge already points to this sink, skip creating a duplicate.
-
-### Edge Removal: `trimSources(node)` and `unlink(edge)`
-
-After a sink finishes recomputing, `trimSources()` removes any edges beyond `sourcesTail` — these are dependencies from the previous execution that were not accessed this time. This is how the graph adapts to conditional dependencies.
-
-`unlink()` removes an edge from the source's sink list. If the source's sink list becomes empty:
-
-1. **Watched cleanup**: If the source has a `stop` callback, it is invoked — this is how lazy resources (Sensor, Collection, watched Store/List) are deallocated when no longer observed.
-2. **Cascading cleanup**: If the source is also a sink (a MemoNode or TaskNode — identified by having a `sources` field), its own sources are trimmed via `trimSources()`. This recursively unlinks the node from its upstream dependencies, allowing their `stop` callbacks to fire if they also become unobserved.
-
-The cascade is critical for intermediate nodes like `deriveCollection`'s internal MemoNode: when the last effect unsubscribes from the derived collection, `unlink()` removes the effect→derived edge, which triggers cascade cleanup of the derived→List edge, which in turn fires the List's `stop` (the `watched` cleanup). Without the cascade, the List would retain a stale sink reference and never clean up its watcher. Recursion depth is bounded by graph depth since the graph is a DAG.
-
-### Dependency Tracking Opt-Out: `untrack(fn)`
-
-`untrack()` temporarily sets `activeSink = null`, executing `fn` without creating any edges. This prevents dependency pollution when an effect creates subcomponents with their own internal signals.
+| Concept | ADR | Description |
+|---------|-----|-------------|
+| Node Composition | [ADR-0007](adr/0007-node-composition-via-field-mixins.md) | Field mixins (SourceFields, SinkFields, OwnerFields, AsyncFields) composed into concrete node types |
+| Edge Structure | [ADR-0008](adr/0008-doubly-linked-list-edge-structure.md) | Doubly-linked lists embedded in nodes for O(1) edge operations |
+| Dependency Tracking | [ADR-0009](adr/0009-activeSink-protocol-for-automatic-dependency-tracking.md) | `activeSink` protocol: edges established as side effect of `.get()` calls during computation |
+| Edge Optimizations | [ADR-0013](adr/0013-link-fast-path-optimizations.md) | Three fast-path checks in `link()` to avoid redundant edge creation |
+| Cascading Cleanup | [ADR-0011](adr/0011-cascading-cleanup-protocol-in-unlink.md) | Recursive cleanup through intermediate nodes when last sink detaches |
+| Two-Level Flagging | [ADR-0012](adr/0012-two-level-flagging-dirty-and-check.md) | `DIRTY` for direct dependents, `CHECK` for transitive dependents to minimize work |
+| FLAG_RELINK | [ADR-0010](adr/0010-flag-relink-mechanism-for-structural-reactivity.md) | Structural change flag for composite signals, invisible to core propagation |
+| Two-Path Access | [ADR-0014](adr/0014-two-path-access-pattern-for-composite-signals.md) | Fast path (untracked rebuild) vs tracked path (edge re-establishment) for composites |
 
 ## Change Propagation
 
-### Flag-Based Dirty Tracking
+See [ADR-0012](adr/0012-two-level-flagging-dirty-and-check.md) for the flag system and [ADR-0010](adr/0010-flag-relink-mechanism-for-structural-reactivity.md) for structural reactivity.
 
-Each sink node has a `flags` field using a bitmap with five flags:
-
-| Flag | Value | Meaning |
-|------|-------|---------|
-| `FLAG_CLEAN` | 0 | Value is up to date |
-| `FLAG_CHECK` | 1 | A transitive dependency may have changed — verify before recomputing |
-| `FLAG_DIRTY` | 2 | A direct dependency changed — recomputation required |
-| `FLAG_RUNNING` | 4 | Currently executing (used for circular dependency detection and edge reuse) |
-| `FLAG_RELINK` | 8 | Structural change requires edge re-establishment on next read |
-
-The first four flags (`CLEAN`/`CHECK`/`DIRTY`/`RUNNING`) are used by the core graph engine in `propagate()` and `refresh()`. They are tested with bitmask operations that ignore higher bits, so `FLAG_RELINK` is invisible to the propagation and refresh machinery.
-
-`FLAG_RELINK` is used exclusively by composite signal types (Store, List, Collection, deriveCollection) that manage their own child signals. When a structural mutation adds or removes child signals, the node is flagged `FLAG_DIRTY | FLAG_RELINK`. On the next `get()`, the composite signal's fast path reads the flag: if `FLAG_RELINK` is set, it forces a tracked `refresh()` after rebuilding the value so that `recomputeMemo()` can call `link()` for new child signals and `trimSources()` for removed ones. This avoids the previous approach of nulling `node.sources`/`node.sourcesTail`, which orphaned edges in upstream sink lists. `FLAG_RELINK` is always cleared by `recomputeMemo()`, which assigns `node.flags = FLAG_RUNNING` (clearing all bits) at the start of recomputation.
-
-### The `propagate(node, newFlag?)` Function
-
-When a source value changes, `propagate()` walks its sink list. The `newFlag` parameter defaults to `FLAG_DIRTY` but callers may pass `FLAG_CHECK` for speculative invalidation (e.g., watched callbacks where the source value may not have actually changed).
-
-- **Memo/Task sinks** (have `sinks` field): Flagged with `newFlag` (typically `DIRTY`). Their own sinks are recursively flagged `CHECK`. If the node has an in-flight `AbortController`, it is aborted immediately. Short-circuits if the node already carries an equal or higher flag.
-- **Effect sinks** (no `sinks` field): Flagged with `newFlag` and pushed onto the `queuedEffects` array. An effect is only enqueued once — subsequent propagations escalate the flag (e.g., `CHECK` → `DIRTY`) without re-enqueuing. The flag is assigned (not OR'd) to clear `FLAG_RUNNING`, preserving the existing pattern where a state update inside a running effect triggers a re-run.
-
-The two-level flagging (`DIRTY` for direct dependents, `CHECK` for transitive) avoids unnecessary recomputation. A `CHECK` node only recomputes if, upon inspection during `refresh()`, one of its sources turns out to have actually changed. This applies equally to memo, task, and effect nodes.
-
-### The `refresh(node)` Function
-
-`refresh()` is called when a sink's value is read (pull-based evaluation). It handles two cases:
-
-1. **FLAG_CHECK**: Walk the node's source list. For each source that is itself a sink (Memo/Task), recursively `refresh()` it. If at any point the node gets upgraded to `DIRTY`, stop checking.
-2. **FLAG_DIRTY**: Recompute the node by calling `recomputeMemo()`, `recomputeTask()`, or `runEffect()` depending on the node type.
-
-If `FLAG_RUNNING` is encountered, a `CircularDependencyError` is thrown.
-
-### The `setState(node, next)` Function
-
-`setState()` is the entry point for value changes on `StateNode`-based signals (State, Sensor). It:
-
-1. Checks equality — if unchanged, returns immediately.
-2. Updates `node.value`.
-3. Walks the sink list, calling `propagate()` on each dependent.
-4. If not inside a `batch()`, calls `flush()` to execute queued effects.
+The core flow: source change → `propagate()` flags direct sinks `DIRTY` and transitive sinks `CHECK` → `refresh()` verifies `CHECK` nodes before recomputing → `flush()` executes queued effects.
 
 ## Effect Scheduling
 
-### Batching
-
-`batch(fn)` increments a `batchDepth` counter before executing `fn` and decrements it after. Effects are only flushed when `batchDepth` returns to 0. Batches nest — only the outermost batch triggers a flush.
-
-### The `flush()` Function
-
-`flush()` iterates over `queuedEffects`, calling `refresh()` on each effect that is still `DIRTY` or `CHECK`. A `flushing` guard prevents re-entrant flushes. Effects that were enqueued during the flush (due to async resolution or nested state changes) are processed in the same pass, since `flush()` reads the array length dynamically. Effects with only `FLAG_CHECK` enter `refresh()`, which walks their sources — if no source value actually changed, the effect is cleaned without running.
-
-### Effect Lifecycle
-
-When an effect runs:
-
-1. `runCleanup(node)` disposes previous cleanup callbacks.
-2. `activeSink` and `activeOwner` are set to the effect node.
-3. The effect function executes; `.get()` calls create edges.
-4. If the function returns a cleanup function, it is registered via `registerCleanup()`.
-5. `activeSink` and `activeOwner` are restored.
-6. `trimSources()` removes stale edges.
+- `batch(fn)`: Increments `batchDepth`; effects only flush when depth returns to 0. Batches nest.
+- `flush()`: Iterates `queuedEffects`, calling `refresh()` on each still-dirty effect. A `flushing` guard prevents re-entry.
+- Effects double as owners: child effects/scopes created during execution are disposed when the parent re-runs.
 
 ## Ownership and Cleanup
 
-### The `activeOwner` Protocol
-
-`activeOwner` points to the current owner node (an `EffectNode` or `Scope`). When `createEffect()` is called, the new effect's dispose function is registered on `activeOwner`. This creates a tree of ownership: disposing a parent disposes all children.
-
-### Cleanup Storage
-
-Cleanup functions are stored on the `cleanup` field of owner nodes. The field is polymorphic for efficiency:
-
-- `null` — no cleanups registered.
-- A single function — one cleanup registered.
-- An array of functions — multiple cleanups registered.
-
-`registerCleanup()` promotes from `null` → function → array as needed. `runCleanup()` executes all registered cleanups and resets the field to `null`.
-
-### `createScope(fn, options?)`
-
-Creates an ownership scope without an effect. The scope becomes `activeOwner` during `fn` execution. Returns a `dispose` function. Unless `options.root` is `true`, the scope's disposal is automatically registered on the parent owner (if any).
-
-`{ root: true }` (via `ScopeOptions`) suppresses that registration, making the returned `dispose` the sole mechanism for tearing down the scope. This is the correct pattern for any owner with an external lifecycle authority (e.g. a web component whose `disconnectedCallback` is the only teardown point) — without it, a scope created inside a re-runnable effect would be disposed on the next effect re-run.
+- `activeOwner`: Module-level variable pointing to current owner (EffectNode or Scope). Child effects/scopes register their dispose on `activeOwner`.
+- `createScope(fn, options?)`: Creates ownership scope without an effect. The scope becomes `activeOwner` during `fn`. Returns `dispose()`. Unless `options.root === true`, disposal auto-registers on parent owner.
+- Cleanup storage: `cleanup` field is polymorphic (`null` → function → array) for efficiency.
 
 ## Signal Types
 
-### State (`src/nodes/state.ts`)
+All signal types are defined in `src/nodes/`. Each exports a factory function (e.g., `createState`, `createMemo`) and the corresponding node type.
 
-**Graph node**: `StateNode<T>` (source only)
+| Type | Node | Role | Key Behavior |
+|------|------|------|--------------|
+| **State** | `StateNode<T>` | Source | Mutable value container; `get()`/`set()`/`update()` |
+| **Sensor** | `StateNode<T>` | Source | Read-only external input; lazy `watched` callback lifecycle |
+| **Memo** | `MemoNode<T>` | Source + Sink | Sync derived computation; lazy evaluation; optional `watched` invalidation |
+| **Task** | `TaskNode<T>` | Source + Sink | Async derived computation; aborts in-flight on dependency change; `isPending()` |
+| **Effect** | `EffectNode` | Sink | Side-effecting computation; runs immediately; auto-cleanup |
+| **Slot** | `MemoNode<T>` | Source + Sink | Stable reactive source delegating to swappable backing signal |
+| **Store** | `MemoNode<Record>` | Source + Sink | Reactive object; each property is a signal; structural reactivity |
+| **List** | `MemoNode<T[]>` | Source + Sink | Reactive array; stable keys; per-item reactivity; structural diffing |
+| **Collection** | `MemoNode<T[]>` | Source + Sink | Two patterns: `createCollection(watched)` (external) and `deriveCollection(source, fn)` (internal) |
 
-A mutable value container. The simplest signal type — `get()` links and returns the value, `set()` validates, calls `setState()`, which propagates changes to dependents.
+Composite signals (Store, List, Collection, deriveCollection) use the [FLAG_RELINK](adr/0010-flag-relink-mechanism-for-structural-reactivity.md) + [two-path access](adr/0014-two-path-access-pattern-for-composite-signals.md) pattern for structural reactivity.
 
-`update(fn)` is sugar for `set(fn(get()))` with validation.
+## Testing Strategy
 
-### Sensor (`src/nodes/sensor.ts`)
+Unit tests in `src/*.test.ts` verify individual signal types and graph behavior. Integration tests in `test/` cover cross-cutting concerns. The `test` script runs all unit tests.
 
-**Graph node**: `StateNode<T>` (source only)
+Regression tests (excluded from default run, executed via `npm run regression`) ensure stability:
 
-A read-only signal that tracks external input. The `watched` callback receives a `set` function that updates the node's value via `setState()`. Sensors cover two patterns:
-
-1. **Tracking external values** (default): Receives replacement values from events (mouse position, resize events). Equality checking (`===` by default) prevents unnecessary propagation.
-2. **Observing mutable objects** (with `SKIP_EQUALITY`): Holds a stable reference to a mutable object (DOM element, Map, Set). `set(sameRef)` with `equals: SKIP_EQUALITY` always propagates, notifying consumers that the object's internals have changed.
-
-The value starts undefined unless `options.value` is provided. Reading a sensor before its `watched` callback has called `set()` (and without `options.value`) throws `UnsetSignalValueError`.
-
-**Lazy lifecycle**: The `watched` callback is invoked on first sink attachment. The returned cleanup is stored as `node.stop` and called when the last sink detaches (via `unlink()`).
-
-### Memo (`src/nodes/memo.ts`)
-
-**Graph node**: `MemoNode<T>` (source + sink)
-
-A synchronous derived computation. The `fn` receives the previous value (or `undefined` on first run) and returns a new value. Dependencies are tracked automatically during execution.
-
-Memos use lazy evaluation — they only recompute when read (`get()` calls `refresh()`). If the recomputed value is equal to the previous (per the `equals` function), downstream sinks are not flagged dirty, stopping propagation. This is the key mechanism for avoiding unnecessary work.
-
-The `error` field preserves thrown errors: if `fn` throws, the error is stored and re-thrown on subsequent `get()` calls until the memo successfully recomputes.
-
-**Reducer pattern**: The `prev` parameter enables state accumulation across recomputations without writable state.
-
-**Watched lifecycle**: An optional `watched` callback in options provides lazy external invalidation. The callback receives an `invalidate` function and is invoked on first sink attachment. Calling `invalidate()` calls `propagate(node)` on the memo itself, which marks it `FLAG_DIRTY` and propagates `FLAG_CHECK` to downstream sinks, then flushes. During flush, downstream effects verify the memo via `refresh()` — if the memo's `equals` function determines the recomputed value is unchanged, the effect is cleaned without running. The returned cleanup is stored as `node.stop` and called when the last sink detaches. This enables patterns like DOM observation (MutationObserver) where a memo re-derives its value in response to external events, with the `equals` check respected at every level of the graph.
-
-### Task (`src/nodes/task.ts`)
-
-**Graph node**: `TaskNode<T>` (source + sink)
-
-An asynchronous derived computation. Like Memo but `fn` returns a `Promise` and receives an `AbortSignal`. When dependencies change while a task is in flight, the `AbortController` is aborted and a new computation starts.
-
-During dependency tracking, only the synchronous preamble of `fn` is tracked (before the first `await`). The promise resolution triggers propagation and flush asynchronously.
-
-`isPending()` subscribes to an internal `pendingNode: StateNode<boolean>` (via `makeSubscribe`) and returns its value, making it reactive. When called inside a reactive context (e.g. `match()` inside `createEffect`), it creates a dependency edge from `pendingNode` to the running effect. `abort()` cancels the current computation manually. Errors are preserved like Memo, but old values are retained on errors (the last successful result remains accessible).
-
-**Stale detection via `match()`**: Both the single-signal and tuple overloads of `match()` support an optional `stale` handler. After collecting values, if no signals are unset and no errors exist, `match()` checks whether any signal is a Task with `isPending() === true`. If so, and a `stale` handler is provided, it is called as a thunk with no arguments. The cleanup it returns is the mechanism for resetting the stale display (e.g. hiding a spinner) — the effect's own cleanup cycle runs it before the next dispatch. If no `stale` handler is provided, falls back to `ok` (preserving current behavior). Routing precedence: `nil` > `err` > `stale` > `ok`. Because `isPending()` is reactive, the effect re-runs when a re-fetch starts (via `pendingNode`) and when it resolves (via the task's value propagation). The `pendingNode` edge is established the first time the effect reaches `ok` or `stale`; re-fetches thereafter correctly trigger `stale`.
-
-**Watched lifecycle**: Same pattern as Memo — an optional `watched` callback receives `invalidate` and is invoked on first sink attachment. Calling `invalidate()` calls `propagate(node)` on the task itself, which marks it dirty, aborts any in-flight computation eagerly via the `AbortController`, and propagates `FLAG_CHECK` to downstream sinks. Effects only re-run if the task's resolved value actually changes.
-
-### Effect (`src/nodes/effect.ts`)
-
-**Graph node**: `EffectNode` (sink only)
-
-A side-effecting computation that runs immediately and re-runs when dependencies change. Effects are terminal — they have no value and no sinks. They are pushed onto the `queuedEffects` array during propagation and executed during `flush()`.
-
-Effects double as owners: they have a `cleanup` field and become `activeOwner` during execution. Child effects and scopes created during execution are automatically disposed when the parent effect re-runs or is disposed.
-
-**`match(signal(s), handlers)`** is the ergonomic companion to `createEffect`. It reads one or more signals inside the effect and dispatches to a handler based on signal state, following this precedence:
-
-1. **`nil`** — one or more signals are unset (pending, no value yet).
-2. **`err`** — one or more signals hold an error (and none are nil).
-3. **`stale`** — all signals have a retained value but at least one `Task` is currently executing (`isPending() === true`). If `stale` is omitted, falls back to `ok`, preserving the last resolved value during re-fetches.
-4. **`ok`** — all signals have a resolved value.
-
-Any cleanup returned by a handler is registered on the active owner and runs before the next dispatch. `match()` must be called within an active owner (effect or scope); it throws `RequiredOwnerError` otherwise.
-
-### Slot (`src/nodes/slot.ts`)
-
-**Graph node**: `MemoNode<T>` (source + sink)
-
-A stable reactive source that delegates reads and writes to a swappable backing signal or `SlotDescriptor`. Designed for integration layers (e.g. custom element systems) where a property position must switch its backing source — from a local `State` to a parent-controlled derived descriptor, for example — without breaking existing subscribers.
-
-The slot object doubles as a property descriptor: its `get`, `set`, `configurable`, and `enumerable` fields can be passed directly to `Object.defineProperty()`. Control methods (`replace()`, `current()`) live on the same object but are ignored by the property definition; integration code should retain the slot reference for later `replace()` calls.
-
-**Graph behavior**: Sinks link to the slot (stable across replacements). The slot links upstream to exactly one delegated signal or `SlotDescriptor` at a time. On `replace(next)`, the slot updates its internal reference, flags sinks dirty via `propagate()`, and flushes. Re-running sinks call `slot.get()`, which triggers `refresh()` — dependency tracking (`link` + `trimSources`) re-subscribes to the new backing source and drops stale edges to the old one. Setter calls forward to the delegated source when writable; if the delegated source is itself a `Slot`, the call chains recursively through it before checking writability. `ReadonlySignalError` is thrown if the terminal source is read-only (e.g. a `Memo` or a descriptor without a `set` function).
-
-Options mirror State: optional `guard` and `equals`. Type-level replacement follows `replace<U extends T>(next)` — narrowing is allowed, widening is not. `createSlot` and `replace` accept native bi-directional derivations via duck-typed `SlotDescriptor` objects mapping to `{ get(): T, set?(next: T): void }`.
-
-### Store (`src/nodes/store.ts`)
-
-**Graph node**: `MemoNode<T>` (source + sink, used for structural reactivity)
-
-A reactive object where each property is its own signal. Properties are automatically wrapped: primitives become `State`, nested objects become `Store`, arrays become `List`. A `Proxy` provides direct property access (`store.name` returns the `State` signal for that property).
-
-**Structural reactivity**: The internal `MemoNode` tracks edges from child signals to the store node. When consumers call `store.get()`, the node acts as both a source (to the consumer) and a sink (of its child signals). Changes to any child signal propagate through the store to its consumers.
-
-**Two-path access with `FLAG_RELINK`**: On first `get()`, `refresh()` executes `buildValue()` with `activeSink = storeNode`, establishing edges from each child signal to the store. Subsequent reads use a fast path: `untrack(buildValue)` rebuilds the value without re-establishing edges. Structural mutations (`add`/`remove`/`set` with additions or removals) set `FLAG_DIRTY | FLAG_RELINK` on the node. The next `get()` detects `FLAG_RELINK` and forces a tracked `refresh()` after rebuilding the value, so `recomputeMemo()` links new child signals and trims removed ones without orphaning edges.
-
-**Same two-path propagation asymmetry as List**: `store.name.set(v)` (via proxy, equivalent to `byKey('name').set(v)`) propagates only if `childSignal → storeNode` edges exist — which requires `store.get()` to have been called at least once. Effects that subscribe only via `store.keys()` or the iterator, without ever calling `store.get()`, will not be notified of child signal mutations. In practice this is uncommon for Store because typical consumers either call `store.get()` (whole object) or `store.name.get()` (single property) — both of which establish the necessary edges. Effects that use `store.set({...})` rather than `store.name.set(v)` are always safe: `set()` explicitly propagates through `node.sinks` after `applyChanges()`.
-
-**Diff-based updates**: `store.set(newObj)` diffs the new object against the current state, applying only the granular changes to child signals. This preserves identity of unchanged child signals and their downstream edges.
-
-**Watched lifecycle**: An optional `watched` callback in options provides lazy resource allocation, following the same pattern as Sensor — activated on first sink, cleaned up when the last sink detaches.
-
-### List (`src/nodes/list.ts`)
-
-**Graph node**: `MemoNode<T[]>` (source + sink, used for structural reactivity)
-
-A reactive array with stable keys and per-item reactivity. Each item becomes a `MutableSignal<T>` (via a configurable `createItem` factory, defaulting to `createState`), keyed by a configurable key generation strategy (auto-increment, string prefix, or custom function). An optional `itemEquals` parameter configures equality checking for default item signals (defaults to `DEEP_EQUALITY`).
-
-**Structural reactivity**: Uses the same `MemoNode` + `FLAG_RELINK` + two-path access pattern as Store. The `buildValue()` function reads all child signals in key order, establishing edges on the refresh path.
-
-**Stable keys**: Keys survive sorting and reordering. `byKey(key)` returns a stable `MutableSignal<T>` reference regardless of the item's current index. `sort()` reorders the keys array without destroying signals.
-
-**Diff-based updates**: `list.set(newArray)` uses `diffArrays()` to compute granular additions, changes, and removals. Changed items update their existing item signals; structural changes (add/remove) set `FLAG_DIRTY | FLAG_RELINK`.
-
-**Two propagation paths — and the asymmetry between them**
-
-The List node has two distinct propagation paths. Understanding when each applies is essential for correct usage and for implementing `replace()`:
-
-| Path | Trigger | How it works | When it fires |
-|------|---------|-------------|---------------|
-| Structural | `add()`, `remove()`, `sort()`, `splice()`, `set()` | Calls `propagate(e.sink)` directly on `node.sinks` | Always, as soon as any consumer has subscribed via `keys()`, `length`, `get()`, or iterator |
-| Value | `byKey(k).set(v)` on a raw item signal | `setState(itemNode)` → propagates to `itemNode.sinks` → listNode (if linked) → downstream | Only if `recomputeMemo(listNode)` has previously run with that item, establishing the `itemSignal → listNode` edge |
-
-The value path has a prerequisite: `list.get()` must have been called at least once after the item was present, so that `buildValue()` executed with `activeSink = listNode` and called `link(itemSignal, listNode)` for each item. This happens automatically for any consumer that reads `list.get()` directly. It does **not** happen for consumers that subscribe only via structural methods (`list.keys()`, `list.length`, the `[Symbol.iterator]`): those call `subscribe()` which links `listNode → effectNode`, but `buildValue()` is never run with `activeSink = listNode`, so no `itemSignal → listNode` edges are established.
-
-Consequence: code that calls `byKey(k).set(v)` to update an item will silently fail to notify effects that subscribe via structural accessors. The item signal propagates to nothing because `listNode` is absent from its sinks.
-
-**`list.replace(key, value)` — item mutation with guaranteed propagation**
-
-`replace(key, value)` combines both propagation paths in a single operation:
-
-1. Updates the item signal via `signal.set(value)` — this propagates through item signal edges to any consumers subscribed directly (e.g. effects reading `byKey(k).get()`).
-2. Marks the list dirty and propagates through `node.sinks` — this notifies structural consumers regardless of edge state, mirroring what `list.set(newArray)` does internally.
-
-An early-exit guard (`untrack(() => signal.get()) === value`) prevents unnecessary propagation when the new value is reference-equal to the current one, without creating a dependency edge from the calling effect to the item signal. If the key does not exist the call is a no-op.
-
-`byKey(key).set(value)` remains valid for effects that subscribe directly to the item signal. It is **not** a safe pattern for effects that subscribe to the list via structural accessors.
-
-### Collection (`src/nodes/collection.ts`)
-
-Collection implements two creation patterns that share the same `Collection<T>` interface:
-
-#### `createCollection(watched, options?)` — externally driven
-
-**Graph node**: `MemoNode<T[]>` (source + sink, tracks item values)
-
-An externally-driven reactive collection with a watched lifecycle, mirroring `createSensor(watched, options?)`. The `watched` callback receives an `applyChanges(diffResult)` function for granular add/change/remove operations. Initial items are provided via `options.value` (default `[]`).
-
-**Lazy lifecycle**: Like Sensor, the `watched` callback is invoked on first sink attachment. The returned cleanup is stored as `node.stop` and called when the last sink detaches (via `unlink()`). The `startWatching()` guard ensures `watched` fires before `link()` so synchronous mutations inside `watched` update `node.value` before the activating effect reads it.
-
-**External mutation via `applyChanges`**: Additions create new item signals (via configurable `createItem` factory, which defaults to `createState` with `itemEquals` defaulting to `DEEP_EQUALITY`). Changes update existing item signals. Removals delete signals and keys. Structural changes set `FLAG_DIRTY | FLAG_RELINK` to trigger edge re-establishment on the next read. The node uses `equals: () => false` since structural changes are managed externally rather than detected by diffing.
-
-**Two-path access with `FLAG_RELINK`**: Same pattern as Store/List — first `get()` uses `refresh()` to establish edges from child signals to the collection node; subsequent reads use `untrack(buildValue)` to avoid re-linking. When `FLAG_RELINK` is set, the next `get()` forces a tracked `refresh()` after rebuilding to link new child signals and trim removed ones.
-
-#### `deriveCollection(source, callback)` — internally derived
-
-**Graph node**: `MemoNode<T[]>` (source + sink, tracks item values)
-
-An internal factory (not exported from the public API) that creates a read-only derived transformation of a List or another Collection. Exposed to users via the `.deriveCollection(callback)` method on List and Collection. Each source item is individually memoized: sync callbacks create `Memo` signals, async callbacks create `Task` signals.
-
-**Consistent with Store/List/createCollection**: The `MemoNode.value` is a `T[]` (cached computed values), and keys are tracked in a separate local `string[]` variable. The `equals` function uses shallow reference equality on array elements to prevent unnecessary downstream propagation when re-evaluation produces the same item references. The node starts `FLAG_DIRTY` to ensure the first `refresh()` establishes edges.
-
-**Initialization**: Source keys are read via `untrack(() => source.keys())` to populate the signals map for direct access (`at()`, `byKey()`, `keyAt()`, `[Symbol.iterator]()`) without triggering premature `watched` activation on the upstream source. The node stays `FLAG_DIRTY` so the first `refresh()` with a real subscriber establishes proper graph edges.
-
-**Non-destructive `syncKeys()` with `FLAG_RELINK`**: Like Store/List/createCollection, `deriveCollection`'s `syncKeys()` sets `FLAG_RELINK` on the node when keys change, without touching the edge lists. This avoids orphaning edges in upstream sink lists, which would prevent the cascading cleanup in `unlink()` from reaching the source List's `watched` lifecycle. All four composite signal types now use the same `FLAG_RELINK` mechanism for structural edge invalidation.
-
-**Three-path `ensureFresh()`**: Access to the derived collection's value follows three distinct paths depending on the node's edge state:
-
-| Path | Condition | Behavior |
-|------|-----------|---------|
-| Fast path | `node.sources` exists | `untrack(buildValue)` rebuilds without re-linking. If `FLAG_RELINK` is set, forces a tracked `refresh()` to link new child signals and trim deleted ones. |
-| First subscriber | no `node.sources`, but `node.sinks` | `refresh()` via `recomputeMemo()` establishes all graph edges (source → derived, child signals → derived) in a single tracked pass. This is where `watched` activation propagates upstream. |
-| No subscriber | neither sources nor sinks | `untrack(buildValue)` computes the value without establishing edges. Keeps `FLAG_DIRTY` so the first real subscriber triggers the "first subscriber" path. Used during chained `deriveCollection` initialization. |
-
-The first-subscriber path is the key to `watched` lifecycle propagation: when an effect first reads a derived collection, `recomputeMemo()` sets `activeSink = derivedNode`, then `buildValue()` calls `source.keys()`, which triggers `subscribe()` on the upstream List with a non-null `activeSink`. This creates the List→derived edge and activates the List's `watched` callback. When the effect later disposes, the cascading cleanup in `unlink()` traverses effect→derived→List, firing the List's `stop` cleanup.
-
-**Chaining**: `.deriveCollection()` creates a new derived collection from an existing one, forming a pipeline. Each level in the chain has its own `MemoNode` for value caching and its own set of per-item derived signals. The "no subscriber" path in `ensureFresh()` ensures intermediate levels don't prematurely activate upstream `watched` callbacks during construction — activation cascades through the entire chain only when the terminal effect subscribes.
-
-## Regression Testing
-
-Two separate test files cover regression concerns. Both are excluded from the default `bun test` run and are executed via the `regression` script.
-
-### Bundle Size (`test/regression-bundle.test.ts`)
-
-Asserts that the full minified + gzipped bundle stays within the absolute limits stated in REQUIREMENTS.md (≤ 10,240 B gzipped). Bundle bytes are machine-independent, so the requirements document is the authoritative limit — no stored baseline JSON is needed.
-
-### Performance (`test/regression-performance.test.ts`)
-
-Compares the current build against the last stable npm release, installed as a pinned devDependency alias (`@zeix/cause-effect-stable`). Both versions run in the same process on the same machine, eliminating hardware variation. Both implementations are built once per scenario, cross-warmed with 100 interleaved pairs, then measured in **11 alternating passes** (current, stable, current, …); the median (6th sorted value) is used. `Bun.gc(true)` is called before each scenario to start from a clean heap, and alternating passes equalize JIT state. The current build passes if it is not more than 20 % slower than stable, with a 1 ms absolute floor.
-
-**Primitive scenarios** (State / Memo / Effect):
-
-| Key | Description |
-|-----|-------------|
-| `deepPropagation` | 50-layer Memo chain, 1,000 batch updates |
-| `broadPropagation` | 50 parallel Memo+Effect branches, 1,000 batch updates |
-| `diamondPropagation` | Width-5 diamond graph, 5,000 batch updates |
-| `signalCreation` | Create 1,000 States × 500 rounds |
-
-**Composite scenarios** (List / Store / Collection):
-
-| Key | Description |
-|-----|-------------|
-| `listStructural` | `list.add()` + `list.remove()` on a watched List (structural path), 5,000 iterations |
-| `listReplace` | `list.replace(key, v)` — item signal → direct subscriber (value path), 10,000 iterations |
-| `storeUpdate` | Proxy property write → child signal → Store → effect, 5,000 iterations |
-| `collectionMutate` | `applyChanges({ added, removed })` → FLAG_RELINK → effect, 5,000 iterations |
-| `derivedCollection` | `source.replace()` → item Memo → derived Collection → effect, 2,000 iterations |
-
-The stable alias resolves to the compiled `index.js` from npm; the current branch runs from `index.ts` via Bun's native TypeScript support. This gives the current branch a marginal consistent advantage, which is acceptable — the test is designed to catch regressions (current slower than stable), not measure exact parity.
+- **Bundle size** (`test/regression-bundle.test.ts`): Asserts minified + gzipped bundle stays within absolute limits from REQUIREMENTS.md (≤ 10,240 B).
+- **Performance** (`test/regression-performance.test.ts`): Compares current build against last stable npm release (`@zeix/cause-effect-stable`). Runs primitive scenarios (State/Memo/Effect chains) and composite scenarios (List/Store/Collection mutations). Current must not exceed stable by >20% (with 1ms floor). Uses 11 alternating passes per scenario, median (6th) value, with GC and JIT normalization.
