@@ -18,9 +18,7 @@ describe('DEEP_EQUALITY', () => {
 		})
 
 		test('NaN equals NaN via Object.is fast path', () => {
-			expect(DEEP_EQUALITY(NaN as unknown as {}, NaN as unknown as {})).toBe(
-				true,
-			)
+			expect(DEEP_EQUALITY(NaN, NaN)).toBe(true)
 		})
 	})
 
@@ -34,27 +32,24 @@ describe('DEEP_EQUALITY', () => {
 		})
 
 		test('different booleans', () => {
-			expect(DEEP_EQUALITY(true as unknown as {}, false as unknown as {})).toBe(
-				false,
-			)
+			expect(DEEP_EQUALITY(true, false)).toBe(false)
 		})
 	})
 
 	describe('cross-type comparisons', () => {
 		test('number vs string', () => {
-			expect(
-				DEEP_EQUALITY(1 as unknown as {}, 'hello' as unknown as {}),
-			).toBe(false)
+			// @ts-expect-error deliberate mismatch
+			expect(DEEP_EQUALITY(1, 'hello')).toBe(false)
 		})
 
 		test('number vs object', () => {
-			expect(DEEP_EQUALITY(1 as unknown as {}, { a: 1 } as {})).toBe(false)
+			// @ts-expect-error deliberate mismatch
+			expect(DEEP_EQUALITY(1, { a: 1 })).toBe(false)
 		})
 
 		test('string vs array', () => {
-			expect(
-				DEEP_EQUALITY('abc' as unknown as {}, ['a', 'b', 'c'] as unknown as {}),
-			).toBe(false)
+			// @ts-expect-error deliberate mismatch
+			expect(DEEP_EQUALITY('abc', ['a', 'b', 'c'])).toBe(false)
 		})
 	})
 
@@ -89,13 +84,18 @@ describe('DEEP_EQUALITY', () => {
 
 		test('differ in key count (a has more)', () => {
 			expect(
-				DEEP_EQUALITY({ a: 1, b: 2 } as { a: number; b?: number }, { a: 1 }),
+				DEEP_EQUALITY({ a: 1, b: 2 } as { a: number; b?: number }, {
+					a: 1,
+				}),
 			).toBe(false)
 		})
 
 		test('differ in key count (b has more)', () => {
 			expect(
-				DEEP_EQUALITY({ a: 1 }, { a: 1, b: 2 } as { a: number; b?: number }),
+				DEEP_EQUALITY({ a: 1 }, { a: 1, b: 2 } as {
+					a: number
+					b?: number
+				}),
 			).toBe(false)
 		})
 	})
@@ -201,25 +201,19 @@ describe('DEEP_EQUALITY', () => {
 	describe('non-plain objects', () => {
 		test('same Map reference is true', () => {
 			const m = new Map([['a', 1]])
-			expect(
-				DEEP_EQUALITY(m as unknown as {}, m as unknown as {}),
-			).toBe(true)
+			expect(DEEP_EQUALITY(m, m)).toBe(true)
 		})
 
 		test('two distinct Maps with same entries are false (not plain objects)', () => {
 			const m1 = new Map([['a', 1]])
 			const m2 = new Map([['a', 1]])
-			expect(
-				DEEP_EQUALITY(m1 as unknown as {}, m2 as unknown as {}),
-			).toBe(false)
+			expect(DEEP_EQUALITY(m1, m2)).toBe(false)
 		})
 
 		test('two distinct Sets with same values are false (not plain objects)', () => {
 			const s1 = new Set([1, 2, 3])
 			const s2 = new Set([1, 2, 3])
-			expect(
-				DEEP_EQUALITY(s1 as unknown as {}, s2 as unknown as {}),
-			).toBe(false)
+			expect(DEEP_EQUALITY(s1, s2)).toBe(false)
 		})
 
 		test('two distinct class instances are false (not plain objects)', () => {
@@ -233,11 +227,10 @@ describe('DEEP_EQUALITY', () => {
 			}
 			expect(
 				DEEP_EQUALITY(
-					new Point(1, 2) as unknown as {},
-					new Point(1, 2) as unknown as {},
+					new Point(1, 2) as unknown & {},
+					new Point(1, 2) as unknown & {},
 				),
 			).toBe(false)
 		})
 	})
-
 })

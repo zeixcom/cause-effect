@@ -8,6 +8,24 @@ import {
 	createStore,
 } from '../index'
 
+/* === Types ===
+ * Types for the recipe tests
+ */
+
+// Workspace types for the batching test
+type Workspace = {
+	id: string
+	name: string
+	members: string[]
+	active: boolean
+}
+
+type ServerUpdates = {
+	removed?: string[]
+	modified?: { id: string; newMembers: string[] }[]
+	added?: Workspace[]
+}
+
 describe('Recipes', () => {
 	test('Multi-Step Wizard Pattern', () => {
 		const step1Data = createStore({ name: '', email: '' })
@@ -80,7 +98,7 @@ describe('Recipes', () => {
 	test('Nested Reactive Structures and Batching', () => {
 		let effectCount = 0
 
-		const workspaces = createList(
+		const workspaces = createList<Workspace>(
 			[
 				{
 					id: 'w1',
@@ -95,23 +113,23 @@ describe('Recipes', () => {
 					active: false,
 				},
 			],
-			{ keyConfig: w => w.id },
+			{ keyConfig: (w: Workspace) => w.id },
 		)
 
 		const activeMemberCount = workspaces.deriveCollection(workspace => {
 			return workspace.active ? workspace.members.length : 0
 		})
 
-		function applyComplexServerSync(serverUpdates: any) {
+		function applyComplexServerSync(serverUpdates: ServerUpdates) {
 			batch(() => {
 				if (serverUpdates.removed) {
-					serverUpdates.removed.forEach((id: string) => {
+					serverUpdates.removed.forEach(id => {
 						workspaces.remove(id)
 					})
 				}
 
 				if (serverUpdates.modified) {
-					serverUpdates.modified.forEach((update: any) => {
+					serverUpdates.modified.forEach(update => {
 						const workspaceSig = workspaces.byKey(update.id)
 						if (workspaceSig) {
 							workspaceSig.update(ws => ({
@@ -123,7 +141,7 @@ describe('Recipes', () => {
 				}
 
 				if (serverUpdates.added) {
-					serverUpdates.added.forEach((item: any) => {
+					serverUpdates.added.forEach(item => {
 						workspaces.add(item)
 					})
 				}
