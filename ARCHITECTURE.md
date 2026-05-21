@@ -348,6 +348,39 @@ The first-subscriber path is the key to `watched` lifecycle propagation: when an
 
 **Chaining**: `.deriveCollection()` creates a new derived collection from an existing one, forming a pipeline. Each level in the chain has its own `MemoNode` for value caching and its own set of per-item derived signals. The "no subscriber" path in `ensureFresh()` ensures intermediate levels don't prematurely activate upstream `watched` callbacks during construction — activation cascades through the entire chain only when the terminal effect subscribes.
 
+## Regression Testing
+
+Two separate test files cover regression concerns. Both are excluded from the default `bun test` run and are executed via the `regression` script.
+
+### Bundle Size (`test/regression-bundle.test.ts`)
+
+Asserts that the full minified + gzipped bundle stays within the absolute limits stated in REQUIREMENTS.md (≤ 10,240 B gzipped). Bundle bytes are machine-independent, so the requirements document is the authoritative limit — no stored baseline JSON is needed.
+
+### Performance (`test/regression-performance.test.ts`)
+
+Compares the current build against the last stable npm release, installed as a pinned devDependency alias (`@zeix/cause-effect-stable`). Both versions run in the same process on the same machine, eliminating hardware variation. Both implementations are built once per scenario, cross-warmed with 100 interleaved pairs, then measured in **11 alternating passes** (current, stable, current, …); the median (6th sorted value) is used. `Bun.gc(true)` is called before each scenario to start from a clean heap, and alternating passes equalize JIT state. The current build passes if it is not more than 20 % slower than stable, with a 1 ms absolute floor.
+
+**Primitive scenarios** (State / Memo / Effect):
+
+| Key | Description |
+|-----|-------------|
+| `deepPropagation` | 50-layer Memo chain, 1,000 batch updates |
+| `broadPropagation` | 50 parallel Memo+Effect branches, 1,000 batch updates |
+| `diamondPropagation` | Width-5 diamond graph, 5,000 batch updates |
+| `signalCreation` | Create 1,000 States × 500 rounds |
+
+**Composite scenarios** (List / Store / Collection):
+
+| Key | Description |
+|-----|-------------|
+| `listStructural` | `list.add()` + `list.remove()` on a watched List (structural path), 5,000 iterations |
+| `listReplace` | `list.replace(key, v)` — item signal → direct subscriber (value path), 10,000 iterations |
+| `storeUpdate` | Proxy property write → child signal → Store → effect, 5,000 iterations |
+| `collectionMutate` | `applyChanges({ added, removed })` → FLAG_RELINK → effect, 5,000 iterations |
+| `derivedCollection` | `source.replace()` → item Memo → derived Collection → effect, 2,000 iterations |
+
+The stable alias resolves to the compiled `index.js` from npm; the current branch runs from `index.ts` via Bun's native TypeScript support. This gives the current branch a marginal consistent advantage, which is acceptable — the test is designed to catch regressions (current slower than stable), not measure exact parity.
+
 ## Key Decisions
 
 | Decision | Choice | Alternatives Considered | Rationale |
@@ -361,3 +394,8 @@ The first-subscriber path is the key to `watched` lifecycle propagation: when an
 | `isEqual` public export | Deprecated alias re-exported from `index.ts` pointing to the implementation in `graph.ts` | Remove immediately | No known downstream consumers, but it was part of the public API — a deprecation cycle is the correct path to removal. |
 | Cycle detection in `isEqual` / `DEEP_EQUALITY` | No cycle detection — plain recursion, no `WeakSet` | (a) Keep `WeakSet` per call; (b) import `fast-deep-equal` or `dequal` | `WeakSet` allocation on every `List.set()` / `Store.set()` call is unnecessary overhead for the common case (plain JSON-like signal values). Circular signal data is a user bug; a stack overflow is an acceptable outcome. Importing an external package for a 20-line function contradicts the zero-dependency policy and bundle-size constraints. `DEEP_EQUALITY` has never shipped; deprecated `isEqual` has no known consumers — no major version required. |
 | `createScope` root option | `ScopeOptions { root?: boolean }` as second argument to `createScope` | Standalone `createRoot(fn)` export | One-line implementation difference; extending the existing function avoids adding a new export. `ScopeOptions` follows the `*Options` pattern used by every other creation function in the library (`SignalOptions`, `ListOptions`, `SensorOptions`, etc.). Positional boolean (`createScope(fn, true)`) was rejected: readable only with IDE hover support; an options object is self-documenting in code review. |
+| Performance regression strategy | Cross-version comparison: current branch (`index.ts`) vs. pinned stable npm release (`@zeix/cause-effect-stable`) in the same process | (a) Stored absolute JSON baseline (previous approach — rejected: machine-dependent, baseline written under different conditions flaps in CI); (b) self-calibrating machine-speed normalization | Both versions run on the same machine in the same test run, eliminating hardware variation. Directly answers "did we regress vs. what users already have?" rather than vs. a snapshot of unknown provenance. |
+| Bundle regression strategy | Absolute limits from REQUIREMENTS.md (≤ 10,240 B gzipped for full library) | Stored JSON baseline; cross-version size comparison | Bundle bytes are machine-independent; REQUIREMENTS.md limits are the authoritative source of truth. Cross-version size comparison would add noise for single-byte fluctuations without providing a meaningful signal. |
+| Regression test file split | `regression-bundle.test.ts` + `regression-performance.test.ts` | Single `regression.test.ts` (previous approach) | Bundle checks are fast and require no npm install beyond initial setup; splitting allows running them independently. Keeps each file focused on one regression concern. |
+| Stable version alias | devDependency `"@zeix/cause-effect-stable": "npm:@zeix/cause-effect@<pinned>"` | Install on-demand in test setup shell; git worktree checkout | Declarative, reproducible, zero shell overhead at test time. Pinned version is visible in version control; update is a one-line `package.json` change at release time. |
+| Median of 11 alternating passes with forced GC | Both implementations built once per scenario; cross-warmed interleaved; 11 alternating C/S passes; `Bun.gc(true)` before each scenario; median at index 5 | 5 passes (previous — OS scheduling asymmetry could corrupt 3/5); min of N; mean | 11 passes means OS scheduling must inflate 6+ consecutive same-implementation passes to move the median — essentially impossible under normal load spikes. Forced GC removes cross-scenario heap pressure that inflated later scenarios. Alternating passes equalize JIT state between implementations. |

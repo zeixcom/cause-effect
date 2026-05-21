@@ -7,6 +7,7 @@
       "devDependencies": {
         "@biomejs/biome": "2.4.6",
         "@types/bun": "latest",
+        "@zeix/cause-effect-stable": "npm:@zeix/cause-effect",
         "mitata": "^1.0.34",
         "random": "^5.4.1",
         "typescript": "^6.0.2",
@@ -38,6 +39,8 @@
     "@types/bun": ["@types/bun@1.3.11", "", { "dependencies": { "bun-types": "1.3.11" } }, "sha512-5vPne5QvtpjGpsGYXiFyycfpDF2ECyPcTSsFBMa0fraoxiQyMJ3SmuQIGhzPg2WJuWxVBoxWJ2kClYTcw/4fAg=="],
 
     "@types/node": ["@types/node@22.10.10", "", { "dependencies": { "undici-types": "~6.20.0" } }, "sha512-X47y/mPNzxviAGY5TcYPtYL8JsY3kAq2n8fMmKoRCxq/c4v4pyGNCzM2R6+M5/umG4ZfHuT+sgqDYqWc9rJ6ww=="],
+
+    "@zeix/cause-effect-stable": ["@zeix/cause-effect@1.3.2", "", { "peerDependencies": { "typescript": ">=5.8.0" } }, "sha512-eIlUlQ3OSCrLqIGT30qHTgqfRW9MeDT6fwHWjmP4RiWp1pnrBlV2bZVCT3kCp75slyQXBgTYymc2VJBfNeK5VA=="],
 
     "bun-types": ["bun-types@1.3.11", "", { "dependencies": { "@types/node": "*" } }, "sha512-1KGPpoxQWl9f6wcZh57LvrPIInQMn2TQ7jsgxqpRzg+l0QPOFvJVH7HmvHo/AiPgwXy+/Thf6Ov3EdVn1vOabg=="],
 
