@@ -63,7 +63,7 @@ Composite signals (Store, List, Collection, deriveCollection) use the [FLAG_RELI
 
 ## Testing Strategy
 
-Unit tests in `src/*.test.ts` verify individual signal types and graph behavior. Integration tests in `test/` cover cross-cutting concerns. The `test` script runs all unit tests.
+All tests live in `test/`. The `test` script runs the full suite. There is no formal separation of unit and integration tests.
 
 Regression tests (excluded from default run, executed via `npm run regression`) ensure stability:
 
