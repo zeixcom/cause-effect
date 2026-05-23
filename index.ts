@@ -1,6 +1,6 @@
 /**
  * @name Cause & Effect
- * @version 1.3.4-beta.4
+ * @version 1.3.4-beta.5
  * @author Esther Brunner
  */
 
