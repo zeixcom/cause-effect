@@ -140,3 +140,4 @@ test/regression-baseline.json
 # Claude
 .claude/settings.local.json
 .DS_Store
+.vibe/config.toml

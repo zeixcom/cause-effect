@@ -1,0 +1,1 @@
+../../.agents/skills/changelog-keeper/SKILL.md

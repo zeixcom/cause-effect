@@ -1,0 +1,1 @@
+../../.agents/skills/cause-effect-dev/SKILL.md
