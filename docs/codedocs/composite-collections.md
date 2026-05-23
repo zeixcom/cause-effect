@@ -22,7 +22,7 @@ Store, List, and Collection all share the same graph semantics as State and Memo
 - `store.get()` and `list.get()` rebuild aggregate values from children.
 - `store.keys()` and `list.keys()` expose structural subscriptions.
 - `list.deriveCollection()` and `collection.deriveCollection()` build per-item Memo or Task nodes over keyed children.
-- Collection can also be fed by an external source through `applyChanges()`.
+- Collection can also be fed by an external source through the `apply` function passed to the watched callback.
 
 ## How They Work Internally
 

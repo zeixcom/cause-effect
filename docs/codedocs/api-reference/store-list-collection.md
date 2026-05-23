@@ -54,6 +54,7 @@ Key methods:
 
 ```ts
 type List<T extends {}, S extends MutableSignal<T> = MutableSignal<T>> = {
+  readonly length: number
   get(): T[]
   set(next: T[]): void
   update(fn: (prev: T[]) => T[]): void

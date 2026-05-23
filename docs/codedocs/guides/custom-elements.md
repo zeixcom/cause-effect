@@ -10,7 +10,7 @@ Cause & Effect is intentionally not a rendering framework, but it is designed to
 ### Create internal state and reactive DOM updates
 
 ```ts
-import { createState, createScope, createEffect, unown } from '@zeix/cause-effect'
+import { createState, createScope, createEffect } from '@zeix/cause-effect'
 
 const label = createState('idle')
 
@@ -18,13 +18,11 @@ class StatusBadge extends HTMLElement {
   #dispose?: () => void
 
   connectedCallback() {
-    this.#dispose = unown(() =>
-      createScope(() => {
-        createEffect(() => {
-          this.textContent = label.get()
-        })
-      }, { root: true }),
-    )
+    this.#dispose = createScope(() => {
+      createEffect(() => {
+        this.textContent = label.get()
+      })
+    }, { root: true })
   }
 
   disconnectedCallback() {
@@ -76,8 +74,8 @@ Object.defineProperty(StatusBadge.prototype, 'value', valueSlot)
 ```ts
 import { createMemo } from '@zeix/cause-effect'
 
-const controlledValue = createMemo(() => `${label.get()}:${internalValue.get()}`)
-valueSlot.replace(controlledValue)
+const controlled = createMemo(() => `status:${internalValue.get()}`)
+valueSlot.replace(controlled)
 ```
 
 </Step>
@@ -93,7 +91,6 @@ import {
   createSensor,
   createSlot,
   createState,
-  unown,
 } from '@zeix/cause-effect'
 
 const internalValue = createState('draft')
@@ -114,13 +111,11 @@ class StatusBadge extends HTMLElement {
   #dispose?: () => void
 
   connectedCallback() {
-    this.#dispose = unown(() =>
-      createScope(() => {
-        createEffect(() => {
-          this.textContent = `${online.get() ? 'online' : 'offline'}:${valueSlot.get()}`
-        })
-      }, { root: true }),
-    )
+    this.#dispose = createScope(() => {
+      createEffect(() => {
+        this.textContent = `${online.get() ? 'online' : 'offline'}:${valueSlot.get()}`
+      })
+    }, { root: true })
   }
 
   disconnectedCallback() {

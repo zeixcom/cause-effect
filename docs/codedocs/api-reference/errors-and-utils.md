@@ -3,7 +3,7 @@ title: "Errors and Utilities"
 description: "API reference for exported error classes, validation types, and utility helpers."
 ---
 
-Import path for every item on this page: `@zeix/cause-effect`. Source files: `src/errors.ts` and `src/util.ts`.
+Import path for every item on this page: `@zeix/cause-effect`. Source files: `src/errors.ts`, `src/util.ts`, and `src/graph.ts`.
 
 ## Error Types
 
@@ -46,14 +46,13 @@ function isFunction<T>(fn: unknown): fn is (...args: unknown[]) => T
 function isAsyncFunction<T>(fn: unknown): fn is (...args: unknown[]) => Promise<T>
 function isSignalOfType<T>(value: unknown, type: string): value is T
 function isRecord<T extends Record<string, unknown>>(value: unknown): value is T
-function valueString(value: unknown): string
 ```
 
 Deprecated exports:
 
 ```ts
 function isObjectOfType<T>(value: unknown, type: string): value is T
-function isUniformArray<T>(value: unknown, guard?: (item: T) => item is T & {}): value is T[]
+function valueString(value: unknown): string
 const isEqual: <T extends {}>(a: T, b: T) => boolean
 ```
 

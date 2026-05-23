@@ -102,7 +102,8 @@ userId.set(2)
 Expected output:
 
 ```txt
-User 1: Loading...
+Refreshing User 1...
+User 1: Alice
 Refreshing User 2...
 User 2: Alice
 ```

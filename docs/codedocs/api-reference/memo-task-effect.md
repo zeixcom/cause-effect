@@ -85,7 +85,7 @@ function match<T extends readonly Signal<unknown & {}>[]>(
 ): MaybeCleanup
 ```
 
-Routing order is `nil` > `err` > `stale` > `ok`.
+Routing order is `nil` > `err` > `stale` > `ok`. If `stale` is absent, it falls back to `ok`.
 
 ```ts
 type MaybePromise<T> = T | Promise<T>
@@ -122,14 +122,6 @@ createEffect(() => {
     err: error => console.error(error.message),
   })
 })
-```
-
-Combined pattern:
-
-```ts
-import { createMemo } from '@zeix/cause-effect'
-
-const displayName = createMemo(() => user.get().name.toUpperCase())
 ```
 
 ### Guards
