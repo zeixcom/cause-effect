@@ -10,14 +10,17 @@ jobs:
         permissions:
             contents: read
             id-token: write # Required for npm provenance
+        env:
+            # Opt into Node.js 24 for actions to avoid deprecation warnings
+            FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
         steps:
             - name: Checkout repository
               uses: actions/checkout@v4
 
-            - name: Setup Node.js
+            - name: Setup Node.js 24
               uses: actions/setup-node@v4
               with:
-                  node-version: '20'
+                  node-version: '24'
                   registry-url: 'https://registry.npmjs.org'
 
             - name: Install dependencies
