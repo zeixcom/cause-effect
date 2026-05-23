@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.3.3
+
+### Changed
+
+- **`List.buildValue()` uses a `push` loop instead of `map/filter`**: Eliminates the intermediate `(T | undefined)[]` allocation that `map()` produced before `filter()` could remove `undefined` entries. Now builds the result in a single pre-allocated pass.
+- **`List.sort()` uses an imperative loop**: Replaces `keys.map(key => [key, signals.get(key)?.get()]).sort(...).map(([key]) => key)` with a single `entries` build loop and a separate `newOrder` accumulation loop, removing two intermediate array allocations.
+- **`List.splice()` and `List.replace()` use boolean flags for change detection**: Replaces `Object.keys(changes.change).length` (iterates all keys to count) with an early-exit `for...in` loop that sets a flag on the first key found.
+- **`List.add()` drops redundant `keys.includes(key)` guard**: The preceding `signals.has(key)` check already throws `DuplicateKeyError` for duplicate keys; `keys.includes(key)` was unreachable dead code.
+- **`diffArrays` split into `diffPositional` for non-content-based keys**: Positional-key lists now take a dedicated fast path (`diffPositional`) that walks both arrays in a single `O(n)` pass with no `Map` or `Set` allocation. Content-based diffing retains the `Map`/`Set` approach for key-stability tracking.
+- **`syncKeys` in `deriveCollection` reduces `Set` allocations**: Previously constructed two `Set`s (`new Set(keys)` and `new Set(nextKeys)`). Now constructs only `nextSet = new Set(nextKeys)` for deletion detection and uses the existing `signals` `Map` directly (`signals.has(key)`) to decide whether a key needs to be added.
+- **`Store.buildValue()` and `Store[Symbol.iterator]` iterate `Map` entries directly**: `buildValue` replaces `signals.forEach((signal, key) => ...)` with `for (const [key, signal] of signals)`. The iterator replaces `Array.from(signals.keys())` and a secondary `signals.get(key)` lookup with a single `for...of` over `signals` entries, eliminating an intermediate array allocation.
+- **`Slot` type assertion cleanup**: Removed `as any` casts in `isSignalOrDescriptor` and `createSlot.set`; used `return void delegated.set(next)` in the Slot-to-Slot delegation path to avoid implicitly returning the inner call's result.
+
 ## 1.3.2
 
 ### Fixed

@@ -8,14 +8,15 @@ import {
 	FLAG_DIRTY,
 	FLAG_RELINK,
 	flush,
-	makeSubscribe,
 	type MemoNode,
+	makeSubscribe,
 	propagate,
 	refresh,
 	type SinkNode,
 	TYPE_LIST,
 	untrack,
 } from '../graph'
+import type { MutableSignal } from '../signal'
 import { isFunction, isSignalOfType } from '../util'
 import {
 	type Collection,
@@ -24,7 +25,6 @@ import {
 	deriveCollection,
 } from './collection'
 import { createState } from './state'
-import type { MutableSignal } from '../signal'
 
 /* === Types === */
 
@@ -128,6 +128,55 @@ function getKeyGenerator<T extends {}>(
 }
 
 /**
+ * Fast diff for positional (non-content-based) keys.
+ * Avoids Map/Set allocation by iterating both arrays in one pass.
+ */
+function diffPositional<T extends {}>(
+	prev: T[],
+	next: T[],
+	prevKeys: string[],
+	generateKey: (item: T) => string,
+	itemEquals: (a: T, b: T) => boolean,
+): DiffResult & { newKeys: string[] } {
+	const add = {} as UnknownRecord
+	const change = {} as UnknownRecord
+	const remove = {} as UnknownRecord
+	const nextKeys: string[] = []
+	let changed = false
+
+	const minLen = Math.min(prev.length, next.length)
+
+	for (let i = 0; i < minLen; i++) {
+		// biome-ignore lint/style/noNonNullAssertion: bounded by minLen
+		const key = prevKeys[i]!
+		nextKeys.push(key)
+		// biome-ignore lint/style/noNonNullAssertion: bounded by minLen
+		if (!itemEquals(prev[i]!, next[i]!)) {
+			// biome-ignore lint/style/noNonNullAssertion: bounded by minLen
+			change[key] = next[i]!
+			changed = true
+		}
+	}
+
+	for (let i = minLen; i < next.length; i++) {
+		// biome-ignore lint/style/noNonNullAssertion: bounded by next.length
+		const val = next[i]!
+		const key = generateKey(val)
+		nextKeys.push(key)
+		add[key] = val
+		changed = true
+	}
+
+	for (let i = minLen; i < prev.length; i++) {
+		// biome-ignore lint/style/noNonNullAssertion: bounded by prev.length
+		remove[prevKeys[i]!] = null
+		changed = true
+	}
+
+	return { add, change, remove, newKeys: nextKeys, changed }
+}
+
+/**
  * Compares two arrays using existing keys and returns differences as a DiffResult.
  * Avoids object conversion by working directly with arrays and keys.
  *
@@ -148,6 +197,9 @@ function diffArrays<T extends {}>(
 	contentBased: boolean,
 	itemEquals: (a: T, b: T) => boolean,
 ): DiffResult & { newKeys: string[] } {
+	if (!contentBased)
+		return diffPositional(prev, next, prevKeys, generateKey, itemEquals)
+
 	const add = {} as UnknownRecord
 	const change = {} as UnknownRecord
 	const remove = {} as UnknownRecord
@@ -170,10 +222,7 @@ function diffArrays<T extends {}>(
 		const val = next[i]
 		if (val === undefined) continue
 
-		// Content-based keys: always derive from item; synthetic keys: reuse by position
-		const key = contentBased
-			? generateKey(val)
-			: (prevKeys[i] ?? generateKey(val))
+		const key = generateKey(val)
 
 		if (seenKeys.has(key)) throw new DuplicateKeyError(TYPE_LIST, key, val)
 
@@ -184,7 +233,7 @@ function diffArrays<T extends {}>(
 		if (!prevByKey.has(key)) {
 			add[key] = val
 			changed = true
-		} else if (!itemEquals(prevByKey.get(key)!, val)) {
+		} else if (!itemEquals(prevByKey.get(key) as T, val)) {
 			change[key] = val
 			changed = true
 		}
@@ -232,10 +281,14 @@ function createList<
 	// --- Internal helpers ---
 
 	// Build current value from child signals
-	const buildValue = (): T[] =>
-		keys
-			.map(key => signals.get(key)?.get())
-			.filter(v => v !== undefined) as T[]
+	const buildValue = (): T[] => {
+		const result: T[] = []
+		for (const key of keys) {
+			const v = signals.get(key)?.get()
+			if (v !== undefined) result.push(v)
+		}
+		return result
+	}
 
 	// Structural tracking node — not a general-purpose Memo.
 	// On first get(): refresh() establishes edges from child signals.
@@ -265,7 +318,12 @@ function createList<
 		}
 
 		// Changes
-		if (Object.keys(changes.change).length) {
+		let hasChange = false
+		for (const _key in changes.change) {
+			hasChange = true
+			break
+		}
+		if (hasChange) {
 			batch(() => {
 				for (const key in changes.change) {
 					const val = changes.change[key]
@@ -404,7 +462,7 @@ function createList<
 			const key = generateKey(value)
 			if (signals.has(key))
 				throw new DuplicateKeyError(TYPE_LIST, key, value)
-			if (!keys.includes(key)) keys.push(key)
+			keys.push(key)
 			validateSignalValue(`${TYPE_LIST} item for key "${key}"`, value)
 			signals.set(key, itemFactory(value))
 			node.flags |= FLAG_DIRTY | FLAG_RELINK
@@ -448,14 +506,18 @@ function createList<
 		},
 
 		sort(compareFn?: (a: T, b: T) => number) {
-			const entries = keys
-				.map(key => [key, signals.get(key)?.get()] as [string, T])
-				.sort(
-					isFunction(compareFn)
-						? (a, b) => compareFn(a[1], b[1])
-						: (a, b) => String(a[1]).localeCompare(String(b[1])),
-				)
-			const newOrder = entries.map(([key]) => key)
+			const entries: [string, T][] = []
+			for (const key of keys) {
+				const v = signals.get(key)?.get()
+				if (v !== undefined) entries.push([key, v])
+			}
+			entries.sort(
+				isFunction(compareFn)
+					? (a, b) => compareFn(a[1], b[1])
+					: (a, b) => String(a[1]).localeCompare(String(b[1])),
+			)
+			const newOrder: string[] = []
+			for (const [key] of entries) newOrder.push(key)
 
 			if (!keysEqual(keys, newOrder)) {
 				keys = newOrder
@@ -482,6 +544,7 @@ function createList<
 
 			const add = {} as Record<string, T>
 			const remove = {} as Record<string, T>
+			let hasRemove = false
 
 			// Collect items to delete
 			for (let i = 0; i < actualDeleteCount; i++) {
@@ -489,13 +552,18 @@ function createList<
 				const key = keys[index]
 				if (key) {
 					const signal = signals.get(key)
-					if (signal) remove[key] = signal.get() as T
+					if (signal) {
+						remove[key] = signal.get()
+						hasRemove = true
+					}
 				}
 			}
 
 			// Build new key order
 			const newOrder = keys.slice(0, actualStart)
 			const change = {} as Record<string, T>
+			let hasAdd = false
+			let hasChange = false
 
 			for (const item of items) {
 				const key = generateKey(item)
@@ -503,21 +571,19 @@ function createList<
 					// Same key removed and re-inserted: route to change, not add+remove
 					delete remove[key]
 					change[key] = item
+					hasChange = true
 				} else if (signals.has(key)) {
 					throw new DuplicateKeyError(TYPE_LIST, key, item)
 				} else {
 					add[key] = item
+					hasAdd = true
 				}
 				newOrder.push(key)
 			}
 
 			newOrder.push(...keys.slice(actualStart + actualDeleteCount))
 
-			const changed = !!(
-				Object.keys(add).length ||
-				Object.keys(remove).length ||
-				Object.keys(change).length
-			)
+			const changed = hasAdd || hasRemove || hasChange
 
 			if (changed) {
 				applyChanges({

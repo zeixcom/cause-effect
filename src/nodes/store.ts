@@ -8,15 +8,15 @@ import {
 	FLAG_DIRTY,
 	FLAG_RELINK,
 	flush,
-	makeSubscribe,
 	type MemoNode,
+	makeSubscribe,
 	propagate,
 	refresh,
 	type SinkNode,
 	TYPE_STORE,
 	untrack,
 } from '../graph'
-import { isSignalOfType, isRecord } from '../util'
+import { isRecord, isSignalOfType } from '../util'
 import {
 	createList,
 	type DiffResult,
@@ -93,7 +93,12 @@ function diffRecords<T extends UnknownRecord>(prev: T, next: T): DiffResult {
 	// Pass 1: iterate new keys — find additions and changes
 	for (const key of nextKeys) {
 		if (key in prev) {
-			if (!DEEP_EQUALITY(prev[key] as {}, next[key] as {})) {
+			if (
+				!DEEP_EQUALITY(
+					prev[key] as unknown & {},
+					next[key] as unknown & {},
+				)
+			) {
 				change[key] = next[key]
 				changed = true
 			}
@@ -154,9 +159,7 @@ function createStore<T extends UnknownRecord>(
 	// Build current value from child signals
 	const buildValue = (): T => {
 		const record = {} as UnknownRecord
-		signals.forEach((signal, key) => {
-			record[key] = signal.get()
-		})
+		for (const [key, signal] of signals) record[key] = signal.get()
 		return record as T
 	}
 
@@ -186,7 +189,12 @@ function createStore<T extends UnknownRecord>(
 		}
 
 		// Changes
-		if (Object.keys(changes.change).length) {
+		let hasChange = false
+		for (const _key in changes.change) {
+			hasChange = true
+			break
+		}
+		if (hasChange) {
 			batch(() => {
 				for (const key in changes.change) {
 					const val = changes.change[key]
@@ -225,17 +233,15 @@ function createStore<T extends UnknownRecord>(
 		[Symbol.isConcatSpreadable]: false as const,
 
 		*[Symbol.iterator]() {
-			for (const key of Array.from(signals.keys())) {
-				const signal = signals.get(key)
-				if (signal)
-					yield [key, signal] as [
-						string,
-						(
-							| State<T[keyof T] & {}>
-							| Store<UnknownRecord>
-							| List<unknown & {}>
-						),
-					]
+			for (const [key, signal] of signals) {
+				yield [key, signal] as [
+					string,
+					(
+						| State<T[keyof T] & {}>
+						| Store<UnknownRecord>
+						| List<unknown & {}>
+					),
+				]
 			}
 		},
 

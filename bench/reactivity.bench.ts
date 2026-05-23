@@ -1,10 +1,12 @@
 import { bench, group, run } from 'mitata'
 import {
 	batch,
+	createCollection,
 	createEffect,
 	createList,
 	createMemo,
 	createSensor,
+	createSlot,
 	createState,
 	createStore,
 	createTask,
@@ -582,6 +584,265 @@ group('Store: nested store propagation', () => {
 	bench('cause-effect', () => {
 		toggle = !toggle
 		nested.user.prefs.theme.set(toggle ? 'dark' : 'light')
+	})
+})
+
+/* === Heavy List Benchmarks === */
+
+group('List: large reactive propagation (1000 items)', () => {
+	const items = Array.from({ length: 1000 }, (_, i) => i)
+	const list = createList(items.slice())
+	createEffect(() => {
+		list.get()
+	})
+
+	let i = 0
+	bench('cause-effect', () => {
+		items[0] = ++i
+		list.set(items.slice())
+	})
+})
+
+group('List: large set diff (1000 items, all changed)', () => {
+	const initial = Array.from({ length: 1000 }, (_, i) => i)
+	const updated = Array.from({ length: 1000 }, (_, i) => i + 1)
+	bench('cause-effect', () => {
+		const list = createList(initial.slice())
+		list.set(updated)
+	})
+})
+
+group('List: large add + remove 100 items', () => {
+	bench('cause-effect', () => {
+		const list = createList<number>([])
+		for (let i = 0; i < 100; i++) list.add(i)
+		for (let i = 0; i < 100; i++) list.remove(0)
+	})
+})
+
+group('List: replace in 1000-item list', () => {
+	const list = createList(Array.from({ length: 1000 }, (_, i) => i))
+	// biome-ignore lint/style/noNonNullAssertion: list is pre-populated
+	const key = list.keyAt(0)!
+	createEffect(() => {
+		list.get()
+	})
+
+	let i = 0
+	bench('cause-effect', () => {
+		batch(() => list.replace(key, ++i))
+	})
+})
+
+/* === Heavy Collection Benchmarks === */
+
+group('Collection: derive 1000 items (sync)', () => {
+	bench('cause-effect', () => {
+		const list = createList(Array.from({ length: 1000 }, (_, i) => i + 1))
+		const col = list.deriveCollection((v: number) => v * 2)
+		col.get()
+	})
+})
+
+group('Collection: chain 5 derivations (100 items)', () => {
+	bench('cause-effect', () => {
+		const list = createList(Array.from({ length: 100 }, (_, i) => i + 1))
+		let col = list.deriveCollection((v: number) => v * 2)
+		for (let i = 1; i < 5; i++)
+			col = col.deriveCollection((v: number) => v + 1)
+		col.get()
+	})
+})
+
+group('Collection: large reactive update (1000 items)', () => {
+	const list = createList(Array.from({ length: 1000 }, (_, i) => i))
+	const col = list.deriveCollection((v: number) => v * 10)
+	// biome-ignore lint/style/noNonNullAssertion: list is pre-populated
+	const firstKey = list.keyAt(0)!
+	createEffect(() => {
+		col.get()
+	})
+
+	let i = 0
+	bench('cause-effect', () => {
+		batch(() => list.replace(firstKey, ++i))
+	})
+})
+
+group(
+	'Collection: externally-driven structural mutations (1000 iterations)',
+	() => {
+		type Item = { id: string }
+		let apply!: (changes: { add?: Item[]; remove?: Item[] }) => void
+		const col = createCollection<Item>(
+			applyChanges => {
+				apply = applyChanges
+				return () => {}
+			},
+			{ keyConfig: (item: Item) => item.id },
+		)
+		createEffect(() => {
+			col.get()
+		})
+
+		let i = 0
+		bench('cause-effect', () => {
+			batch(() => {
+				apply({ add: [{ id: `k${i}` }] })
+				apply({ remove: [{ id: `k${i}` }] })
+				i++
+			})
+		})
+	},
+)
+
+/* === Heavy Store Benchmarks === */
+
+group('Store: 50 properties, single update', () => {
+	const obj = Object.fromEntries(
+		Array.from({ length: 50 }, (_, i) => [`key${i}`, i]),
+	)
+	const store = createStore(obj)
+	createEffect(() => {
+		store.get()
+	})
+
+	let i = 0
+	bench('cause-effect', () => {
+		;(store as Record<string, { set: (v: number) => void }>).key0?.set(++i)
+	})
+})
+
+group('Store: large set diff (50 properties)', () => {
+	const initial = Object.fromEntries(
+		Array.from({ length: 50 }, (_, i) => [`key${i}`, i]),
+	)
+	const updated = Object.fromEntries(
+		Array.from({ length: 50 }, (_, i) => [`key${i}`, i + 1]),
+	)
+	const store = createStore(initial)
+	createEffect(() => {
+		store.get()
+	})
+
+	bench('cause-effect', () => {
+		store.set(updated)
+	})
+})
+
+/* === Heavy Slot Benchmarks === */
+
+group('Slot: chain 5 slots', () => {
+	bench('cause-effect', () => {
+		const base = createState(0)
+		let current = createSlot(base)
+		for (let i = 1; i < 5; i++) current = createSlot(current)
+		createEffect(() => {
+			current.get()
+		})
+		current.set(1)
+	})
+})
+
+group('Slot: replace with 10 subscribers', () => {
+	const s1 = createState(0)
+	const s2 = createState(1)
+	const slot = createSlot<number>(s1)
+	for (let i = 0; i < 10; i++) {
+		createEffect(() => {
+			slot.get()
+		})
+	}
+
+	let toggle = false
+	bench('cause-effect', () => {
+		toggle = !toggle
+		slot.replace(toggle ? s2 : s1)
+	})
+})
+
+/* === Heavy Sensor Benchmarks === */
+
+group('Sensor: 10-sensor fan-in (1 effect)', () => {
+	// watched is called lazily on first subscription, so we collect setters via a Map
+	const setterMap = new Map<number, (v: number) => void>()
+	const sensors: ReturnType<typeof createSensor<number>>[] = []
+
+	for (let i = 0; i < 10; i++) {
+		const idx = i
+		sensors.push(
+			createSensor<number>(set => {
+				setterMap.set(idx, set)
+				set(idx)
+				return () => {}
+			}),
+		)
+	}
+
+	// Reading all sensors in an effect triggers their watched callbacks
+	createEffect(() => {
+		for (const s of sensors) s.get()
+	})
+
+	let i = 0
+	bench('cause-effect', () => {
+		// biome-ignore lint/style/noNonNullAssertion: populated by effect above
+		setterMap.get(i % 10)!(++i)
+	})
+})
+
+group('Sensor: 1 sensor → 10 effects fanout', () => {
+	let setter!: (v: number) => void
+	const sensor = createSensor<number>(set => {
+		setter = set
+		set(0)
+		return () => {}
+	})
+	for (let i = 0; i < 10; i++) {
+		createEffect(() => {
+			sensor.get()
+		})
+	}
+
+	let i = 0
+	bench('cause-effect', () => {
+		setter(++i)
+	})
+})
+
+/* === Heavy Task Benchmarks === */
+
+group('Task: 10 tasks reading 1 state (fanout)', () => {
+	const wait = () => new Promise<void>(r => setTimeout(r, 0))
+
+	const src = createState(0)
+	const tasks = Array.from({ length: 10 }, () =>
+		createTask(async () => src.get() * 2, { value: 0 }),
+	)
+	for (const t of tasks) createEffect(() => void t.get())
+
+	let i = 0
+	bench('cause-effect', async () => {
+		batch(() => src.set(++i))
+		await wait()
+	})
+})
+
+group('Task: chain of 5 tasks', () => {
+	const wait = () => new Promise<void>(r => setTimeout(r, 0))
+
+	const src = createState(1)
+	let current = createTask(async () => src.get(), { value: 0 })
+	for (let i = 0; i < 4; i++) {
+		const prev = current
+		current = createTask(async () => prev.get() + 1, { value: 0 })
+	}
+	createEffect(() => void current.get())
+
+	let i = 0
+	bench('cause-effect', async () => {
+		batch(() => src.set(++i))
+		await wait()
 	})
 })
 

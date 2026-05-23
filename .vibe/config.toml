@@ -1,0 +1,17 @@
+skill_paths = [
+    "../.agents/skills",
+]
+
+[tools.bash]
+allowlist = [
+    "cat",
+    "cd",
+    "diff",
+    "echo",
+    "git diff",
+    "git log",
+    "git show",
+    "grep",
+    "head",
+    "sed",
+]
