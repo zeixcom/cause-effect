@@ -26,7 +26,7 @@ type ListOptions<T extends {}, S extends MutableSignal<T> = MutableSignal<T>> = 
     keyConfig?: KeyConfig<T>;
     /** Lifecycle callback invoked when the list gains its first downstream subscriber. Must return a cleanup function. */
     watched?: () => Cleanup;
-    /** Equality function for item state signals. Defaults to reference equality (`===`). */
+    /** Equality function for item state signals. Defaults to `DEEP_EQUALITY`. */
     itemEquals?: (a: T, b: T) => boolean;
     /** Factory for per-item signals. Defaults to `createState`. */
     createItem?: (value: T) => S;
