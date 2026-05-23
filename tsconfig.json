@@ -15,7 +15,7 @@
 		"erasableSyntaxOnly": true,
 		"isolatedModules": true,
 		"resolveJsonModule": true,
-		"types": ["bun-types"],
+		"types": ["bun"],
 
 		// Editor-only mode - no emit
 		"noEmit": true,

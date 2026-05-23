@@ -1,6 +1,6 @@
 import { type Cleanup, TYPE_LIST } from '../graph';
-import { type Collection } from './collection';
 import type { MutableSignal } from '../signal';
+import { type Collection } from './collection';
 type UnknownRecord = Record<string, unknown>;
 type DiffResult = {
     changed: boolean;

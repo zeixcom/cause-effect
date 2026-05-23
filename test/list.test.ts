@@ -570,6 +570,7 @@ describe('List', () => {
 	describe('options.itemEquals', () => {
 		test('should use DEEP_EQUALITY by default for object items', () => {
 			const list = createList([{ a: 1 }, { a: 2 }])
+			// biome-ignore lint/style/noNonNullAssertion: test
 			const item = list.at(0)!
 			let count = 0
 			createEffect(() => {
@@ -577,6 +578,7 @@ describe('List', () => {
 				count++
 			})
 			expect(count).toBe(1)
+			// biome-ignore lint/style/noNonNullAssertion: test
 			list.replace(list.keyAt(0)!, { a: 1 })
 			expect(count).toBe(1)
 		})
@@ -584,12 +586,14 @@ describe('List', () => {
 			const list = createList([{ id: 1, val: 'a' }], {
 				itemEquals: (a, b) => a.id === b.id,
 			})
+			// biome-ignore lint/style/noNonNullAssertion: test
 			const item = list.at(0)!
 			let count = 0
 			createEffect(() => {
 				item.get()
 				count++
 			})
+			// biome-ignore lint/style/noNonNullAssertion: test
 			list.replace(list.keyAt(0)!, { id: 1, val: 'b' })
 			expect(count).toBe(1)
 			expect(item.get().val).toBe('a')

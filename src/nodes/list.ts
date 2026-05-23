@@ -128,6 +128,55 @@ function getKeyGenerator<T extends {}>(
 }
 
 /**
+ * Fast diff for positional (non-content-based) keys.
+ * Avoids Map/Set allocation by iterating both arrays in one pass.
+ */
+function diffPositional<T extends {}>(
+	prev: T[],
+	next: T[],
+	prevKeys: string[],
+	generateKey: (item: T) => string,
+	itemEquals: (a: T, b: T) => boolean,
+): DiffResult & { newKeys: string[] } {
+	const add = {} as UnknownRecord
+	const change = {} as UnknownRecord
+	const remove = {} as UnknownRecord
+	const nextKeys: string[] = []
+	let changed = false
+
+	const minLen = Math.min(prev.length, next.length)
+
+	for (let i = 0; i < minLen; i++) {
+		// biome-ignore lint/style/noNonNullAssertion: bounded by minLen
+		const key = prevKeys[i]!
+		nextKeys.push(key)
+		// biome-ignore lint/style/noNonNullAssertion: bounded by minLen
+		if (!itemEquals(prev[i]!, next[i]!)) {
+			// biome-ignore lint/style/noNonNullAssertion: bounded by minLen
+			change[key] = next[i]!
+			changed = true
+		}
+	}
+
+	for (let i = minLen; i < next.length; i++) {
+		// biome-ignore lint/style/noNonNullAssertion: bounded by next.length
+		const val = next[i]!
+		const key = generateKey(val)
+		nextKeys.push(key)
+		add[key] = val
+		changed = true
+	}
+
+	for (let i = minLen; i < prev.length; i++) {
+		// biome-ignore lint/style/noNonNullAssertion: bounded by prev.length
+		remove[prevKeys[i]!] = null
+		changed = true
+	}
+
+	return { add, change, remove, newKeys: nextKeys, changed }
+}
+
+/**
  * Compares two arrays using existing keys and returns differences as a DiffResult.
  * Avoids object conversion by working directly with arrays and keys.
  *
@@ -148,6 +197,9 @@ function diffArrays<T extends {}>(
 	contentBased: boolean,
 	itemEquals: (a: T, b: T) => boolean,
 ): DiffResult & { newKeys: string[] } {
+	if (!contentBased)
+		return diffPositional(prev, next, prevKeys, generateKey, itemEquals)
+
 	const add = {} as UnknownRecord
 	const change = {} as UnknownRecord
 	const remove = {} as UnknownRecord
@@ -170,10 +222,7 @@ function diffArrays<T extends {}>(
 		const val = next[i]
 		if (val === undefined) continue
 
-		// Content-based keys: always derive from item; synthetic keys: reuse by position
-		const key = contentBased
-			? generateKey(val)
-			: (prevKeys[i] ?? generateKey(val))
+		const key = generateKey(val)
 
 		if (seenKeys.has(key)) throw new DuplicateKeyError(TYPE_LIST, key, val)
 
@@ -413,7 +462,7 @@ function createList<
 			const key = generateKey(value)
 			if (signals.has(key))
 				throw new DuplicateKeyError(TYPE_LIST, key, value)
-			if (!keys.includes(key)) keys.push(key)
+			keys.push(key)
 			validateSignalValue(`${TYPE_LIST} item for key "${key}"`, value)
 			signals.set(key, itemFactory(value))
 			node.flags |= FLAG_DIRTY | FLAG_RELINK
