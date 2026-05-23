@@ -333,11 +333,15 @@ function unlink(edge: Edge): Edge | null {
 		}
 
 		// Cascade: if the source is also a sink (e.g. MemoNode, derived collection),
-		// trim its own sources so upstream watched callbacks can clean up
+		// trim its own sources so upstream watched callbacks can clean up.
+		// Mark FLAG_DIRTY so the next refresh() re-runs the computation and
+		// re-establishes source links — without this the node is FLAG_CLEAN with
+		// no sources, causing stale reads and silent propagation loss on reconnect.
 		if ('sources' in source && source.sources) {
 			const sinkNode = source as SinkNode
 			sinkNode.sourcesTail = null
 			trimSources(sinkNode)
+			sinkNode.flags |= FLAG_DIRTY
 		}
 	}
 

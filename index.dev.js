@@ -513,7 +513,37 @@ function getKeyGenerator(keyConfig) {
     contentBased
   ];
 }
+function diffPositional(prev, next, prevKeys, generateKey, itemEquals) {
+  const add = {};
+  const change = {};
+  const remove = {};
+  const nextKeys = [];
+  let changed = false;
+  const minLen = Math.min(prev.length, next.length);
+  for (let i = 0;i < minLen; i++) {
+    const key = prevKeys[i];
+    nextKeys.push(key);
+    if (!itemEquals(prev[i], next[i])) {
+      change[key] = next[i];
+      changed = true;
+    }
+  }
+  for (let i = minLen;i < next.length; i++) {
+    const val = next[i];
+    const key = generateKey(val);
+    nextKeys.push(key);
+    add[key] = val;
+    changed = true;
+  }
+  for (let i = minLen;i < prev.length; i++) {
+    remove[prevKeys[i]] = null;
+    changed = true;
+  }
+  return { add, change, remove, newKeys: nextKeys, changed };
+}
 function diffArrays(prev, next, prevKeys, generateKey, contentBased, itemEquals) {
+  if (!contentBased)
+    return diffPositional(prev, next, prevKeys, generateKey, itemEquals);
   const add = {};
   const change = {};
   const remove = {};
@@ -531,7 +561,7 @@ function diffArrays(prev, next, prevKeys, generateKey, contentBased, itemEquals)
     const val = next[i];
     if (val === undefined)
       continue;
-    const key = contentBased ? generateKey(val) : prevKeys[i] ?? generateKey(val);
+    const key = generateKey(val);
     if (seenKeys.has(key))
       throw new DuplicateKeyError(TYPE_LIST, key, val);
     nextKeys.push(key);
@@ -561,7 +591,15 @@ function createList(value, options) {
   const [generateKey, contentBased] = getKeyGenerator(options?.keyConfig);
   const itemEquals = options?.itemEquals ?? DEEP_EQUALITY;
   const itemFactory = options?.createItem ?? ((item) => createState(item, { equals: itemEquals }));
-  const buildValue = () => keys.map((key) => signals.get(key)?.get()).filter((v) => v !== undefined);
+  const buildValue = () => {
+    const result = [];
+    for (const key of keys) {
+      const v = signals.get(key)?.get();
+      if (v !== undefined)
+        result.push(v);
+    }
+    return result;
+  };
   const node = {
     fn: buildValue,
     value,
@@ -696,8 +734,7 @@ function createList(value, options) {
       const key = generateKey(value2);
       if (signals.has(key))
         throw new DuplicateKeyError(TYPE_LIST, key, value2);
-      if (!keys.includes(key))
-        keys.push(key);
+      keys.push(key);
       validateSignalValue(`${TYPE_LIST} item for key "${key}"`, value2);
       signals.set(key, itemFactory(value2));
       node.flags |= FLAG_DIRTY | FLAG_RELINK;
@@ -939,13 +976,12 @@ function deriveCollection(source, callback) {
   };
   function syncKeys(nextKeys) {
     if (!keysEqual(keys, nextKeys)) {
-      const a = new Set(keys);
-      const b = new Set(nextKeys);
+      const nextSet = new Set(nextKeys);
       for (const key of keys)
-        if (!b.has(key))
+        if (!nextSet.has(key))
           signals.delete(key);
       for (const key of nextKeys)
-        if (!a.has(key))
+        if (!signals.has(key))
           addSignal(key);
       keys = nextKeys;
       node.flags |= FLAG_RELINK;
@@ -1359,9 +1395,8 @@ function createStore(value, options) {
   };
   const buildValue = () => {
     const record = {};
-    signals.forEach((signal, key) => {
+    for (const [key, signal] of signals)
       record[key] = signal.get();
-    });
     return record;
   };
   const node = {

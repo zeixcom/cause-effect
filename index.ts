@@ -1,6 +1,6 @@
 /**
  * @name Cause & Effect
- * @version 1.3.1
+ * @version 1.3.3
  * @author Esther Brunner
  */
 
@@ -14,14 +14,16 @@ export {
 	RequiredOwnerError,
 	UnsetSignalValueError,
 } from './src/errors'
+/** @deprecated Use `DEEP_EQUALITY` instead. */
 export {
 	batch,
 	type Cleanup,
 	type ComputedOptions,
 	createScope,
-	DEFAULT_EQUALITY,
 	DEEP_EQUALITY,
+	DEFAULT_EQUALITY,
 	type EffectCallback,
+	isEqual,
 	type MaybeCleanup,
 	type MemoCallback,
 	type ScopeOptions,
@@ -44,9 +46,9 @@ export {
 export {
 	createEffect,
 	type MatchHandlers,
-	type SingleMatchHandlers,
 	type MaybePromise,
 	match,
+	type SingleMatchHandlers,
 } from './src/nodes/effect'
 export {
 	createList,
@@ -95,10 +97,7 @@ export {
 	isAsyncFunction,
 	isFunction,
 	isObjectOfType,
-	isSignalOfType,
 	isRecord,
+	isSignalOfType,
 	valueString,
 } from './src/util'
-
-/** @deprecated Use `DEEP_EQUALITY` instead. */
-export { isEqual } from './src/graph'
