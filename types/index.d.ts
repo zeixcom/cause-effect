@@ -1,6 +1,6 @@
 /**
  * @name Cause & Effect
- * @version 1.3.4-beta.2
+ * @version 1.3.4-beta.3
  * @author Esther Brunner
  */
 export { CircularDependencyError, type Guard, InvalidCallbackError, InvalidSignalValueError, NullishSignalValueError, ReadonlySignalError, RequiredOwnerError, UnsetSignalValueError, } from './src/errors';
