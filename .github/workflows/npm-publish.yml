@@ -14,17 +14,22 @@ jobs:
             - name: Checkout repository
               uses: actions/checkout@v4
 
-            - name: Setup Node.js 24
+            - name: Setup Bun
+              uses: oven-sh/setup-bun@v1
+              with:
+                  bun-version: latest
+
+            - name: Install dependencies
+              run: bun install --production
+
+            - name: Build package
+              run: bun run build
+
+            - name: Setup Node.js 24 for npm publish
               uses: actions/setup-node@v4
               with:
                   node-version: '24'
                   registry-url: 'https://registry.npmjs.org'
-
-            - name: Install dependencies
-              run: npm ci
-
-            - name: Build package
-              run: npm run build
 
             - name: Publish to npm
               run: npm publish --provenance --access public
