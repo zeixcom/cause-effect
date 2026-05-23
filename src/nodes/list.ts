@@ -281,10 +281,14 @@ function createList<
 	// --- Internal helpers ---
 
 	// Build current value from child signals
-	const buildValue = (): T[] =>
-		keys
-			.map(key => signals.get(key)?.get())
-			.filter(v => v !== undefined) as T[]
+	const buildValue = (): T[] => {
+		const result: T[] = []
+		for (const key of keys) {
+			const v = signals.get(key)?.get()
+			if (v !== undefined) result.push(v)
+		}
+		return result
+	}
 
 	// Structural tracking node — not a general-purpose Memo.
 	// On first get(): refresh() establishes edges from child signals.
