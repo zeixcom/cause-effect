@@ -71,7 +71,7 @@ function isSignalOrDescriptor<T extends {}>(
 		value !== null &&
 		typeof value === 'object' &&
 		'get' in value &&
-		typeof (value as any).get === 'function'
+		typeof value.get === 'function'
 	)
 }
 
@@ -123,13 +123,10 @@ function createSlot<T extends {}>(
 	}
 
 	const set = (next: T): void => {
-		if (isSlot(delegated)) return delegated.set(next)
-		if (
-			'set' in delegated &&
-			typeof (delegated as any).set === 'function'
-		) {
+		if (isSlot(delegated)) return void delegated.set(next)
+		if ('set' in delegated && typeof delegated.set === 'function') {
 			validateSignalValue(TYPE_SLOT, next, guard)
-			;(delegated as any).set(next)
+			delegated.set(next)
 		} else {
 			throw new ReadonlySignalError(TYPE_SLOT)
 		}

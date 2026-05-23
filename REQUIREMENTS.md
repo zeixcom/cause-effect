@@ -90,7 +90,7 @@ The library uses no browser-specific APIs in its core. Environment-specific beha
 | Usage | Target |
 |-------|--------|
 | Core signals only (State, Memo, Task, Effect) | Below 5 kB gzipped |
-| Full library (all 9 signal types + utilities) | Below 10 kB gzipped |
+| Full library (all 9 signal types + utilities) | Below 7 kB gzipped |
 
 The library must remain tree-shakable: importing only what you use should not pull in unrelated signal types.
 

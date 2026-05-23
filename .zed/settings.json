@@ -1,5 +1,4 @@
 {
-	"project_name": "Cause & Effect",
 	"languages": {
 		"TypeScript": {
 			"language_servers": ["!eslint", "..."],
