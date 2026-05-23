@@ -167,11 +167,9 @@ function deriveCollection<T extends {}, U extends {}>(
 	// array. Sets FLAG_RELINK on the node if keys changed.
 	function syncKeys(nextKeys: string[]): void {
 		if (!keysEqual(keys, nextKeys)) {
-			const a = new Set(keys)
-			const b = new Set(nextKeys)
-
-			for (const key of keys) if (!b.has(key)) signals.delete(key)
-			for (const key of nextKeys) if (!a.has(key)) addSignal(key)
+			const nextSet = new Set(nextKeys)
+			for (const key of keys) if (!nextSet.has(key)) signals.delete(key)
+			for (const key of nextKeys) if (!signals.has(key)) addSignal(key)
 			keys = nextKeys
 			node.flags |= FLAG_RELINK
 		}

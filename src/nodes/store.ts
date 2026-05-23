@@ -159,9 +159,7 @@ function createStore<T extends UnknownRecord>(
 	// Build current value from child signals
 	const buildValue = (): T => {
 		const record = {} as UnknownRecord
-		signals.forEach((signal, key) => {
-			record[key] = signal.get()
-		})
+		for (const [key, signal] of signals) record[key] = signal.get()
 		return record as T
 	}
 
