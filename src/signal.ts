@@ -5,6 +5,7 @@ import {
 	type Signal,
 	type TaskCallback,
 	TYPE_COLLECTION,
+	TYPE_LAYER,
 	TYPE_LIST,
 	TYPE_MEMO,
 	TYPE_NEURON,
@@ -14,6 +15,7 @@ import {
 	TYPE_STORE,
 	TYPE_TASK,
 } from './graph'
+import { isLayer } from './nodes/layer'
 import { createList, isList, type List, type UnknownRecord } from './nodes/list'
 import { createMemo, isMemo, type Memo } from './nodes/memo'
 import { createState, isState, type State } from './nodes/state'
@@ -34,20 +36,6 @@ type MutableSignal<T extends {}> = {
 	set(value: T): void
 	update(callback: (value: T) => T): void
 }
-
-/* === Constants === */
-
-const SIGNAL_TYPES = new Set([
-	TYPE_STATE,
-	TYPE_MEMO,
-	TYPE_TASK,
-	TYPE_SENSOR,
-	TYPE_SLOT,
-	TYPE_LIST,
-	TYPE_COLLECTION,
-	TYPE_STORE,
-	TYPE_NEURON,
-])
 
 /* === Factory Functions === */
 
@@ -146,7 +134,6 @@ function isSignal<T extends {}>(value: unknown): value is Signal<T> {
 		)
 	)
 }
-
 /**
  * Check whether a value is a State, Store, or List
  *
@@ -158,6 +145,21 @@ function isMutableSignal(value: unknown): value is MutableSignal<unknown & {}> {
 	return isState(value) || isStore(value) || isList(value)
 }
 
+/* === Constants === */
+
+const SIGNAL_TYPES = new Set([
+	TYPE_STATE,
+	TYPE_MEMO,
+	TYPE_TASK,
+	TYPE_SENSOR,
+	TYPE_SLOT,
+	TYPE_LIST,
+	TYPE_COLLECTION,
+	TYPE_STORE,
+	TYPE_NEURON,
+	TYPE_LAYER,
+])
+
 export {
 	type MutableSignal,
 	createComputed,
@@ -166,4 +168,5 @@ export {
 	isComputed,
 	isSignal,
 	isMutableSignal,
+	isLayer,
 }

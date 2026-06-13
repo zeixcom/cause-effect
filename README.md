@@ -361,7 +361,7 @@ target.value = 10 // sets local to 10
 
 ### Neuron
 
-A reactive signal for lightweight ML experimentation. Computes a weighted sum of its numeric inputs and applies an activation function. Supports forward propagation (`.get()`) and backpropagation (`.train(target)`) for training.
+A reactive signal for lightweight ML experimentation. Computes a weighted sum of its numeric inputs, applies an activation function, and supports forward propagation (`.get()`) and backpropagation (`.train(target)`) for training.
 
 ```js
 import { createState, createNeuron } from '@zeix/cause-effect'
@@ -371,7 +371,12 @@ const input1 = createState(0.5)
 const input2 = createState(0.3)
 
 // Create a Neuron with sigmoid activation
-const neuron = createNeuron([input1, input2], { activation: 'sigmoid' })
+const neuron = createNeuron([input1, input2], {
+  activation: 'sigmoid',
+  init: 'random',
+  learningRate: 0.1,
+  lossFunction: 'mse', // Mean Squared Error
+})
 
 // Forward propagation
 console.log(neuron.get()) // Weighted sum + sigmoid activation
@@ -384,11 +389,13 @@ neuron.train(0.8)
 
 **`createNeuron(inputs, options)`**
 Creates a Neuron signal.
-- `inputs` — Array of `Signal<number>` (e.g., `State<number>` or `Memo<number>`).
+- `inputs` — Array of `Signal<number>` (e.g., `State<number>`, `Memo<number>`, or other `Neuron` signals).
 - `options` — Optional configuration:
   - `activation` — Activation function (`'sigmoid'`, `'relu'`, `'tanh'`, `'linear'`, or custom function). Default: `'sigmoid'`.
   - `init` — Initialization strategy (`'random'`, `'zeros'`, `'xavier'`). Default: `'random'`.
   - `learningRate` — Learning rate for backpropagation. Default: `0.1`.
+  - `lossFunction` — Loss function for backpropagation (`'mse'` for Mean Squared Error). Default: `'mse'`.
+  - `autoTrain` — If `true`, backpropagation runs automatically during `.get()`. Default: `false`.
   - `equals` — Optional equality function to determine if a new value is different from the old value.
   - `watched` — Optional callback invoked when the Neuron is first watched.
 
@@ -414,67 +421,66 @@ Type guard that returns `true` if the value is a Neuron signal.
 | `'zeros'` | All weights and bias set to `0`. |
 | `'xavier'` | Scaled random values for better convergence. |
 
+#### Error Handling
+- Throws if `inputs` contains non-numeric signals or invalid values.
+- Throws if `activation` or `init` is invalid.
+- Detects circular dependencies during forward/backward propagation.
+
 > ⚠️ **Experimental Status** — The Neuron signal is experimental and may change in future releases. It is intended for lightweight experimentation and prototyping, not production ML workloads.
 
-### Neuron
+### Layer
 
-A **Neuron** signal for lightweight ML experimentation. Computes a weighted sum of its inputs and applies an activation function. Supports forward propagation (`.get()`) and backpropagation (`.train(target)`).
-
-**Experimental**: The `Neuron` signal is experimental and may change in future releases.
+A reactive signal for creating dense layers of Neurons, optimized for multi-neuron networks. Subscribes to a single dense input signal (e.g., `Signal<number[]>` or another `Layer`) and propagates errors backward through the entire layer during backpropagation.
 
 ```js
-import { createNeuron, isNeuron } from '@zeix/cause-effect'
+import { createState, createLayer } from '@zeix/cause-effect'
 
-const input1 = createState(0.5)
-const input2 = createState(0.3)
-const neuron = createNeuron([input1, input2], {
-  activation: 'sigmoid', // sigmoid, relu, tanh, linear, or custom function
-  init: 'random',        // random, zeros, or xavier
-  learningRate: 0.1,    // default: 0.1
+// Create a dense input signal
+const inputs = createState([0.5, 0.3])
+
+// Create a Layer with 2 Neurons
+const layer = createLayer(inputs, {
+  size: 2,
+  activation: 'sigmoid',
+  init: 'random',
+  learningRate: 0.1,
 })
 
 // Forward propagation
-console.log(neuron.get()) // Weighted sum + activation
+console.log(layer.get()) // Array of outputs for each Neuron
 
-// Backpropagation
-neuron.train(0.8) // Adjust weights via backpropagation
+// Backpropagation (adjust weights to approach targets)
+layer.train([0.8, 0.2])
 ```
-
-#### Activation Functions & Initialization
-
-| Activation | Description |
-|------------|-------------|
-| `sigmoid`  | Sigmoid function (default) |
-| `relu`     | Rectified Linear Unit |
-| `tanh`     | Hyperbolic Tangent |
-| `linear`   | Linear function |
-| `function` | Custom activation function |
-
-| Initialization | Description |
-|---------------|-------------|
-| `random`      | Random weights and bias (default) |
-| `zeros`       | Zero weights and bias |
-| `xavier`      | Xavier/Glorot initialization |
 
 #### API
 
-**`createNeuron(inputs, options?)`**
+**`createLayer(inputs, options)`**
+Creates a Layer signal.
+- `inputs` — A dense input signal (`Signal<number[]>` or another `Layer`).
+- `options` — Optional configuration:
+  - `size` — Number of Neurons in the Layer. Default: `1`.
+  - `activation` — Activation function (`'sigmoid'`, `'relu'`, `'tanh'`, `'linear'`, or custom function). Default: `'sigmoid'`.
+  - `init` — Initialization strategy (`'random'`, `'zeros'`, `'xavier'`). Default: `'random'`.
+  - `learningRate` — Learning rate for backpropagation. Default: `0.1`.
+  - `lossFunction` — Loss function for backpropagation (`'mse'` for Mean Squared Error). Default: `'mse'`.
+  - `autoTrain` — If `true`, backpropagation runs automatically during `.get()`. Default: `false`.
+  - `equals` — Optional equality function to determine if a new value is different from the old value.
+  - `watched` — Optional callback invoked when the Layer is first watched.
 
-Creates a Neuron signal.
+Returns a `Layer` signal with:
+- `.get()` — Gets the current output array (one value per Neuron).
+- `.train(targets)` — Adjusts weights via backpropagation to approach the target values.
 
-- `inputs` - Array of input signals (`Signal<number>`).
-- `options` - Optional configuration:
-  - `activation` - Activation function (`sigmoid`, `relu`, `tanh`, `linear`, or custom function). Default: `sigmoid`.
-  - `init` - Initialization strategy (`random`, `zeros`, `xavier`). Default: `random`.
-  - `learningRate` - Learning rate for backpropagation. Default: `0.1`.
-  - `equals` - Optional equality function. Default: reference equality (`===`).
-  - `watched` - Optional callback invoked when the Neuron is first watched.
+**`isLayer(value)`**
+Type guard that returns `true` if the value is a Layer signal.
 
-**`isNeuron(value)`**
+#### Error Handling
+- Throws if `inputs` is not a dense signal (`Signal<number[]>` or `Layer`).
+- Throws if `size` does not match the input shape.
+- Throws if `activation` or `init` is invalid.
 
-Checks if a value is a Neuron signal.
-
-Returns `true` if the value is a Neuron, `false` otherwise.
+> ⚠️ **Experimental Status** — The Layer signal is experimental and may change in future releases. It is intended for lightweight experimentation and prototyping, not production ML workloads.
 
 ### Effect
 

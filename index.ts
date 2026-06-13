@@ -50,6 +50,7 @@ export {
 	match,
 	type SingleMatchHandlers,
 } from './src/nodes/effect'
+export { createLayer, isLayer, type Layer } from './src/nodes/layer'
 export {
 	createList,
 	isList,

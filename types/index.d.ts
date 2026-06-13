@@ -8,6 +8,7 @@ export { CircularDependencyError, type Guard, InvalidCallbackError, InvalidSigna
 export { batch, type Cleanup, type ComputedOptions, createScope, DEEP_EQUALITY, DEFAULT_EQUALITY, type EffectCallback, isEqual, type MaybeCleanup, type MemoCallback, type ScopeOptions, type Signal, type SignalOptions, SKIP_EQUALITY, type TaskCallback, unown, untrack, } from './src/graph';
 export { type Collection, type CollectionCallback, type CollectionChanges, type CollectionOptions, createCollection, type DeriveCollectionCallback, isCollection, } from './src/nodes/collection';
 export { createEffect, type MatchHandlers, type MaybePromise, match, type SingleMatchHandlers, } from './src/nodes/effect';
+export { createLayer, isLayer, type Layer } from './src/nodes/layer';
 export { createList, isList, type KeyConfig, type List, type ListOptions, } from './src/nodes/list';
 export { createMemo, isMemo, type Memo } from './src/nodes/memo';
 export { createNeuron, isNeuron, type Neuron } from './src/nodes/neuron';

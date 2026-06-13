@@ -9,25 +9,26 @@ We are introducing an experimental **Neuron** signal type to the `@zeix/cause-ef
 
 ## Decision
 ### Core Design
-1. **Signal Type**: The Neuron signal will be a new signal type, loosely replicating the behavior of a `Memo` signal but specialized for ML operations.
+1. **Signal Type**: The Neuron signal is a new signal type, loosely replicating the behavior of a `Memo` signal but specialized for ML operations.
 2. **Factory Function**: `createNeuron(inputs: Signal<number>[], options: NeuronOptions)`
-   - `inputs` can be any `Signal<number>`, not limited to other Neurons.
-   - `options` will include:
-     - Activation functions (`sigmoid`, `relu`, `tanh`, `linear`).
+   - `inputs` can be any `Signal<number>` (e.g., `State<number>`, `Memo<number>`, or other `Neuron` signals).
+   - `options` includes:
+     - Activation functions (`sigmoid`, `relu`, `tanh`, `linear`, or custom function).
      - Initialization strategies (`random`, `zeros`, `xavier`).
-     - Learning rate and other hyperparameters.
-3. **Forward Propagation**: The Neuron will compute a weighted sum of its inputs, apply an activation function, and return the result via `.get()`.
-4. **Backpropagation**: Errors will be propagated backward to adjust weights and biases. The exact mechanism is still under exploration but will likely involve "reverse edges" for error propagation.
+     - Learning rate (default: `0.1`).
+     - Loss function (default: Mean Squared Error).
+3. **Forward Propagation**: The Neuron computes a weighted sum of its inputs, applies an activation function, and returns the result via `.get()`.
+4. **Backpropagation**: Errors are propagated backward to adjust weights and biases via an explicit `train(target)` method. Reverse edges are **not yet implemented** for multi-layer networks.
 
 ### Integration with Existing Signals
-- **Dependency Tracking**: Neurons will track dependencies like other signals, with **dynamic reconfiguration of input edges** as a future requirement.
-- **Batching**: Since Neurons are pure functions without side effects, they will not require the `batch()` mechanism.
-- **Error Handling**: Input edges will be validated, and errors will be caught and handled similarly to other signals (e.g., `Memo`, `Task`).
+- **Dependency Tracking**: Neurons track dependencies like other signals, but **dynamic reconfiguration of input edges is not yet supported**.
+- **Batching**: Neurons are pure functions without side effects and do not require the `batch()` mechanism.
+- **Error Handling**: Input edges are validated, and errors (e.g., non-numeric values, circular dependencies) are handled gracefully.
 
 ### Performance and Safety
-- **Performance**: Initially, we assume a low number of input signals (e.g., up to 16). Performance optimizations (e.g., WebAssembly) will be explored later.
-- **Error Handling**: Invalid inputs (e.g., non-numeric values) and circular dependencies will be validated and handled gracefully.
-- **Cancellation**: All operations will be synchronous for now, with async support deferred to future work.
+- **Performance**: Optimized for a low number of input signals (e.g., up to 16). Performance optimizations (e.g., WebAssembly) are deferred to future work.
+- **Error Handling**: Invalid inputs (e.g., non-numeric values, circular dependencies) are validated and handled gracefully.
+- **Cancellation**: All operations are synchronous. Async support is deferred to future work.
 
 ### Testing and Validation
 - **Test Cases**: Focus on single-neuron scenarios, such as logic gates (e.g., `AND`, `OR`). Multi-layer networks will be explored by chaining Neurons.
@@ -35,14 +36,21 @@ We are introducing an experimental **Neuron** signal type to the `@zeix/cause-ef
 
 ## Consequences
 ### Benefits
-- **Educational Value**: Provides a simple, reactive way to experiment with ML concepts.
-- **Extensibility**: The design allows for future enhancements, such as custom loss functions, optimizers, and dynamic input reconfiguration.
-- **Integration**: Seamlessly integrates with the existing signal graph, enabling reactive ML workflows.
+- **Educational Value**: Provides a simple, reactive way to experiment with ML concepts (e.g., logic gates, single-neuron training).
+- **Extensibility**: The design supports future enhancements, such as custom loss functions, optimizers, and dynamic input reconfiguration.
+- **Integration**: Seamlessly integrates with the existing signal graph (e.g., `State`, `Memo`, `Effect`).
 
 ### Drawbacks
 - **Complexity**: Introduces additional complexity to the signal graph, particularly with backpropagation and reverse edges.
-- **Performance**: Initial implementation may not scale well for large networks, but this will be addressed in future iterations.
-- **API Surface**: Expands the public API, which may require careful documentation and examples.
+- **Performance**: Initial implementation is not optimized for large networks. Performance optimizations (e.g., WebAssembly) are deferred to future work.
+- **API Surface**: Expands the public API, requiring careful documentation and examples.
+
+### Implementation Status
+- **Forward Propagation**: Implemented and tested.
+- **Backpropagation**: Implemented for single-neuron scenarios. Reverse edges for multi-layer networks are **not yet implemented**.
+- **Dynamic Reconfiguration**: Not yet supported (e.g., switching inputs at runtime).
+- **Sparse Connectivity**: Not yet supported (e.g., masking inputs).
+- **Custom Loss Functions**: Hardcoded to Mean Squared Error (MSE).
 
 ### Feedback Mechanism: Design Decisions
 The choice of backpropagation strategy has significant implications:
@@ -89,4 +97,7 @@ See `TODO.md` for implementation tasks.
 
 ## Open Questions
 1. How should dynamic reconfiguration of input signals be implemented (e.g., for active inference)?
-2. Should we introduce a `createLayer()` utility early to simplify multi-neuron networks?
+2. Should Neurons support sparse connectivity (e.g., masking certain inputs)?
+3. How should reverse edges be implemented for backpropagation in multi-layer networks?
+4. Should Neurons support custom loss functions (e.g., cross-entropy, Huber loss)?
+5. Should we introduce a `createLayer()` utility early to simplify multi-neuron networks?

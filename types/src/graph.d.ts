@@ -1,4 +1,5 @@
 import { type Guard } from './errors';
+import type { Neuron } from './nodes/neuron';
 type SourceFields<T extends {}> = {
     value: T;
     sinks: Edge | null;
@@ -30,6 +31,13 @@ type MemoNode<T extends {}> = SourceFields<T> & OptionsFields<T> & SinkFields & 
 type TaskNode<T extends {}> = SourceFields<T> & OptionsFields<T> & SinkFields & AsyncFields & {
     fn: (prev: T, abort: AbortSignal) => Promise<T>;
     pendingNode: StateNode<boolean>;
+};
+type LayerNode<T extends {}> = SourceFields<T> & OptionsFields<T> & SinkFields & {
+    inputSignal: Signal<number[]>;
+    neurons: Neuron[];
+    weights: number[][];
+    gradients: number[][];
+    error: Error | undefined;
 };
 type EffectNode = SinkFields & OwnerFields & {
     fn: EffectCallback;
@@ -134,9 +142,11 @@ declare const TYPE_COLLECTION = "Collection";
 declare const TYPE_STORE = "Store";
 declare const TYPE_SLOT = "Slot";
 declare const TYPE_NEURON = "Neuron";
+declare const TYPE_LAYER = "Layer";
 declare const FLAG_CLEAN = 0;
 declare const FLAG_CHECK: number;
 declare const FLAG_DIRTY: number;
+declare const FLAG_RUNNING: number;
 declare const FLAG_RELINK: number;
 declare let activeSink: SinkNode | null;
 declare let activeOwner: OwnerNode | null;
@@ -286,4 +296,4 @@ declare function createScope(fn: () => MaybeCleanup, options?: ScopeOptions): Cl
  */
 declare function unown<T>(fn: () => T): T;
 declare function makeSubscribe(node: SourceNode, onWatch?: () => Cleanup): () => void;
-export { type Cleanup, type ComputedOptions, type Edge, type EffectCallback, type EffectNode, type MaybeCleanup, type MemoCallback, type MemoNode, type Scope, type ScopeOptions, type Signal, type SignalOptions, type SinkNode, type StateNode, type TaskCallback, type TaskNode, activeOwner, activeSink, batch, batchDepth, createScope, DEFAULT_EQUALITY, DEEP_EQUALITY, isEqual, SKIP_EQUALITY, FLAG_CHECK, FLAG_CLEAN, FLAG_DIRTY, FLAG_RELINK, flush, link, makeSubscribe, propagate, refresh, registerCleanup, runCleanup, runEffect, setState, trimSources, TYPE_COLLECTION, TYPE_LIST, TYPE_MEMO, TYPE_NEURON, TYPE_SENSOR, TYPE_STATE, TYPE_SLOT, TYPE_STORE, TYPE_TASK, unlink, unown, untrack, };
+export { type Cleanup, type ComputedOptions, type Edge, type EffectCallback, type EffectNode, type LayerNode, type MaybeCleanup, type MemoCallback, type MemoNode, type OptionsFields, type Scope, type ScopeOptions, type Signal, type SignalOptions, type SinkFields, type SinkNode, type SourceFields, type StateNode, type TaskCallback, type TaskNode, activeOwner, activeSink, batch, batchDepth, createScope, DEFAULT_EQUALITY, DEEP_EQUALITY, isEqual, SKIP_EQUALITY, FLAG_CHECK, FLAG_CLEAN, FLAG_DIRTY, FLAG_RUNNING, FLAG_RELINK, flush, link, makeSubscribe, propagate, refresh, registerCleanup, runCleanup, runEffect, setState, trimSources, TYPE_COLLECTION, TYPE_LAYER, TYPE_LIST, TYPE_MEMO, TYPE_NEURON, TYPE_SENSOR, TYPE_STATE, TYPE_SLOT, TYPE_STORE, TYPE_TASK, unlink, unown, untrack, };
