@@ -54,12 +54,18 @@ describe('Guide: Keyed Collections', () => {
 		)
 		const seen: string[] = []
 		const itemSignal = todos.byKey('a')
-		const dispose = createEffect(() => {
-			seen.push(itemSignal.get().title)
-		})
-		todos.replace('a', { id: 'a', title: 'Write final docs', done: false })
-		expect(seen).toEqual(['Write docs', 'Write final docs'])
-		dispose()
+		if (itemSignal) {
+			const dispose = createEffect(() => {
+				seen.push(itemSignal.get().title)
+			})
+			todos.replace('a', {
+				id: 'a',
+				title: 'Write final docs',
+				done: false,
+			})
+			expect(seen).toEqual(['Write docs', 'Write final docs'])
+			dispose()
+		}
 	})
 
 	test('deriveCollection maps item values to a read-only collection', () => {

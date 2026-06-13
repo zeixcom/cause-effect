@@ -10,6 +10,7 @@ export { type Collection, type CollectionCallback, type CollectionChanges, type 
 export { createEffect, type MatchHandlers, type MaybePromise, match, type SingleMatchHandlers, } from './src/nodes/effect';
 export { createList, isList, type KeyConfig, type List, type ListOptions, } from './src/nodes/list';
 export { createMemo, isMemo, type Memo } from './src/nodes/memo';
+export { createNeuron, isNeuron, type Neuron } from './src/nodes/neuron';
 export { createSensor, isSensor, type Sensor, type SensorCallback, type SensorOptions, } from './src/nodes/sensor';
 export { createSlot, isSlot, type Slot, type SlotDescriptor, } from './src/nodes/slot';
 export { createState, isState, type State, type UpdateCallback, } from './src/nodes/state';

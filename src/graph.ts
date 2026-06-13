@@ -174,6 +174,7 @@ const TYPE_LIST = 'List'
 const TYPE_COLLECTION = 'Collection'
 const TYPE_STORE = 'Store'
 const TYPE_SLOT = 'Slot'
+const TYPE_NEURON = 'Neuron'
 
 const FLAG_CLEAN = 0
 const FLAG_CHECK = 1 << 0
@@ -730,6 +731,7 @@ function makeSubscribe(node: SourceNode, onWatch?: () => Cleanup): () => void {
 export {
 	type Cleanup,
 	type ComputedOptions,
+	type Edge,
 	type EffectCallback,
 	type EffectNode,
 	type MaybeCleanup,
@@ -769,6 +771,7 @@ export {
 	TYPE_COLLECTION,
 	TYPE_LIST,
 	TYPE_MEMO,
+	TYPE_NEURON,
 	TYPE_SENSOR,
 	TYPE_STATE,
 	TYPE_SLOT,

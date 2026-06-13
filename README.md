@@ -36,6 +36,7 @@ Every signal type participates in the same dependency graph with the same propag
 | **Collection** | Reactive collection (external source or derived, item-level memoization) | `createCollection()` |
 | **Slot** | Stable delegation for integration layers (swappable backing signal) | `createSlot()` |
 | **Effect** | Side-effect sink (terminal) | `createEffect()` |
+| **Neuron** | Lightweight ML experimentation (weighted sum + activation) | `createNeuron()` |
 
 ## Design Principles
 
@@ -358,6 +359,123 @@ target.value = 10 // sets local to 10
 
 `replace()` and `current()` are available on the slot object but are not installed on the property — keep the slot reference for later control. Setting via the property forwards to the delegated signal; throws `ReadonlySignalError` if the current backing signal is read-only.
 
+### Neuron
+
+A reactive signal for lightweight ML experimentation. Computes a weighted sum of its numeric inputs and applies an activation function. Supports forward propagation (`.get()`) and backpropagation (`.train(target)`) for training.
+
+```js
+import { createState, createNeuron } from '@zeix/cause-effect'
+
+// Create input signals
+const input1 = createState(0.5)
+const input2 = createState(0.3)
+
+// Create a Neuron with sigmoid activation
+const neuron = createNeuron([input1, input2], { activation: 'sigmoid' })
+
+// Forward propagation
+console.log(neuron.get()) // Weighted sum + sigmoid activation
+
+// Backpropagation (adjust weights to approach target)
+neuron.train(0.8)
+```
+
+#### API
+
+**`createNeuron(inputs, options)`**
+Creates a Neuron signal.
+- `inputs` — Array of `Signal<number>` (e.g., `State<number>` or `Memo<number>`).
+- `options` — Optional configuration:
+  - `activation` — Activation function (`'sigmoid'`, `'relu'`, `'tanh'`, `'linear'`, or custom function). Default: `'sigmoid'`.
+  - `init` — Initialization strategy (`'random'`, `'zeros'`, `'xavier'`). Default: `'random'`.
+  - `learningRate` — Learning rate for backpropagation. Default: `0.1`.
+  - `equals` — Optional equality function to determine if a new value is different from the old value.
+  - `watched` — Optional callback invoked when the Neuron is first watched.
+
+Returns a `Neuron` signal with:
+- `.get()` — Gets the current value (weighted sum + activation).
+- `.train(target)` — Adjusts weights via backpropagation to approach the target value.
+
+**`isNeuron(value)`**
+Type guard that returns `true` if the value is a Neuron signal.
+
+#### Activation Functions & Initialization
+
+| Activation | Description | Derivative |
+|------------|-------------|------------|
+| `'sigmoid'` | `1 / (1 + exp(-x))` | `output * (1 - output)` |
+| `'relu'` | `max(0, x)` | `output > 0 ? 1 : 0` |
+| `'tanh'` | `tanh(x)` | `1 - output²` |
+| `'linear'` | `x` | `1` |
+
+| Initialization | Description |
+|---------------|-------------|
+| `'random'` | Random values in `[-1, 1]`. |
+| `'zeros'` | All weights and bias set to `0`. |
+| `'xavier'` | Scaled random values for better convergence. |
+
+> ⚠️ **Experimental Status** — The Neuron signal is experimental and may change in future releases. It is intended for lightweight experimentation and prototyping, not production ML workloads.
+
+### Neuron
+
+A **Neuron** signal for lightweight ML experimentation. Computes a weighted sum of its inputs and applies an activation function. Supports forward propagation (`.get()`) and backpropagation (`.train(target)`).
+
+**Experimental**: The `Neuron` signal is experimental and may change in future releases.
+
+```js
+import { createNeuron, isNeuron } from '@zeix/cause-effect'
+
+const input1 = createState(0.5)
+const input2 = createState(0.3)
+const neuron = createNeuron([input1, input2], {
+  activation: 'sigmoid', // sigmoid, relu, tanh, linear, or custom function
+  init: 'random',        // random, zeros, or xavier
+  learningRate: 0.1,    // default: 0.1
+})
+
+// Forward propagation
+console.log(neuron.get()) // Weighted sum + activation
+
+// Backpropagation
+neuron.train(0.8) // Adjust weights via backpropagation
+```
+
+#### Activation Functions & Initialization
+
+| Activation | Description |
+|------------|-------------|
+| `sigmoid`  | Sigmoid function (default) |
+| `relu`     | Rectified Linear Unit |
+| `tanh`     | Hyperbolic Tangent |
+| `linear`   | Linear function |
+| `function` | Custom activation function |
+
+| Initialization | Description |
+|---------------|-------------|
+| `random`      | Random weights and bias (default) |
+| `zeros`       | Zero weights and bias |
+| `xavier`      | Xavier/Glorot initialization |
+
+#### API
+
+**`createNeuron(inputs, options?)`**
+
+Creates a Neuron signal.
+
+- `inputs` - Array of input signals (`Signal<number>`).
+- `options` - Optional configuration:
+  - `activation` - Activation function (`sigmoid`, `relu`, `tanh`, `linear`, or custom function). Default: `sigmoid`.
+  - `init` - Initialization strategy (`random`, `zeros`, `xavier`). Default: `random`.
+  - `learningRate` - Learning rate for backpropagation. Default: `0.1`.
+  - `equals` - Optional equality function. Default: reference equality (`===`).
+  - `watched` - Optional callback invoked when the Neuron is first watched.
+
+**`isNeuron(value)`**
+
+Checks if a value is a Neuron signal.
+
+Returns `true` if the value is a Neuron, `false` otherwise.
+
 ### Effect
 
 A side-effect sink that runs whenever the signals it reads change. Effects are terminal — they consume values but produce none. The returned function disposes the effect:
@@ -487,7 +605,8 @@ const data    = createComputed(async (_, signal) =>
 |---|---|
 | `isSignal(value)` | Any signal (all 9 types) |
 | `isMutableSignal(value)` | `State`, `Store`, `List` — signals with `.set()` and `.update()` |
-| `isComputed(value)` | `Memo`, `Task` — derived signals |
+| `isComputed(value)` | `Memo`, `Task`, `Neuron` — derived signals |
+| `isNeuron(value)` | `Neuron` — lightweight ML experimentation |
 
 The `MutableSignal<T>` type is the corresponding TypeScript type for `isMutableSignal` — use it as a parameter type in generic code that accepts any writable signal.
 
@@ -506,6 +625,10 @@ Does the data come from *outside* the reactive system?
 └─ No, managed internally? What kind of data is it?
     │
     ├─ *Primitive* (number/string/boolean)
+    │   │
+    │   ├─ Do you need *lightweight ML experimentation* with forward/backpropagation?
+    │   │     └─ Yes → `createNeuron([input1, input2, ...], { activation: 'sigmoid' })`
+    │   │        (weighted sum + activation, `.train(target)` for backpropagation)
     │   │
     │   ├─ Do you want to mutate it directly?
     │   │     └─ Yes → `createState()`
@@ -542,6 +665,10 @@ Does the data come from *outside* the reactive system?
 Do you need a *stable property position* that can swap its backing signal?
 └─ Yes → `createSlot(existingSignal)`
    (integration layers, custom elements, property descriptors)
+
+Do you need *lightweight ML experimentation* with forward/backpropagation?
+└─ Yes → `createNeuron([input1, input2, ...], { activation: 'sigmoid' })`
+   (weighted sum + activation, `.train(target)` for backpropagation)
 ```
 
 ## Advanced Usage

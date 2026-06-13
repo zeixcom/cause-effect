@@ -10,8 +10,8 @@ describe('Bundle size', () => {
 		// biome-ignore lint/style/noNonNullAssertion: test
 		const bytes = await result.outputs[0]!.arrayBuffer()
 		const size = bytes.byteLength
-		console.log(`  bundleMinified: ${size}B (limit: 21000B)`)
-		expect(size).toBeLessThanOrEqual(21000)
+		console.log(`  bundleMinified: ${size}B (limit: 22000B)`)
+		expect(size).toBeLessThanOrEqual(22000)
 	})
 
 	test('gzipped bundle should not regress', async () => {
@@ -22,7 +22,7 @@ describe('Bundle size', () => {
 		// biome-ignore lint/style/noNonNullAssertion: test
 		const bytes = await result.outputs[0]!.arrayBuffer()
 		const gzipped = gzipSync(new Uint8Array(bytes)).byteLength
-		console.log(`  bundleGzipped: ${gzipped}B (limit: 7000B)`)
-		expect(gzipped).toBeLessThanOrEqual(7000)
+		console.log(`  bundleGzipped: ${gzipped}B (limit: 7500B)`)
+		expect(gzipped).toBeLessThanOrEqual(7500)
 	})
 })

@@ -7,6 +7,7 @@ import {
 	TYPE_COLLECTION,
 	TYPE_LIST,
 	TYPE_MEMO,
+	TYPE_NEURON,
 	TYPE_SENSOR,
 	TYPE_SLOT,
 	TYPE_STATE,
@@ -45,6 +46,7 @@ const SIGNAL_TYPES = new Set([
 	TYPE_LIST,
 	TYPE_COLLECTION,
 	TYPE_STORE,
+	TYPE_NEURON,
 ])
 
 /* === Factory Functions === */

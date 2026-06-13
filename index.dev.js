@@ -104,6 +104,7 @@ var TYPE_LIST = "List";
 var TYPE_COLLECTION = "Collection";
 var TYPE_STORE = "Store";
 var TYPE_SLOT = "Slot";
+var TYPE_NEURON = "Neuron";
 var FLAG_CLEAN = 0;
 var FLAG_CHECK = 1 << 0;
 var FLAG_DIRTY = 1 << 1;
@@ -1323,6 +1324,148 @@ function match(signalOrSignals, handlers) {
     });
   }
 }
+// src/nodes/neuron.ts
+var sigmoid = (x) => 1 / (1 + Math.exp(-x));
+var relu = (x) => Math.max(0, x);
+var tanh = (x) => Math.tanh(x);
+var linear = (x) => x;
+function getActivationFn(activation = "sigmoid") {
+  if (typeof activation === "function")
+    return activation;
+  switch (activation) {
+    case "sigmoid":
+      return sigmoid;
+    case "relu":
+      return relu;
+    case "tanh":
+      return tanh;
+    case "linear":
+      return linear;
+    default:
+      return sigmoid;
+  }
+}
+function initializeWeights(inputCount, strategy = "random") {
+  switch (strategy) {
+    case "zeros":
+      return { weights: Array(inputCount).fill(0), bias: 0 };
+    case "xavier": {
+      const scale = Math.sqrt(2 / (inputCount + 1));
+      return {
+        weights: Array.from({ length: inputCount }, () => (Math.random() * 2 - 1) * scale),
+        bias: (Math.random() * 2 - 1) * scale
+      };
+    }
+    default:
+      return {
+        weights: Array.from({ length: inputCount }, () => Math.random() * 2 - 1),
+        bias: Math.random() * 2 - 1
+      };
+  }
+}
+function forward(node) {
+  let sum = node.bias;
+  for (let i = 0;i < node.inputs.length; i++) {
+    sum += node.inputs[i].get() * node.weights[i];
+  }
+  return node.activation(sum);
+}
+function getActivationDerivative(activation, output) {
+  if (activation === sigmoid) {
+    return output * (1 - output);
+  } else if (activation === relu) {
+    return output > 0 ? 1 : 0;
+  } else if (activation === tanh) {
+    return 1 - output * output;
+  } else {
+    return 1;
+  }
+}
+function backpropagate(node, target) {
+  node.target = target;
+  const output = node.value;
+  const error = target - output;
+  const derivative = getActivationDerivative(node.activation, output);
+  const delta = error * derivative;
+  for (let i = 0;i < node.inputs.length; i++) {
+    node.weights[i] += node.learningRate * delta * node.inputs[i].get();
+  }
+  node.bias += node.learningRate * delta;
+  for (const edge of node.reverseEdges) {
+    const source = edge.source;
+    if (source && "target" in source) {}
+  }
+}
+function createNeuron(inputs, options = {}) {
+  if (!Array.isArray(inputs) || inputs.length === 0) {
+    throw new Error("[Neuron] Inputs must be a non-empty array of Signal<number>");
+  }
+  for (const input of inputs) {
+    if (!isSignalOfType(input, TYPE_MEMO) && !isSignalOfType(input, TYPE_STATE)) {
+      throw new Error("[Neuron] Inputs must be Signal<number> (Memo or State)");
+    }
+    const value = input.get();
+    if (typeof value !== "number" || Number.isNaN(value)) {
+      throw new InvalidSignalValueError("Neuron", value);
+    }
+  }
+  if (activeSink !== null) {
+    for (const input of inputs) {
+      if (input === activeSink) {
+        throw new CircularDependencyError("Neuron");
+      }
+    }
+  }
+  const { weights, bias } = initializeWeights(inputs.length, options.init);
+  const activation = getActivationFn(options.activation);
+  const learningRate = options.learningRate ?? 0.1;
+  const node = {
+    fn: () => forward(node),
+    value: 0,
+    flags: FLAG_DIRTY,
+    sources: null,
+    sourcesTail: null,
+    sinks: null,
+    sinksTail: null,
+    equals: options.equals ?? ((a, b) => a === b),
+    error: undefined,
+    stop: undefined,
+    weights,
+    bias,
+    activation,
+    learningRate,
+    inputs,
+    reverseEdges: []
+  };
+  const watched = options.watched;
+  const subscribe = makeSubscribe(node, watched ? () => watched(() => {
+    propagate(node);
+    if (batchDepth === 0)
+      flush();
+  }) : undefined);
+  return {
+    [Symbol.toStringTag]: "Neuron",
+    get() {
+      subscribe();
+      refresh(node);
+      if (node.error)
+        throw node.error;
+      validateReadValue("Neuron", node.value);
+      return node.value;
+    },
+    train(target) {
+      validateSignalValue("Neuron", target);
+      backpropagate(node, target);
+      node.flags = FLAG_DIRTY;
+      propagate(node);
+      if (batchDepth === 0)
+        flush();
+    }
+  };
+}
+function isNeuron(value) {
+  return isSignalOfType(value, "Neuron");
+}
 // src/nodes/sensor.ts
 function createSensor(watched, options) {
   validateCallback(TYPE_SENSOR, watched, isSyncFunction);
@@ -1565,7 +1708,8 @@ var SIGNAL_TYPES = new Set([
   TYPE_SLOT,
   TYPE_LIST,
   TYPE_COLLECTION,
-  TYPE_STORE
+  TYPE_STORE,
+  TYPE_NEURON
 ]);
 function createComputed(callback, options) {
   return isAsyncFunction(callback) ? createTask(callback, options) : createMemo(callback, options);
@@ -1681,6 +1825,7 @@ export {
   isSensor,
   isRecord,
   isObjectOfType,
+  isNeuron,
   isMutableSignal,
   isMemo,
   isList,
@@ -1696,6 +1841,7 @@ export {
   createSignal,
   createSensor,
   createScope,
+  createNeuron,
   createMutableSignal,
   createMemo,
   createList,
