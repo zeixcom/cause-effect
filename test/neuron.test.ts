@@ -97,10 +97,14 @@ describe('Neuron', () => {
 		expect(updatedOutput).not.toBe(initialOutput)
 	})
 
-	test('Neuron > should train via backpropagation', () => {
+	test('Neuron > Neuron > should train via backpropagation', () => {
 		const input1 = createState(0.5)
 		const input2 = createState(0.3)
-		const neuron = createNeuron([input1, input2], { activation: 'sigmoid' })
+		const neuron = createNeuron([input1, input2], {
+			activation: 'sigmoid',
+			init: 'zeros', // Start with zeros to observe changes
+			learningRate: 0.5, // Higher learning rate for faster convergence
+		})
 
 		const initialOutput = neuron.get()
 		neuron.train(0.8)
@@ -171,5 +175,55 @@ describe('Neuron', () => {
 
 		// Verify that the output changed after training
 		expect(updatedWeights).not.toBe(initialWeights)
+	})
+
+	test('Neuron > Multi-Layer Network > should train XOR network via backpropagation', () => {
+		// XOR network: 2 inputs -> hidden Neurons (2) -> output Neuron
+		const inputA = createState(0)
+		const inputB = createState(0)
+
+		// Hidden Neurons (2)
+		const hiddenNeuron1 = createNeuron([inputA, inputB], {
+			activation: 'sigmoid',
+			init: 'xavier',
+			learningRate: 0.1,
+		})
+		const hiddenNeuron2 = createNeuron([inputA, inputB], {
+			activation: 'sigmoid',
+			init: 'xavier',
+			learningRate: 0.1,
+		})
+
+		// Output Neuron (XOR)
+		const outputNeuron = createNeuron([hiddenNeuron1, hiddenNeuron2], {
+			activation: 'sigmoid',
+			init: 'xavier',
+			learningRate: 0.1,
+		})
+
+		// Train the XOR network
+		for (let i = 0; i < 100000; i++) {
+			inputA.set(Math.random() > 0.5 ? 1 : 0)
+			inputB.set(Math.random() > 0.5 ? 1 : 0)
+			const target = inputA.get() !== inputB.get() ? 1 : 0
+			outputNeuron.train(target)
+		}
+
+		// Test XOR logic
+		inputA.set(0)
+		inputB.set(0)
+		expect(outputNeuron.get()).toBeLessThan(0.1) // ~0 (XOR)
+
+		inputA.set(0)
+		inputB.set(1)
+		expect(outputNeuron.get()).toBeGreaterThan(0.9) // ~1 (XOR)
+
+		inputA.set(1)
+		inputB.set(0)
+		expect(outputNeuron.get()).toBeGreaterThan(0.9) // ~1 (XOR)
+
+		inputA.set(1)
+		inputB.set(1)
+		expect(outputNeuron.get()).toBeLessThan(0.1) // ~0 (XOR)
 	})
 })

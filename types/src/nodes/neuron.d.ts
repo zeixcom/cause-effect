@@ -61,16 +61,31 @@ type Neuron = {
      */
     get(): number;
     /**
+     * Gets the current weights of the Neuron.
+     * @returns The weights array.
+     */
+    getWeights(): number[];
+    /**
+     * Sets the weights of the Neuron.
+     * @param weights - The new weights array.
+     */
+    setWeights(weights: number[]): void;
+    /**
      * Trains the Neuron by adjusting weights via backpropagation.
      * @param target - The target value for training.
      */
     train(target: number): void;
 };
 /**
+ * An input to a Neuron: a scalar signal, a vector signal (indexed by the
+ * Neuron's position within a Layer), or another Neuron for chaining.
+ */
+type NeuronInput = Signal<number> | Signal<number[]> | Neuron;
+/**
  * Creates a Neuron signal for lightweight ML experimentation.
  * Computes a weighted sum of its inputs and applies an activation function.
  *
- * @param inputs - Array of input signals (must be `Signal<number>`).
+ * @param inputs - Array of input signals (must be `Signal<number>` or `Signal<number[]>`).
  * @param options - Optional configuration for the Neuron.
  * @param options.activation - Activation function (`sigmoid`, `relu`, `tanh`, `linear`, or custom function).
  * @param options.init - Initialization strategy (`random`, `zeros`, `xavier`).
@@ -89,7 +104,7 @@ type Neuron = {
  * neuron.train(0.8) // Adjust weights via backpropagation
  * ```
  */
-declare function createNeuron(inputs: Signal<number>[], options?: NeuronOptions): Neuron;
+declare function createNeuron(inputs: NeuronInput[], options?: NeuronOptions): Neuron;
 /**
  * Checks if a value is a Neuron signal.
  *

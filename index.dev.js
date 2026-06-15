@@ -105,6 +105,7 @@ var TYPE_COLLECTION = "Collection";
 var TYPE_STORE = "Store";
 var TYPE_SLOT = "Slot";
 var TYPE_NEURON = "Neuron";
+var TYPE_LAYER = "Layer";
 var FLAG_CLEAN = 0;
 var FLAG_CHECK = 1 << 0;
 var FLAG_DIRTY = 1 << 1;
@@ -1363,10 +1364,14 @@ function initializeWeights(inputCount, strategy = "random") {
       };
   }
 }
+function inputValueAt(input, index) {
+  const value = input.get();
+  return Array.isArray(value) ? value[index] : value;
+}
 function forward(node) {
   let sum = node.bias;
   for (let i = 0;i < node.inputs.length; i++) {
-    sum += node.inputs[i].get() * node.weights[i];
+    sum += inputValueAt(node.inputs[i], i) * node.weights[i];
   }
   return node.activation(sum);
 }
@@ -1383,17 +1388,21 @@ function getActivationDerivative(activation, output) {
 }
 function backpropagate(node, target) {
   node.target = target;
-  const output = node.value;
+  const output = forward(node);
+  node.value = output;
   const error = target - output;
   const derivative = getActivationDerivative(node.activation, output);
   const delta = error * derivative;
   for (let i = 0;i < node.inputs.length; i++) {
-    node.weights[i] += node.learningRate * delta * node.inputs[i].get();
+    node.weights[i] += node.learningRate * delta * inputValueAt(node.inputs[i], i);
   }
   node.bias += node.learningRate * delta;
-  for (const edge of node.reverseEdges) {
-    const source = edge.source;
-    if (source && "target" in source) {}
+  for (let i = 0;i < node.inputs.length; i++) {
+    const input = node.inputs[i];
+    if (isNeuron(input)) {
+      const inputDelta = delta * node.weights[i];
+      input.train(input.get() + inputDelta);
+    }
   }
 }
 function createNeuron(inputs, options = {}) {
@@ -1401,12 +1410,13 @@ function createNeuron(inputs, options = {}) {
     throw new Error("[Neuron] Inputs must be a non-empty array of Signal<number>");
   }
   for (const input of inputs) {
-    if (!isSignalOfType(input, TYPE_MEMO) && !isSignalOfType(input, TYPE_STATE)) {
-      throw new Error("[Neuron] Inputs must be Signal<number> (Memo or State)");
-    }
     const value = input.get();
-    if (typeof value !== "number" || Number.isNaN(value)) {
-      throw new InvalidSignalValueError("Neuron", value);
+    if (Array.isArray(value)) {} else if (!isSignalOfType(input, TYPE_MEMO) && !isSignalOfType(input, TYPE_STATE) && !isNeuron(input)) {
+      throw new Error("[Neuron] Inputs must be Signal<number>, Signal<number[]>, or Neuron");
+    } else {
+      if (typeof value !== "number" || Number.isNaN(value)) {
+        throw new InvalidSignalValueError("Neuron", value);
+      }
     }
   }
   if (activeSink !== null) {
@@ -1453,6 +1463,12 @@ function createNeuron(inputs, options = {}) {
       validateReadValue("Neuron", node.value);
       return node.value;
     },
+    getWeights() {
+      return node.weights;
+    },
+    setWeights(weights2) {
+      node.weights = weights2;
+    },
     train(target) {
       validateSignalValue("Neuron", target);
       backpropagate(node, target);
@@ -1465,6 +1481,131 @@ function createNeuron(inputs, options = {}) {
 }
 function isNeuron(value) {
   return isSignalOfType(value, "Neuron");
+}
+
+// src/nodes/layer.ts
+function recomputeLayer(node) {
+  node.flags = FLAG_RUNNING;
+  let changed = false;
+  try {
+    const inputs = node.inputSignal.get();
+    if (!Array.isArray(inputs) || !inputs.every((i) => typeof i === "number")) {
+      throw new TypeError(`[${TYPE_LAYER}] Input must be an array of numbers`);
+    }
+    const outputs = [];
+    for (let i = 0;i < node.neurons.length; i++) {
+      outputs.push(node.neurons[i].get());
+    }
+    const next = outputs;
+    validateSignalValue(TYPE_LAYER, next);
+    if (node.error || !node.equals(next, node.value)) {
+      node.value = next;
+      node.error = undefined;
+      changed = true;
+    }
+  } catch (err) {
+    changed = true;
+    node.error = err instanceof Error ? err : new Error(String(err));
+  } finally {
+    trimSources(node);
+  }
+  if (changed) {
+    for (let e = node.sinks;e; e = e.nextSink) {
+      if (e.sink.flags & FLAG_CHECK)
+        e.sink.flags |= FLAG_DIRTY;
+    }
+  }
+  node.flags = FLAG_CLEAN;
+}
+function createLayer(inputSignal, options) {
+  if (!inputSignal || typeof inputSignal.get !== "function") {
+    throw new TypeError(`[${TYPE_LAYER}] Input must be a Signal<number[]>`);
+  }
+  const {
+    size,
+    activation = "sigmoid",
+    initialization = "random",
+    equals
+  } = options;
+  if (typeof size !== "number" || size <= 0) {
+    throw new TypeError(`[${TYPE_LAYER}] Size must be a positive number`);
+  }
+  const neurons = [];
+  for (let i = 0;i < size; i++) {
+    neurons.push(createNeuron([inputSignal], {
+      activation,
+      init: initialization
+    }));
+  }
+  const weights = [];
+  const gradients = [];
+  for (let i = 0;i < size; i++) {
+    weights.push([Math.random() * 2 - 1]);
+    gradients.push([0]);
+  }
+  const node = {
+    fn: undefined,
+    value: [],
+    flags: FLAG_CHECK,
+    sinks: null,
+    sinksTail: null,
+    equals: equals ?? Object.is,
+    inputSignal,
+    neurons,
+    weights,
+    gradients,
+    error: undefined,
+    sources: null,
+    sourcesTail: null
+  };
+  Object.defineProperty(node, Symbol.toStringTag, { value: TYPE_LAYER });
+  return {
+    get() {
+      if (activeSink)
+        link(node, activeSink);
+      if (node.error)
+        throw node.error;
+      if (node.flags & FLAG_CHECK) {
+        if (node.flags & FLAG_DIRTY)
+          recomputeLayer(node);
+        node.flags = FLAG_CLEAN;
+      }
+      return node.value;
+    },
+    setWeights(weights2) {
+      if (!Array.isArray(weights2) || !weights2.every((w) => Array.isArray(w) && w.every((n) => typeof n === "number"))) {
+        throw new TypeError(`[${TYPE_LAYER}] Weights must be a 2D array of numbers`);
+      }
+      if (weights2.length !== node.neurons.length) {
+        throw new TypeError(`[${TYPE_LAYER}] Weights length must match Layer size`);
+      }
+      node.weights = weights2;
+      node.gradients = weights2.map((w) => new Array(w.length).fill(0));
+      for (let i = 0;i < node.neurons.length; i++) {
+        node.neurons[i].setWeights(weights2[i]);
+      }
+      propagate(node);
+    },
+    backpropagate(gradients2) {
+      if (!Array.isArray(gradients2) || !gradients2.every((g) => typeof g === "number")) {
+        throw new TypeError(`[${TYPE_LAYER}] Gradients must be an array of numbers`);
+      }
+      if (gradients2.length !== node.neurons.length) {
+        throw new TypeError(`[${TYPE_LAYER}] Gradients length must match Layer size`);
+      }
+      for (let i = 0;i < gradients2.length; i++) {
+        node.gradients[i] = node.gradients[i].map((g, j) => g + gradients2[i] * node.weights[i][j]);
+      }
+    },
+    train(target) {
+      const outputs = node.value;
+      const gradients2 = outputs.map((output) => output - target);
+      this.backpropagate(gradients2);
+    }
+  };
+}
+function isLayer(value) {
+  return isSignalOfType(value, TYPE_LAYER);
 }
 // src/nodes/sensor.ts
 function createSensor(watched, options) {
@@ -1700,17 +1841,6 @@ function isStore(value) {
 }
 
 // src/signal.ts
-var SIGNAL_TYPES = new Set([
-  TYPE_STATE,
-  TYPE_MEMO,
-  TYPE_TASK,
-  TYPE_SENSOR,
-  TYPE_SLOT,
-  TYPE_LIST,
-  TYPE_COLLECTION,
-  TYPE_STORE,
-  TYPE_NEURON
-]);
 function createComputed(callback, options) {
   return isAsyncFunction(callback) ? createTask(callback, options) : createMemo(callback, options);
 }
@@ -1749,6 +1879,18 @@ function isSignal(value) {
 function isMutableSignal(value) {
   return isState(value) || isStore(value) || isList(value);
 }
+var SIGNAL_TYPES = new Set([
+  TYPE_STATE,
+  TYPE_MEMO,
+  TYPE_TASK,
+  TYPE_SENSOR,
+  TYPE_SLOT,
+  TYPE_LIST,
+  TYPE_COLLECTION,
+  TYPE_STORE,
+  TYPE_NEURON,
+  TYPE_LAYER
+]);
 
 // src/nodes/slot.ts
 function isSignalOrDescriptor(value) {
@@ -1829,6 +1971,7 @@ export {
   isMutableSignal,
   isMemo,
   isList,
+  isLayer,
   isFunction,
   isEqual,
   isComputed,
@@ -1845,6 +1988,7 @@ export {
   createMutableSignal,
   createMemo,
   createList,
+  createLayer,
   createEffect,
   createComputed,
   createCollection,

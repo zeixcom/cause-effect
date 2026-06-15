@@ -32,12 +32,12 @@ interface Layer<T extends {}> {
      */
     setWeights(weights: number[][]): void;
     /**
-     * Perform backpropagation (placeholder).
+     * Perform backpropagation.
      * @param gradients - Array of gradients (one per Neuron).
      */
     backpropagate(gradients: number[]): void;
     /**
-     * Train the Layer (placeholder).
+     * Train the Layer.
      * @param target - Target value for training.
      */
     train(target: number): void;

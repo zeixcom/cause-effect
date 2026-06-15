@@ -95,11 +95,29 @@ type Neuron = {
 	get(): number
 
 	/**
+	 * Gets the current weights of the Neuron.
+	 * @returns The weights array.
+	 */
+	getWeights(): number[]
+
+	/**
+	 * Sets the weights of the Neuron.
+	 * @param weights - The new weights array.
+	 */
+	setWeights(weights: number[]): void
+
+	/**
 	 * Trains the Neuron by adjusting weights via backpropagation.
 	 * @param target - The target value for training.
 	 */
 	train(target: number): void
 }
+
+/**
+ * An input to a Neuron: a scalar signal, a vector signal (indexed by the
+ * Neuron's position within a Layer), or another Neuron for chaining.
+ */
+type NeuronInput = Signal<number> | Signal<number[]> | Neuron
 
 /**
  * Internal node type for Neuron signals.
@@ -109,7 +127,7 @@ type NeuronNode = MemoNode<number> & {
 	bias: number
 	activation: ActivationFunction
 	learningRate: number
-	inputs: Signal<number>[]
+	inputs: NeuronInput[]
 	reverseEdges: Edge[] // Reverse edges for backpropagation
 	target?: number // Target value for training
 }
@@ -183,12 +201,22 @@ function initializeWeights(
 /* === Forward Propagation === */
 
 /**
+ * Reads the scalar value of an input at the given index.
+ * `Signal<number[]>` inputs are indexed by the Neuron's position (used by `createLayer`),
+ * while `Signal<number>` and `Neuron` inputs are read directly.
+ */
+function inputValueAt(input: NeuronInput, index: number): number {
+	const value = input.get()
+	return Array.isArray(value) ? value[index]! : value
+}
+
+/**
  * Computes the weighted sum of inputs and applies the activation function.
  */
 function forward(node: NeuronNode): number {
 	let sum = node.bias
 	for (let i = 0; i < node.inputs.length; i++) {
-		sum += node.inputs[i]!.get() * node.weights[i]!
+		sum += inputValueAt(node.inputs[i]!, i) * node.weights[i]!
 	}
 	return node.activation(sum)
 }
@@ -219,23 +247,28 @@ function getActivationDerivative(
  */
 function backpropagate(node: NeuronNode, target: number): void {
 	node.target = target
-	const output = node.value
+	// Recompute the Neuron's value before computing the error
+	const output = forward(node)
+	node.value = output
 	const error = target - output
 	const derivative = getActivationDerivative(node.activation, output)
 	const delta = error * derivative
 
 	// Update weights and bias
 	for (let i = 0; i < node.inputs.length; i++) {
-		node.weights[i]! += node.learningRate * delta * node.inputs[i]!.get()
+		node.weights[i]! +=
+			node.learningRate * delta * inputValueAt(node.inputs[i]!, i)
 	}
 	node.bias += node.learningRate * delta
 
-	// Propagate error backward via reverse edges
-	for (const edge of node.reverseEdges) {
-		const source = edge.source as NeuronNode
-		if (source && 'target' in source) {
-			// Reverse edges are not yet implemented for multi-layer networks.
-			// This will be addressed in a future update.
+	// Propagate error backward to Neuron inputs using the chain rule.
+	// `input.train()` applies the input's own activation derivative, so the
+	// delta passed here must not be pre-multiplied by it again.
+	for (let i = 0; i < node.inputs.length; i++) {
+		const input = node.inputs[i]!
+		if (isNeuron(input)) {
+			const inputDelta = delta * node.weights[i]!
+			input.train(input.get() + inputDelta)
 		}
 	}
 }
@@ -246,7 +279,7 @@ function backpropagate(node: NeuronNode, target: number): void {
  * Creates a Neuron signal for lightweight ML experimentation.
  * Computes a weighted sum of its inputs and applies an activation function.
  *
- * @param inputs - Array of input signals (must be `Signal<number>`).
+ * @param inputs - Array of input signals (must be `Signal<number>` or `Signal<number[]>`).
  * @param options - Optional configuration for the Neuron.
  * @param options.activation - Activation function (`sigmoid`, `relu`, `tanh`, `linear`, or custom function).
  * @param options.init - Initialization strategy (`random`, `zeros`, `xavier`).
@@ -266,7 +299,7 @@ function backpropagate(node: NeuronNode, target: number): void {
  * ```
  */
 function createNeuron(
-	inputs: Signal<number>[],
+	inputs: NeuronInput[],
 	options: NeuronOptions = {},
 ): Neuron {
 	// Validate inputs
@@ -276,18 +309,22 @@ function createNeuron(
 		)
 	}
 	for (const input of inputs) {
-		if (
+		const value = input.get()
+		if (Array.isArray(value)) {
+			// Skip validation for Signal<number[]>
+		} else if (
 			!isSignalOfType(input, TYPE_MEMO) &&
-			!isSignalOfType(input, TYPE_STATE)
+			!isSignalOfType(input, TYPE_STATE) &&
+			!isNeuron(input)
 		) {
 			throw new Error(
-				'[Neuron] Inputs must be Signal<number> (Memo or State)',
+				'[Neuron] Inputs must be Signal<number>, Signal<number[]>, or Neuron',
 			)
-		}
-		// Validate numeric value
-		const value = input.get()
-		if (typeof value !== 'number' || Number.isNaN(value)) {
-			throw new InvalidSignalValueError('Neuron', value)
+		} else {
+			// Validate numeric value for Signal<number>
+			if (typeof value !== 'number' || Number.isNaN(value)) {
+				throw new InvalidSignalValueError('Neuron', value)
+			}
 		}
 	}
 
@@ -347,6 +384,12 @@ function createNeuron(
 			if (node.error) throw node.error
 			validateReadValue('Neuron', node.value)
 			return node.value
+		},
+		getWeights() {
+			return node.weights
+		},
+		setWeights(weights: number[]) {
+			node.weights = weights
 		},
 		train(target: number) {
 			validateSignalValue('Neuron', target)

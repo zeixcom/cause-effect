@@ -11,6 +11,7 @@ import {
 	type Signal,
 	type SignalOptions,
 	type SinkFields,
+	type SinkNode,
 	type SourceFields,
 	TYPE_LAYER,
 	trimSources,
@@ -70,13 +71,13 @@ interface Layer<T extends {}> {
 	setWeights(weights: number[][]): void
 
 	/**
-	 * Perform backpropagation (placeholder).
+	 * Perform backpropagation.
 	 * @param gradients - Array of gradients (one per Neuron).
 	 */
 	backpropagate(gradients: number[]): void
 
 	/**
-	 * Train the Layer (placeholder).
+	 * Train the Layer.
 	 * @param target - Target value for training.
 	 */
 	train(target: number): void
@@ -117,7 +118,7 @@ function recomputeLayer(node: LayerNode<number[]>): void {
 		changed = true
 		node.error = err instanceof Error ? err : new Error(String(err))
 	} finally {
-		trimSources(node)
+		trimSources(node as unknown as SinkNode)
 	}
 
 	if (changed) {
@@ -156,7 +157,7 @@ function createLayer(
 		neurons.push(
 			createNeuron([inputSignal], {
 				activation,
-				initialization,
+				init: initialization,
 			}),
 		)
 	}
@@ -165,15 +166,17 @@ function createLayer(
 	const weights: number[][] = []
 	const gradients: number[][] = []
 	for (let i = 0; i < size; i++) {
-		const neuronWeights = neurons[i]!.getWeights()
-		weights.push([...neuronWeights])
-		gradients.push(new Array(neuronWeights.length).fill(0))
+		// Each Neuron has 1 input (scalar)
+		weights.push([Math.random() * 2 - 1])
+		gradients.push([0])
 	}
 
 	const node: LayerNode<number[]> = {
+		fn: undefined,
 		value: [],
 		flags: FLAG_CHECK,
 		sinks: null,
+		sinksTail: null,
 		equals: equals ?? Object.is,
 		inputSignal,
 		neurons,
@@ -218,9 +221,9 @@ function createLayer(
 			node.gradients = weights.map(w => new Array(w.length).fill(0))
 			// Update weights for all Neurons
 			for (let i = 0; i < node.neurons.length; i++) {
-				node.neurons[i].setWeights(weights[i])
+				node.neurons[i]!.setWeights(weights[i]!)
 			}
-			propagate(node)
+			propagate(node as unknown as SinkNode)
 		},
 
 		backpropagate(gradients: number[]) {
@@ -237,7 +240,10 @@ function createLayer(
 					`[${TYPE_LAYER}] Gradients length must match Layer size`,
 				)
 			}
-			// Placeholder: Update gradients for all Neurons
+			// Update gradients for all Neurons
+			// Reverse edges for propagating gradients to upstream Layers are not
+			// yet implemented (see ADR 0015) — only this Layer's own gradients
+			// are accumulated for now.
 			for (let i = 0; i < gradients.length; i++) {
 				node.gradients[i] = node.gradients[i]!.map(
 					(g, j) => g + gradients[i]! * node.weights[i]![j]!,
@@ -246,7 +252,7 @@ function createLayer(
 		},
 
 		train(target: number) {
-			// Placeholder: Compute gradients and update weights
+			// Compute gradients and update weights
 			const outputs = node.value
 			const gradients = outputs.map(output => output - target)
 			this.backpropagate(gradients)
