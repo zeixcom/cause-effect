@@ -34,19 +34,6 @@ type MutableSignal<T extends {}> = {
 	update(callback: (value: T) => T): void
 }
 
-/* === Constants === */
-
-const SIGNAL_TYPES = new Set([
-	TYPE_STATE,
-	TYPE_MEMO,
-	TYPE_TASK,
-	TYPE_SENSOR,
-	TYPE_SLOT,
-	TYPE_LIST,
-	TYPE_COLLECTION,
-	TYPE_STORE,
-])
-
 /* === Factory Functions === */
 
 /**
@@ -144,7 +131,6 @@ function isSignal<T extends {}>(value: unknown): value is Signal<T> {
 		)
 	)
 }
-
 /**
  * Check whether a value is a State, Store, or List
  *
@@ -155,6 +141,19 @@ function isSignal<T extends {}>(value: unknown): value is Signal<T> {
 function isMutableSignal(value: unknown): value is MutableSignal<unknown & {}> {
 	return isState(value) || isStore(value) || isList(value)
 }
+
+/* === Constants === */
+
+const SIGNAL_TYPES = new Set([
+	TYPE_STATE,
+	TYPE_MEMO,
+	TYPE_TASK,
+	TYPE_SENSOR,
+	TYPE_SLOT,
+	TYPE_LIST,
+	TYPE_COLLECTION,
+	TYPE_STORE,
+])
 
 export {
 	type MutableSignal,

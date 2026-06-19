@@ -29,18 +29,15 @@ the relevant source, then record findings before moving to the next.
 - Each signal type subsection describes the correct internal composition and lifecycle
 - No subsection references a removed node type, flag, or function
 
-### CLAUDE.md
-- Internal Node Shapes block matches `src/graph.ts`
-- `activeOwner` / `activeSink` semantics description is accurate
-- Each non-obvious behavior entry is still accurate for the current implementation
-- Mental model analogy covers all 9 signal types
-
-### .github/copilot-instructions.md
-- Signal Types list covers all 9 signal types with accurate one-line descriptions
-- Key Files Structure lists all current `src/` files
-- Code patterns in "Common Code Patterns" compile against current `index.ts`
+### AGENTS.md
+- File-structure map lists all current `src/` and `src/nodes/` files
+- Code patterns and key patterns compile against current `index.ts`
   (check factory signatures, option names, parameter order)
-- API Design Principles reflect current conventions
+- Code style and conventions reflect current practices
+
+### .agents/skills/shared/references/non-obvious-behaviors.md
+- Each non-obvious behavior entry is still accurate for the current implementation
+- Coverage matches current signal types (no entry references removed behavior)
 
 ### README.md
 - Every factory function exported from `index.ts` has a documented `### SignalType` section

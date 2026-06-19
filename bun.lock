@@ -10,7 +10,17 @@
         "@zeix/cause-effect-stable": "npm:@zeix/cause-effect",
         "mitata": "^1.0.34",
         "random": "^5.4.1",
-        "typescript": "^6.0.2",
+        "typescript": "^6.0.3",
+      },
+      "peerDependencies": {
+        "typescript": ">=5.8.0",
+      },
+    },
+    "packages/correlation-prediction": {
+      "name": "@zeix/correlation-prediction",
+      "version": "0.1.0",
+      "dependencies": {
+        "@zeix/cause-effect": "^1.3.4-beta.8",
       },
       "peerDependencies": {
         "typescript": ">=5.8.0",
@@ -40,7 +50,11 @@
 
     "@types/node": ["@types/node@22.10.10", "", { "dependencies": { "undici-types": "~6.20.0" } }, "sha512-X47y/mPNzxviAGY5TcYPtYL8JsY3kAq2n8fMmKoRCxq/c4v4pyGNCzM2R6+M5/umG4ZfHuT+sgqDYqWc9rJ6ww=="],
 
+    "@zeix/cause-effect": ["@zeix/cause-effect@1.3.4-beta.8", "", { "peerDependencies": { "typescript": ">=5.8.0" } }, "sha512-wzuwN1v0hKKmyR/vzZ/Xzc5qC+Z0CXojaHtheCcFTyVwOWSzgtRqju8lgC7XJdT12aFaX3OTv03So8wHOGvVDQ=="],
+
     "@zeix/cause-effect-stable": ["@zeix/cause-effect@1.3.3", "", { "peerDependencies": { "typescript": ">=5.8.0" } }, "sha512-grXYA4hw1mQgIcQsl3qLwv/MFjLgfuGt7/0FPAA9U2sfy9BG3a1yjaSTKcySnVgimCNmzHWrwAKUJlxIg5ZS0A=="],
+
+    "@zeix/correlation-prediction": ["@zeix/correlation-prediction@workspace:packages/correlation-prediction"],
 
     "bun-types": ["bun-types@1.3.14", "", { "dependencies": { "@types/node": "*" } }, "sha512-4N0ig0fEomHt5R0KCFWjovxow98rIoRwKolrYdCcknNwMekCXRnWEUvgu5soYV8QXtVsrUD8B95MBOZGPvr6KQ=="],
 

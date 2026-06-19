@@ -18,7 +18,7 @@ Read changed source files in full. Do not review from the handoff summary alone.
 
 ## Step 4: Evaluate DX and consistency
 
-Read `CLAUDE.md` and `ARCHITECTURE.md` for established patterns:
+Read `.agents/skills/shared/references/non-obvious-behaviors.md` and `ARCHITECTURE.md` for established patterns:
 - Is the API ergonomic? Would a library consumer write this naturally?
 - Is naming consistent with the existing surface?
 - Are defaults sensible? Is it easy to misuse?

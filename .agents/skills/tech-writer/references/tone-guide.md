@@ -87,53 +87,31 @@ are used freely without definition — this document assumes the reader has the 
 - Any sentence that could be replaced by reading the source directly
 </ARCHITECTURE>
 
-<CLAUDE_MD>
-**Primary audience:** Claude (this model) at inference time. Every token has a cost.
+<AGENTS_md>
+**Primary audience:** Coding agents (Claude, Copilot, ZCode/GLM, Cursor) at inference time.
+Every token has a cost. The document is also the canonical skill index for the project.
 
 **Register:** Terse, declarative, maximally dense. No hand-holding. No transitions.
 Bold key terms. Bullet lists over prose. Code examples only when the correct pattern is
 non-obvious from the statement.
 
 **Structure rules:**
-- Non-obvious behavior entries follow a strict three-part structure:
-  1. **Bold statement** of the behavior — one sentence, declarative, specific.
-  2. Implication or consequence — one or two sentences maximum.
-  3. Code example — only if the correct pattern cannot be inferred from the statement.
-     Use before/after style (bad comment + good comment) only when the contrast is the point.
-- The bar for "non-obvious": an experienced reactive developer would not predict this
-  behavior from the public API alone. If they would, it does not belong here.
-- Internal names (`FLAG_CHECK`, `activeSink`, `trimSources`) are appropriate — Claude
-  can cross-reference ARCHITECTURE.md.
-
-**What to cut:**
-- Any sentence that restates what the bold statement already said
-- Explanations of standard reactive concepts (memoization, lazy evaluation, dependency tracking)
-- "Note that…", "Keep in mind…", "Be aware that…" — state it directly
-- Examples that illustrate obvious correct usage; examples only for non-obvious patterns
-</CLAUDE_MD>
-
-<copilot_instructions>
-**Primary audience:** GitHub Copilot during code generation. The document drives what
-Copilot suggests as it completes function calls, option objects, and type annotations.
-
-**Register:** Structured and pattern-oriented. Headers create anchors Copilot uses to
-locate relevant context. Code blocks are generation templates — they must be complete,
-compilable, and idiomatic.
-
-**Structure rules:**
-- Code patterns must compile against the current `index.ts`. Copilot generates from these
+- Code patterns must compile against the current `index.ts`. Agents generate from these
   literally — a wrong parameter name or stale option key will be reproduced in generated code.
-- Signal type descriptions: one line each in the format
-  `**Name** (\`createName\`): what it is and its key behavioral trait.`
+- File-structure entries: one line each mapping a `src/` module to its responsibility.
 - Do not use narrative prose in list items — use fragments that complete a pattern, not
   sentences that explain one.
+- Non-obvious behaviors live in `.agents/skills/shared/references/non-obvious-behaviors.md`,
+  not here. If one is important enough to surface on every invocation, add a one-line pointer,
+  not the full entry.
 
 **What to cut:**
 - Explanatory prose around code patterns — the pattern is self-documenting
 - Options or parameters that are rarely used and not needed for the common case
-- Duplication between sections (e.g. do not describe `createTask` in both "Signal Types"
-  and again identically in "Common Code Patterns")
-</copilot_instructions>
+- Duplication between sections (e.g. do not describe a factory in both "Core Concepts"
+  and again identically in "Key Patterns")
+- Examples that illustrate obvious correct usage; examples only for non-obvious patterns
+</AGENTS_md>
 
 <REQUIREMENTS>
 **Primary audience:** Stakeholders, contributors, and future maintainers who need to

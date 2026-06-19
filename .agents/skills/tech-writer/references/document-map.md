@@ -110,56 +110,32 @@ per-signal-type subsection describing each type's internal composition and lifec
 - No subsection references a removed type, flag, or function
 </ARCHITECTURE_md>
 
-<CLAUDE_md>
-**Path:** `CLAUDE.md`
-**Audience:** Claude (this model) at inference time
+<AGENTS_md>
+**Path:** `AGENTS.md`
+**Audience:** Coding agents (Claude, Copilot, ZCode/GLM, Cursor) at inference time; also the
+canonical skill index for the project
 **Register:** Terse, direct, AI-optimized — every token has a cost; no explanatory padding
-**Scope:** Spreadsheet-cell mental model for all 9 signal types; internal node shapes and the
-`activeSink`/`activeOwner` dual-pointer model; non-obvious behaviors that a competent reactive
-developer would not predict from the public API alone
+**Scope:** Project type and core concepts, code style (naming, generics, pure-function
+annotations), key patterns (signal `.get()`/`.set()`, proxy reactivity, callbacks, batch/
+untrack), file structure mapping `src/` modules to responsibilities, error-handling entry
+points, and the index of available agent skills
 
 **Update triggers:**
-- A signal type is added (extend the mental model list and node shapes)
-- Internal node shapes change (`src/graph.ts` field composition)
-- `activeSink` or `activeOwner` semantics change
-- A non-obvious behavior is introduced, changed, or resolved
-- An existing non-obvious behavior entry becomes inaccurate
+- A factory function signature changes (update the corresponding pattern)
+- A new source file is added to `src/` (update the File Structure map)
+- A coding convention or key pattern is established or changes
+- The set of available agent skills changes (update the skill index)
+
+**Do NOT update for:** non-obvious behavior entries (those live in the shared reference),
+node-shape internals (those live in `ARCHITECTURE.md`), bug fixes that do not change
+conventions.
 
 **Consistency checks:**
-- Mental model list covers all 9 signal types
-- Internal Node Shapes block matches `src/graph.ts`
-- `activeOwner`/`activeSink` description is accurate
-- Every non-obvious behavior entry is still correct for the current implementation
-- No entry describes behavior that has since changed or been removed
-</CLAUDE_md>
-
-<copilot_instructions_md>
-**Path:** `.github/copilot-instructions.md`
-**Audience:** GitHub Copilot during code generation
-**Register:** Structured, pattern-oriented — code examples are generation templates, not prose
-**Scope:** Project overview, core architecture summary (node types, edge structure, graph
-operations, flags), signal type descriptions with factory names, key file paths, coding
-conventions (TypeScript style, naming, error handling, performance patterns), API design
-principles, common code patterns (signal creation, reactivity, type safety, resource
-management), build system
-
-**Update triggers:**
-- A new signal type is added (add to signal types list, key files, and code patterns)
-- A factory function signature changes (update the corresponding code pattern)
-- A node type or flag is added, renamed, or removed (update Core Architecture section)
-- A new source file is added to `src/` (update Key Files Structure)
-- A coding convention or API design principle changes
-- A new common code pattern is established
-
-**Consistency checks:**
-- Signal Types list covers all 9 signal types with accurate factory name and one-line
-  description
-- Key Files Structure lists all current `src/` and `src/nodes/` files
-- Code patterns in "Common Code Patterns" use current factory signatures and option names —
-  verify each against `index.ts`
-- API Design Principles accurately describe current conventions
-- Core Architecture node types and flags match `src/graph.ts`
-</copilot_instructions_md>
+- File Structure map lists all current `src/` and `src/nodes/` files
+- Code patterns compile against current `index.ts` (factory signatures, option names,
+  parameter order)
+- Skill index matches the skills present under `.agents/skills/`
+</AGENTS_md>
 
 <jsdoc_in_src>
 **Path:** `src/nodes/*.ts`, `src/graph.ts`, `src/errors.ts`, `src/util.ts`, `src/signal.ts`
@@ -185,14 +161,17 @@ constraints. Internal helpers do not require JSDoc.
 <change_to_document_matrix>
 Quick reference for update-after-change.md. Use this to identify affected documents.
 
-| Change type                        | JSDoc | ARCH | CLAUDE + copilot | README | GUIDE | REQ |
-|------------------------------------|-------|------|------------------|--------|-------|-----|
-| New signal type                    | ✓     | ✓    | ✓                | ✓      | ✓     | ✓ * |
-| Changed public signature / option  | ✓     | —    | ✓ if behavior    | ✓      | ✓ if mental model | — |
-| Removed public API                 | ✓     | ✓ if structural | ✓       | ✓      | ✓ if documented | — |
-| New / changed non-obvious behavior | —     | ✓ if graph-level | ✓      | ✓ if affects usage | — | — |
-| Internal implementation change     | —     | ✓    | ✓                | —      | —     | — |
-| Vision / scope / constraint change | —     | —    | —                | —      | —     | ✓ |
+| Change type                        | JSDoc | ARCH | AGENTS | README | GUIDE | REQ |
+|------------------------------------|-------|------|--------|--------|-------|-----|
+| New signal type                    | ✓     | ✓    | ✓      | ✓      | ✓     | ✓ * |
+| Changed public signature / option  | ✓     | —    | ✓ if behavior | ✓ | ✓ if mental model | — |
+| Removed public API                 | ✓     | ✓ if structural | ✓  | ✓      | ✓ if documented | — |
+| New / changed non-obvious behavior | —     | ✓ if graph-level | — (shared ref) | ✓ if affects usage | — | — |
+| Internal implementation change     | —     | ✓    | ✓      | —      | —     | — |
+| Vision / scope / constraint change | —     | —    | —      | —      | —     | ✓ |
+
+Non-obvious behaviors are authored in the shared reference
+(`.agents/skills/shared/references/non-obvious-behaviors.md`), not in `AGENTS.md`.
 
 \* For REQUIREMENTS.md: only the signal type table row. Not the prose count — update
 that to match automatically.

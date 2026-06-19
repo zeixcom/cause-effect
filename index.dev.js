@@ -1557,16 +1557,6 @@ function isStore(value) {
 }
 
 // src/signal.ts
-var SIGNAL_TYPES = new Set([
-  TYPE_STATE,
-  TYPE_MEMO,
-  TYPE_TASK,
-  TYPE_SENSOR,
-  TYPE_SLOT,
-  TYPE_LIST,
-  TYPE_COLLECTION,
-  TYPE_STORE
-]);
 function createComputed(callback, options) {
   return isAsyncFunction(callback) ? createTask(callback, options) : createMemo(callback, options);
 }
@@ -1605,6 +1595,16 @@ function isSignal(value) {
 function isMutableSignal(value) {
   return isState(value) || isStore(value) || isList(value);
 }
+var SIGNAL_TYPES = new Set([
+  TYPE_STATE,
+  TYPE_MEMO,
+  TYPE_TASK,
+  TYPE_SENSOR,
+  TYPE_SLOT,
+  TYPE_LIST,
+  TYPE_COLLECTION,
+  TYPE_STORE
+]);
 
 // src/nodes/slot.ts
 function isSignalOrDescriptor(value) {

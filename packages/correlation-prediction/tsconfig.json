@@ -1,0 +1,12 @@
+{
+	"extends": "../../tsconfig.json",
+	"compilerOptions": {
+		"noEmit": true,
+		"paths": {
+			"@zeix/cause-effect": ["../../index.ts"],
+			"@zeix/cause-effect/*": ["../../src/*"]
+		}
+	},
+	"include": ["./**/*.ts"],
+	"exclude": ["node_modules", "index.js", "index.dev.js", "types"]
+}
