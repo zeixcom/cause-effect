@@ -110,7 +110,7 @@ What kind of task is this?
 | `ARCHITECTURE.md` | Current system design and key decisions |
 | `TODO.md` | Active task queue (create if absent) |
 | `NOTES.md` | Developer-written blockers and questions |
-| `CLAUDE.md` | Non-obvious behaviors — consult before making decisions about the API surface |
+| `.agents/skills/shared/references/non-obvious-behaviors.md` | Non-obvious behaviors — consult before making decisions about the API surface |
 </reference_index>
 
 <workflows_index>
