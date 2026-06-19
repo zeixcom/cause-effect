@@ -183,7 +183,7 @@ CE-022 depends on CE-020, CE-023 depends on CE-022.
   legend to include Draft, added a Notes section grouping core vs. experimental ADRs, and
   corrected all link paths. Verified: 17 index rows = 17 ADR files; all links resolve.
 
-- [ ] CE-026: Defer eager input reads in `createNeuron` validation
+- [x] CE-026: Defer eager input reads in `createNeuron` validation — done ✓
   **Skill:** cause-effect-dev
   **Context:** `createNeuron` validates inputs by calling `input.get()` for every input at
   construction time (`packages/correlation-prediction/src/neuron.ts:227`). This is an eager
@@ -195,3 +195,6 @@ CE-022 depends on CE-020, CE-023 depends on CE-022.
   the package's first release. Surfaced in CE-018 review.
   **Check:** a Neuron can be constructed from an unset Task/Sensor input without throwing;
   forward-pass still rejects non-numeric values.
+  **Result:** Shape-only validation at construction (no `.get()` calls); numeric validation
+  deferred to forward pass in `inputValueAt()`. Added 3 tests verifying unset Sensor handling
+  and non-numeric value rejection. All 34 package tests pass.

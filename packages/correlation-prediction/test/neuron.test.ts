@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
 	createEffect,
 	createMemo,
+	createSensor,
 	createState,
 	InvalidSignalValueError,
 	SKIP_EQUALITY,
@@ -131,10 +132,9 @@ describe('Neuron', () => {
 		expect(() => createNeuron([])).toThrow()
 	})
 
-	test('Neuron > should throw for non-numeric input values', () => {
-		expect(() => createNeuron([createState(NaN)])).toThrow(
-			InvalidSignalValueError,
-		)
+	test('Neuron > should throw for non-numeric input values during get (CE-026)', () => {
+		const neuron = createNeuron([createState(NaN as unknown as number)])
+		expect(() => neuron.get()).toThrow(InvalidSignalValueError)
 	})
 
 	test('Neuron > should throw for NaN train target', () => {
@@ -218,6 +218,7 @@ describe('Neuron', () => {
 				[1, 1, 0],
 			]
 			for (let i = 0; i < 20000; i++) {
+				// biome-ignore lint/style/noNonNullAssertion: test
 				const [a, b, t] = cases[i % 4]!
 				inputA.set(a)
 				inputB.set(b)
@@ -233,5 +234,23 @@ describe('Neuron', () => {
 		} finally {
 			Math.random = originalRandom
 		}
+	})
+
+	test('Neuron > can be constructed from unset Sensor input', () => {
+		const unsetSensor = createSensor<number>(() => () => {})
+		expect(() => createNeuron([unsetSensor])).not.toThrow()
+	})
+
+	test('Neuron > forward pass throws for unset Sensor input', () => {
+		const unsetSensor = createSensor<number>(() => () => {})
+		const neuron = createNeuron([unsetSensor])
+		expect(() => neuron.get()).toThrow()
+	})
+
+	test('Neuron > forward pass validates non-numeric values', () => {
+		const nonNumeric = createState('not a number')
+		// @ts-expect-error deliberate invalid input
+		const neuron = createNeuron([nonNumeric])
+		expect(() => neuron.get()).toThrow(InvalidSignalValueError)
 	})
 })

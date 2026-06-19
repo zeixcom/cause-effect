@@ -10,10 +10,15 @@
  */
 
 export {
+	createLayer,
+	isLayer,
+	type Layer,
+	type LayerOptions,
+} from "./src/layer";
+export {
 	createNeuron,
 	isNeuron,
 	type Neuron,
 	type NeuronInput,
 	type NeuronOptions,
-} from './src/neuron'
-export { createLayer, isLayer, type Layer, type LayerOptions } from './src/layer'
+} from "./src/neuron";

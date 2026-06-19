@@ -67,7 +67,9 @@ describe('Layer', () => {
 		layer.train([1, 0])
 		const after = layer.get()
 		// first neuron pulled toward 1 (up from 0.5), second toward 0 (down)
+		// biome-ignore lint/style/noNonNullAssertion: test
 		expect(after[0]).toBeGreaterThan(before[0]!)
+		// biome-ignore lint/style/noNonNullAssertion: test
 		expect(after[1]).toBeLessThan(before[1]!)
 	})
 

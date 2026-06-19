@@ -1,15 +1,15 @@
 import {
-	InvalidSignalValueError,
 	batch,
 	createMemo,
+	InvalidSignalValueError,
 	type Signal,
-} from '@zeix/cause-effect'
+} from "@zeix/cause-effect";
 import {
 	createNeuron,
 	type Neuron,
 	type NeuronInput,
 	type NeuronOptions,
-} from './neuron'
+} from "./neuron";
 
 /* === Types === */
 
@@ -20,32 +20,32 @@ type LayerOptions = {
 	/**
 	 * Number of Neurons in the Layer.
 	 */
-	size: number
+	size: number;
 
 	/**
 	 * Activation function for Neurons in the Layer.
 	 * @default 'sigmoid'
 	 */
-	activation?: 'sigmoid' | 'relu' | 'tanh' | 'linear'
+	activation?: "sigmoid" | "relu" | "tanh" | "linear";
 
 	/**
 	 * Initialization strategy for weights.
 	 * @default 'random'
 	 */
-	initialization?: 'random' | 'zeros' | 'xavier'
+	initialization?: "random" | "zeros" | "xavier";
 
 	/**
 	 * Learning rate for backpropagation.
 	 * @default 0.1
 	 */
-	learningRate?: number
+	learningRate?: number;
 
 	/**
 	 * Optional equality function for the Layer output vector.
 	 * @default reference equality (===)
 	 */
-	equals?: (a: number[], b: number[]) => boolean
-}
+	equals?: (a: number[], b: number[]) => boolean;
+};
 
 /**
  * A Layer signal: a vector of Neurons sharing a dense input signal.
@@ -55,25 +55,25 @@ type LayerOptions = {
  * changes. Backpropagation delegates to each Neuron's `train()`.
  */
 type Layer = {
-	readonly [Symbol.toStringTag]: 'Layer'
+	readonly [Symbol.toStringTag]: "Layer";
 
 	/**
 	 * Gets the current Layer output (one value per Neuron).
 	 * @returns The output vector.
 	 */
-	get(): number[]
+	get(): number[];
 
 	/**
 	 * Gets the Neurons that compose this Layer.
 	 * @returns The array of Neurons.
 	 */
-	getNeurons(): Neuron[]
+	getNeurons(): Neuron[];
 
 	/**
 	 * Sets the weights for all Neurons in the Layer.
 	 * @param weights - 2D array of weights (one array per Neuron).
 	 */
-	setWeights(weights: number[][]): void
+	setWeights(weights: number[][]): void;
 
 	/**
 	 * Trains the Layer toward a target output vector.
@@ -81,8 +81,8 @@ type Layer = {
 	 * backpropagation and recurses into upstream Neurons for multi-layer learning.
 	 * @param targets - Target value per Neuron (length must match Layer size).
 	 */
-	train(targets: number[]): void
-}
+	train(targets: number[]): void;
+};
 
 /**
  * Checks whether a value is a Layer signal.
@@ -90,10 +90,10 @@ type Layer = {
 function isLayer(value: unknown): value is Layer {
 	return (
 		value !== null &&
-		typeof value === 'object' &&
+		typeof value === "object" &&
 		(value as { [Symbol.toStringTag]?: unknown })[Symbol.toStringTag] ===
-			'Layer'
-	)
+			"Layer"
+	);
 }
 
 /* === Factory === */
@@ -117,68 +117,74 @@ function isLayer(value: unknown): value is Layer {
  * layer.train([1, 0, 0.5])
  * ```
  */
-function createLayer(inputSignal: Signal<number[]>, options: LayerOptions): Layer {
+function createLayer(
+	inputSignal: Signal<number[]>,
+	options: LayerOptions,
+): Layer {
 	if (
 		!inputSignal ||
-		typeof (inputSignal as Signal<number[]>).get !== 'function'
+		typeof (inputSignal as Signal<number[]>).get !== "function"
 	) {
-		throw new TypeError('[Layer] Input must be a Signal<number[]>')
+		throw new TypeError("[Layer] Input must be a Signal<number[]>");
 	}
-	if (typeof options?.size !== 'number' || options.size <= 0) {
-		throw new TypeError('[Layer] Size must be a positive number')
+	if (typeof options?.size !== "number" || options.size <= 0) {
+		throw new TypeError("[Layer] Size must be a positive number");
 	}
 
-	const { size, activation, initialization, learningRate, equals } = options
+	const { size, activation, initialization, learningRate, equals } = options;
 
 	// Build neuron options, omitting undefined so exactOptionalPropertyTypes holds.
-	const neuronOptions: NeuronOptions = {}
-	if (activation !== undefined) neuronOptions.activation = activation
-	if (initialization !== undefined) neuronOptions.init = initialization
-	if (learningRate !== undefined) neuronOptions.learningRate = learningRate
+	const neuronOptions: NeuronOptions = {};
+	if (activation !== undefined) neuronOptions.activation = activation;
+	if (initialization !== undefined) neuronOptions.init = initialization;
+	if (learningRate !== undefined) neuronOptions.learningRate = learningRate;
 
 	// Each Neuron reads the shared input vector indexed by its position.
-	const neurons: Neuron[] = []
+	const neurons: Neuron[] = [];
 	for (let i = 0; i < size; i++) {
 		neurons.push(
 			createNeuron([inputSignal as unknown as NeuronInput], neuronOptions),
-		)
+		);
 	}
 
 	// Layer output = memo over each Neuron. No manual flags or propagation.
-	const memoOptions: { equals?: (a: number[], b: number[]) => boolean } = {}
-	if (equals !== undefined) memoOptions.equals = equals
-	const output = createMemo<number[]>(() => neurons.map(n => n.get()), memoOptions)
+	const memoOptions: { equals?: (a: number[], b: number[]) => boolean } = {};
+	if (equals !== undefined) memoOptions.equals = equals;
+	const output = createMemo<number[]>(
+		() => neurons.map((n) => n.get()),
+		memoOptions,
+	);
 
 	return {
-		[Symbol.toStringTag]: 'Layer',
+		[Symbol.toStringTag]: "Layer",
 		get: () => output.get(),
 		getNeurons: () => [...neurons],
 		setWeights(weights: number[][]) {
 			if (!Array.isArray(weights) || weights.length !== neurons.length) {
 				throw new TypeError(
-					'[Layer] Weights must be a 2D array matching Layer size',
-				)
+					"[Layer] Weights must be a 2D array matching Layer size",
+				);
 			}
 			for (let i = 0; i < neurons.length; i++) {
-				neurons[i]!.setWeights(weights[i]!)
+				neurons[i]?.setWeights(weights[i] as number[]);
 			}
 		},
 		train(targets: number[]) {
 			if (
 				!Array.isArray(targets) ||
 				targets.length !== neurons.length ||
-				!targets.every(t => typeof t === 'number' && !Number.isNaN(t))
+				!targets.every((t) => typeof t === "number" && !Number.isNaN(t))
 			) {
-				throw new InvalidSignalValueError('Layer', targets)
+				throw new InvalidSignalValueError("Layer", targets);
 			}
 			// Batch the per-Neuron training so the Layer memo recomputes once.
 			batch(() => {
 				for (let i = 0; i < neurons.length; i++) {
-					neurons[i]!.train(targets[i]!)
+					neurons[i]?.train(targets[i] as number);
 				}
-			})
+			});
 		},
-	}
+	};
 }
 
-export { createLayer, isLayer, type Layer, type LayerOptions }
+export { createLayer, isLayer, type Layer, type LayerOptions };
