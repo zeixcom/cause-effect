@@ -1,0 +1,32 @@
+{
+	"name": "@zeix/correlation-prediction",
+	"version": "0.1.0",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/zeixcom/cause-effect"
+	},
+	"homepage": "https://github.com/zeixcom/cause-effect#readme",
+	"author": "Esther Brunner",
+	"type": "module",
+	"main": "index.ts",
+	"module": "index.ts",
+	"description": "Correlation & Prediction - lightweight reactive ML primitives built on @zeix/cause-effect.",
+	"license": "MIT",
+	"keywords": [
+		"Correlation & Prediction",
+		"Reactivity",
+		"Signals",
+		"Machine Learning",
+		"Neural Networks"
+	],
+	"scripts": {
+		"build": "bun build index.ts --outfile index.js --minify && bun build index.ts --outfile index.dev.js",
+		"test": "bun test"
+	},
+	"dependencies": {
+		"@zeix/cause-effect": "^1.3.4-beta.8"
+	},
+	"peerDependencies": {
+		"typescript": ">=5.8.0"
+	}
+}

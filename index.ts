@@ -50,7 +50,6 @@ export {
 	match,
 	type SingleMatchHandlers,
 } from './src/nodes/effect'
-export { createLayer, isLayer, type Layer } from './src/nodes/layer'
 export {
 	createList,
 	isList,
@@ -59,7 +58,6 @@ export {
 	type ListOptions,
 } from './src/nodes/list'
 export { createMemo, isMemo, type Memo } from './src/nodes/memo'
-export { createNeuron, isNeuron, type Neuron } from './src/nodes/neuron'
 export {
 	createSensor,
 	isSensor,

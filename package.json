@@ -33,6 +33,9 @@
 	"publishConfig": {
 		"access": "public"
 	},
+	"workspaces": [
+		"packages/*"
+	],
 	"scripts": {
 		"build": "bunx tsc --project tsconfig.build.json && bun build index.ts --outdir ./ --minify && bun build index.ts --outfile index.dev.js",
 		"bench": "bun run bench/reactivity.bench.ts",

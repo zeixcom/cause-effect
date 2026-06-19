@@ -1,5 +1,4 @@
 import { CircularDependencyError, type Guard } from './errors'
-import type { Neuron } from './nodes/neuron'
 import { isRecord } from './util'
 
 /* === Internal Types === */
@@ -47,16 +46,6 @@ type TaskNode<T extends {}> = SourceFields<T> &
 	AsyncFields & {
 		fn: (prev: T, abort: AbortSignal) => Promise<T>
 		pendingNode: StateNode<boolean>
-	}
-
-type LayerNode<T extends {}> = SourceFields<T> &
-	OptionsFields<T> &
-	SinkFields & {
-		inputSignal: Signal<number[]>
-		neurons: Neuron[]
-		weights: number[][]
-		gradients: number[][]
-		error: Error | undefined
 	}
 
 type EffectNode = SinkFields &
@@ -185,8 +174,6 @@ const TYPE_LIST = 'List'
 const TYPE_COLLECTION = 'Collection'
 const TYPE_STORE = 'Store'
 const TYPE_SLOT = 'Slot'
-const TYPE_NEURON = 'Neuron'
-const TYPE_LAYER = 'Layer'
 
 const FLAG_CLEAN = 0
 const FLAG_CHECK = 1 << 0
@@ -743,21 +730,16 @@ function makeSubscribe(node: SourceNode, onWatch?: () => Cleanup): () => void {
 export {
 	type Cleanup,
 	type ComputedOptions,
-	type Edge,
 	type EffectCallback,
 	type EffectNode,
-	type LayerNode,
 	type MaybeCleanup,
 	type MemoCallback,
 	type MemoNode,
-	type OptionsFields,
 	type Scope,
 	type ScopeOptions,
 	type Signal,
 	type SignalOptions,
-	type SinkFields,
 	type SinkNode,
-	type SourceFields,
 	type StateNode,
 	type TaskCallback,
 	type TaskNode,
@@ -773,7 +755,6 @@ export {
 	FLAG_CHECK,
 	FLAG_CLEAN,
 	FLAG_DIRTY,
-	FLAG_RUNNING,
 	FLAG_RELINK,
 	flush,
 	link,
@@ -786,10 +767,8 @@ export {
 	setState,
 	trimSources,
 	TYPE_COLLECTION,
-	TYPE_LAYER,
 	TYPE_LIST,
 	TYPE_MEMO,
-	TYPE_NEURON,
 	TYPE_SENSOR,
 	TYPE_STATE,
 	TYPE_SLOT,

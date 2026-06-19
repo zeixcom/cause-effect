@@ -1,5 +1,4 @@
 import { type ComputedOptions, type MemoCallback, type Signal, type TaskCallback } from './graph';
-import { isLayer } from './nodes/layer';
 import { type List, type UnknownRecord } from './nodes/list';
 import { type Memo } from './nodes/memo';
 import { type State } from './nodes/state';
@@ -69,4 +68,4 @@ declare function isSignal<T extends {}>(value: unknown): value is Signal<T>;
  * @returns True if value is a State, Store, or List, false otherwise
  */
 declare function isMutableSignal(value: unknown): value is MutableSignal<unknown & {}>;
-export { type MutableSignal, createComputed, createSignal, createMutableSignal, isComputed, isSignal, isMutableSignal, isLayer, };
+export { type MutableSignal, createComputed, createSignal, createMutableSignal, isComputed, isSignal, isMutableSignal, };

@@ -5,17 +5,14 @@ import {
 	type Signal,
 	type TaskCallback,
 	TYPE_COLLECTION,
-	TYPE_LAYER,
 	TYPE_LIST,
 	TYPE_MEMO,
-	TYPE_NEURON,
 	TYPE_SENSOR,
 	TYPE_SLOT,
 	TYPE_STATE,
 	TYPE_STORE,
 	TYPE_TASK,
 } from './graph'
-import { isLayer } from './nodes/layer'
 import { createList, isList, type List, type UnknownRecord } from './nodes/list'
 import { createMemo, isMemo, type Memo } from './nodes/memo'
 import { createState, isState, type State } from './nodes/state'
@@ -156,8 +153,6 @@ const SIGNAL_TYPES = new Set([
 	TYPE_LIST,
 	TYPE_COLLECTION,
 	TYPE_STORE,
-	TYPE_NEURON,
-	TYPE_LAYER,
 ])
 
 export {
@@ -168,5 +163,4 @@ export {
 	isComputed,
 	isSignal,
 	isMutableSignal,
-	isLayer,
 }
