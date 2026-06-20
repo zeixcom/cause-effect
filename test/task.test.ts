@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+	CircularDependencyError,
 	createEffect,
 	createMemo,
 	createScope,
@@ -391,6 +392,36 @@ describe('Task', () => {
 				// @ts-expect-error - Testing invalid input
 				createTask(async () => 42, { value: null })
 			}).toThrow('[Task] Signal value cannot be null or undefined')
+		})
+	})
+
+	describe('Synchronous throw recovery (bug #1)', () => {
+		// When the task callback throws synchronously (reachable when the async
+		// predicate mis-classifies a function), recomputeTask must leave the node
+		// in a recoverable state: FLAG_RUNNING cleared, pending reset, and
+		// subsequent reads report the SAME error rather than a spurious
+		// CircularDependencyError.
+		test('should not get stuck in FLAG_RUNNING after a synchronous throw', () => {
+			const boom = (): Promise<number> => {
+				throw new Error('sync boom')
+			}
+			// Bypass isAsyncFunction validation to reach the recomputeTask catch
+			const task = createTask(
+				// @ts-expect-error - exercising the sync-throw recovery path
+				boom as () => Promise<number>,
+				{ value: 0 },
+			)
+
+			// First read surfaces the real error
+			expect(() => task.get()).toThrow('sync boom')
+			// Must not be left pending
+			expect(task.isPending()).toBe(false)
+			// Subsequent reads must throw the SAME error, not CircularDependencyError
+			expect(() => task.get()).toThrow('sync boom')
+			expect(() => task.get()).toThrow((err: unknown) => {
+				if (!(err instanceof Error)) return false
+				return !(err instanceof CircularDependencyError)
+			})
 		})
 	})
 

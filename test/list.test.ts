@@ -11,6 +11,7 @@ import {
 	isList,
 	isMemo,
 	match,
+	NullishSignalValueError,
 } from '../index.ts'
 
 /* === Utility Functions === */
@@ -841,6 +842,39 @@ describe('List', () => {
 				// @ts-expect-error - Testing invalid input
 				createList(null)
 			}).toThrow()
+		})
+	})
+
+	describe('Undefined handling (bug #2)', () => {
+		// `undefined` elements must be rejected the same way `null` is — otherwise
+		// `keys` grows sparse and `length` / `get()` disagree.
+		test('should throw NullishSignalValueError for undefined elements on init', () => {
+			expect(() => {
+				// @ts-expect-error - Testing invalid input
+				createList([1, undefined, 3])
+			}).toThrow(NullishSignalValueError)
+			expect(() => {
+				// @ts-expect-error - Testing invalid input
+				createList([1, undefined, 3])
+			}).toThrow('null or undefined')
+		})
+
+		test('should throw NullishSignalValueError for undefined elements on set() with content-based keys', () => {
+			// The content-based diff path (diffArrays) skips undefined via
+			// `if (val === undefined) continue` — that must throw instead.
+			type Item = { id: string; v: number }
+			const list = createList<Item>([{ id: 'a', v: 1 }], {
+				keyConfig: item => item.id,
+			})
+			expect(() => {
+				// @ts-expect-error - Testing invalid input
+				list.set([{ id: 'a', v: 1 }, undefined])
+			}).toThrow(NullishSignalValueError)
+		})
+
+		test('length and get() must agree when there are no undefined holes', () => {
+			const list = createList([1, 2, 3])
+			expect(list.length).toBe(list.get().length)
 		})
 	})
 })

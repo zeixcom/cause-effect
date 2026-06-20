@@ -2,9 +2,11 @@ import { describe, expect, test } from 'bun:test'
 import {
 	createEffect,
 	createMemo,
+	createScope,
 	createState,
 	createStore,
 	isList,
+	isState,
 	isStore,
 } from '../index.ts'
 
@@ -555,6 +557,66 @@ describe('Store', () => {
 			})
 			// @ts-expect-error testing null
 			expect(() => store.add('email', null)).toThrow()
+		})
+	})
+
+	describe('set re-subscription leak (bug #4)', () => {
+		// store.set builds the prev value via buildValue() without untrack.
+		// When set() is called inside an effect, child .get() calls leak edges
+		// from each child State directly to that effect — causing over-broad
+		// re-runs on unrelated child mutations.
+		test('effect calling store.set should not over-subscribe to child signals', () => {
+			const store = createStore<{ a: number; b: number }>({ a: 1, b: 1 })
+			let setRuns = 0
+			// This effect calls store.set — if edges leak, mutating `b` below
+			// will re-run it even though the effect never reads `b` directly.
+			const dispose = createScope(() => {
+				createEffect(() => {
+					setRuns++
+					// Replace the whole store value; `set` rebuilds prev internally.
+					if (setRuns === 1) {
+						store.set({ a: 1, b: 1 })
+					}
+				})
+			})
+			expect(setRuns).toBe(1)
+
+			// Mutating only `b` should NOT re-run the set-effect, because the
+			// effect only writes; it does not read `b`.
+			store.b.set(99)
+			expect(setRuns).toBe(1)
+
+			dispose()
+		})
+	})
+
+	describe('set type-change routing (bug #5)', () => {
+		// When a property changes shape (primitive -> array), store.set must
+		// route through addSignal/createList, not stuff the array into the
+		// existing State. isRecord() returns false for arrays, which previously
+		// caused the type-change branch to be skipped.
+		test('primitive-to-array type change produces a List child, not a State holding an array', () => {
+			type Shape = { count: number | number[] }
+			const store = createStore<Shape>({ count: 5 })
+			expect(isState(store.count)).toBe(true)
+			expect(store.count.get()).toBe(5)
+
+			// Now change the shape to an array.
+			store.set({ count: [1, 2, 3] })
+
+			// The child should be a List now, not a State<number[]>.
+			expect(isList(store.count)).toBe(true)
+			expect(store.count.get()).toEqual([1, 2, 3])
+		})
+
+		test('array-to-primitive type change produces a State child', () => {
+			type Shape = { count: number[] | number }
+			const store = createStore<Shape>({ count: [1, 2, 3] })
+			expect(isList(store.count)).toBe(true)
+
+			store.set({ count: 5 })
+			expect(isState(store.count)).toBe(true)
+			expect(store.count.get()).toBe(5)
 		})
 	})
 })

@@ -233,4 +233,58 @@ describe('DEEP_EQUALITY', () => {
 			).toBe(false)
 		})
 	})
+
+	describe('built-in value types (bug #6b)', () => {
+		// Date and RegExp represent values, not identity — two equal instances
+		// must compare equal under DEEP_EQUALITY rather than forcing spurious
+		// downstream propagation.
+		test('two Dates with the same time are equal', () => {
+			const t = 1_700_000_000_000
+			expect(DEEP_EQUALITY(new Date(t), new Date(t))).toBe(true)
+		})
+
+		test('two Dates with different times are not equal', () => {
+			expect(DEEP_EQUALITY(new Date(1), new Date(2))).toBe(false)
+		})
+
+		test('two RegExps with the same source and flags are equal', () => {
+			expect(DEEP_EQUALITY(/foo/g, /foo/g)).toBe(true)
+		})
+
+		test('two RegExPs with different flags are not equal', () => {
+			expect(DEEP_EQUALITY(/foo/g, /foo/i)).toBe(false)
+		})
+
+		test('two RegExPs with different source are not equal', () => {
+			expect(DEEP_EQUALITY(/foo/, /bar/)).toBe(false)
+		})
+	})
+
+	describe('cyclic structures (bug #6a)', () => {
+		// Cyclic plain objects must not stack-overflow; structurally equal cycles
+		// compare equal.
+		test('structurally equal cyclic objects do not overflow and compare equal', () => {
+			const a: Record<string, unknown> = { name: 'root' }
+			a.self = a
+			const b: Record<string, unknown> = { name: 'root' }
+			b.self = b
+			expect(DEEP_EQUALITY(a, b)).toBe(true)
+		})
+
+		test('structurally different cyclic objects compare unequal without overflow', () => {
+			const a: Record<string, unknown> = { name: 'a' }
+			a.self = a
+			const b: Record<string, unknown> = { name: 'b' }
+			b.self = b
+			expect(DEEP_EQUALITY(a, b)).toBe(false)
+		})
+
+		test('cyclic arrays do not overflow', () => {
+			const a: unknown[] = [1]
+			a[1] = a
+			const b: unknown[] = [1]
+			b[1] = b
+			expect(() => DEEP_EQUALITY(a, b)).not.toThrow()
+		})
+	})
 })

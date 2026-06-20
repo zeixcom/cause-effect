@@ -416,6 +416,67 @@ describe('Collection', () => {
 
 			dispose()
 		})
+
+		test('should throw DuplicateKeyError when add produces a duplicate key (bug #3)', () => {
+			type Item = { id: string; v: number }
+			let apply:
+				| ((changes: CollectionChanges<Item>) => void)
+				| undefined
+			const col = createCollection<Item>(
+				applyChanges => {
+					apply = applyChanges
+					return () => {}
+				},
+				{ keyConfig: item => item.id },
+			)
+
+			const dispose = createScope(() => {
+				createEffect(() => {
+					void col.get()
+				})
+			})
+
+			// Two items with the same content-based key must throw,
+			// matching List.add and Store.add behavior.
+			expect(() => {
+				// biome-ignore lint/style/noNonNullAssertion: test
+				apply!({
+					add: [
+						{ id: 'a', v: 1 },
+						{ id: 'a', v: 2 },
+					],
+				})
+			}).toThrow('already exists')
+
+			dispose()
+		})
+
+		test('should throw DuplicateKeyError when adding a key that already exists (bug #3)', () => {
+			type Item = { id: string; v: number }
+			let apply:
+				| ((changes: CollectionChanges<Item>) => void)
+				| undefined
+			const col = createCollection<Item>(
+				applyChanges => {
+					apply = applyChanges
+					return () => {}
+				},
+				{ value: [{ id: 'a', v: 1 }], keyConfig: item => item.id },
+			)
+
+			const dispose = createScope(() => {
+				createEffect(() => {
+					void col.get()
+				})
+			})
+
+			expect(() => {
+				// biome-ignore lint/style/noNonNullAssertion: test
+				apply!({ add: [{ id: 'a', v: 99 }] })
+			}).toThrow('already exists')
+
+			dispose()
+		})
 	})
 
 	describe('deriveCollection', () => {
