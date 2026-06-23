@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **`recomputeTask` left a Task permanently stuck after a synchronous throw** (`src/graph.ts`): The early `return` in the `catch` block skipped both `setState(node.pendingNode, true)` and `node.flags = FLAG_CLEAN`, leaving `FLAG_RUNNING` set. Every subsequent read then threw a spurious `CircularDependencyError` (via the `FLAG_RUNNING` guard in `refresh()`), even though no cycle existed. Now the `catch` clears `FLAG_RUNNING` and resets pending, so the node stays recoverable and subsequent reads report the original error.
+- **`List` silently dropped `undefined` elements, causing a `length`/`get()` mismatch** (`src/nodes/list.ts`): The init loop and `diffArrays` skipped `undefined` via `if (val === undefined) continue`, leaving `keys` sparse (`keys.length` > actual signal count) while `node.value` retained the original array with the `undefined`. Now `undefined` is rejected with `NullishSignalValueError`, consistent with `null`.
+- **`createCollection` `applyChanges` silently overwrote duplicate keys** (`src/nodes/collection.ts`): The add-path called `signals.set(key, ...)` without checking for an existing key, orphaning the previous signal's subscribers. Now throws `DuplicateKeyError`, matching `List.add` and `Store.add`.
+- **`Store.set()` leaked dependency edges when called inside an effect** (`src/nodes/store.ts`): `buildValue()` was called without `untrack()`, so child `.get()` calls created edges from each child `State` to the active effect, causing over-broad re-runs. Now wrapped in `untrack()`, mirroring `List`.
+- **`Store.set()` misrouted primitive↔array type changes** (`src/nodes/store.ts`): The type-change check `isRecord(val) !== isStore(signal)` returned `false` for arrays (not records), so `State<number>` → array fell into `signal.set(array)` instead of routing through `addSignal`/`createList`. Now compares shape categories (list/store/state).
+- **`DEEP_EQUALITY` stack-overflowed on cyclic input and rejected equal `Date`/`RegExp`** (`src/graph.ts`): `deepEqual` had no cycle guard and treated `Date`/`RegExp` as non-records (returning `false`). Now has a `WeakSet` seen-pairs guard and explicit `Date` (`getTime`) and `RegExp` (`source`+`flags`) branches.
+- **`valueString` threw inside `Error` constructors on circular values** (`src/util.ts`): `JSON.stringify` throws on circular references, masking the original validation failure. Now wrapped in try/catch with a `String(value)` fallback.
+- **`Slot.set()` stack-overflowed on circular delegation** (`src/nodes/slot.ts`): Mutual delegation (A→B→A) infinite-looped. Now detects the cycle and throws a descriptive error.
+
+### Changed
+
+- **Explicit node-kind discriminator replaces duck-typed routing** (`src/graph.ts`): `refresh()` and `CircularDependencyError` previously branched on incidental field names (`'controller' in node` / `'value' in node`). Now `MemoNode`, `TaskNode`, and `EffectNode` carry an explicit `kind` field (`'Memo'` | `'Task'` | `'Effect'`), eliminating fragility where adding a field named `value` or `controller` would silently misroute recomputation.
+- **`isComputed` return type corrected** (`src/signal.ts`): Was `value is Memo<T>` despite accepting `Task`s. Now `value is Memo<T> | Task<T>`, reflecting that a `Task` does not satisfy `Memo<T>`'s shape (no `isPending`/`abort`).
+
 ## 1.3.3
 
 ### Changed

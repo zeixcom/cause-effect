@@ -201,3 +201,61 @@ called.** It does not wait for the current flush to complete. Calling cleanup du
 (e.g. inside a batch callback) is safe but will immediately dispose the owner and all its
 children.
 </scope_cleanup_is_synchronous>
+
+<async_requires_async_syntax>
+**Async routing in `createSignal`/`createComputed` requires the `async`/`await` keyword.**
+The library detects async callbacks by their function prototype
+(`Object.getPrototypeOf(fn) === async-function prototype`), not by their return value. A
+*synchronous* function that happens to return a `Promise` is classified as a `Memo`, not a
+`Task` — so the memo caches the `Promise` object itself rather than its resolved value.
+
+```typescript
+// WRONG — sync function returning a Promise becomes a Memo<number>,
+// caching the Promise object. equals/guard run against the Promise.
+const data = createComputed((): Promise<number> => fetch('/api').then(r => r.json()))
+
+// Correct — async keyword makes isAsyncFunction return true, routing to createTask.
+const data = createComputed(async (): Promise<number> => {
+  const r = await fetch('/api')
+  return r.json()
+})
+```
+
+If you must wrap a Promise-returning API, always use the `async` keyword so the library
+routes it to `createTask` (with abort/pending support) rather than `createMemo`.
+</async_requires_async_syntax>
+
+<flush_has_no_loop_guard>
+**`flush()` has no infinite-loop guard.** An effect that writes to a state it also reads
+will re-trigger itself on every run, looping until the call stack or heap is exhausted.
+This is standard behavior for fine-grained reactive systems and is intentional — the
+overhead of a per-flush iteration cap is not worth it for correct graphs.
+
+```typescript
+// BUG — infinite loop: effect reads and writes the same state
+const count = createState(0)
+createEffect(() => {
+  count.set(count.get() + 1) // re-triggers itself forever
+})
+```
+
+Avoid writing to a signal that the same effect reads. If you need derived state, use a
+`createMemo` instead.
+</flush_has_no_loop_guard>
+
+<untrack_does_not_suppress_watched>
+**`untrack()` only suppresses dependency-edge creation (`activeSink` linking). It does NOT
+prevent `watched` activation on upstream signals.** The `watched` lifecycle keys on
+`node.sinks` (via `makeSubscribe`), not on `activeSink`. So wrapping a read in `untrack`
+inside a `deriveCollection`/constructor does not stop the upstream source's `watched`
+callback from firing.
+
+```typescript
+// This does NOT prevent the source's watched() from firing —
+// untrack only blocks edge creation.
+const keys = Array.from(untrack(() => source.keys()))
+```
+
+If you need to defer upstream resource setup, structure your graph so the upstream signal
+has no sinks until an effect actually reads it.
+</untrack_does_not_suppress_watched>
