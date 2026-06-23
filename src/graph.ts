@@ -31,11 +31,18 @@ type AsyncFields = {
 	error: Error | undefined
 }
 
+// Explicit node-kind discriminator. Previously, refresh() and
+// CircularDependencyError branched on incidental field names ('controller'
+// in node / 'value' in node), which misroutes if any field is added or
+// renamed. The kind field makes routing intentional and cheap.
+type NodeKind = typeof TYPE_MEMO | typeof TYPE_TASK | typeof TYPE_EFFECT
+
 type StateNode<T extends {}> = SourceFields<T> & OptionsFields<T>
 
 type MemoNode<T extends {}> = SourceFields<T> &
 	OptionsFields<T> &
 	SinkFields & {
+		kind: typeof TYPE_MEMO
 		fn: MemoCallback<T>
 		error: Error | undefined
 	}
@@ -44,12 +51,14 @@ type TaskNode<T extends {}> = SourceFields<T> &
 	OptionsFields<T> &
 	SinkFields &
 	AsyncFields & {
+		kind: typeof TYPE_TASK
 		fn: (prev: T, abort: AbortSignal) => Promise<T>
 		pendingNode: StateNode<boolean>
 	}
 
 type EffectNode = SinkFields &
 	OwnerFields & {
+		kind: typeof TYPE_EFFECT
 		fn: EffectCallback
 	}
 
@@ -169,6 +178,7 @@ type EffectCallback = () => MaybeCleanup
 const TYPE_STATE = 'State'
 const TYPE_MEMO = 'Memo'
 const TYPE_TASK = 'Task'
+const TYPE_EFFECT = 'Effect'
 const TYPE_SENSOR = 'Sensor'
 const TYPE_LIST = 'List'
 const TYPE_COLLECTION = 'Collection'
@@ -565,18 +575,12 @@ function refresh(node: SinkNode): void {
 	}
 
 	if (node.flags & FLAG_RUNNING) {
-		throw new CircularDependencyError(
-			'controller' in node
-				? TYPE_TASK
-				: 'value' in node
-					? TYPE_MEMO
-					: 'Effect',
-		)
+		throw new CircularDependencyError(node.kind)
 	}
 
 	if (node.flags & FLAG_DIRTY) {
-		if ('controller' in node) recomputeTask(node)
-		else if ('value' in node) recomputeMemo(node)
+		if (node.kind === TYPE_TASK) recomputeTask(node)
+		else if (node.kind === TYPE_MEMO) recomputeMemo(node)
 		else runEffect(node)
 	} else {
 		node.flags = FLAG_CLEAN
@@ -793,6 +797,7 @@ export {
 	setState,
 	trimSources,
 	TYPE_COLLECTION,
+	TYPE_EFFECT,
 	TYPE_LIST,
 	TYPE_MEMO,
 	TYPE_SENSOR,

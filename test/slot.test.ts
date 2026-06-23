@@ -337,4 +337,35 @@ describe('Slot', () => {
 			expect(seenX).toBe(5)
 		})
 	})
+
+	describe('set cycle guard (smell #13)', () => {
+		test('should throw on circular slot delegation instead of stack-overflowing', () => {
+			// Mutual delegation A -> B -> A is a user error with no terminal
+			// writable signal. set() must detect the cycle and throw a
+			// descriptive error instead of infinite-looping.
+			const a = createState(1)
+			const slotA = createSlot(a)
+			const slotB = createSlot(slotA)
+			// Close the cycle: A delegates to B, B delegates to A.
+			slotA.replace(slotB)
+
+			expect(() => slotA.set(42)).toThrow('Circular delegation')
+			// Backing signal must be unchanged.
+			expect(a.get()).toBe(1)
+		})
+
+		test('should allow normal non-cyclic delegation after a guarded set', () => {
+			const a = createState(1)
+			const slotA = createSlot(a)
+
+			// A normal set works fine.
+			slotA.set(42)
+			expect(a.get()).toBe(42)
+
+			// The guard is cleared after each top-level set, so subsequent
+			// sets still work.
+			slotA.set(99)
+			expect(a.get()).toBe(99)
+		})
+	})
 })

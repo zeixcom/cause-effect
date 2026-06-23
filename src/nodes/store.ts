@@ -14,6 +14,7 @@ import {
 	refresh,
 	type SinkNode,
 	TYPE_STORE,
+	TYPE_MEMO,
 	untrack,
 } from '../graph'
 import { isRecord, isSignalOfType } from '../util'
@@ -186,6 +187,7 @@ function createStore<T extends UnknownRecord>(
 	// On subsequent get(): untrack(buildValue) rebuilds without re-linking.
 	// Mutation methods set FLAG_RELINK to force re-establishment on next read.
 	const node: MemoNode<T> = {
+		kind: TYPE_MEMO,
 		fn: buildValue,
 		value,
 		flags: FLAG_DIRTY,

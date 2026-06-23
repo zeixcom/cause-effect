@@ -90,6 +90,7 @@ function createMemo<T extends {}>(
 		validateSignalValue(TYPE_MEMO, options.value, options?.guard)
 
 	const node: MemoNode<T> = {
+		kind: TYPE_MEMO,
 		fn,
 		value: options?.value as T,
 		flags: FLAG_DIRTY,

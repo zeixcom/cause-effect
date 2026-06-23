@@ -119,6 +119,7 @@ function createTask<T extends {}>(
 	}
 
 	const node: TaskNode<T> = {
+		kind: TYPE_TASK,
 		fn,
 		value: options?.value as T,
 		sources: null,

@@ -13,6 +13,7 @@ import {
 	type SignalOptions,
 	type SinkNode,
 	TYPE_SLOT,
+	TYPE_MEMO,
 } from '../graph'
 import { isSignal } from '../signal'
 import { isSignalOfType } from '../util'
@@ -63,6 +64,11 @@ type Slot<T extends {}> = {
 
 /* === Internal Functions === */
 
+// Tracks slot nodes visited by the current top-level set() call to break
+// cycles when slots delegate to each other (A -> B -> A). Cleared when the
+// outermost set() unwinds.
+const settingSlots = new WeakSet<object>()
+
 function isSignalOrDescriptor<T extends {}>(
 	value: unknown,
 ): value is Signal<T> | SlotDescriptor<T> {
@@ -104,6 +110,7 @@ function createSlot<T extends {}>(
 	const guard = options?.guard
 
 	const node: MemoNode<T> = {
+		kind: TYPE_MEMO,
 		fn: () => delegated.get(),
 		value: undefined as unknown as T,
 		flags: FLAG_DIRTY,
@@ -123,12 +130,22 @@ function createSlot<T extends {}>(
 	}
 
 	const set = (next: T): void => {
-		if (isSlot(delegated)) return void delegated.set(next)
-		if ('set' in delegated && typeof delegated.set === 'function') {
-			validateSignalValue(TYPE_SLOT, next, guard)
-			delegated.set(next)
-		} else {
-			throw new ReadonlySignalError(TYPE_SLOT)
+		// Cycle guard: if this slot's node is already in the middle of a set()
+		// call (mutual delegation A -> B -> A), the chain has no terminal
+		// writable signal. Throw a descriptive error instead of stack-overflowing.
+		if (settingSlots.has(node))
+			throw new Error('[Slot] Circular delegation detected in set()')
+		settingSlots.add(node)
+		try {
+			if (isSlot(delegated)) return void delegated.set(next)
+			if ('set' in delegated && typeof delegated.set === 'function') {
+				validateSignalValue(TYPE_SLOT, next, guard)
+				delegated.set(next)
+			} else {
+				throw new ReadonlySignalError(TYPE_SLOT)
+			}
+		} finally {
+			settingSlots.delete(node)
 		}
 	}
 

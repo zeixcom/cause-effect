@@ -14,6 +14,7 @@ import {
 	refresh,
 	type SinkNode,
 	TYPE_LIST,
+	TYPE_MEMO,
 	untrack,
 } from '../graph'
 import type { MutableSignal } from '../signal'
@@ -298,6 +299,7 @@ function createList<
 	// On subsequent get(): untrack(buildValue) rebuilds without re-linking.
 	// Mutation methods set FLAG_RELINK to force re-establishment on next read.
 	const node: MemoNode<T[]> = {
+		kind: TYPE_MEMO,
 		fn: buildValue,
 		value,
 		flags: FLAG_DIRTY,

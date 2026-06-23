@@ -1039,4 +1039,39 @@ describe('match', () => {
 			expect(cleanupCount).toBe(1)
 		})
 	})
+
+	describe('async catch routes to err even after owner disposal (smell #11)', () => {
+		// Documented behavior (JSDoc on match): rejections from stale async
+		// handlers are routed to err. The .then path checks controller.aborted,
+		// but the .catch path does not — so a handler that rejects after the
+		// owner is disposed still fires err. This test locks in that behavior.
+		test('err fires for a rejection that settles after disposal', async () => {
+			const source = createState(1)
+			let errCount = 0
+			let lastErr: Error | undefined
+			const dispose = createScope(() => {
+				createEffect(() =>
+					match(source, {
+						ok: () =>
+							new Promise<undefined>((_resolve, reject) => {
+								// Reject asynchronously, after disposal.
+								setTimeout(() => reject(new Error('late reject')), 10)
+							}),
+						err: e => {
+							errCount++
+							lastErr = e
+						},
+					}),
+				)
+			})
+
+			expect(errCount).toBe(0)
+			dispose()
+			// After disposal, the pending rejection settles and routes to err
+			// despite the owner being gone.
+			await wait(30)
+			expect(errCount).toBe(1)
+			expect(lastErr?.message).toBe('late reject')
+		})
+	})
 })

@@ -21,6 +21,7 @@ import {
 	type SinkNode,
 	SKIP_EQUALITY,
 	TYPE_COLLECTION,
+	TYPE_MEMO,
 	untrack,
 } from '../graph'
 import { isAsyncFunction, isSignalOfType, isSyncFunction } from '../util'
@@ -206,6 +207,7 @@ function deriveCollection<T extends {}, U extends {}>(
 	// fn (buildValue) syncs keys then reads child signals to produce T[].
 	// Keys are tracked separately in a local variable.
 	const node: MemoNode<T[]> = {
+		kind: TYPE_MEMO,
 		fn: buildValue,
 		value: [],
 		flags: FLAG_DIRTY,
@@ -247,10 +249,12 @@ function deriveCollection<T extends {}, U extends {}>(
 		}
 	}
 
-	// Initialize signals for current source keys — untrack to prevent
-	// triggering watched callbacks on upstream sources during construction.
-	// The first refresh() (triggered by an effect) will establish proper
-	// graph edges; this just populates the signals map for direct access.
+	// Initialize signals for current source keys. untrack suppresses edge
+	// creation (activeSink linking) during construction, but note it does NOT
+	// prevent watched activation on the upstream source — that keys on
+	// node.sinks via makeSubscribe, not activeSink. The first refresh()
+	// (triggered by an effect) will establish proper graph edges; this just
+	// populates the signals map for direct access.
 	const initialKeys = Array.from(untrack(() => source.keys()))
 	for (const key of initialKeys) addSignal(key)
 	keys = initialKeys
@@ -366,6 +370,7 @@ function createCollection<T extends {}, S extends Signal<T> = Signal<T>>(
 	}
 
 	const node: MemoNode<T[]> = {
+		kind: TYPE_MEMO,
 		fn: buildValue,
 		value,
 		flags: FLAG_DIRTY,
