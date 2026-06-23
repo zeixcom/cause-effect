@@ -254,6 +254,7 @@ function createStore<T extends UnknownRecord>(
 		[Symbol.isConcatSpreadable]: false as const,
 
 		*[Symbol.iterator]() {
+			subscribe()
 			for (const [key, signal] of signals) {
 				yield [key, signal] as [
 					string,

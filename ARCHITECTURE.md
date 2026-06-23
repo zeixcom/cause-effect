@@ -24,6 +24,7 @@ The design optimizes for three properties:
 | Two-Level Flagging | [ADR-0012](adr/0012-two-level-flagging-dirty-and-check.md) | `DIRTY` for direct dependents, `CHECK` for transitive dependents to minimize work |
 | FLAG_RELINK | [ADR-0010](adr/0010-flag-relink-mechanism-for-structural-reactivity.md) | Structural change flag for composite signals, invisible to core propagation |
 | Two-Path Access | [ADR-0014](adr/0014-two-path-access-pattern-for-composite-signals.md) | Fast path (untracked rebuild) vs tracked path (edge re-establishment) for composites |
+| Composite Lookups | [ADR-0015](adr/0015-composite-lookup-methods-track-structural-changes.md) | List/Collection lookups track structural changes; Store.byKey stays untracked (granularity preserved) |
 
 ## Change Propagation
 
@@ -60,6 +61,14 @@ All signal types are defined in `src/nodes/`. Each exports a factory function (e
 | **Collection** | `MemoNode<T[]>` | Source + Sink | Two patterns: `createCollection(watched)` (external) and `deriveCollection(source, fn)` (internal) |
 
 Composite signals (Store, List, Collection, deriveCollection) use the [FLAG_RELINK](adr/0010-flag-relink-mechanism-for-structural-reactivity.md) + [two-path access](adr/0014-two-path-access-pattern-for-composite-signals.md) pattern for structural reactivity.
+
+### Composite Lookup Methods
+
+**List and Collection** — `at()`, `byKey()`, `keyAt()`, `indexOfKey()`, and the `Symbol.iterator` create the same O(1) **structural-consumer** edge as `keys()`, `length`, and `get()` — via `subscribe()` (or `ensureFresh()` for `deriveCollection`, whose node can be stale from upstream tracked changes). Reading any of these inside an effect or memo re-runs it on structural change (key add/remove/reorder). The consumer edge is **independent** of the two-path pattern in ADR-0014, which governs *value-rebuild* edges (child signal → composite node); `subscribe()`→`link()` never triggers value-rebuild relinking. (The iterator edge is established lazily on first `.next()`, since these are generator methods.)
+
+**Store** — `byKey()` and the proxy property access (`store.prop`) deliberately do **not** create a structural edge. Store keys are statically known from `T`, and proxy reads are already granular: `store.name` returns the child `State`, whose `.get()` forms a *property-level* edge. Adding a structural edge on top would make every property read also subscribe to "any key added/removed," defeating per-property reactivity (Store's defining feature). The Store `Symbol.iterator` *does* track structure, like `store.keys()` and `store.get()` — it is a whole-store traversal, not a per-property read. See [ADR-0015](adr/0015-composite-lookup-methods-track-structural-changes.md) for the rationale behind this asymmetry.
+
+Return types remain honest: `byKey(k): S | undefined` etc. on List/Collection (a runtime string may not be a present key). `Store.byKey` is non-nullable because Store keys are statically known from `T`.
 
 ## Testing Strategy
 

@@ -5,37 +5,6 @@ For library development, see cause-effect-dev/references/ for additional interna
 implementation details.
 </overview>
 
-<direct_lookups_do_not_track>
-**`byKey()`, `at()`, `keyAt()`, and `indexOfKey()` do not create graph edges.** They are
-direct lookups into the internal map/array — calling them inside an effect or memo does not
-subscribe to structural changes.
-
-To react to structural changes (key added, key removed, order changed), read a tracking
-accessor instead:
-
-| You want to react to | Read this |
-|---|---|
-| Any structural change | `collection.get()` or `list.get()` |
-| Key set membership | `collection.keys()` |
-| Length / item count | `collection.length` |
-| A specific item's value | `collection.get()` then access the item |
-
-```typescript
-// Wrong — effect does not re-run when keys are added or removed
-createEffect(() => {
-  const item = collection.byKey('id-123')
-  render(item)
-})
-
-// Correct — reading keys() creates a dependency on structural changes
-createEffect(() => {
-  const keys = collection.keys()           // tracks structure
-  const item = collection.byKey('id-123') // safe after establishing the edge
-  render(item)
-})
-```
-</direct_lookups_do_not_track>
-
 <bykey_set_does_not_propagate_to_structural_subscribers>
 **`byKey(key).set(value)` does not propagate to effects that subscribed via `list.keys()`,
 `list.length`, or the iterator.** Those effects subscribe to the list's structural node but

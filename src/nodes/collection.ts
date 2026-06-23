@@ -145,7 +145,13 @@ function deriveCollection<T extends {}, U extends {}>(
 	const addSignal = (key: string): void => {
 		const signal = isAsync
 			? createTask(async (prev: T | undefined, abort: AbortSignal) => {
-					const sourceValue = source.byKey(key)?.get() as U
+					// Look up the item signal without a structural edge (byKey now
+					// tracks structure), then read its value tracked so the Task
+					// depends on the item's value but not on structural changes.
+					// Key synchronization is handled by syncKeys() reading source.keys().
+					const itemSignal = untrack(() => source.byKey(key))
+					if (!itemSignal) return prev as T
+					const sourceValue = itemSignal.get() as U
 					if (sourceValue == null) return prev as T
 					return (
 						callback as (
@@ -155,7 +161,13 @@ function deriveCollection<T extends {}, U extends {}>(
 					)(sourceValue, abort)
 				})
 			: createMemo(() => {
-					const sourceValue = source.byKey(key)?.get() as U
+					// Look up the item signal without a structural edge (byKey now
+					// tracks structure), then read its value tracked so the Memo
+					// depends on the item's value but not on structural changes.
+					// Key synchronization is handled by syncKeys() reading source.keys().
+					const itemSignal = untrack(() => source.byKey(key))
+					if (!itemSignal) return undefined as unknown as T
+					const sourceValue = itemSignal.get() as U
 					if (sourceValue == null) return undefined as unknown as T
 					return (callback as (sourceValue: U) => T)(sourceValue)
 				})
@@ -263,6 +275,8 @@ function deriveCollection<T extends {}, U extends {}>(
 		[Symbol.isConcatSpreadable]: true as const,
 
 		*[Symbol.iterator]() {
+			if (activeSink) link(node, activeSink)
+			ensureFresh()
 			for (const key of keys) {
 				const signal = signals.get(key)
 				if (signal) yield signal
@@ -288,19 +302,27 @@ function deriveCollection<T extends {}, U extends {}>(
 		},
 
 		at(index: number) {
+			if (activeSink) link(node, activeSink)
+			ensureFresh()
 			const key = keys[index]
 			return key !== undefined ? signals.get(key) : undefined
 		},
 
 		byKey(key: string) {
+			if (activeSink) link(node, activeSink)
+			ensureFresh()
 			return signals.get(key)
 		},
 
 		keyAt(index: number) {
+			if (activeSink) link(node, activeSink)
+			ensureFresh()
 			return keys[index]
 		},
 
 		indexOfKey(key: string) {
+			if (activeSink) link(node, activeSink)
+			ensureFresh()
 			return keys.indexOf(key)
 		},
 
@@ -452,6 +474,7 @@ function createCollection<T extends {}, S extends Signal<T> = Signal<T>>(
 		[Symbol.isConcatSpreadable]: true as const,
 
 		*[Symbol.iterator]() {
+			subscribe()
 			for (const key of keys) {
 				const signal = signals.get(key)
 				if (signal) yield signal
@@ -493,19 +516,23 @@ function createCollection<T extends {}, S extends Signal<T> = Signal<T>>(
 		},
 
 		at(index: number) {
+			subscribe()
 			const key = keys[index]
 			return key !== undefined ? signals.get(key) : undefined
 		},
 
 		byKey(key: string) {
+			subscribe()
 			return signals.get(key)
 		},
 
 		keyAt(index: number) {
+			subscribe()
 			return keys[index]
 		},
 
 		indexOfKey(key: string) {
+			subscribe()
 			return keys.indexOf(key)
 		},
 

@@ -383,6 +383,7 @@ function createList<
 		[Symbol.isConcatSpreadable]: true as const,
 
 		*[Symbol.iterator]() {
+			subscribe()
 			for (const key of keys) {
 				const signal = signals.get(key)
 				if (signal) yield signal
@@ -444,6 +445,7 @@ function createList<
 		},
 
 		at(index: number) {
+			subscribe()
 			const key = keys[index]
 			return key !== undefined ? signals.get(key) : undefined
 		},
@@ -454,14 +456,17 @@ function createList<
 		},
 
 		byKey(key: string) {
+			subscribe()
 			return signals.get(key)
 		},
 
 		keyAt(index: number) {
+			subscribe()
 			return keys[index]
 		},
 
 		indexOfKey(key: string) {
+			subscribe()
 			return keys.indexOf(key)
 		},
 
@@ -506,9 +511,15 @@ function createList<
 				)
 			)
 				return
-			signal.set(value)
-			node.flags |= FLAG_DIRTY
-			for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
+			// Batch the item-signal set and the structural node propagation so
+			// subscribers that hold both edges (e.g. byKey(k).get()) flush once
+			// instead of once per edge. Without the batch, signal.set() flushes
+			// immediately, then the node propagation flushes again.
+			batch(() => {
+				signal.set(value)
+				node.flags |= FLAG_DIRTY
+				for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
+			})
 			if (batchDepth === 0) flush()
 		},
 
