@@ -603,6 +603,106 @@ describe('List', () => {
 			list.remove(0)
 			expect(sum.get()).toBe(9)
 		})
+
+		// Content-based keys so item values map 1:1 to stable string keys —
+		// this is the realistic scenario where byKey()/indexOfKey() with a
+		// specific key matters. With auto-increment keys the key is positional.
+		test('byKey() tracks structural changes (add/remove)', () => {
+			type Item = { id: string; v: number }
+			const list = createList<Item>(
+				[
+					{ id: 'a', v: 1 },
+					{ id: 'b', v: 2 },
+				],
+				{ keyConfig: item => item.id },
+			)
+			let effectCount = 0
+			createEffect(() => {
+				list.byKey('a')
+				effectCount++
+			})
+
+			expect(effectCount).toBe(1)
+			list.add({ id: 'c', v: 3 })
+			expect(effectCount).toBe(2)
+			list.remove('a')
+			expect(effectCount).toBe(3)
+		})
+
+		test('at() tracks structural changes (add/remove)', () => {
+			const list = createList(['a'])
+			let effectCount = 0
+			createEffect(() => {
+				list.at(0)
+				effectCount++
+			})
+
+			expect(effectCount).toBe(1)
+			list.add('b')
+			expect(effectCount).toBe(2)
+			list.remove(0)
+			expect(effectCount).toBe(3)
+		})
+
+		test('keyAt() tracks structural changes (add/remove)', () => {
+			const list = createList(['a'])
+			let effectCount = 0
+			createEffect(() => {
+				list.keyAt(0)
+				effectCount++
+			})
+
+			expect(effectCount).toBe(1)
+			list.add('b')
+			expect(effectCount).toBe(2)
+			list.remove(0)
+			expect(effectCount).toBe(3)
+		})
+
+		test('indexOfKey() tracks structural changes (add/remove)', () => {
+			type Item = { id: string; v: number }
+			const list = createList<Item>([{ id: 'a', v: 1 }], {
+				keyConfig: item => item.id,
+			})
+			let effectCount = 0
+			createEffect(() => {
+				list.indexOfKey('a')
+				effectCount++
+			})
+
+			expect(effectCount).toBe(1)
+			list.add({ id: 'b', v: 2 })
+			expect(effectCount).toBe(2)
+			list.remove('a')
+			expect(effectCount).toBe(3)
+		})
+
+		test('Symbol.iterator tracks structural changes and is reached by replace()', () => {
+			type Item = { id: string; v: number }
+			const list = createList<Item>(
+				[{ id: 'a', v: 1 }],
+				{ keyConfig: item => item.id },
+			)
+			let runs = 0
+			createEffect(() => {
+				for (const _sig of list) {
+					// iterate only — no item-level reads
+				}
+				runs++
+			})
+			expect(runs).toBe(1)
+
+			// add/remove → structural change reaches iterator subscriber
+			list.add({ id: 'b', v: 2 })
+			expect(runs).toBe(2)
+			list.remove('a')
+			expect(runs).toBe(3)
+
+			// replace() now reaches iterator subscribers (previously silent)
+			list.add({ id: 'c', v: 3 })
+			list.replace('c', { id: 'c', v: 30 })
+			expect(runs).toBe(5)
+		})
 	})
 
 	describe('options.itemEquals', () => {

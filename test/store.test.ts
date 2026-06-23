@@ -487,6 +487,26 @@ describe('Store', () => {
 			config.ui.theme.set('dark')
 			expect(display.get()).toBe('Theme: dark')
 		})
+
+		test('Symbol.iterator tracks structural changes (add/remove)', () => {
+			const store = createStore<{ a: number; b?: number }>({ a: 1 })
+			let runs = 0
+			const dispose = createScope(() => {
+				createEffect(() => {
+					for (const _entry of store) {
+						// iterate only — no per-property reads
+					}
+					runs++
+				})
+			})
+
+			expect(runs).toBe(1)
+			store.add('b', 2)
+			expect(runs).toBe(2)
+			store.remove('a')
+			expect(runs).toBe(3)
+			dispose()
+		})
 	})
 
 	describe('Serialization', () => {

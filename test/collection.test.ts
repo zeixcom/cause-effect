@@ -475,6 +475,105 @@ describe('Collection', () => {
 		})
 	})
 
+	describe('createCollection lookup methods track structural changes', () => {
+		test('byKey() tracks structural changes (add/remove)', () => {
+			type Item = { id: string; v: number }
+			let apply: ((changes: CollectionChanges<Item>) => void) | undefined
+			const col = createCollection<Item>(
+				applyChanges => {
+					apply = applyChanges
+					return () => {}
+				},
+				{ keyConfig: item => item.id, value: [{ id: 'a', v: 1 }] },
+			)
+			let effectCount = 0
+			const dispose = createScope(() => {
+				createEffect(() => {
+					col.byKey('a')
+					effectCount++
+				})
+			})
+
+			expect(effectCount).toBe(1)
+			// biome-ignore lint/style/noNonNullAssertion: test
+			apply!({ add: [{ id: 'b', v: 2 }] })
+			expect(effectCount).toBe(2)
+			// biome-ignore lint/style/noNonNullAssertion: test
+			apply!({ remove: [{ id: 'a', v: 1 }] })
+			expect(effectCount).toBe(3)
+			dispose()
+		})
+
+		test('at(), keyAt(), indexOfKey() track structural changes', () => {
+			type Item = { id: string; v: number }
+			let apply: ((changes: CollectionChanges<Item>) => void) | undefined
+			const col = createCollection<Item>(
+				applyChanges => {
+					apply = applyChanges
+					return () => {}
+				},
+				{ keyConfig: item => item.id, value: [{ id: 'a', v: 1 }] },
+			)
+			let byAt = 0
+			let byKeyAt = 0
+			let byIndexOfKey = 0
+			const dispose = createScope(() => {
+				createEffect(() => {
+					col.at(0)
+					byAt++
+				})
+				createEffect(() => {
+					col.keyAt(0)
+					byKeyAt++
+				})
+				createEffect(() => {
+					col.indexOfKey('a')
+					byIndexOfKey++
+				})
+			})
+
+			expect(byAt).toBe(1)
+			expect(byKeyAt).toBe(1)
+			expect(byIndexOfKey).toBe(1)
+			// biome-ignore lint/style/noNonNullAssertion: test
+			apply!({ add: [{ id: 'b', v: 2 }] })
+			expect(byAt).toBe(2)
+			expect(byKeyAt).toBe(2)
+			expect(byIndexOfKey).toBe(2)
+			dispose()
+		})
+
+		test('Symbol.iterator tracks structural changes', () => {
+			type Item = { id: string; v: number }
+			let apply: ((changes: CollectionChanges<Item>) => void) | undefined
+			const col = createCollection<Item>(
+				applyChanges => {
+					apply = applyChanges
+					return () => {}
+				},
+				{ keyConfig: item => item.id, value: [{ id: 'a', v: 1 }] },
+			)
+			let runs = 0
+			const dispose = createScope(() => {
+				createEffect(() => {
+					for (const _sig of col) {
+						// iterate only — no item-level reads
+					}
+					runs++
+				})
+			})
+
+			expect(runs).toBe(1)
+			// biome-ignore lint/style/noNonNullAssertion: test
+			apply!({ add: [{ id: 'b', v: 2 }] })
+			expect(runs).toBe(2)
+			// biome-ignore lint/style/noNonNullAssertion: test
+			apply!({ remove: [{ id: 'a', v: 1 }] })
+			expect(runs).toBe(3)
+			dispose()
+		})
+	})
+
 	describe('Input Validation', () => {
 		test('should throw InvalidCallbackError for non-function watched', () => {
 			expect(() => {
@@ -725,6 +824,105 @@ describe('Collection', () => {
 			})
 
 			expect(() => mapped.get()).toThrow('bad item')
+		})
+
+		test('byKey() tracks structural changes in source list', () => {
+			const list = createList([1, 2])
+			const doubled = list.deriveCollection((v: number) => v * 2)
+			let effectCount = 0
+			const dispose = createScope(() => {
+				createEffect(() => {
+					doubled.byKey(list.keyAt(0) as string)
+					effectCount++
+				})
+			})
+
+			expect(effectCount).toBe(1)
+			list.add(3)
+			expect(effectCount).toBe(2)
+			list.remove(0)
+			expect(effectCount).toBe(3)
+			dispose()
+		})
+
+		test('at(), keyAt(), indexOfKey() track structural changes in source', () => {
+			const list = createList([1])
+			const doubled = list.deriveCollection((v: number) => v * 2)
+			let byAt = 0
+			let byKeyAt = 0
+			let byIndexOfKey = 0
+			const dispose = createScope(() => {
+				createEffect(() => {
+					doubled.at(0)
+					byAt++
+				})
+				createEffect(() => {
+					doubled.keyAt(0)
+					byKeyAt++
+				})
+				createEffect(() => {
+					doubled.indexOfKey(list.keyAt(0) as string)
+					byIndexOfKey++
+				})
+			})
+
+			expect(byAt).toBe(1)
+			expect(byKeyAt).toBe(1)
+			expect(byIndexOfKey).toBe(1)
+			list.add(2)
+			expect(byAt).toBe(2)
+			expect(byKeyAt).toBe(2)
+			expect(byIndexOfKey).toBe(2)
+			dispose()
+		})
+
+		test('per-item memo does NOT gain a structural edge on the source', () => {
+			// Regression guard: byKey() now tracks, so deriveCollection's
+			// internal source.byKey(key).get() must be untracked. Otherwise
+			// every per-item memo would recompute on any structural change.
+			const list = createList([1, 2, 3])
+			let memoRuns = 0
+			const doubled = list.deriveCollection((v: number) => {
+				memoRuns++
+				return v * 2
+			})
+			const dispose = createScope(() => {
+				createEffect(() => {
+					// read each item's derived value directly
+					for (const key of doubled.keys()) {
+						doubled.byKey(key)?.get()
+					}
+				})
+			})
+
+			memoRuns = 0
+			// Add an item — existing per-item memos should NOT recompute.
+			// (Only the new item's memo runs once.)
+			const before = memoRuns
+			list.add(4)
+			expect(memoRuns).toBe(before + 1)
+			dispose()
+		})
+
+		test('Symbol.iterator tracks structural changes in source', () => {
+			const list = createList([1, 2])
+			const doubled = list.deriveCollection((v: number) => v * 2)
+			let runs = 0
+			const dispose = createScope(() => {
+				createEffect(() => {
+					for (const _sig of doubled) {
+						// iterate only — no item-level reads
+					}
+					runs++
+				})
+			})
+
+			expect(runs).toBe(1)
+			list.add(3)
+			expect(runs).toBe(2)
+			list.remove(0)
+			expect(runs).toBe(3)
+			dispose()
 		})
 	})
 })
