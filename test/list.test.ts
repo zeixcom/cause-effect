@@ -213,6 +213,14 @@ describe('List', () => {
 			)
 		})
 
+		test('DuplicateKeyError message includes a falsy value (CE-012)', () => {
+			// The constructor used a truthy check on `value`, so falsy-but-defined
+			// values like `0` were silently dropped from the message even though
+			// a value was passed.
+			const list = createList<number>([0], { keyConfig: item => String(item) })
+			expect(() => list.add(0)).toThrow('with value 0')
+		})
+
 		test('add with null throws NullishSignalValueError with item-for-key prefix', () => {
 			const list = createList<number>([1])
 			expect(() => {

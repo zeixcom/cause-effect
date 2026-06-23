@@ -122,7 +122,7 @@ class DuplicateKeyError extends Error {
 	constructor(where: string, key: string, value?: unknown) {
 		super(
 			`[${where}] Could not add key "${key}"${
-				value ? ` with value ${JSON.stringify(value)}` : ''
+				value != null ? ` with value ${JSON.stringify(value)}` : ''
 			} because it already exists`,
 		)
 		this.name = 'DuplicateKeyError'

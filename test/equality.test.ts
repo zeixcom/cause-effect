@@ -287,4 +287,31 @@ describe('DEEP_EQUALITY', () => {
 			expect(() => DEEP_EQUALITY(a, b)).not.toThrow()
 		})
 	})
+
+	describe('aliased (non-cyclic) references — ADR-0016', () => {
+		// The cycle guard must be scoped to the current recursion path, not
+		// "every object ever visited." An object reachable twice via different,
+		// non-cyclic paths (shared/aliased substructure) must still be compared
+		// independently each time, not short-circuited to true.
+		test('a shared sub-object compared against two different values is not aliased away', () => {
+			const shared = { val: 1 }
+			const a = { p: shared, q: shared }
+			const b = { p: { val: 1 }, q: { val: 2 } }
+			expect(DEEP_EQUALITY(a, b)).toBe(false)
+		})
+
+		test('array elements aliasing the same default object are compared independently', () => {
+			const DEFAULT = { count: 0 }
+			const arrA = [DEFAULT, DEFAULT]
+			const arrB = [{ count: 0 }, { count: 1 }]
+			expect(DEEP_EQUALITY(arrA, arrB)).toBe(false)
+		})
+
+		test('an aliased Date is still compared by value on each occurrence', () => {
+			const shared = new Date(1)
+			const a = { p: shared, q: shared }
+			const b = { p: new Date(1), q: new Date(2) }
+			expect(DEEP_EQUALITY(a, b)).toBe(false)
+		})
+	})
 })

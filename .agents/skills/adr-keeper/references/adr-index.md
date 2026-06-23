@@ -1,7 +1,7 @@
 # ADR Index
 
-**Last updated:** 2026-06-23
-**Total ADRs:** 15
+**Last updated:** 2026-06-24
+**Total ADRs:** 16
 
 | # | ADR | Status | Related Requirements |
 |---|-----|--------|---------------------|
@@ -9,7 +9,7 @@
 | [0002](../../../../adr/0002-match-handler-signature-design.md) | Match Handler Signature Design | ✅ Accepted | Utility Function Exports |
 | [0003](../../../../adr/0003-equality-strategy-naming-convention.md) | Equality Strategy Naming Convention | ✅ Accepted | Minimal Surface |
 | [0004](../../../../adr/0004-isequal-placement-and-deprecation.md) | isEqual Placement and Deprecation | ✅ Accepted | Minimal Surface |
-| [0005](../../../../adr/0005-cycle-detection-omission-in-deep-equality.md) | Cycle Detection Omission in Deep Equality | ✅ Accepted | Bundle Size, Zero-Deps |
+| [0005](../../../../adr/0005-cycle-detection-omission-in-deep-equality.md) | Cycle Detection Omission in Deep Equality | 🗑️ Superseded by [0016](../../../../adr/0016-path-scoped-cycle-detection-in-deep-equality.md) | Bundle Size, Zero-Deps |
 | [0006](../../../../adr/0006-scope-root-option-pattern.md) | Scope Root Option Pattern | ✅ Accepted | API Design |
 | [0007](../../../../adr/0007-node-composition-via-field-mixins.md) | Node Composition via Field Mixins | ✅ Accepted | Unified Graph |
 | [0008](../../../../adr/0008-doubly-linked-list-edge-structure.md) | Doubly-Linked List Edge Structure | ✅ Accepted | Performance |
@@ -20,6 +20,7 @@
 | [0013](../../../../adr/0013-link-fast-path-optimizations.md) | link() Fast-Path Optimizations | ✅ Accepted | Performance |
 | [0014](../../../../adr/0014-two-path-access-pattern-for-composite-signals.md) | Two-Path Access Pattern for Composite Signals | ✅ Accepted | Performance |
 | [0015](../../../../adr/0015-composite-lookup-methods-track-structural-changes.md) | Composite Lookup Methods Track Structural Changes (Asymmetrically) | ✅ Accepted | Explicit Reactivity, Non-Nullable Types, Minimal Surface |
+| [0016](../../../../adr/0016-path-scoped-cycle-detection-in-deep-equality.md) | Path-Scoped Cycle Detection in Deep Equality | ✅ Accepted | Performance |
 
 ---
 

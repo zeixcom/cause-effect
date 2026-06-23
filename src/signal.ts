@@ -18,7 +18,7 @@ import { createMemo, isMemo, type Memo } from './nodes/memo'
 import { createState, isState, type State } from './nodes/state'
 import { createStore, isStore, type Store } from './nodes/store'
 import { createTask, isTask, type Task } from './nodes/task'
-import { isAsyncFunction, isFunction, isRecord, isUniformArray } from './util'
+import { isAsyncFunction, isFunction, isRecord } from './util'
 
 /* === Types === */
 
@@ -91,7 +91,8 @@ function createSignal(value: unknown): unknown {
 		return createTask(value as TaskCallback<unknown & {}>)
 	if (isFunction(value))
 		return createMemo(value as MemoCallback<unknown & {}>)
-	if (isUniformArray<unknown & {}>(value)) return createList(value)
+	if (Array.isArray(value) && value.every(item => item != null))
+		return createList(value as (unknown & {})[])
 	if (isRecord(value)) return createStore(value)
 	return createState(value as unknown & {})
 }
@@ -111,7 +112,8 @@ function createMutableSignal(value: unknown): unknown {
 	if (isMutableSignal(value)) return value
 	if (value == null || isFunction(value) || isSignal(value))
 		throw new InvalidSignalValueError('createMutableSignal', value)
-	if (isUniformArray<unknown & {}>(value)) return createList(value)
+	if (Array.isArray(value) && value.every(item => item != null))
+		return createList(value as (unknown & {})[])
 	if (isRecord(value)) return createStore(value)
 	return createState(value as unknown & {})
 }
