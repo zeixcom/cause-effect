@@ -148,7 +148,7 @@ describe('Store', () => {
 			// Setting a record without `c` must remove that key.
 			store.set({ a: 1, b: 2 })
 			expect(store.byKey('c')).toBeUndefined()
-			expect(store.keys().toArray()).toEqual(['a', 'b'])
+			expect(Array.from(store.keys())).toEqual(['a', 'b'])
 		})
 	})
 
@@ -607,7 +607,7 @@ describe('Store', () => {
 		})
 	})
 
-	describe('set re-subscription leak (bug #4)', () => {
+	describe('set re-subscription leak', () => {
 		// store.set builds the prev value via buildValue() without untrack.
 		// When set() is called inside an effect, child .get() calls leak edges
 		// from each child State directly to that effect — causing over-broad
@@ -637,7 +637,7 @@ describe('Store', () => {
 		})
 	})
 
-	describe('set type-change routing (bug #5)', () => {
+	describe('set type-change routing', () => {
 		// When a property changes shape (primitive -> array), store.set must
 		// route through addSignal/createList, not stuff the array into the
 		// existing State. isRecord() returns false for arrays, which previously

@@ -417,11 +417,9 @@ describe('Collection', () => {
 			dispose()
 		})
 
-		test('should throw DuplicateKeyError when add produces a duplicate key (bug #3)', () => {
+		test('should throw DuplicateKeyError when add produces a duplicate key', () => {
 			type Item = { id: string; v: number }
-			let apply:
-				| ((changes: CollectionChanges<Item>) => void)
-				| undefined
+			let apply: ((changes: CollectionChanges<Item>) => void) | undefined
 			const col = createCollection<Item>(
 				applyChanges => {
 					apply = applyChanges
@@ -451,11 +449,9 @@ describe('Collection', () => {
 			dispose()
 		})
 
-		test('should throw DuplicateKeyError when adding a key that already exists (bug #3)', () => {
+		test('should throw DuplicateKeyError when adding a key that already exists', () => {
 			type Item = { id: string; v: number }
-			let apply:
-				| ((changes: CollectionChanges<Item>) => void)
-				| undefined
+			let apply: ((changes: CollectionChanges<Item>) => void) | undefined
 			const col = createCollection<Item>(
 				applyChanges => {
 					apply = applyChanges
@@ -496,9 +492,7 @@ describe('Collection', () => {
 
 		test('applyChanges change for nonexistent key is silently skipped', () => {
 			type Item = { id: string; v: number }
-			let apply:
-				| ((changes: CollectionChanges<Item>) => void)
-				| undefined
+			let apply: ((changes: CollectionChanges<Item>) => void) | undefined
 			const col = createCollection<Item>(
 				applyChanges => {
 					apply = applyChanges
@@ -524,9 +518,7 @@ describe('Collection', () => {
 
 		test('applyChanges remove for nonexistent key is silently skipped', () => {
 			type Item = { id: string; v: number }
-			let apply:
-				| ((changes: CollectionChanges<Item>) => void)
-				| undefined
+			let apply: ((changes: CollectionChanges<Item>) => void) | undefined
 			const col = createCollection<Item>(
 				applyChanges => {
 					apply = applyChanges

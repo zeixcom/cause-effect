@@ -13,7 +13,6 @@ import {
 	type SignalOptions,
 	type SinkNode,
 	TYPE_SLOT,
-	TYPE_MEMO,
 } from '../graph'
 import { isSignal } from '../signal'
 import { isSignalOfType } from '../util'
@@ -110,7 +109,6 @@ function createSlot<T extends {}>(
 	const guard = options?.guard
 
 	const node: MemoNode<T> = {
-		kind: TYPE_MEMO,
 		fn: () => delegated.get(),
 		value: undefined as unknown as T,
 		flags: FLAG_DIRTY,

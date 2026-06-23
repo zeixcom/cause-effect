@@ -1,4 +1,8 @@
-import { DuplicateKeyError, validateSignalValue } from '../errors'
+import {
+	DuplicateKeyError,
+	NullishSignalValueError,
+	validateSignalValue,
+} from '../errors'
 import {
 	batch,
 	batchDepth,
@@ -14,7 +18,6 @@ import {
 	refresh,
 	type SinkNode,
 	TYPE_LIST,
-	TYPE_MEMO,
 	untrack,
 } from '../graph'
 import type { MutableSignal } from '../signal'
@@ -299,7 +302,6 @@ function createList<
 	// On subsequent get(): untrack(buildValue) rebuilds without re-linking.
 	// Mutation methods set FLAG_RELINK to force re-establishment on next read.
 	const node: MemoNode<T[]> = {
-		kind: TYPE_MEMO,
 		fn: buildValue,
 		value,
 		flags: FLAG_DIRTY,
@@ -360,12 +362,13 @@ function createList<
 	// --- Initialize ---
 	for (let i = 0; i < value.length; i++) {
 		const val = value[i]
+		if (val == null)
+			throw new NullishSignalValueError(`${TYPE_LIST} item ${i}`)
 		let key = keys[i]
 		if (!key) {
 			key = generateKey(val)
 			keys[i] = key
 		}
-		validateSignalValue(`${TYPE_LIST} item for key "${key}"`, val)
 		signals.set(key, itemFactory(val))
 	}
 

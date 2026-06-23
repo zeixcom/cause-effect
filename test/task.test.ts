@@ -479,7 +479,7 @@ describe('Task', () => {
 		})
 	})
 
-	describe('Synchronous throw recovery (bug #1)', () => {
+	describe('Synchronous throw recovery', () => {
 		// When the task callback throws synchronously (reachable when the async
 		// predicate mis-classifies a function), recomputeTask must leave the node
 		// in a recoverable state: FLAG_RUNNING cleared, pending reset, and
@@ -492,7 +492,7 @@ describe('Task', () => {
 			// function can never throw synchronously, so this is the only way
 			// to reach recomputeTask's catch path in practice.
 			const ASYNC_PROTO = Object.getPrototypeOf(async () => {})
-			const boom = function (): Promise<number> {
+			const boom = (): Promise<number> => {
 				throw new Error('sync boom')
 			}
 			Object.setPrototypeOf(boom, ASYNC_PROTO)
@@ -519,7 +519,9 @@ describe('Task', () => {
 			}
 			expect(caught).toBeInstanceOf(Error)
 			expect((caught as Error).message).toBe('sync boom')
-			expect((caught as Error).message).not.toContain('Circular dependency')
+			expect((caught as Error).message).not.toContain(
+				'Circular dependency',
+			)
 		})
 	})
 

@@ -16,7 +16,6 @@ import {
 	runEffect,
 	type Signal,
 	trimSources,
-	TYPE_EFFECT,
 } from '../graph'
 import { isTask } from './task'
 
@@ -94,7 +93,6 @@ function createEffect(fn: EffectCallback): Cleanup {
 	validateCallback('Effect', fn)
 
 	const node: EffectNode = {
-		kind: TYPE_EFFECT,
 		fn,
 		flags: FLAG_DIRTY,
 		sources: null,

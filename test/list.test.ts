@@ -882,7 +882,7 @@ describe('List', () => {
 		})
 	})
 
-	describe('Undefined handling (bug #2)', () => {
+	describe('Undefined handling', () => {
 		// `undefined` elements must be rejected the same way `null` is — otherwise
 		// `keys` grows sparse and `length` / `get()` disagree.
 		test('should throw NullishSignalValueError for undefined elements on init', () => {
@@ -890,10 +890,10 @@ describe('List', () => {
 				// @ts-expect-error - Testing invalid input
 				createList([1, undefined, 3])
 			}).toThrow(NullishSignalValueError)
-			expect(() => {
-				// @ts-expect-error - Testing invalid input
-				createList([1, undefined, 3])
-			}).toThrow('null or undefined')
+
+			// Compacted arrays should work as expected
+			const list = createList([1, undefined, 3].filter(x => x != null))
+			expect(list.length).toBe(list.get().length)
 		})
 
 		test('should throw NullishSignalValueError for undefined elements on set() with content-based keys', () => {
@@ -905,12 +905,16 @@ describe('List', () => {
 			})
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
-				list.set([{ id: 'a', v: 1 }, undefined])
+				list.set([{ id: 'a', v: 2 }, undefined])
 			}).toThrow(NullishSignalValueError)
+
+			// Compacted arrays should work as expected
+			list.set([{ id: 'a', v: 2 }, undefined].filter(x => x != null))
+			expect(list.length).toBe(list.get().length)
 		})
 
 		test('length and get() must agree when there are no undefined holes', () => {
-			const list = createList([1, 2, 3])
+			const list = createList([0, 1, 2, 3])
 			expect(list.length).toBe(list.get().length)
 		})
 	})

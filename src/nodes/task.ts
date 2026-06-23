@@ -13,11 +13,11 @@ import {
 	propagate,
 	refresh,
 	type SinkNode,
+	type StateNode,
+	setState,
 	type TaskCallback,
 	type TaskNode,
 	TYPE_TASK,
-	type StateNode,
-	setState,
 } from '../graph'
 import { isAsyncFunction, isSignalOfType } from '../util'
 
@@ -119,7 +119,6 @@ function createTask<T extends {}>(
 	}
 
 	const node: TaskNode<T> = {
-		kind: TYPE_TASK,
 		fn,
 		value: options?.value as T,
 		sources: null,

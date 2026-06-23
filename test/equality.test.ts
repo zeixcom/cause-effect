@@ -234,7 +234,7 @@ describe('DEEP_EQUALITY', () => {
 		})
 	})
 
-	describe('built-in value types (bug #6b)', () => {
+	describe('built-in value types', () => {
 		// Date and RegExp represent values, not identity — two equal instances
 		// must compare equal under DEEP_EQUALITY rather than forcing spurious
 		// downstream propagation.
@@ -260,7 +260,7 @@ describe('DEEP_EQUALITY', () => {
 		})
 	})
 
-	describe('cyclic structures (bug #6a)', () => {
+	describe('cyclic structures', () => {
 		// Cyclic plain objects must not stack-overflow; structurally equal cycles
 		// compare equal.
 		test('structurally equal cyclic objects do not overflow and compare equal', () => {

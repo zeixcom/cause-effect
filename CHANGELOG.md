@@ -15,7 +15,6 @@
 
 ### Changed
 
-- **Explicit node-kind discriminator replaces duck-typed routing** (`src/graph.ts`): `refresh()` and `CircularDependencyError` previously branched on incidental field names (`'controller' in node` / `'value' in node`). Now `MemoNode`, `TaskNode`, and `EffectNode` carry an explicit `kind` field (`'Memo'` | `'Task'` | `'Effect'`), eliminating fragility where adding a field named `value` or `controller` would silently misroute recomputation.
 - **`isComputed` return type corrected** (`src/signal.ts`): Was `value is Memo<T>` despite accepting `Task`s. Now `value is Memo<T> | Task<T>`, reflecting that a `Task` does not satisfy `Memo<T>`'s shape (no `isPending`/`abort`).
 
 ## 1.3.3

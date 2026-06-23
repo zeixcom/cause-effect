@@ -21,7 +21,6 @@ import {
 	type SinkNode,
 	SKIP_EQUALITY,
 	TYPE_COLLECTION,
-	TYPE_MEMO,
 	untrack,
 } from '../graph'
 import { isAsyncFunction, isSignalOfType, isSyncFunction } from '../util'
@@ -207,7 +206,6 @@ function deriveCollection<T extends {}, U extends {}>(
 	// fn (buildValue) syncs keys then reads child signals to produce T[].
 	// Keys are tracked separately in a local variable.
 	const node: MemoNode<T[]> = {
-		kind: TYPE_MEMO,
 		fn: buildValue,
 		value: [],
 		flags: FLAG_DIRTY,
@@ -370,7 +368,6 @@ function createCollection<T extends {}, S extends Signal<T> = Signal<T>>(
 	}
 
 	const node: MemoNode<T[]> = {
-		kind: TYPE_MEMO,
 		fn: buildValue,
 		value,
 		flags: FLAG_DIRTY,

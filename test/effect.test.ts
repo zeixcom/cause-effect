@@ -595,17 +595,24 @@ describe('match', () => {
 		// recomputeTask() sets node.controller synchronously, so isPending() = true immediately
 		// after the first get() call that triggers recomputation.
 		test('should call stale on initial run when task has a seeded value and is computing', async () => {
-			const task = createTask(async () => {
-				await wait(50)
-				return 99
-			}, { value: 42 })
+			const task = createTask(
+				async () => {
+					await wait(50)
+					return 99
+				},
+				{ value: 42 },
+			)
 			let okCount = 0
 			let staleCount = 0
 
 			createEffect(() =>
 				match(task, {
-					ok: () => { okCount++ },
-					stale: () => { staleCount++ },
+					ok: () => {
+						okCount++
+					},
+					stale: () => {
+						staleCount++
+					},
 				}),
 			)
 
@@ -621,17 +628,24 @@ describe('match', () => {
 
 		test('should call stale when another dependency changes while task is still pending', async () => {
 			const other = createState(0)
-			const task = createTask(async () => {
-				await wait(100)
-				return 42
-			}, { value: 0 })
+			const task = createTask(
+				async () => {
+					await wait(100)
+					return 42
+				},
+				{ value: 0 },
+			)
 			const log: string[] = []
 
 			createEffect(() => {
 				const o = other.get()
 				match(task, {
-					ok: v => { log.push(`ok:${v}:${o}`) },
-					stale: () => { log.push(`stale:${o}`) },
+					ok: v => {
+						log.push(`ok:${v}:${o}`)
+					},
+					stale: () => {
+						log.push(`stale:${o}`)
+					},
 				})
 			})
 
@@ -648,15 +662,20 @@ describe('match', () => {
 		})
 
 		test('should fall back to ok when stale handler is absent', async () => {
-			const task = createTask(async () => {
-				await wait(50)
-				return 99
-			}, { value: 42 })
+			const task = createTask(
+				async () => {
+					await wait(50)
+					return 99
+				},
+				{ value: 42 },
+			)
 			let okCount = 0
 
 			createEffect(() =>
 				match(task, {
-					ok: () => { okCount++ },
+					ok: () => {
+						okCount++
+					},
 				}),
 			)
 
@@ -669,17 +688,24 @@ describe('match', () => {
 
 		test('should call stale for tuple overload when any task is re-computing', async () => {
 			const a = createState(10)
-			const task = createTask(async () => {
-				await wait(50)
-				return 99
-			}, { value: 0 })
+			const task = createTask(
+				async () => {
+					await wait(50)
+					return 99
+				},
+				{ value: 0 },
+			)
 			let okCount = 0
 			let staleCount = 0
 
 			createEffect(() =>
 				match([a, task], {
-					ok: () => { okCount++ },
-					stale: () => { staleCount++ },
+					ok: () => {
+						okCount++
+					},
+					stale: () => {
+						staleCount++
+					},
 				}),
 			)
 
@@ -695,10 +721,13 @@ describe('match', () => {
 
 		test('nil takes precedence over stale', async () => {
 			// One task unresolved (no initial value → nil), one task with seeded value (stale)
-			const staleTask = createTask(async () => {
-				await wait(200)
-				return 42
-			}, { value: 0 })
+			const staleTask = createTask(
+				async () => {
+					await wait(200)
+					return 42
+				},
+				{ value: 0 },
+			)
 			const nilTask = createTask(async () => {
 				await wait(200)
 				return 99
@@ -709,9 +738,15 @@ describe('match', () => {
 
 			createEffect(() =>
 				match([staleTask, nilTask], {
-					ok: () => { okCount++ },
-					nil: () => { nilCount++ },
-					stale: () => { staleCount++ },
+					ok: () => {
+						okCount++
+					},
+					nil: () => {
+						nilCount++
+					},
+					stale: () => {
+						staleCount++
+					},
 				}),
 			)
 
@@ -795,16 +830,21 @@ describe('match', () => {
 		})
 
 		test('stale cleanup runs before next dispatch', async () => {
-			const task = createTask(async () => {
-				await wait(50)
-				return 99
-			}, { value: 42 })
+			const task = createTask(
+				async () => {
+					await wait(50)
+					return 99
+				},
+				{ value: 42 },
+			)
 			let cleanupCount = 0
 
 			createEffect(() =>
 				match(task, {
 					ok: () => {},
-					stale: () => () => { cleanupCount++ },
+					stale: () => () => {
+						cleanupCount++
+					},
 				}),
 			)
 
@@ -971,13 +1011,11 @@ describe('match', () => {
 		test('should wrap a non-Error thrown by a signal get() before routing to err', () => {
 			const throwingSignal = {
 				get(): never {
-					// biome-ignore lint/svelte/require-throw-error: testing non-Error throw
 					throw 'string error'
 				},
 			}
 			let received: Error | undefined
 			createEffect(() =>
-				// @ts-expect-error - throwingSignal is not a real Signal but match reads .get()
 				match(throwingSignal, {
 					ok: () => {},
 					err: e => {
@@ -995,7 +1033,6 @@ describe('match', () => {
 			createEffect(() =>
 				match(source, {
 					ok: () => {
-						// biome-ignore lint/svelte/require-throw-error: testing non-Error throw
 						throw { custom: 'object' }
 					},
 					err: e => {
@@ -1055,7 +1092,10 @@ describe('match', () => {
 						ok: () =>
 							new Promise<undefined>((_resolve, reject) => {
 								// Reject asynchronously, after disposal.
-								setTimeout(() => reject(new Error('late reject')), 10)
+								setTimeout(
+									() => reject(new Error('late reject')),
+									10,
+								)
 							}),
 						err: e => {
 							errCount++

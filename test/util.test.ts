@@ -1,15 +1,14 @@
 import { describe, expect, test } from 'bun:test'
 import {
+	InvalidCallbackError,
+	InvalidSignalValueError,
 	isAsyncFunction,
 	isFunction,
 	isRecord,
-	InvalidCallbackError,
-	InvalidSignalValueError,
-	valueString,
 } from '../index.ts'
 // isSyncFunction is internal-only (not re-exported from index.ts), so import
 // from source to exercise it directly.
-import { isSyncFunction } from '../src/util'
+import { isSyncFunction, valueString } from '../src/util'
 
 /* === Tests === */
 
@@ -17,7 +16,7 @@ describe('util', () => {
 	describe('isFunction', () => {
 		test('returns true for functions', () => {
 			expect(isFunction(() => {})).toBe(true)
-			expect(isFunction(function () {})).toBe(true)
+			expect(isFunction(() => {})).toBe(true)
 			expect(isFunction(async () => {})).toBe(true)
 		})
 
@@ -32,20 +31,19 @@ describe('util', () => {
 	describe('isAsyncFunction', () => {
 		test('returns true for async functions', () => {
 			expect(isAsyncFunction(async () => {})).toBe(true)
-			expect(isAsyncFunction(async function () {})).toBe(true)
+			expect(isAsyncFunction(async () => {})).toBe(true)
 		})
 
 		test('returns false for sync functions', () => {
 			expect(isAsyncFunction(() => {})).toBe(false)
-			expect(isAsyncFunction(function () {})).toBe(false)
+			expect(isAsyncFunction(() => {})).toBe(false)
 		})
 
 		test('returns false for a sync function returning a Promise (footgun, smell #8)', () => {
 			// A regular function that returns a Promise is NOT classified as
 			// async. This means createSignal/createComputed route it to createMemo,
 			// caching the Promise itself. Documented behavior — locking it in.
-			const promiseReturning = (): Promise<number> =>
-				Promise.resolve(42)
+			const promiseReturning = (): Promise<number> => Promise.resolve(42)
 			expect(isAsyncFunction(promiseReturning)).toBe(false)
 		})
 
@@ -58,7 +56,7 @@ describe('util', () => {
 	describe('isSyncFunction', () => {
 		test('returns true for sync functions', () => {
 			expect(isSyncFunction(() => {})).toBe(true)
-			expect(isSyncFunction(function () {})).toBe(true)
+			expect(isSyncFunction(() => {})).toBe(true)
 		})
 
 		test('returns false for async functions', () => {
@@ -136,7 +134,7 @@ describe('util', () => {
 			expect(valueString([1, 2, 3])).toBe('[1,2,3]')
 		})
 
-		test('should not throw on circular references (bug #7)', () => {
+		test('should not throw on circular references', () => {
 			const circular: Record<string, unknown> = { name: 'root' }
 			circular.self = circular
 			// Must not throw a secondary TypeError about circular structure.
@@ -146,7 +144,7 @@ describe('util', () => {
 		})
 	})
 
-	describe('Error constructors with circular values (bug #7)', () => {
+	describe('Error constructors with circular values', () => {
 		// Constructing these errors must not mask the original validation
 		// failure with a "Converting circular structure to JSON" TypeError.
 		// (Note: we construct directly rather than via expect().not.toThrow(),
@@ -163,7 +161,7 @@ describe('util', () => {
 			}
 			expect(secondary).toBeUndefined()
 			expect(err).toBeInstanceOf(InvalidSignalValueError)
-			expect(err!.message).toContain('Signal value')
+			expect(err?.message).toContain('Signal value')
 		})
 
 		test('InvalidCallbackError does not throw on circular value', () => {
@@ -178,7 +176,7 @@ describe('util', () => {
 			}
 			expect(secondary).toBeUndefined()
 			expect(err).toBeInstanceOf(InvalidCallbackError)
-			expect(err!.message).toContain('Callback')
+			expect(err?.message).toContain('Callback')
 		})
 	})
 })

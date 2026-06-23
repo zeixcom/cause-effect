@@ -14,18 +14,17 @@ import {
 	refresh,
 	type SinkNode,
 	TYPE_STORE,
-	TYPE_MEMO,
 	untrack,
 } from '../graph'
 import { isRecord, isSignalOfType } from '../util'
 import {
 	createList,
-	isList,
 	type DiffResult,
+	isList,
 	type List,
 	type UnknownRecord,
 } from './list'
-import { createState, isState, type State } from './state'
+import { createState, type State } from './state'
 
 /* === Types === */
 
@@ -187,7 +186,6 @@ function createStore<T extends UnknownRecord>(
 	// On subsequent get(): untrack(buildValue) rebuilds without re-linking.
 	// Mutation methods set FLAG_RELINK to force re-establishment on next read.
 	const node: MemoNode<T> = {
-		kind: TYPE_MEMO,
 		fn: buildValue,
 		value,
 		flags: FLAG_DIRTY,
@@ -220,16 +218,16 @@ function createStore<T extends UnknownRecord>(
 					const val = changes.change[key]
 					validateSignalValue(`${TYPE_STORE} for key "${key}"`, val)
 					const signal = signals.get(key)
-						if (signal) {
-							// Type changed (e.g. primitive -> array, array -> object):
-							// replace the child signal. Comparing shape categories
-							// catches array<->primitive and array<->record transitions
-							// that isRecord-only checks miss (arrays are not records).
-							if (shapeCategory(val) !== signalCategory(signal)) {
-								addSignal(key, val)
-								structural = true
-							} else signal.set(val as never)
-						}
+					if (signal) {
+						// Type changed (e.g. primitive -> array, array -> object):
+						// replace the child signal. Comparing shape categories
+						// catches array<->primitive and array<->record transitions
+						// that isRecord-only checks miss (arrays are not records).
+						if (shapeCategory(val) !== signalCategory(signal)) {
+							addSignal(key, val)
+							structural = true
+						} else signal.set(val as never)
+					}
 				}
 			})
 		}
@@ -316,7 +314,8 @@ function createStore<T extends UnknownRecord>(
 			// Use cached value if clean, recompute if dirty. untrack prevents
 			// buildValue's child .get() calls from leaking edges into whatever
 			// effect is currently active (which would cause over-broad re-runs).
-			const prev = node.flags & FLAG_DIRTY ? untrack(buildValue) : node.value
+			const prev =
+				node.flags & FLAG_DIRTY ? untrack(buildValue) : node.value
 
 			const changes = diffRecords(prev, next)
 			if (applyChanges(changes)) {
