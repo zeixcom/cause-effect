@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **`recomputeTask` left a Task permanently stuck after a synchronous throw** (`src/graph.ts`): The early `return` in the `catch` block skipped both `setState(node.pendingNode, true)` and `node.flags = FLAG_CLEAN`, leaving `FLAG_RUNNING` set. Every subsequent read then threw a spurious `CircularDependencyError` (via the `FLAG_RUNNING` guard in `refresh()`), even though no cycle existed. Now the `catch` clears `FLAG_RUNNING` and resets pending, so the node stays recoverable and subsequent reads report the original error.
+- **`List` silently dropped `undefined` elements, causing a `length`/`get()` mismatch** (`src/nodes/list.ts`): The init loop and `diffArrays` skipped `undefined` via `if (val === undefined) continue`, leaving `keys` sparse (`keys.length` > actual signal count) while `node.value` retained the original array with the `undefined`. Now `undefined` is rejected with `NullishSignalValueError`, consistent with `null`.
+- **`createCollection` `applyChanges` silently overwrote duplicate keys** (`src/nodes/collection.ts`): The add-path called `signals.set(key, ...)` without checking for an existing key, orphaning the previous signal's subscribers. Now throws `DuplicateKeyError`, matching `List.add` and `Store.add`.
+- **`Store.set()` leaked dependency edges when called inside an effect** (`src/nodes/store.ts`): `buildValue()` was called without `untrack()`, so child `.get()` calls created edges from each child `State` to the active effect, causing over-broad re-runs. Now wrapped in `untrack()`, mirroring `List`.
+- **`Store.set()` misrouted primitive↔array type changes** (`src/nodes/store.ts`): The type-change check `isRecord(val) !== isStore(signal)` returned `false` for arrays (not records), so `State<number>` → array fell into `signal.set(array)` instead of routing through `addSignal`/`createList`. Now compares shape categories (list/store/state).
+- **`DEEP_EQUALITY` stack-overflowed on cyclic input and rejected equal `Date`/`RegExp`** (`src/graph.ts`): `deepEqual` had no cycle guard and treated `Date`/`RegExp` as non-records (returning `false`). Now has a `WeakSet` seen-pairs guard and explicit `Date` (`getTime`) and `RegExp` (`source`+`flags`) branches.
+- **`valueString` threw inside `Error` constructors on circular values** (`src/util.ts`): `JSON.stringify` throws on circular references, masking the original validation failure. Now wrapped in try/catch with a `String(value)` fallback.
+- **`Slot.set()` stack-overflowed on circular delegation** (`src/nodes/slot.ts`): Mutual delegation (A→B→A) infinite-looped. Now detects the cycle and throws a descriptive error.
+
+### Changed
+
+- **Composite signal accessors now subscribe to structural changes**: The direct-lookup methods (`at()`, `byKey()`, `keyAt()`, `indexOfKey()`) and the `Symbol.iterator` on `List` and `Collection`, plus the `Symbol.iterator` on `Store`, previously created no graph edge — reading them inside an effect or memo silently failed to re-run when keys were added, removed, or reordered. Each now calls `subscribe()` (or `ensureFresh()` for `deriveCollection`, whose node can be stale from upstream tracked changes), establishing the same O(1) structural-consumer edge that `keys()`, `length`, and `get()` already create. The defensive `keys()` pre-read workaround is no longer required, and `list.replace(key, value)` now reaches iterator-subscribers (previously silent). See [ADR-0015](adr/0015-composite-lookup-methods-track-structural-changes.md). **Migration:** effects that read *only* these accessors will now re-run on structural changes where they previously did not — the intended fix, but a behavior change to be aware of. This is not type- or API-surface-breaking.
+- **`Store` per-property access stays granular**: `Store.byKey()` and the proxy property access (`store.prop`) deliberately remain untracked for structural changes, because proxy reads are already granular — `store.name` returns the child `State`, whose `.get()` forms a property-level edge. Adding a structural edge would make `store.set({ name, age })` spuriously re-run the `name` effect. The only untracked accessors in the library are now these Store per-property paths; whole-store traversal (`get()`, `keys()`, iterator) tracks consistently. The principled line within Store is whole-store vs per-property.
+- **`List.replace()` is batched internally**: The item-signal `set()` and the structural node propagation are now wrapped in `batch()` so subscribers holding both an item-level edge and a structural edge (e.g. an effect calling `byKey(k).get()`) flush once instead of up to three times. This was a latent redundancy exposed by the accessor-tracking change above.
+- **`isComputed` return type corrected** (`src/signal.ts`): Was `value is Memo<T>` despite accepting `Task`s. Now `value is Memo<T> | Task<T>`, reflecting that a `Task` does not satisfy `Memo<T>`'s shape (no `isPending`/`abort`).
+
 ## 1.3.3
 
 ### Changed

@@ -128,4 +128,30 @@ describe('batch', () => {
 		expect(result).toBe(30)
 		expect(count).toBe(2)
 	})
+
+	test('should restore batchDepth and propagate error when fn throws', () => {
+		const a = createState(1)
+		let count = 0
+		createEffect((): undefined => {
+			void a.get()
+			count++
+		})
+		expect(count).toBe(1)
+
+		// The batch callback throws — the error must propagate, and
+		// batchDepth must be restored to 0 so subsequent batches flush normally.
+		expect(() =>
+			batch(() => {
+				a.set(2)
+				throw new Error('boom')
+			}),
+		).toThrow('boom')
+
+		// Subsequent batch must flush effects exactly once.
+		count = 0
+		batch(() => {
+			a.set(3)
+		})
+		expect(count).toBe(1)
+	})
 })

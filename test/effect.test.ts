@@ -595,17 +595,24 @@ describe('match', () => {
 		// recomputeTask() sets node.controller synchronously, so isPending() = true immediately
 		// after the first get() call that triggers recomputation.
 		test('should call stale on initial run when task has a seeded value and is computing', async () => {
-			const task = createTask(async () => {
-				await wait(50)
-				return 99
-			}, { value: 42 })
+			const task = createTask(
+				async () => {
+					await wait(50)
+					return 99
+				},
+				{ value: 42 },
+			)
 			let okCount = 0
 			let staleCount = 0
 
 			createEffect(() =>
 				match(task, {
-					ok: () => { okCount++ },
-					stale: () => { staleCount++ },
+					ok: () => {
+						okCount++
+					},
+					stale: () => {
+						staleCount++
+					},
 				}),
 			)
 
@@ -621,17 +628,24 @@ describe('match', () => {
 
 		test('should call stale when another dependency changes while task is still pending', async () => {
 			const other = createState(0)
-			const task = createTask(async () => {
-				await wait(100)
-				return 42
-			}, { value: 0 })
+			const task = createTask(
+				async () => {
+					await wait(100)
+					return 42
+				},
+				{ value: 0 },
+			)
 			const log: string[] = []
 
 			createEffect(() => {
 				const o = other.get()
 				match(task, {
-					ok: v => { log.push(`ok:${v}:${o}`) },
-					stale: () => { log.push(`stale:${o}`) },
+					ok: v => {
+						log.push(`ok:${v}:${o}`)
+					},
+					stale: () => {
+						log.push(`stale:${o}`)
+					},
 				})
 			})
 
@@ -648,15 +662,20 @@ describe('match', () => {
 		})
 
 		test('should fall back to ok when stale handler is absent', async () => {
-			const task = createTask(async () => {
-				await wait(50)
-				return 99
-			}, { value: 42 })
+			const task = createTask(
+				async () => {
+					await wait(50)
+					return 99
+				},
+				{ value: 42 },
+			)
 			let okCount = 0
 
 			createEffect(() =>
 				match(task, {
-					ok: () => { okCount++ },
+					ok: () => {
+						okCount++
+					},
 				}),
 			)
 
@@ -669,17 +688,24 @@ describe('match', () => {
 
 		test('should call stale for tuple overload when any task is re-computing', async () => {
 			const a = createState(10)
-			const task = createTask(async () => {
-				await wait(50)
-				return 99
-			}, { value: 0 })
+			const task = createTask(
+				async () => {
+					await wait(50)
+					return 99
+				},
+				{ value: 0 },
+			)
 			let okCount = 0
 			let staleCount = 0
 
 			createEffect(() =>
 				match([a, task], {
-					ok: () => { okCount++ },
-					stale: () => { staleCount++ },
+					ok: () => {
+						okCount++
+					},
+					stale: () => {
+						staleCount++
+					},
 				}),
 			)
 
@@ -695,10 +721,13 @@ describe('match', () => {
 
 		test('nil takes precedence over stale', async () => {
 			// One task unresolved (no initial value → nil), one task with seeded value (stale)
-			const staleTask = createTask(async () => {
-				await wait(200)
-				return 42
-			}, { value: 0 })
+			const staleTask = createTask(
+				async () => {
+					await wait(200)
+					return 42
+				},
+				{ value: 0 },
+			)
 			const nilTask = createTask(async () => {
 				await wait(200)
 				return 99
@@ -709,9 +738,15 @@ describe('match', () => {
 
 			createEffect(() =>
 				match([staleTask, nilTask], {
-					ok: () => { okCount++ },
-					nil: () => { nilCount++ },
-					stale: () => { staleCount++ },
+					ok: () => {
+						okCount++
+					},
+					nil: () => {
+						nilCount++
+					},
+					stale: () => {
+						staleCount++
+					},
 				}),
 			)
 
@@ -795,16 +830,21 @@ describe('match', () => {
 		})
 
 		test('stale cleanup runs before next dispatch', async () => {
-			const task = createTask(async () => {
-				await wait(50)
-				return 99
-			}, { value: 42 })
+			const task = createTask(
+				async () => {
+					await wait(50)
+					return 99
+				},
+				{ value: 42 },
+			)
 			let cleanupCount = 0
 
 			createEffect(() =>
 				match(task, {
 					ok: () => {},
-					stale: () => () => { cleanupCount++ },
+					stale: () => () => {
+						cleanupCount++
+					},
 				}),
 			)
 
@@ -960,6 +1000,118 @@ describe('match', () => {
 			expect(cleanupCount).toBe(0) // no cleanup on first run
 			source.set(2) // re-run should call previous cleanup
 			expect(cleanupCount).toBe(1)
+		})
+	})
+
+	describe('non-Error throw wrapping', () => {
+		// match wraps non-Error thrown values (strings, objects) via
+		// new Error(String(e)) before routing to err. This covers the three
+		// wrapping sites: signal .get() throw, ok-handler throw, and async
+		// .catch rejection.
+		test('should wrap a non-Error thrown by a signal get() before routing to err', () => {
+			const throwingSignal = {
+				get(): never {
+					throw 'string error'
+				},
+			}
+			let received: Error | undefined
+			createEffect(() =>
+				match(throwingSignal, {
+					ok: () => {},
+					err: e => {
+						received = e
+					},
+				}),
+			)
+			expect(received).toBeInstanceOf(Error)
+			expect(received?.message).toBe('string error')
+		})
+
+		test('should wrap a non-Error thrown by the ok handler before routing to err', () => {
+			const source = createState(1)
+			let received: Error | undefined
+			createEffect(() =>
+				match(source, {
+					ok: () => {
+						throw { custom: 'object' }
+					},
+					err: e => {
+						received = e
+					},
+				}),
+			)
+			expect(received).toBeInstanceOf(Error)
+			expect(received?.message).toBe('[object Object]')
+		})
+	})
+
+	describe('nil handler cleanup', () => {
+		test('cleanup returned by nil is called on re-run', () => {
+			const task = createTask(async () => {
+				return 42
+			})
+			let nilCount = 0
+			let cleanupCount = 0
+			const dispose = createScope(() => {
+				createEffect(() =>
+					match(task, {
+						ok: () => {
+							nilCount = -1 // should never run while pending
+						},
+						nil: () => {
+							nilCount++
+							return () => {
+								cleanupCount++
+							}
+						},
+					}),
+				)
+			})
+			// First run: task is pending (no initial value), nil fires.
+			expect(nilCount).toBe(1)
+			expect(cleanupCount).toBe(0)
+
+			dispose()
+			// nil cleanup should run on disposal.
+			expect(cleanupCount).toBe(1)
+		})
+	})
+
+	describe('async catch routes to err even after owner disposal (smell #11)', () => {
+		// Documented behavior (JSDoc on match): rejections from stale async
+		// handlers are routed to err. The .then path checks controller.aborted,
+		// but the .catch path does not — so a handler that rejects after the
+		// owner is disposed still fires err. This test locks in that behavior.
+		test('err fires for a rejection that settles after disposal', async () => {
+			const source = createState(1)
+			let errCount = 0
+			let lastErr: Error | undefined
+			const dispose = createScope(() => {
+				createEffect(() =>
+					match(source, {
+						ok: () =>
+							new Promise<undefined>((_resolve, reject) => {
+								// Reject asynchronously, after disposal.
+								setTimeout(
+									() => reject(new Error('late reject')),
+									10,
+								)
+							}),
+						err: e => {
+							errCount++
+							lastErr = e
+						},
+					}),
+				)
+			})
+
+			expect(errCount).toBe(0)
+			dispose()
+			// After disposal, the pending rejection settles and routes to err
+			// despite the owner being gone.
+			await wait(30)
+			expect(errCount).toBe(1)
+			expect(lastErr?.message).toBe('late reject')
 		})
 	})
 })

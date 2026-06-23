@@ -125,7 +125,7 @@ function createMutableSignal(value: unknown): unknown {
  * @param value - Value to check
  * @returns True if value is a computed signal, false otherwise
  */
-function isComputed<T extends {}>(value: unknown): value is Memo<T> {
+function isComputed<T extends {}>(value: unknown): value is Memo<T> | Task<T> {
 	return isMemo(value) || isTask(value)
 }
 

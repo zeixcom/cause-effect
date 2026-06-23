@@ -220,7 +220,14 @@ const DEFAULT_EQUALITY = <T extends {}>(a: T, b: T): boolean => a === b
  */
 const SKIP_EQUALITY = (_a?: unknown, _b?: unknown): boolean => false
 
-const deepEqual = (a: unknown, b: unknown): boolean => {
+const deepEqual = (a: unknown, b: unknown): boolean =>
+	deepEqualInner(a, b, new WeakSet())
+
+const deepEqualInner = (
+	a: unknown,
+	b: unknown,
+	seen: WeakSet<object>,
+): boolean => {
 	if (Object.is(a, b)) return true
 	if (typeof a !== typeof b) return false
 	if (
@@ -231,6 +238,12 @@ const deepEqual = (a: unknown, b: unknown): boolean => {
 	)
 		return false
 
+	// Cycle guard: if we are already comparing this pair, treat as equal.
+	// Using a single WeakSet keyed on `a` is sufficient because we always
+	// descend into (a[key], b[key]) pairs in lockstep.
+	if (seen.has(a as object)) return true
+	seen.add(a as object)
+
 	const aIsArray = Array.isArray(a)
 	if (aIsArray !== Array.isArray(b)) return false
 
@@ -239,16 +252,24 @@ const deepEqual = (a: unknown, b: unknown): boolean => {
 		const ba = b as unknown[]
 		if (aa.length !== ba.length) return false
 		for (let i = 0; i < aa.length; i++)
-			if (!deepEqual(aa[i], ba[i])) return false
+			if (!deepEqualInner(aa[i], ba[i], seen)) return false
 		return true
 	}
+
+	// Value-semantic built-ins: compare by their intrinsic value, not identity.
+	// These are not plain records, so without explicit handling they would
+	// fall through to `return false` and force spurious downstream propagation.
+	if (a instanceof Date && b instanceof Date)
+		return a.getTime() === b.getTime()
+	if (a instanceof RegExp && b instanceof RegExp)
+		return a.source === b.source && a.flags === b.flags
 
 	if (isRecord(a) && isRecord(b)) {
 		const aKeys = Object.keys(a)
 		if (aKeys.length !== Object.keys(b).length) return false
 		for (const key of aKeys) {
 			if (!(key in b)) return false
-			if (!deepEqual(a[key], b[key])) return false
+			if (!deepEqualInner(a[key], b[key], seen)) return false
 		}
 		return true
 	}
@@ -463,6 +484,11 @@ function recomputeTask(node: TaskNode<unknown & {}>): void {
 	} catch (err) {
 		node.controller = undefined
 		node.error = err instanceof Error ? err : new Error(String(err))
+		// Keep the node recoverable: clear FLAG_RUNNING and reset pending,
+		// so subsequent reads report the SAME error instead of a spurious
+		// CircularDependencyError on the stuck RUNNING flag.
+		node.flags = FLAG_CLEAN
+		setState(node.pendingNode, false)
 		return
 	} finally {
 		activeSink = prevWatcher
