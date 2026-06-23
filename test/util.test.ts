@@ -1,13 +1,114 @@
 import { describe, expect, test } from 'bun:test'
 import {
+	isAsyncFunction,
+	isFunction,
+	isRecord,
 	InvalidCallbackError,
 	InvalidSignalValueError,
 	valueString,
 } from '../index.ts'
+// isSyncFunction is internal-only (not re-exported from index.ts), so import
+// from source to exercise it directly.
+import { isSyncFunction } from '../src/util'
 
 /* === Tests === */
 
 describe('util', () => {
+	describe('isFunction', () => {
+		test('returns true for functions', () => {
+			expect(isFunction(() => {})).toBe(true)
+			expect(isFunction(function () {})).toBe(true)
+			expect(isFunction(async () => {})).toBe(true)
+		})
+
+		test('returns false for non-functions', () => {
+			expect(isFunction(null)).toBe(false)
+			expect(isFunction(42)).toBe(false)
+			expect(isFunction('str')).toBe(false)
+			expect(isFunction({})).toBe(false)
+		})
+	})
+
+	describe('isAsyncFunction', () => {
+		test('returns true for async functions', () => {
+			expect(isAsyncFunction(async () => {})).toBe(true)
+			expect(isAsyncFunction(async function () {})).toBe(true)
+		})
+
+		test('returns false for sync functions', () => {
+			expect(isAsyncFunction(() => {})).toBe(false)
+			expect(isAsyncFunction(function () {})).toBe(false)
+		})
+
+		test('returns false for a sync function returning a Promise (footgun, smell #8)', () => {
+			// A regular function that returns a Promise is NOT classified as
+			// async. This means createSignal/createComputed route it to createMemo,
+			// caching the Promise itself. Documented behavior — locking it in.
+			const promiseReturning = (): Promise<number> =>
+				Promise.resolve(42)
+			expect(isAsyncFunction(promiseReturning)).toBe(false)
+		})
+
+		test('returns false for non-functions', () => {
+			expect(isAsyncFunction(null)).toBe(false)
+			expect(isAsyncFunction(42)).toBe(false)
+		})
+	})
+
+	describe('isSyncFunction', () => {
+		test('returns true for sync functions', () => {
+			expect(isSyncFunction(() => {})).toBe(true)
+			expect(isSyncFunction(function () {})).toBe(true)
+		})
+
+		test('returns false for async functions', () => {
+			expect(isSyncFunction(async () => {})).toBe(false)
+		})
+
+		test('returns false for non-functions', () => {
+			expect(isSyncFunction(null)).toBe(false)
+			expect(isSyncFunction(42)).toBe(false)
+		})
+	})
+
+	describe('isRecord', () => {
+		test('returns true for plain objects', () => {
+			expect(isRecord({})).toBe(true)
+			expect(isRecord({ a: 1 })).toBe(true)
+		})
+
+		test('returns false for null and primitives', () => {
+			expect(isRecord(null)).toBe(false)
+			expect(isRecord(undefined)).toBe(false)
+			expect(isRecord(42)).toBe(false)
+			expect(isRecord('str')).toBe(false)
+			expect(isRecord(true)).toBe(false)
+		})
+
+		test('returns false for arrays', () => {
+			expect(isRecord([])).toBe(false)
+			expect(isRecord([1, 2, 3])).toBe(false)
+		})
+
+		test('returns false for Object.create(null) (null prototype)', () => {
+			expect(isRecord(Object.create(null))).toBe(false)
+		})
+
+		test('returns false for class instances', () => {
+			class Foo {
+				x = 1
+			}
+			expect(isRecord(new Foo())).toBe(false)
+		})
+
+		test('returns false for Map, Set, Date, RegExp', () => {
+			expect(isRecord(new Map())).toBe(false)
+			expect(isRecord(new Set())).toBe(false)
+			expect(isRecord(new Date())).toBe(false)
+			expect(isRecord(/foo/)).toBe(false)
+		})
+	})
+
 	describe('valueString', () => {
 		test('should format strings in double quotes', () => {
 			expect(valueString('hello')).toBe('"hello"')

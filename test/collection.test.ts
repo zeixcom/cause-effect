@@ -479,6 +479,78 @@ describe('Collection', () => {
 		})
 	})
 
+	describe('Input Validation', () => {
+		test('should throw InvalidCallbackError for non-function watched', () => {
+			expect(() => {
+				// @ts-expect-error - testing non-function
+				createCollection(42)
+			}).toThrow('Callback 42 is invalid')
+		})
+
+		test('should throw InvalidCallbackError for async watched', () => {
+			expect(() => {
+				// @ts-expect-error - testing async function
+				createCollection(async () => () => {})
+			}).toThrow('invalid')
+		})
+
+		test('applyChanges change for nonexistent key is silently skipped', () => {
+			type Item = { id: string; v: number }
+			let apply:
+				| ((changes: CollectionChanges<Item>) => void)
+				| undefined
+			const col = createCollection<Item>(
+				applyChanges => {
+					apply = applyChanges
+					return () => {}
+				},
+				{ keyConfig: item => item.id },
+			)
+			const dispose = createScope(() => {
+				createEffect(() => {
+					void col.get()
+				})
+			})
+
+			// Change a key that does not exist — must not throw.
+			expect(() => {
+				// biome-ignore lint/style/noNonNullAssertion: test
+				apply!({ change: [{ id: 'missing', v: 1 }] })
+			}).not.toThrow()
+			expect(col.get()).toEqual([])
+
+			dispose()
+		})
+
+		test('applyChanges remove for nonexistent key is silently skipped', () => {
+			type Item = { id: string; v: number }
+			let apply:
+				| ((changes: CollectionChanges<Item>) => void)
+				| undefined
+			const col = createCollection<Item>(
+				applyChanges => {
+					apply = applyChanges
+					return () => {}
+				},
+				{ value: [{ id: 'a', v: 1 }], keyConfig: item => item.id },
+			)
+			const dispose = createScope(() => {
+				createEffect(() => {
+					void col.get()
+				})
+			})
+
+			// Remove a key that does not exist — must not throw.
+			expect(() => {
+				// biome-ignore lint/style/noNonNullAssertion: test
+				apply!({ remove: [{ id: 'missing', v: 0 }] })
+			}).not.toThrow()
+			expect(col.get()).toEqual([{ id: 'a', v: 1 }])
+
+			dispose()
+		})
+	})
+
 	describe('deriveCollection', () => {
 		test('should transform list values with sync callback', () => {
 			const numbers = createList([1, 2, 3])

@@ -962,4 +962,81 @@ describe('match', () => {
 			expect(cleanupCount).toBe(1)
 		})
 	})
+
+	describe('non-Error throw wrapping', () => {
+		// match wraps non-Error thrown values (strings, objects) via
+		// new Error(String(e)) before routing to err. This covers the three
+		// wrapping sites: signal .get() throw, ok-handler throw, and async
+		// .catch rejection.
+		test('should wrap a non-Error thrown by a signal get() before routing to err', () => {
+			const throwingSignal = {
+				get(): never {
+					// biome-ignore lint/svelte/require-throw-error: testing non-Error throw
+					throw 'string error'
+				},
+			}
+			let received: Error | undefined
+			createEffect(() =>
+				// @ts-expect-error - throwingSignal is not a real Signal but match reads .get()
+				match(throwingSignal, {
+					ok: () => {},
+					err: e => {
+						received = e
+					},
+				}),
+			)
+			expect(received).toBeInstanceOf(Error)
+			expect(received?.message).toBe('string error')
+		})
+
+		test('should wrap a non-Error thrown by the ok handler before routing to err', () => {
+			const source = createState(1)
+			let received: Error | undefined
+			createEffect(() =>
+				match(source, {
+					ok: () => {
+						// biome-ignore lint/svelte/require-throw-error: testing non-Error throw
+						throw { custom: 'object' }
+					},
+					err: e => {
+						received = e
+					},
+				}),
+			)
+			expect(received).toBeInstanceOf(Error)
+			expect(received?.message).toBe('[object Object]')
+		})
+	})
+
+	describe('nil handler cleanup', () => {
+		test('cleanup returned by nil is called on re-run', () => {
+			const task = createTask(async () => {
+				return 42
+			})
+			let nilCount = 0
+			let cleanupCount = 0
+			const dispose = createScope(() => {
+				createEffect(() =>
+					match(task, {
+						ok: () => {
+							nilCount = -1 // should never run while pending
+						},
+						nil: () => {
+							nilCount++
+							return () => {
+								cleanupCount++
+							}
+						},
+					}),
+				)
+			})
+			// First run: task is pending (no initial value), nil fires.
+			expect(nilCount).toBe(1)
+			expect(cleanupCount).toBe(0)
+
+			dispose()
+			// nil cleanup should run on disposal.
+			expect(cleanupCount).toBe(1)
+		})
+	})
 })

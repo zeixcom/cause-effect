@@ -139,6 +139,17 @@ describe('Store', () => {
 			store.set({ x: 1 })
 			expect(runs).toBe(1)
 		})
+
+		test('should remove keys absent from the new value', () => {
+			type Shape = { a: number; b: number; c?: number }
+			const store = createStore<Shape>({ a: 1, b: 2, c: 3 })
+			expect(store.byKey('c')?.get()).toBe(3)
+
+			// Setting a record without `c` must remove that key.
+			store.set({ a: 1, b: 2 })
+			expect(store.byKey('c')).toBeUndefined()
+			expect(store.keys().toArray()).toEqual(['a', 'b'])
+		})
 	})
 
 	describe('update', () => {
@@ -147,6 +158,35 @@ describe('Store', () => {
 			user.update(u => ({ ...u, age: u.age + 1 }))
 			expect(user.name.get()).toBe('John')
 			expect(user.age.get()).toBe(26)
+		})
+
+		test('should throw when callback is null (no InvalidCallbackError — gap vs State)', () => {
+			// NOTE: Store.update does not validate its callback the way
+			// State.update does. A null/non-function callback throws a bare
+			// TypeError from invoking null(), not an InvalidCallbackError.
+			// This inconsistency is documented; the test locks in current behavior.
+			const user = createStore({ name: 'John' })
+			expect(() => {
+				// @ts-expect-error - testing null callback
+				user.update(null)
+			}).toThrow(TypeError)
+		})
+
+		test('should throw when callback is a non-function (gap vs State)', () => {
+			const user = createStore({ name: 'John' })
+			expect(() => {
+				// @ts-expect-error - testing non-function
+				user.update('not a function')
+			}).toThrow(TypeError)
+		})
+
+		test('should propagate errors from the update callback', () => {
+			const user = createStore({ name: 'John' })
+			expect(() =>
+				user.update(() => {
+					throw new Error('callback failed')
+				}),
+			).toThrow('callback failed')
 		})
 	})
 
@@ -163,6 +203,13 @@ describe('Store', () => {
 		test('should throw DuplicateKeyError for existing key', () => {
 			const user = createStore({ name: 'John' })
 			expect(() => user.add('name', 'Jane')).toThrow()
+		})
+
+		test('DuplicateKeyError message includes prefix, key, and value', () => {
+			const user = createStore({ name: 'John' })
+			expect(() => user.add('name', 'Jane')).toThrow(
+				'[Store] Could not add key "name" with value "Jane" because it already exists',
+			)
 		})
 
 		test('should be reactive', () => {

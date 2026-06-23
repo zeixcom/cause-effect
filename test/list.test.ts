@@ -158,6 +158,26 @@ describe('List', () => {
 			list.update(arr => [...arr, 3])
 			expect(list.get()).toEqual([1, 2, 3])
 		})
+
+		test('should throw when callback is null (no InvalidCallbackError — gap vs State)', () => {
+			// NOTE: List.update does not validate its callback the way
+			// State.update does. A null callback throws a bare TypeError from
+			// invoking null(), not an InvalidCallbackError. This test locks in
+			// the current behavior; the inconsistency is documented.
+			const list = createList([1, 2])
+			expect(() => {
+				// @ts-expect-error - testing null callback
+				list.update(null)
+			}).toThrow(TypeError)
+		})
+
+		test('should throw when callback is a non-function (gap vs State)', () => {
+			const list = createList([1, 2])
+			expect(() => {
+				// @ts-expect-error - testing non-function
+				list.update(42)
+			}).toThrow(TypeError)
+		})
 	})
 
 	describe('add', () => {
@@ -182,6 +202,23 @@ describe('List', () => {
 			expect(() => list.add({ id: 'a', val: 2 })).toThrow(
 				'already exists',
 			)
+		})
+
+		test('DuplicateKeyError message includes [List] prefix and key', () => {
+			const list = createList([{ id: 'a', val: 1 }], {
+				keyConfig: item => item.id,
+			})
+			expect(() => list.add({ id: 'a', val: 2 })).toThrow(
+				'[List] Could not add key "a"',
+			)
+		})
+
+		test('add with null throws NullishSignalValueError with item-for-key prefix', () => {
+			const list = createList<number>([1])
+			expect(() => {
+				// @ts-expect-error - testing null
+				list.add(null)
+			}).toThrow(NullishSignalValueError)
 		})
 	})
 

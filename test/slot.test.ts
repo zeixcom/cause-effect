@@ -5,6 +5,7 @@ import {
 	createMemo,
 	createSlot,
 	createState,
+	isSlot,
 } from '../index.ts'
 import { InvalidSignalValueError, NullishSignalValueError } from '../src/errors'
 
@@ -274,6 +275,66 @@ describe('Slot', () => {
 			const slot = createSlot({ get: () => state.get() * 2 })
 			expect(slot.get()).toBe(2)
 			expect(() => slot.set(100)).toThrow('[Slot] Signal is read-only')
+		})
+	})
+
+	describe('current()', () => {
+		test('should return the currently delegated signal', () => {
+			const a = createState(1)
+			const b = createState(2)
+			const slot = createSlot(a)
+			expect(slot.current()).toBe(a)
+			slot.replace(b)
+			expect(slot.current()).toBe(b)
+		})
+
+		test('should return a descriptor when backed by a SlotDescriptor', () => {
+			const descriptor = { get: () => 42 }
+			const slot = createSlot(descriptor)
+			expect(slot.current()).toBe(descriptor)
+		})
+	})
+
+	describe('isSlot', () => {
+		test('should return true for slots', () => {
+			expect(isSlot(createSlot(createState(1)))).toBe(true)
+		})
+
+		test('should return false for non-slots', () => {
+			expect(isSlot(createState(1))).toBe(false)
+			expect(isSlot(createMemo(() => 1))).toBe(false)
+			expect(isSlot(null)).toBe(false)
+			expect(isSlot(42)).toBe(false)
+			expect(isSlot({})).toBe(false)
+		})
+	})
+
+	describe('options.equals', () => {
+		test('should suppress propagation when equals returns true', () => {
+			const state = createState({ x: 1, y: 2 })
+			const slot = createSlot(state, {
+				// Only compare by x — changes to y should not propagate.
+				// First call receives undefined prev, so guard against that.
+				equals: (a, b) => b == null ? false : a.x === b.x,
+			})
+			let runs = 0
+			let seenX = 0
+			createEffect(() => {
+				seenX = slot.get().x
+				runs++
+			})
+			expect(runs).toBe(1)
+			expect(seenX).toBe(1)
+
+			// y changes but x stays the same — equals suppresses propagation.
+			state.set({ x: 1, y: 99 })
+			expect(runs).toBe(1)
+			expect(seenX).toBe(1)
+
+			// x changes — propagates.
+			state.set({ x: 5, y: 99 })
+			expect(runs).toBe(2)
+			expect(seenX).toBe(5)
 		})
 	})
 })
