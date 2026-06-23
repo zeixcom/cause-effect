@@ -48,16 +48,36 @@ describe('util', () => {
 	describe('Error constructors with circular values (bug #7)', () => {
 		// Constructing these errors must not mask the original validation
 		// failure with a "Converting circular structure to JSON" TypeError.
+		// (Note: we construct directly rather than via expect().not.toThrow(),
+		// because bun's matcher treats Error construction itself as a throw.)
 		test('InvalidSignalValueError does not throw on circular value', () => {
 			const circular: Record<string, unknown> = { name: 'root' }
 			circular.self = circular
-			expect(() => new InvalidSignalValueError('State', circular)).not.toThrow()
+			let err: InvalidSignalValueError | undefined
+			let secondary: unknown
+			try {
+				err = new InvalidSignalValueError('State', circular)
+			} catch (e) {
+				secondary = e
+			}
+			expect(secondary).toBeUndefined()
+			expect(err).toBeInstanceOf(InvalidSignalValueError)
+			expect(err!.message).toContain('Signal value')
 		})
 
 		test('InvalidCallbackError does not throw on circular value', () => {
 			const circular: Record<string, unknown> = { name: 'root' }
 			circular.self = circular
-			expect(() => new InvalidCallbackError('State', circular)).not.toThrow()
+			let err: InvalidCallbackError | undefined
+			let secondary: unknown
+			try {
+				err = new InvalidCallbackError('State', circular)
+			} catch (e) {
+				secondary = e
+			}
+			expect(secondary).toBeUndefined()
+			expect(err).toBeInstanceOf(InvalidCallbackError)
+			expect(err!.message).toContain('Callback')
 		})
 	})
 })

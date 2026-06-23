@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test'
 import {
-	CircularDependencyError,
 	createEffect,
 	createMemo,
 	createScope,
@@ -402,26 +401,40 @@ describe('Task', () => {
 		// subsequent reads report the SAME error rather than a spurious
 		// CircularDependencyError.
 		test('should not get stuck in FLAG_RUNNING after a synchronous throw', () => {
-			const boom = (): Promise<number> => {
+			// Build a function whose prototype matches the async-function
+			// prototype (so isAsyncFunction returns true and createTask's
+			// validation passes) but which throws synchronously. A real async
+			// function can never throw synchronously, so this is the only way
+			// to reach recomputeTask's catch path in practice.
+			const ASYNC_PROTO = Object.getPrototypeOf(async () => {})
+			const boom = function (): Promise<number> {
 				throw new Error('sync boom')
 			}
-			// Bypass isAsyncFunction validation to reach the recomputeTask catch
-			const task = createTask(
-				// @ts-expect-error - exercising the sync-throw recovery path
-				boom as () => Promise<number>,
-				{ value: 0 },
-			)
+			Object.setPrototypeOf(boom, ASYNC_PROTO)
+			expect(Object.getPrototypeOf(boom)).toBe(ASYNC_PROTO)
+
+			const task = createTask(boom, { value: 0 })
 
 			// First read surfaces the real error
 			expect(() => task.get()).toThrow('sync boom')
 			// Must not be left pending
 			expect(task.isPending()).toBe(false)
-			// Subsequent reads must throw the SAME error, not CircularDependencyError
+			// Subsequent reads must throw the SAME error, not a spurious
+			// CircularDependencyError. The message check is sufficient: a
+			// CircularDependencyError message would contain "Circular dependency".
 			expect(() => task.get()).toThrow('sync boom')
-			expect(() => task.get()).toThrow((err: unknown) => {
-				if (!(err instanceof Error)) return false
-				return !(err instanceof CircularDependencyError)
-			})
+			// Capture the third read's error explicitly to assert it is the
+			// original failure, not a CircularDependencyError. (Manual catch
+			// avoids bun's toThrow predicate, which mishandles instanceof here.)
+			let caught: unknown
+			try {
+				task.get()
+			} catch (e) {
+				caught = e
+			}
+			expect(caught).toBeInstanceOf(Error)
+			expect((caught as Error).message).toBe('sync boom')
+			expect((caught as Error).message).not.toContain('Circular dependency')
 		})
 	})
 

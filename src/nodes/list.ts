@@ -220,7 +220,10 @@ function diffArrays<T extends {}>(
 	// Process new array and build new keys array
 	for (let i = 0; i < next.length; i++) {
 		const val = next[i]
-		if (val === undefined) continue
+		// Reject undefined/null elements up front, consistent with init.
+		// Previously `undefined` was silently skipped, leaving holes in keys
+		// and causing length/get() to disagree.
+		validateSignalValue(`${TYPE_LIST} item at index ${i}`, val)
 
 		const key = generateKey(val)
 
@@ -355,7 +358,6 @@ function createList<
 	// --- Initialize ---
 	for (let i = 0; i < value.length; i++) {
 		const val = value[i]
-		if (val === undefined) continue
 		let key = keys[i]
 		if (!key) {
 			key = generateKey(val)

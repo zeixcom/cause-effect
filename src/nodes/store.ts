@@ -19,11 +19,12 @@ import {
 import { isRecord, isSignalOfType } from '../util'
 import {
 	createList,
+	isList,
 	type DiffResult,
 	type List,
 	type UnknownRecord,
 } from './list'
-import { createState, type State } from './state'
+import { createState, isState, type State } from './state'
 
 /* === Types === */
 
@@ -156,6 +157,23 @@ function createStore<T extends UnknownRecord>(
 		else signals.set(key, createState(val as unknown & {}))
 	}
 
+	// Returns the reactive node category a value maps to, mirroring addSignal.
+	// Used to detect type changes (e.g. primitive -> array) that require
+	// replacing the child signal rather than calling .set on the existing one.
+	type ShapeCategory = 'list' | 'store' | 'state'
+	const shapeCategory = (val: unknown): ShapeCategory => {
+		if (Array.isArray(val)) return 'list'
+		if (isRecord(val)) return 'store'
+		return 'state'
+	}
+	const signalCategory = (
+		signal: State<unknown & {}> | Store<UnknownRecord> | List<unknown & {}>,
+	): ShapeCategory => {
+		if (isList(signal)) return 'list'
+		if (isStore(signal)) return 'store'
+		return 'state'
+	}
+
 	// Build current value from child signals
 	const buildValue = (): T => {
 		const record = {} as UnknownRecord
@@ -200,13 +218,16 @@ function createStore<T extends UnknownRecord>(
 					const val = changes.change[key]
 					validateSignalValue(`${TYPE_STORE} for key "${key}"`, val)
 					const signal = signals.get(key)
-					if (signal) {
-						// Type changed (e.g. primitive → object or vice versa): replace signal
-						if (isRecord(val) !== isStore(signal)) {
-							addSignal(key, val)
-							structural = true
-						} else signal.set(val as never)
-					}
+						if (signal) {
+							// Type changed (e.g. primitive -> array, array -> object):
+							// replace the child signal. Comparing shape categories
+							// catches array<->primitive and array<->record transitions
+							// that isRecord-only checks miss (arrays are not records).
+							if (shapeCategory(val) !== signalCategory(signal)) {
+								addSignal(key, val)
+								structural = true
+							} else signal.set(val as never)
+						}
 				}
 			})
 		}
@@ -290,8 +311,10 @@ function createStore<T extends UnknownRecord>(
 		},
 
 		set(next: T) {
-			// Use cached value if clean, recompute if dirty
-			const prev = node.flags & FLAG_DIRTY ? buildValue() : node.value
+			// Use cached value if clean, recompute if dirty. untrack prevents
+			// buildValue's child .get() calls from leaking edges into whatever
+			// effect is currently active (which would cause over-broad re-runs).
+			const prev = node.flags & FLAG_DIRTY ? untrack(buildValue) : node.value
 
 			const changes = diffRecords(prev, next)
 			if (applyChanges(changes)) {

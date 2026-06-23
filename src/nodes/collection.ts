@@ -1,4 +1,5 @@
 import {
+	DuplicateKeyError,
 	UnsetSignalValueError,
 	validateCallback,
 	validateSignalValue,
@@ -396,6 +397,11 @@ function createCollection<T extends {}, S extends Signal<T> = Signal<T>>(
 			if (add) {
 				for (const item of add) {
 					const key = generateKey(item)
+					// Reject duplicate keys up front — matches List.add / Store.add.
+					// Previously this silently overwrote the existing child signal,
+					// orphaning its subscribers.
+					if (signals.has(key))
+						throw new DuplicateKeyError(TYPE_COLLECTION, key, item)
 					signals.set(key, itemFactory(item))
 					itemToKey.set(item, key)
 					if (!keys.includes(key)) keys.push(key)
