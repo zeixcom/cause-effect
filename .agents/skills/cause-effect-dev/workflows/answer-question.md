@@ -6,7 +6,7 @@ Load references based on the question type — only what is needed:
 - Graph propagation, flags, flush order → references/internal-types.md (then read `ARCHITECTURE.md` if still unclear)
 - Unexpected or counterintuitive behavior → ../shared/references/non-obvious-behaviors.md
 - A thrown error → ../shared/references/error-classes.md
-- Design rationale or constraints → `REQUIREMENTS.md` + `CLAUDE.md`
+- Design rationale or constraints → `REQUIREMENTS.md` + `AGENTS.md`
 - Comparing signal types or migration from React/Vue/Angular → references/source-map.md (then read `GUIDE.md`)
 </required_reading>
 
@@ -29,7 +29,7 @@ Identify which category applies:
 
 Read only the reference files listed for that category above. Do not load references speculatively.
 
-If a reference points to an authoritative document (`ARCHITECTURE.md`, `GUIDE.md`, `REQUIREMENTS.md`, `CLAUDE.md`), read that document only if the reference files do not fully resolve the question.
+If a reference points to an authoritative document (`ARCHITECTURE.md`, `GUIDE.md`, `REQUIREMENTS.md`, `AGENTS.md`), read that document only if the reference files do not fully resolve the question.
 
 ## Step 3: Read source if needed
 
@@ -43,7 +43,7 @@ Ground every claim in a source. Cite the file when the answer is non-obvious (e.
 
 For counterintuitive behaviors, include a minimal code example showing the correct pattern alongside the incorrect one. Use the examples in references/non-obvious-behaviors.md as a model.
 
-For design rationale questions, distinguish between hard constraints (stated in `REQUIREMENTS.md`) and soft conventions (described in `CLAUDE.md`).
+For design rationale questions, distinguish between hard constraints (stated in `REQUIREMENTS.md`) and soft conventions (described in `AGENTS.md`).
 </process>
 
 <success_criteria>

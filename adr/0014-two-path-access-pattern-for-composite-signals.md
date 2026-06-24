@@ -62,6 +62,12 @@ This ensures the next `get()` takes the tracked path to re-establish edges.
 - ✅ **Lazy edge establishment**: Edges only created when needed (on first read)
 - ⚠️ **Slight complexity**: Requires careful flag management
 
+## Clarification (added by ADR-0015)
+
+This ADR governs **value-rebuild edges** — the edges from child signals to the composite node that are rebuilt on the tracked path. It does **not** address the separate **structural-consumer edge** that a downstream effect/memo establishes against the composite node itself when it reads `keys()`, `length`, or `get()`. Those are O(1) edges via `link()` that do not trigger value-rebuild relinking.
+
+[ADR-0015](0015-composite-lookup-methods-track-structural-changes.md) extends the picture: the direct-lookup methods on List/Collection (`at`, `byKey`, `keyAt`, `indexOfKey`) now also create that structural-consumer edge. Store's `byKey` and proxy access deliberately do **not**, because Store property reads are already granular. This clarifies that the two-path pattern here is solely about the child→composite value-rebuild path, not a reason to keep direct lookups untracked.
+
 ## Related
 
 - Requirements: [Performance Constraints](REQUIREMENTS.md#performance), [Unified Graph](REQUIREMENTS.md#unified-graph)

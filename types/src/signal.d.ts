@@ -51,7 +51,7 @@ declare function createMutableSignal<T extends {}>(value: T): State<T>;
  * @param value - Value to check
  * @returns True if value is a computed signal, false otherwise
  */
-declare function isComputed<T extends {}>(value: unknown): value is Memo<T>;
+declare function isComputed<T extends {}>(value: unknown): value is Memo<T> | Task<T>;
 /**
  * Check whether a value is a Signal
  *

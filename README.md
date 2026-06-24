@@ -1,6 +1,6 @@
 # Cause & Effect
 
-Version 1.3.3
+Version 1.3.4
 
 **Cause & Effect** is a reactive state management primitives library for TypeScript. It provides the foundational building blocks for managing complex, dynamic, composite, and asynchronous state — correctly and performantly — in a unified signal graph.
 
@@ -42,7 +42,7 @@ Every signal type participates in the same dependency graph with the same propag
 - **Explicit reactivity**: Dependencies are tracked through `.get()` calls — the graph always reflects the true dependency structure, with no hidden subscriptions
 - **Non-nullable types**: All signals enforce `T extends {}`, excluding `null` and `undefined` at the type level — you can trust returned values without null checks
 - **Unified graph**: Composite signals (Store, List, Collection) and async signals (Task) are first-class citizens, not afterthoughts — all derivable state can be derived
-- **Tree-shakable, zero dependencies**: Import only what you use — core signals (State, Memo, Task, Effect) stay below 5 kB gzipped, the full library below 10 kB
+- **Tree-shakable, zero dependencies**: Import only what you use — core signals (State, Memo, Task, Effect) are less than 3 kB gzipped, the full library is around 7 kB
 
 ## Installation
 
@@ -102,15 +102,35 @@ A read-only source that tracks external input. It activates lazily when first ac
 ```js
 import { createSensor, createEffect } from '@zeix/cause-effect'
 
+// `value` seeds an initial reading — without it, `.get()` throws
+// `UnsetSignalValueError` until the first mousemove event fires
 const mousePos = createSensor((set) => {
   const handler = (e) => set({ x: e.clientX, y: e.clientY })
   window.addEventListener('mousemove', handler)
   return () => window.removeEventListener('mousemove', handler)
-})
+}, { value: { x: 0, y: 0 } })
 
 createEffect(() => {
   const pos = mousePos.get()
-  if (pos) console.log(`Mouse: ${pos.x}, ${pos.y}`)
+  console.log(`Mouse: ${pos.x}, ${pos.y}`)
+})
+```
+
+Sensor and Task are the only signals without a default initial value — `.get()` throws `UnsetSignalValueError` while unset. Use `match()` to handle the unset case explicitly instead of seeding a default, when there isn't a natural one:
+
+```js
+import { createSensor, createEffect, match } from '@zeix/cause-effect'
+
+const geolocation = createSensor((set) => {
+  const id = navigator.geolocation.watchPosition(pos => set(pos.coords))
+  return () => navigator.geolocation.clearWatch(id)
+})
+
+createEffect(() => {
+  match(geolocation, {
+    ok: coords => console.log(`${coords.latitude}, ${coords.longitude}`),
+    nil: () => console.log('Waiting for location…'),
+  })
 })
 ```
 
@@ -249,7 +269,7 @@ items.splice(1, 1, 'orange')
 items.sort()
 ```
 
-Access items by key using `.byKey()` or by index using `.at()`. `.indexOfKey()` returns the current index of an item in the list, while `.keyAt()` returns the key of an item at a given position. To update an existing item, use `.replace(key, value)` — this propagates to all subscribers regardless of how they subscribed to the list.
+Access items by key using `.byKey()` or by index using `.at()`. `.indexOfKey()` returns the current index of an item in the list, while `.keyAt()` returns the key of an item at a given position. `.byKey()` returns the item's own signal — calling `.set()` on it updates that item but is not guaranteed to reach subscribers that only read the list structurally (`.keys()`, `.length`, the iterator). To update an existing item, use `.replace(key, value)` instead — this propagates to all subscribers regardless of how they subscribed to the list.
 
 Keys are stable across reordering. Use `keyConfig` in options to control key generation:
 
@@ -480,6 +500,8 @@ const doubled = createComputed(() => count.get() * 2)
 const data    = createComputed(async (_, signal) =>
   fetch(url.get(), { signal }).then(r => r.json()))
 ```
+
+The async/sync split is decided by checking the callback itself (`async` or not), before it ever runs. A callback that forgets `async` but still returns a `Promise` — e.g. `createComputed(() => fetch(url).then(r => r.json()))` — is created as a `Memo`, and throws `PromiseValueError` the first time it's read, instead of silently caching the `Promise` as the value.
 
 **Type predicates**
 

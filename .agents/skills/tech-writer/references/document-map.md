@@ -110,9 +110,9 @@ per-signal-type subsection describing each type's internal composition and lifec
 - No subsection references a removed type, flag, or function
 </ARCHITECTURE_md>
 
-<CLAUDE_md>
-**Path:** `CLAUDE.md`
-**Audience:** Claude (this model) at inference time
+<AGENTS_md>
+**Path:** `AGENTS.md`
+**Audience:** All LLM agents
 **Register:** Terse, direct, AI-optimized — every token has a cost; no explanatory padding
 **Scope:** Spreadsheet-cell mental model for all 9 signal types; internal node shapes and the
 `activeSink`/`activeOwner` dual-pointer model; non-obvious behaviors that a competent reactive
@@ -131,7 +131,7 @@ developer would not predict from the public API alone
 - `activeOwner`/`activeSink` description is accurate
 - Every non-obvious behavior entry is still correct for the current implementation
 - No entry describes behavior that has since changed or been removed
-</CLAUDE_md>
+</AGENTS_md>
 
 <copilot_instructions_md>
 **Path:** `.github/copilot-instructions.md`
@@ -185,14 +185,14 @@ constraints. Internal helpers do not require JSDoc.
 <change_to_document_matrix>
 Quick reference for update-after-change.md. Use this to identify affected documents.
 
-| Change type                        | JSDoc | ARCH | CLAUDE + copilot | README | GUIDE | REQ |
-|------------------------------------|-------|------|------------------|--------|-------|-----|
-| New signal type                    | ✓     | ✓    | ✓                | ✓      | ✓     | ✓ * |
+| Change type                        | JSDoc | ARCH | AGENTS | README | GUIDE | REQ |
+|------------------------------------|-------|------|--------|--------|-------|-----|
+| New signal type                    | ✓     | ✓    | ✓      | ✓      | ✓     | ✓ * |
 | Changed public signature / option  | ✓     | —    | ✓ if behavior    | ✓      | ✓ if mental model | — |
-| Removed public API                 | ✓     | ✓ if structural | ✓       | ✓      | ✓ if documented | — |
+| Removed public API                 | ✓     | ✓ if structural | ✓      | ✓      | ✓ if documented | — |
 | New / changed non-obvious behavior | —     | ✓ if graph-level | ✓      | ✓ if affects usage | — | — |
-| Internal implementation change     | —     | ✓    | ✓                | —      | —     | — |
-| Vision / scope / constraint change | —     | —    | —                | —      | —     | ✓ |
+| Internal implementation change     | —     | ✓    | ✓      | —      | —     | — |
+| Vision / scope / constraint change | —     | —    | —      | —      | —     | ✓ |
 
 \* For REQUIREMENTS.md: only the signal type table row. Not the prose count — update
 that to match automatically.

@@ -82,7 +82,9 @@ declare function deriveCollection<T extends {}, U extends {}>(source: Collection
 /**
  * Creates an externally-driven Collection with a watched lifecycle.
  * Items are managed via the `applyChanges(changes)` helper passed to the watched callback.
- * The collection activates when first accessed by an effect and deactivates when no longer watched.
+ * The collection activates when first accessed by an effect and deactivates when no longer
+ * watched. Structural mutations applied via `applyChanges` do not restart this lifecycle —
+ * only the subscriber count matters.
  *
  * @since 0.18.0
  * @param watched - Callback invoked when the collection starts being watched, receives applyChanges helper

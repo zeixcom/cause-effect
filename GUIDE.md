@@ -252,6 +252,8 @@ createEffect(() => {
 
 There are no dependency arrays to maintain, no lint rules to enforce them, and no stale closure bugs from forgetting a dependency. Vue and Angular developers will find this familiar — it works like `watchEffect()` and Angular's `effect()`.
 
+One consequence of tracking-by-reading: a signal read inside a branch that hasn't executed yet — an unresolved `match()` case, an `if`, a ternary — isn't a dependency yet either. Read the signals you care about unconditionally, before branching, so they're tracked on the first run regardless of which branch executes. See the README's [conditional-reads tip](README.md#resource-management-with-watch-callbacks) for the lazy-resource implications.
+
 ### Effects run synchronously
 
 In React, effects run after the browser paints. In Vue, reactive updates are batched until the next microtask. In Cause & Effect, effects run synchronously right after a state change:
@@ -277,6 +279,17 @@ batch(() => {
 }) // effect runs once, after both updates
 ```
 
+React catches an effect that triggers its own re-render and throws "Too many re-renders." Cause & Effect has no equivalent guard: an effect that writes to a signal it also reads re-triggers itself every time, looping until the stack or heap is exhausted.
+
+```ts
+// Loops forever — count.set() re-runs this same effect, which calls count.set() again
+createEffect(() => {
+  count.set(count.get() + 1)
+})
+```
+
+If you need a value derived from itself (a running total, a counter), compute it with `createMemo()` instead of writing back into the signal an effect reads.
+
 ### Non-nullable signals
 
 All signals enforce `T extends {}` — `null` and `undefined` are excluded at the type level. This means you can trust that `.get()` always returns a real value without null checks.
@@ -291,10 +304,21 @@ count.get() // type is number, guaranteed non-null
 
 This is a deliberate design decision. In frameworks, nullable state leads to defensive checks scattered across templates and hooks. Here, the type system prevents it.
 
+`createSensor()` and `createTask()` are the one exception: unlike `createState()`, they have no synthetic initial value, because there genuinely isn't one yet — no mouse position before the first `mousemove`, no response before the fetch resolves. Calling `.get()` before that first value arrives throws `UnsetSignalValueError` rather than returning `null`. `match()` is the idiomatic way to handle this — it routes to a `nil` branch instead of you writing `try`/`catch` around every read:
+
+```ts
+createEffect(() => {
+  match(task, {
+    ok:  data => render(data),
+    nil: () => showSpinner(), // no value yet — not an error
+  })
+})
+```
+
 **What to do instead:**
 
 - For async results: use `createTask()` — a Task without reactive dependencies works like a Promise that resolves into the graph. Use `match()` to handle the pending state.
-- For external input that starts undefined: use `createSensor()` with its lazy start callback.
+- For external input that starts undefined: use `createSensor()` with its lazy start callback, and `match()` to handle the unset state — or pass an initial `value` in its options if a sensible default exists.
 - For optional state: use a discriminated union, an empty string, an empty array, `0`, or `false` — whatever the zero value for your type is:
 
 ```ts
@@ -344,6 +368,8 @@ const cleanup = createEffect(() => console.log(count.get()))
 cleanup() // you must call this yourself
 ```
 
+Unlike React's unmount (scheduled by the framework) or Vue's `onUnmounted` (deferred to teardown phase), calling `dispose()` or `cleanup()` here runs synchronously, the instant you call it — including from inside a `batch()` callback, where it tears the scope down immediately rather than waiting for the batch to finish.
+
 ### Explicit equality, not reference identity
 
 By default, signals use `===` for equality. But unlike frameworks where this is buried in internals, you can override it per signal:
@@ -354,6 +380,23 @@ const point = createState({ x: 0, y: 0 }, {
 })
 
 point.set({ x: 0, y: 0 }) // no update — values are equal
+```
+
+`equals` doesn't just gate this one signal — when a value is considered equal, propagation stops for its entire downstream subtree. Nothing further down recomputes or re-runs, even if it would have produced a different result. A memo that recomputes to a new object on every run would normally propagate every time (a fresh object is never `===` the old one) — `DEEP_EQUALITY` changes that, comparing by structure instead of reference:
+
+```ts
+import { createState, createMemo, createEffect, DEEP_EQUALITY } from '@zeix/cause-effect'
+
+const source = createState({ x: 1, y: 2, z: 3 })
+const point = createMemo(
+  () => ({ x: source.get().x, y: source.get().y }),
+  { equals: DEEP_EQUALITY } // structural, not reference, comparison
+)
+
+// Does NOT re-run when z changes — point is structurally the same
+// object even though source changed and point recomputed
+createEffect(() => console.log('point is', point.get()))
+source.set({ x: 1, y: 2, z: 999 })
 ```
 
 ## Beyond the Basics
@@ -450,6 +493,8 @@ todos.replace('t1', { id: 't1', text: 'Learn signals', done: true })
 
 Each item is its own signal. Sorting reorders keys without destroying signals or their downstream dependencies. Adding and removing items is granular — unaffected items and their effects don't re-run.
 
+`todos.byKey('t1')` returns that item's own signal — calling `.set()` on it directly updates the item, but skips the list's own structural bookkeeping, so an effect that only reads `todos.keys()` or `todos.length` (not the item itself) won't see it. `.replace()` updates the item *and* notifies the list, so use it instead of reaching into `byKey()` for writes.
+
 ### Collection: derived arrays with item-level memoization
 
 Collections provide reactive transformations over arrays with automatic per-item memoization. They come in two forms: **derived collections** (transformations of Lists or other Collections) and **externally-driven collections** (fed by external sources like WebSockets or Server-Sent Events).
@@ -492,7 +537,7 @@ createEffect(() => {
 })
 ```
 
-The WebSocket connects when the first effect reads the collection and disconnects when no effects are watching. Incoming data is applied as granular add/change/remove operations, not wholesale array replacement.
+The WebSocket connects when the first effect reads the collection and disconnects when no effects are watching. Incoming data is applied as granular add/change/remove operations, not wholesale array replacement. The connection itself stays open across those operations — adding or removing messages doesn't reconnect the WebSocket; only the subscriber count (first effect in, last effect out) does.
 
 ### Sensor: lazy external input
 

@@ -5,8 +5,13 @@ import {
 	createMemo,
 	createSlot,
 	createState,
+	isSlot,
 } from '../index.ts'
-import { InvalidSignalValueError, NullishSignalValueError } from '../src/errors'
+import {
+	InvalidSignalValueError,
+	NullishSignalValueError,
+	PromiseValueError,
+} from '../src/errors'
 
 describe('Slot', () => {
 	test('should replace delegated signal and re-subscribe sinks', () => {
@@ -274,6 +279,104 @@ describe('Slot', () => {
 			const slot = createSlot({ get: () => state.get() * 2 })
 			expect(slot.get()).toBe(2)
 			expect(() => slot.set(100)).toThrow('[Slot] Signal is read-only')
+		})
+
+		test('should throw PromiseValueError if the descriptor get() returns a Promise', () => {
+			const slot = createSlot<Promise<number>>({
+				get: () => Promise.resolve(1),
+			})
+			expect(() => slot.get()).toThrow(PromiseValueError)
+		})
+	})
+
+	describe('current()', () => {
+		test('should return the currently delegated signal', () => {
+			const a = createState(1)
+			const b = createState(2)
+			const slot = createSlot(a)
+			expect(slot.current()).toBe(a)
+			slot.replace(b)
+			expect(slot.current()).toBe(b)
+		})
+
+		test('should return a descriptor when backed by a SlotDescriptor', () => {
+			const descriptor = { get: () => 42 }
+			const slot = createSlot(descriptor)
+			expect(slot.current()).toBe(descriptor)
+		})
+	})
+
+	describe('isSlot', () => {
+		test('should return true for slots', () => {
+			expect(isSlot(createSlot(createState(1)))).toBe(true)
+		})
+
+		test('should return false for non-slots', () => {
+			expect(isSlot(createState(1))).toBe(false)
+			expect(isSlot(createMemo(() => 1))).toBe(false)
+			expect(isSlot(null)).toBe(false)
+			expect(isSlot(42)).toBe(false)
+			expect(isSlot({})).toBe(false)
+		})
+	})
+
+	describe('options.equals', () => {
+		test('should suppress propagation when equals returns true', () => {
+			const state = createState({ x: 1, y: 2 })
+			const slot = createSlot(state, {
+				// Only compare by x — changes to y should not propagate.
+				// First call receives undefined prev, so guard against that.
+				equals: (a, b) => b == null ? false : a.x === b.x,
+			})
+			let runs = 0
+			let seenX = 0
+			createEffect(() => {
+				seenX = slot.get().x
+				runs++
+			})
+			expect(runs).toBe(1)
+			expect(seenX).toBe(1)
+
+			// y changes but x stays the same — equals suppresses propagation.
+			state.set({ x: 1, y: 99 })
+			expect(runs).toBe(1)
+			expect(seenX).toBe(1)
+
+			// x changes — propagates.
+			state.set({ x: 5, y: 99 })
+			expect(runs).toBe(2)
+			expect(seenX).toBe(5)
+		})
+	})
+
+	describe('set cycle guard (smell #13)', () => {
+		test('should throw on circular slot delegation instead of stack-overflowing', () => {
+			// Mutual delegation A -> B -> A is a user error with no terminal
+			// writable signal. set() must detect the cycle and throw a
+			// descriptive error instead of infinite-looping.
+			const a = createState(1)
+			const slotA = createSlot(a)
+			const slotB = createSlot(slotA)
+			// Close the cycle: A delegates to B, B delegates to A.
+			slotA.replace(slotB)
+
+			expect(() => slotA.set(42)).toThrow('Circular delegation')
+			// Backing signal must be unchanged.
+			expect(a.get()).toBe(1)
+		})
+
+		test('should allow normal non-cyclic delegation after a guarded set', () => {
+			const a = createState(1)
+			const slotA = createSlot(a)
+
+			// A normal set works fine.
+			slotA.set(42)
+			expect(a.get()).toBe(42)
+
+			// The guard is cleared after each top-level set, so subsequent
+			// sets still work.
+			slotA.set(99)
+			expect(a.get()).toBe(99)
 		})
 	})
 })

@@ -46,24 +46,21 @@ function isRecord<T extends Record<string, unknown>>(
 }
 
 /**
- * @deprecated Use Array.isArray(value) && value.every(guard) instead.
- */
-function isUniformArray<T>(
-	value: unknown,
-	guard: (item: T) => item is T & {} = (item): item is T & {} => item != null,
-): value is T[] {
-	return Array.isArray(value) && value.every(guard)
-}
-
-/**
  * @deprecated
  */
 function valueString(value: unknown): string {
-	return typeof value === 'string'
-		? `"${value}"`
-		: !!value && typeof value === 'object'
-			? JSON.stringify(value)
-			: String(value)
+	if (typeof value === 'string') return `"${value}"`
+	if (value != null && typeof value === 'object') {
+		// JSON.stringify throws on circular references; fall back to a safe
+		// representation so error constructors never mask the original
+		// validation failure with a secondary TypeError.
+		try {
+			return JSON.stringify(value)
+		} catch {
+			return String(value)
+		}
+	}
+	return String(value)
 }
 
 /* === Exports === */
@@ -75,6 +72,5 @@ export {
 	isObjectOfType,
 	isSignalOfType,
 	isRecord,
-	isUniformArray,
 	valueString,
 }

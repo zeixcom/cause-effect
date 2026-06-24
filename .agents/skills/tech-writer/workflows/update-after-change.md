@@ -30,7 +30,7 @@ Identify which of the following change types apply — more than one may apply:
 
 Use this table to identify which documents need updating:
 
-| Change type | JSDoc | ARCHITECTURE.md | CLAUDE.md + copilot | README.md | GUIDE.md | REQUIREMENTS.md |
+| Change type | JSDoc | ARCHITECTURE.md | AGENTS.md | README.md | GUIDE.md | REQUIREMENTS.md |
 |---|---|---|---|---|---|---|
 | New public API | ✓ | ✓ | ✓ | ✓ | ✓ if conceptually new | ✓ signal type table only |
 | Changed public API | ✓ | if node shape changed | ✓ if behavior changes | ✓ | ✓ if affects mental model | ✗ |
@@ -47,7 +47,7 @@ Follow the corresponding workflow for each affected document. Always work in thi
    → workflows/update-jsdoc.md
 2. **ARCHITECTURE.md** — internal structure; must be consistent with source
    → workflows/update-architecture.md
-3. **CLAUDE.md + copilot-instructions.md** — agent docs; must be consistent with architecture
+3. **AGENTS.md + copilot-instructions.md** — agent docs; must be consistent with architecture
    → workflows/update-agent-docs.md
 4. **README.md + GUIDE.md** — public docs; must be consistent with API and agent docs
    → workflows/update-public-api.md

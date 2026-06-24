@@ -233,4 +233,85 @@ describe('DEEP_EQUALITY', () => {
 			).toBe(false)
 		})
 	})
+
+	describe('built-in value types', () => {
+		// Date and RegExp represent values, not identity — two equal instances
+		// must compare equal under DEEP_EQUALITY rather than forcing spurious
+		// downstream propagation.
+		test('two Dates with the same time are equal', () => {
+			const t = 1_700_000_000_000
+			expect(DEEP_EQUALITY(new Date(t), new Date(t))).toBe(true)
+		})
+
+		test('two Dates with different times are not equal', () => {
+			expect(DEEP_EQUALITY(new Date(1), new Date(2))).toBe(false)
+		})
+
+		test('two RegExps with the same source and flags are equal', () => {
+			expect(DEEP_EQUALITY(/foo/g, /foo/g)).toBe(true)
+		})
+
+		test('two RegExPs with different flags are not equal', () => {
+			expect(DEEP_EQUALITY(/foo/g, /foo/i)).toBe(false)
+		})
+
+		test('two RegExPs with different source are not equal', () => {
+			expect(DEEP_EQUALITY(/foo/, /bar/)).toBe(false)
+		})
+	})
+
+	describe('cyclic structures', () => {
+		// Cyclic plain objects must not stack-overflow; structurally equal cycles
+		// compare equal.
+		test('structurally equal cyclic objects do not overflow and compare equal', () => {
+			const a: Record<string, unknown> = { name: 'root' }
+			a.self = a
+			const b: Record<string, unknown> = { name: 'root' }
+			b.self = b
+			expect(DEEP_EQUALITY(a, b)).toBe(true)
+		})
+
+		test('structurally different cyclic objects compare unequal without overflow', () => {
+			const a: Record<string, unknown> = { name: 'a' }
+			a.self = a
+			const b: Record<string, unknown> = { name: 'b' }
+			b.self = b
+			expect(DEEP_EQUALITY(a, b)).toBe(false)
+		})
+
+		test('cyclic arrays do not overflow', () => {
+			const a: unknown[] = [1]
+			a[1] = a
+			const b: unknown[] = [1]
+			b[1] = b
+			expect(() => DEEP_EQUALITY(a, b)).not.toThrow()
+		})
+	})
+
+	describe('aliased (non-cyclic) references — ADR-0016', () => {
+		// The cycle guard must be scoped to the current recursion path, not
+		// "every object ever visited." An object reachable twice via different,
+		// non-cyclic paths (shared/aliased substructure) must still be compared
+		// independently each time, not short-circuited to true.
+		test('a shared sub-object compared against two different values is not aliased away', () => {
+			const shared = { val: 1 }
+			const a = { p: shared, q: shared }
+			const b = { p: { val: 1 }, q: { val: 2 } }
+			expect(DEEP_EQUALITY(a, b)).toBe(false)
+		})
+
+		test('array elements aliasing the same default object are compared independently', () => {
+			const DEFAULT = { count: 0 }
+			const arrA = [DEFAULT, DEFAULT]
+			const arrB = [{ count: 0 }, { count: 1 }]
+			expect(DEEP_EQUALITY(arrA, arrB)).toBe(false)
+		})
+
+		test('an aliased Date is still compared by value on each occurrence', () => {
+			const shared = new Date(1)
+			const a = { p: shared, q: shared }
+			const b = { p: new Date(1), q: new Date(2) }
+			expect(DEEP_EQUALITY(a, b)).toBe(false)
+		})
+	})
 })

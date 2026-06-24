@@ -3,7 +3,7 @@
 
 1. `REQUIREMENTS.md` — goals, constraints, non-negotiables
 2. Relevant sections of `ARCHITECTURE.md` — understand the current system
-3. `CLAUDE.md` — non-obvious constraints that affect the design surface
+3. `AGENTS.md` — available skills and constraints that affect the design surface
 
 ## Step 2: Explore the codebase
 

@@ -83,6 +83,17 @@ declare class RequiredOwnerError extends Error {
      */
     constructor(where: string);
 }
+/**
+ * Error thrown when a synchronous Memo/Slot callback returns a Promise.
+ */
+declare class PromiseValueError extends TypeError {
+    /**
+     * Constructs a new PromiseValueError.
+     *
+     * @param where - The location where the error occurred.
+     */
+    constructor(where: string);
+}
 declare class DuplicateKeyError extends Error {
     constructor(where: string, key: string, value?: unknown);
 }
@@ -90,4 +101,4 @@ declare function validateSignalValue<T extends {}>(where: string, value: unknown
 declare function validateReadValue<T extends {}>(where: string, value: T | null | undefined): asserts value is T;
 declare function validateCallback(where: string, value: unknown): asserts value is (...args: unknown[]) => unknown;
 declare function validateCallback<T>(where: string, value: unknown, guard: (value: unknown) => value is T): asserts value is T;
-export { type Guard, CircularDependencyError, NullishSignalValueError, InvalidSignalValueError, UnsetSignalValueError, InvalidCallbackError, ReadonlySignalError, RequiredOwnerError, DuplicateKeyError, validateSignalValue, validateReadValue, validateCallback, };
+export { type Guard, CircularDependencyError, NullishSignalValueError, InvalidSignalValueError, UnsetSignalValueError, InvalidCallbackError, ReadonlySignalError, RequiredOwnerError, DuplicateKeyError, PromiseValueError, validateSignalValue, validateReadValue, validateCallback, };

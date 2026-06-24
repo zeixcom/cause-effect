@@ -5,37 +5,6 @@ For library development, see cause-effect-dev/references/ for additional interna
 implementation details.
 </overview>
 
-<direct_lookups_do_not_track>
-**`byKey()`, `at()`, `keyAt()`, and `indexOfKey()` do not create graph edges.** They are
-direct lookups into the internal map/array — calling them inside an effect or memo does not
-subscribe to structural changes.
-
-To react to structural changes (key added, key removed, order changed), read a tracking
-accessor instead:
-
-| You want to react to | Read this |
-|---|---|
-| Any structural change | `collection.get()` or `list.get()` |
-| Key set membership | `collection.keys()` |
-| Length / item count | `collection.length` |
-| A specific item's value | `collection.get()` then access the item |
-
-```typescript
-// Wrong — effect does not re-run when keys are added or removed
-createEffect(() => {
-  const item = collection.byKey('id-123')
-  render(item)
-})
-
-// Correct — reading keys() creates a dependency on structural changes
-createEffect(() => {
-  const keys = collection.keys()           // tracks structure
-  const item = collection.byKey('id-123') // safe after establishing the edge
-  render(item)
-})
-```
-</direct_lookups_do_not_track>
-
 <bykey_set_does_not_propagate_to_structural_subscribers>
 **`byKey(key).set(value)` does not propagate to effects that subscribed via `list.keys()`,
 `list.length`, or the iterator.** Those effects subscribe to the list's structural node but
@@ -201,3 +170,48 @@ called.** It does not wait for the current flush to complete. Calling cleanup du
 (e.g. inside a batch callback) is safe but will immediately dispose the owner and all its
 children.
 </scope_cleanup_is_synchronous>
+
+<async_requires_async_syntax>
+**Async routing in `createSignal`/`createComputed` requires the `async`/`await` keyword.**
+The library detects async callbacks by their function prototype
+(`Object.getPrototypeOf(fn) === async-function prototype`), not by their return value, because
+the routing decision is made before the callback ever runs. A *synchronous* function that
+happens to return a `Promise` is classified as a `Memo`, not a `Task`.
+
+This used to fail silently (the memo cached the raw `Promise` object). It now throws
+`PromiseValueError` the first time the misclassified Memo is read, since `recomputeMemo()`
+checks the computed value against `instanceof Promise`:
+
+```typescript
+// WRONG — sync function returning a Promise becomes a Memo<number>.
+// Throws PromiseValueError on first .get().
+const data = createComputed((): Promise<number> => fetch('/api').then(r => r.json()))
+
+// Correct — async keyword makes isAsyncFunction return true, routing to createTask.
+const data = createComputed(async (): Promise<number> => {
+  const r = await fetch('/api')
+  return r.json()
+})
+```
+
+If you must wrap a Promise-returning API, always use the `async` keyword so the library
+routes it to `createTask` (with abort/pending support) rather than `createMemo`.
+</async_requires_async_syntax>
+
+<flush_has_no_loop_guard>
+**`flush()` has no infinite-loop guard.** An effect that writes to a state it also reads
+will re-trigger itself on every run, looping until the call stack or heap is exhausted.
+This is standard behavior for fine-grained reactive systems and is intentional — the
+overhead of a per-flush iteration cap is not worth it for correct graphs.
+
+```typescript
+// BUG — infinite loop: effect reads and writes the same state
+const count = createState(0)
+createEffect(() => {
+  count.set(count.get() + 1) // re-triggers itself forever
+})
+```
+
+Avoid writing to a signal that the same effect reads. If you need derived state, use a
+`createMemo` instead.
+</flush_has_no_loop_guard>

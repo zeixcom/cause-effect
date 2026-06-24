@@ -2,9 +2,11 @@ import { describe, expect, test } from 'bun:test'
 import {
 	createEffect,
 	createMemo,
+	createScope,
 	createState,
 	createStore,
 	isList,
+	isState,
 	isStore,
 } from '../index.ts'
 
@@ -137,6 +139,17 @@ describe('Store', () => {
 			store.set({ x: 1 })
 			expect(runs).toBe(1)
 		})
+
+		test('should remove keys absent from the new value', () => {
+			type Shape = { a: number; b: number; c?: number }
+			const store = createStore<Shape>({ a: 1, b: 2, c: 3 })
+			expect(store.byKey('c')?.get()).toBe(3)
+
+			// Setting a record without `c` must remove that key.
+			store.set({ a: 1, b: 2 })
+			expect(store.byKey('c')).toBeUndefined()
+			expect(Array.from(store.keys())).toEqual(['a', 'b'])
+		})
 	})
 
 	describe('update', () => {
@@ -145,6 +158,35 @@ describe('Store', () => {
 			user.update(u => ({ ...u, age: u.age + 1 }))
 			expect(user.name.get()).toBe('John')
 			expect(user.age.get()).toBe(26)
+		})
+
+		test('should throw when callback is null (no InvalidCallbackError — gap vs State)', () => {
+			// NOTE: Store.update does not validate its callback the way
+			// State.update does. A null/non-function callback throws a bare
+			// TypeError from invoking null(), not an InvalidCallbackError.
+			// This inconsistency is documented; the test locks in current behavior.
+			const user = createStore({ name: 'John' })
+			expect(() => {
+				// @ts-expect-error - testing null callback
+				user.update(null)
+			}).toThrow(TypeError)
+		})
+
+		test('should throw when callback is a non-function (gap vs State)', () => {
+			const user = createStore({ name: 'John' })
+			expect(() => {
+				// @ts-expect-error - testing non-function
+				user.update('not a function')
+			}).toThrow(TypeError)
+		})
+
+		test('should propagate errors from the update callback', () => {
+			const user = createStore({ name: 'John' })
+			expect(() =>
+				user.update(() => {
+					throw new Error('callback failed')
+				}),
+			).toThrow('callback failed')
 		})
 	})
 
@@ -161,6 +203,13 @@ describe('Store', () => {
 		test('should throw DuplicateKeyError for existing key', () => {
 			const user = createStore({ name: 'John' })
 			expect(() => user.add('name', 'Jane')).toThrow()
+		})
+
+		test('DuplicateKeyError message includes prefix, key, and value', () => {
+			const user = createStore({ name: 'John' })
+			expect(() => user.add('name', 'Jane')).toThrow(
+				'[Store] Could not add key "name" with value "Jane" because it already exists',
+			)
 		})
 
 		test('should be reactive', () => {
@@ -438,6 +487,26 @@ describe('Store', () => {
 			config.ui.theme.set('dark')
 			expect(display.get()).toBe('Theme: dark')
 		})
+
+		test('Symbol.iterator tracks structural changes (add/remove)', () => {
+			const store = createStore<{ a: number; b?: number }>({ a: 1 })
+			let runs = 0
+			const dispose = createScope(() => {
+				createEffect(() => {
+					for (const _entry of store) {
+						// iterate only — no per-property reads
+					}
+					runs++
+				})
+			})
+
+			expect(runs).toBe(1)
+			store.add('b', 2)
+			expect(runs).toBe(2)
+			store.remove('a')
+			expect(runs).toBe(3)
+			dispose()
+		})
 	})
 
 	describe('Serialization', () => {
@@ -555,6 +624,66 @@ describe('Store', () => {
 			})
 			// @ts-expect-error testing null
 			expect(() => store.add('email', null)).toThrow()
+		})
+	})
+
+	describe('set re-subscription leak', () => {
+		// store.set builds the prev value via buildValue() without untrack.
+		// When set() is called inside an effect, child .get() calls leak edges
+		// from each child State directly to that effect — causing over-broad
+		// re-runs on unrelated child mutations.
+		test('effect calling store.set should not over-subscribe to child signals', () => {
+			const store = createStore<{ a: number; b: number }>({ a: 1, b: 1 })
+			let setRuns = 0
+			// This effect calls store.set — if edges leak, mutating `b` below
+			// will re-run it even though the effect never reads `b` directly.
+			const dispose = createScope(() => {
+				createEffect(() => {
+					setRuns++
+					// Replace the whole store value; `set` rebuilds prev internally.
+					if (setRuns === 1) {
+						store.set({ a: 1, b: 1 })
+					}
+				})
+			})
+			expect(setRuns).toBe(1)
+
+			// Mutating only `b` should NOT re-run the set-effect, because the
+			// effect only writes; it does not read `b`.
+			store.b.set(99)
+			expect(setRuns).toBe(1)
+
+			dispose()
+		})
+	})
+
+	describe('set type-change routing', () => {
+		// When a property changes shape (primitive -> array), store.set must
+		// route through addSignal/createList, not stuff the array into the
+		// existing State. isRecord() returns false for arrays, which previously
+		// caused the type-change branch to be skipped.
+		test('primitive-to-array type change produces a List child, not a State holding an array', () => {
+			type Shape = { count: number | number[] }
+			const store = createStore<Shape>({ count: 5 })
+			expect(isState(store.count)).toBe(true)
+			expect(store.count.get()).toBe(5)
+
+			// Now change the shape to an array.
+			store.set({ count: [1, 2, 3] })
+
+			// The child should be a List now, not a State<number[]>.
+			expect(isList(store.count)).toBe(true)
+			expect(store.count.get()).toEqual([1, 2, 3])
+		})
+
+		test('array-to-primitive type change produces a State child', () => {
+			type Shape = { count: number[] | number }
+			const store = createStore<Shape>({ count: [1, 2, 3] })
+			expect(isList(store.count)).toBe(true)
+
+			store.set({ count: 5 })
+			expect(isState(store.count)).toBe(true)
+			expect(store.count.get()).toBe(5)
 		})
 	})
 })

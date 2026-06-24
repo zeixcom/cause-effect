@@ -416,6 +416,270 @@ describe('Collection', () => {
 
 			dispose()
 		})
+
+		test('should throw DuplicateKeyError when add produces a duplicate key', () => {
+			type Item = { id: string; v: number }
+			let apply: ((changes: CollectionChanges<Item>) => void) | undefined
+			const col = createCollection<Item>(
+				applyChanges => {
+					apply = applyChanges
+					return () => {}
+				},
+				{ keyConfig: item => item.id },
+			)
+
+			const dispose = createScope(() => {
+				createEffect(() => {
+					void col.get()
+				})
+			})
+
+			// Two items with the same content-based key must throw,
+			// matching List.add and Store.add behavior.
+			expect(() => {
+				// biome-ignore lint/style/noNonNullAssertion: test
+				apply!({
+					add: [
+						{ id: 'a', v: 1 },
+						{ id: 'a', v: 2 },
+					],
+				})
+			}).toThrow('already exists')
+
+			dispose()
+		})
+
+		test('should throw DuplicateKeyError when adding a key that already exists', () => {
+			type Item = { id: string; v: number }
+			let apply: ((changes: CollectionChanges<Item>) => void) | undefined
+			const col = createCollection<Item>(
+				applyChanges => {
+					apply = applyChanges
+					return () => {}
+				},
+				{ value: [{ id: 'a', v: 1 }], keyConfig: item => item.id },
+			)
+
+			const dispose = createScope(() => {
+				createEffect(() => {
+					void col.get()
+				})
+			})
+
+			expect(() => {
+				// biome-ignore lint/style/noNonNullAssertion: test
+				apply!({ add: [{ id: 'a', v: 99 }] })
+			}).toThrow('already exists')
+
+			dispose()
+		})
+
+		test('leaves no partial state when a later item in the batch collides', () => {
+			// Regression: the add-loop used to mutate signals/keys/itemToKey as it
+			// iterated, so a duplicate on the *second* item left the first item
+			// committed while node.value/flags were never updated — byKey()/keys()
+			// disagreed with get(). The whole batch must be validated before any
+			// mutation happens.
+			type Item = { id: string; v: number }
+			let apply: ((changes: CollectionChanges<Item>) => void) | undefined
+			const col = createCollection<Item>(
+				applyChanges => {
+					apply = applyChanges
+					return () => {}
+				},
+				{ keyConfig: item => item.id },
+			)
+
+			const dispose = createScope(() => {
+				createEffect(() => {
+					void col.get()
+				})
+			})
+
+			expect(() => {
+				// biome-ignore lint/style/noNonNullAssertion: test
+				apply!({
+					add: [
+						{ id: 'a', v: 1 },
+						{ id: 'a', v: 2 },
+					],
+				})
+			}).toThrow('already exists')
+
+			// None of the views should show the first item as added.
+			expect(col.get()).toEqual([])
+			expect(col.byKey('a')).toBeUndefined()
+			expect(Array.from(col.keys())).toEqual([])
+
+			dispose()
+		})
+	})
+
+	describe('createCollection lookup methods track structural changes', () => {
+		test('byKey() tracks structural changes (add/remove)', () => {
+			type Item = { id: string; v: number }
+			let apply: ((changes: CollectionChanges<Item>) => void) | undefined
+			const col = createCollection<Item>(
+				applyChanges => {
+					apply = applyChanges
+					return () => {}
+				},
+				{ keyConfig: item => item.id, value: [{ id: 'a', v: 1 }] },
+			)
+			let effectCount = 0
+			const dispose = createScope(() => {
+				createEffect(() => {
+					col.byKey('a')
+					effectCount++
+				})
+			})
+
+			expect(effectCount).toBe(1)
+			// biome-ignore lint/style/noNonNullAssertion: test
+			apply!({ add: [{ id: 'b', v: 2 }] })
+			expect(effectCount).toBe(2)
+			// biome-ignore lint/style/noNonNullAssertion: test
+			apply!({ remove: [{ id: 'a', v: 1 }] })
+			expect(effectCount).toBe(3)
+			dispose()
+		})
+
+		test('at(), keyAt(), indexOfKey() track structural changes', () => {
+			type Item = { id: string; v: number }
+			let apply: ((changes: CollectionChanges<Item>) => void) | undefined
+			const col = createCollection<Item>(
+				applyChanges => {
+					apply = applyChanges
+					return () => {}
+				},
+				{ keyConfig: item => item.id, value: [{ id: 'a', v: 1 }] },
+			)
+			let byAt = 0
+			let byKeyAt = 0
+			let byIndexOfKey = 0
+			const dispose = createScope(() => {
+				createEffect(() => {
+					col.at(0)
+					byAt++
+				})
+				createEffect(() => {
+					col.keyAt(0)
+					byKeyAt++
+				})
+				createEffect(() => {
+					col.indexOfKey('a')
+					byIndexOfKey++
+				})
+			})
+
+			expect(byAt).toBe(1)
+			expect(byKeyAt).toBe(1)
+			expect(byIndexOfKey).toBe(1)
+			// biome-ignore lint/style/noNonNullAssertion: test
+			apply!({ add: [{ id: 'b', v: 2 }] })
+			expect(byAt).toBe(2)
+			expect(byKeyAt).toBe(2)
+			expect(byIndexOfKey).toBe(2)
+			dispose()
+		})
+
+		test('Symbol.iterator tracks structural changes', () => {
+			type Item = { id: string; v: number }
+			let apply: ((changes: CollectionChanges<Item>) => void) | undefined
+			const col = createCollection<Item>(
+				applyChanges => {
+					apply = applyChanges
+					return () => {}
+				},
+				{ keyConfig: item => item.id, value: [{ id: 'a', v: 1 }] },
+			)
+			let runs = 0
+			const dispose = createScope(() => {
+				createEffect(() => {
+					for (const _sig of col) {
+						// iterate only — no item-level reads
+					}
+					runs++
+				})
+			})
+
+			expect(runs).toBe(1)
+			// biome-ignore lint/style/noNonNullAssertion: test
+			apply!({ add: [{ id: 'b', v: 2 }] })
+			expect(runs).toBe(2)
+			// biome-ignore lint/style/noNonNullAssertion: test
+			apply!({ remove: [{ id: 'a', v: 1 }] })
+			expect(runs).toBe(3)
+			dispose()
+		})
+	})
+
+	describe('Input Validation', () => {
+		test('should throw InvalidCallbackError for non-function watched', () => {
+			expect(() => {
+				// @ts-expect-error - testing non-function
+				createCollection(42)
+			}).toThrow('Callback 42 is invalid')
+		})
+
+		test('should throw InvalidCallbackError for async watched', () => {
+			expect(() => {
+				// @ts-expect-error - testing async function
+				createCollection(async () => () => {})
+			}).toThrow('invalid')
+		})
+
+		test('applyChanges change for nonexistent key is silently skipped', () => {
+			type Item = { id: string; v: number }
+			let apply: ((changes: CollectionChanges<Item>) => void) | undefined
+			const col = createCollection<Item>(
+				applyChanges => {
+					apply = applyChanges
+					return () => {}
+				},
+				{ keyConfig: item => item.id },
+			)
+			const dispose = createScope(() => {
+				createEffect(() => {
+					void col.get()
+				})
+			})
+
+			// Change a key that does not exist — must not throw.
+			expect(() => {
+				// biome-ignore lint/style/noNonNullAssertion: test
+				apply!({ change: [{ id: 'missing', v: 1 }] })
+			}).not.toThrow()
+			expect(col.get()).toEqual([])
+
+			dispose()
+		})
+
+		test('applyChanges remove for nonexistent key is silently skipped', () => {
+			type Item = { id: string; v: number }
+			let apply: ((changes: CollectionChanges<Item>) => void) | undefined
+			const col = createCollection<Item>(
+				applyChanges => {
+					apply = applyChanges
+					return () => {}
+				},
+				{ value: [{ id: 'a', v: 1 }], keyConfig: item => item.id },
+			)
+			const dispose = createScope(() => {
+				createEffect(() => {
+					void col.get()
+				})
+			})
+
+			// Remove a key that does not exist — must not throw.
+			expect(() => {
+				// biome-ignore lint/style/noNonNullAssertion: test
+				apply!({ remove: [{ id: 'missing', v: 0 }] })
+			}).not.toThrow()
+			expect(col.get()).toEqual([{ id: 'a', v: 1 }])
+
+			dispose()
+		})
 	})
 
 	describe('deriveCollection', () => {
@@ -600,6 +864,105 @@ describe('Collection', () => {
 			})
 
 			expect(() => mapped.get()).toThrow('bad item')
+		})
+
+		test('byKey() tracks structural changes in source list', () => {
+			const list = createList([1, 2])
+			const doubled = list.deriveCollection((v: number) => v * 2)
+			let effectCount = 0
+			const dispose = createScope(() => {
+				createEffect(() => {
+					doubled.byKey(list.keyAt(0) as string)
+					effectCount++
+				})
+			})
+
+			expect(effectCount).toBe(1)
+			list.add(3)
+			expect(effectCount).toBe(2)
+			list.remove(0)
+			expect(effectCount).toBe(3)
+			dispose()
+		})
+
+		test('at(), keyAt(), indexOfKey() track structural changes in source', () => {
+			const list = createList([1])
+			const doubled = list.deriveCollection((v: number) => v * 2)
+			let byAt = 0
+			let byKeyAt = 0
+			let byIndexOfKey = 0
+			const dispose = createScope(() => {
+				createEffect(() => {
+					doubled.at(0)
+					byAt++
+				})
+				createEffect(() => {
+					doubled.keyAt(0)
+					byKeyAt++
+				})
+				createEffect(() => {
+					doubled.indexOfKey(list.keyAt(0) as string)
+					byIndexOfKey++
+				})
+			})
+
+			expect(byAt).toBe(1)
+			expect(byKeyAt).toBe(1)
+			expect(byIndexOfKey).toBe(1)
+			list.add(2)
+			expect(byAt).toBe(2)
+			expect(byKeyAt).toBe(2)
+			expect(byIndexOfKey).toBe(2)
+			dispose()
+		})
+
+		test('per-item memo does NOT gain a structural edge on the source', () => {
+			// Regression guard: byKey() now tracks, so deriveCollection's
+			// internal source.byKey(key).get() must be untracked. Otherwise
+			// every per-item memo would recompute on any structural change.
+			const list = createList([1, 2, 3])
+			let memoRuns = 0
+			const doubled = list.deriveCollection((v: number) => {
+				memoRuns++
+				return v * 2
+			})
+			const dispose = createScope(() => {
+				createEffect(() => {
+					// read each item's derived value directly
+					for (const key of doubled.keys()) {
+						doubled.byKey(key)?.get()
+					}
+				})
+			})
+
+			memoRuns = 0
+			// Add an item — existing per-item memos should NOT recompute.
+			// (Only the new item's memo runs once.)
+			const before = memoRuns
+			list.add(4)
+			expect(memoRuns).toBe(before + 1)
+			dispose()
+		})
+
+		test('Symbol.iterator tracks structural changes in source', () => {
+			const list = createList([1, 2])
+			const doubled = list.deriveCollection((v: number) => v * 2)
+			let runs = 0
+			const dispose = createScope(() => {
+				createEffect(() => {
+					for (const _sig of doubled) {
+						// iterate only — no item-level reads
+					}
+					runs++
+				})
+			})
+
+			expect(runs).toBe(1)
+			list.add(3)
+			expect(runs).toBe(2)
+			list.remove(0)
+			expect(runs).toBe(3)
+			dispose()
 		})
 	})
 })

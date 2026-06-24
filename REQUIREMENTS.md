@@ -87,10 +87,12 @@ The library uses no browser-specific APIs in its core. Environment-specific beha
 
 ### Bundle Size
 
-| Usage | Target |
-|-------|--------|
-| Core signals only (State, Memo, Task, Effect) | Below 5 kB gzipped |
-| Full library (all 9 signal types + utilities) | Below 7 kB gzipped |
+| Usage | Minified | Gzipped |
+|-------|----------|---------|
+| Core signals only (State, Memo, Task, Effect) | — | Below 4 kB (4096 B) |
+| Full library (all 9 signal types + utilities) | Below 24 kB (24576 B) | Below 8 kB (8192 B) |
+
+The full-library targets carry deliberate headroom above current usage (raised from 21000 B / 7000 B, ~2026-06-24) so that routine bug fixes are not blocked on bundle-size regressions — see `test/regression-bundle.test.ts` for the enforced limits.
 
 The library must remain tree-shakable: importing only what you use should not pull in unrelated signal types.
 

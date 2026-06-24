@@ -1,4 +1,8 @@
-import { DuplicateKeyError, validateSignalValue } from '../errors'
+import {
+	DuplicateKeyError,
+	NullishSignalValueError,
+	validateSignalValue,
+} from '../errors'
 import {
 	batch,
 	batchDepth,
@@ -57,7 +61,7 @@ type ListOptions<
 > = {
 	/** Key generation strategy. A string prefix or a function `(item) => string | undefined`. Defaults to auto-increment. */
 	keyConfig?: KeyConfig<T>
-	/** Lifecycle callback invoked when the list gains its first downstream subscriber. Must return a cleanup function. */
+	/** Lifecycle callback invoked when the list gains its first downstream subscriber. Must return a cleanup function. Stays active through structural mutations (add/remove/sort) — only the subscriber count matters. */
 	watched?: () => Cleanup
 	/** Equality function for item state signals. Defaults to `DEEP_EQUALITY`. */
 	itemEquals?: (a: T, b: T) => boolean
@@ -220,7 +224,10 @@ function diffArrays<T extends {}>(
 	// Process new array and build new keys array
 	for (let i = 0; i < next.length; i++) {
 		const val = next[i]
-		if (val === undefined) continue
+		// Reject undefined/null elements up front, consistent with init.
+		// Previously `undefined` was silently skipped, leaving holes in keys
+		// and causing length/get() to disagree.
+		validateSignalValue(`${TYPE_LIST} item at index ${i}`, val)
 
 		const key = generateKey(val)
 
@@ -355,13 +362,13 @@ function createList<
 	// --- Initialize ---
 	for (let i = 0; i < value.length; i++) {
 		const val = value[i]
-		if (val === undefined) continue
+		if (val == null)
+			throw new NullishSignalValueError(`${TYPE_LIST} item ${i}`)
 		let key = keys[i]
 		if (!key) {
 			key = generateKey(val)
 			keys[i] = key
 		}
-		validateSignalValue(`${TYPE_LIST} item for key "${key}"`, val)
 		signals.set(key, itemFactory(val))
 	}
 
@@ -376,6 +383,7 @@ function createList<
 		[Symbol.isConcatSpreadable]: true as const,
 
 		*[Symbol.iterator]() {
+			subscribe()
 			for (const key of keys) {
 				const signal = signals.get(key)
 				if (signal) yield signal
@@ -437,6 +445,7 @@ function createList<
 		},
 
 		at(index: number) {
+			subscribe()
 			const key = keys[index]
 			return key !== undefined ? signals.get(key) : undefined
 		},
@@ -447,14 +456,17 @@ function createList<
 		},
 
 		byKey(key: string) {
+			subscribe()
 			return signals.get(key)
 		},
 
 		keyAt(index: number) {
+			subscribe()
 			return keys[index]
 		},
 
 		indexOfKey(key: string) {
+			subscribe()
 			return keys.indexOf(key)
 		},
 
@@ -499,9 +511,15 @@ function createList<
 				)
 			)
 				return
-			signal.set(value)
-			node.flags |= FLAG_DIRTY
-			for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
+			// Batch the item-signal set and the structural node propagation so
+			// subscribers that hold both edges (e.g. byKey(k).get()) flush once
+			// instead of once per edge. Without the batch, signal.set() flushes
+			// immediately, then the node propagation flushes again.
+			batch(() => {
+				signal.set(value)
+				node.flags |= FLAG_DIRTY
+				for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
+			})
 			if (batchDepth === 0) flush()
 		},
 

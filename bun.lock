@@ -10,7 +10,7 @@
         "@zeix/cause-effect-stable": "npm:@zeix/cause-effect",
         "mitata": "^1.0.34",
         "random": "^5.4.1",
-        "typescript": "^6.0.2",
+        "typescript": "^6.0.3",
       },
       "peerDependencies": {
         "typescript": ">=5.8.0",

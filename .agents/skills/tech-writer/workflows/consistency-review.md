@@ -29,7 +29,7 @@ the relevant source, then record findings before moving to the next.
 - Each signal type subsection describes the correct internal composition and lifecycle
 - No subsection references a removed node type, flag, or function
 
-### CLAUDE.md
+### AGENTS.md
 - Internal Node Shapes block matches `src/graph.ts`
 - `activeOwner` / `activeSink` semantics description is accurate
 - Each non-obvious behavior entry is still accurate for the current implementation

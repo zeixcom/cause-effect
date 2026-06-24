@@ -13,7 +13,7 @@ Read the issue or report fully. Identify what the user expected, what happened, 
 
 To classify correctly:
 - Read `REQUIREMENTS.md` (Must Have / Should Avoid / Out of Scope)
-- Read `CLAUDE.md` — many apparent bugs are documented non-obvious behaviors
+- Read `AGENTS.md` — many apparent bugs are documented non-obvious behaviors
 - Search the source if needed to confirm whether the behavior is by design
 
 ## Step 3: Resolve
@@ -37,7 +37,7 @@ To classify correctly:
 </process>
 
 <success_criteria>
-- Issue classified with clear reasoning grounded in REQUIREMENTS.md or CLAUDE.md
+- Issue classified with clear reasoning grounded in REQUIREMENTS.md
 - Won't do: user has a specific explanation
 - All other resolvable cases: a correctly formatted task in TODO.md
 - Unclear cases: escalated to the user, not guessed

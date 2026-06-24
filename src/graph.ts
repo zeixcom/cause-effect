@@ -1,4 +1,4 @@
-import { CircularDependencyError, type Guard } from './errors'
+import { CircularDependencyError, type Guard, PromiseValueError } from './errors'
 import { isRecord } from './util'
 
 /* === Internal Types === */
@@ -96,7 +96,8 @@ type SignalOptions<T extends {}> = {
 	/**
 	 * Optional custom equality function.
 	 * Used to determine if a new value is different from the old value.
-	 * Defaults to reference equality (===).
+	 * Defaults to reference equality (===). When equal, propagation stops for
+	 * this signal's entire downstream subtree, not just this signal.
 	 */
 	equals?: (a: T, b: T) => boolean
 }
@@ -220,7 +221,14 @@ const DEFAULT_EQUALITY = <T extends {}>(a: T, b: T): boolean => a === b
  */
 const SKIP_EQUALITY = (_a?: unknown, _b?: unknown): boolean => false
 
-const deepEqual = (a: unknown, b: unknown): boolean => {
+const deepEqual = (a: unknown, b: unknown): boolean =>
+	deepEqualInner(a, b, new WeakSet())
+
+const deepEqualInner = (
+	a: unknown,
+	b: unknown,
+	seen: WeakSet<object>,
+): boolean => {
 	if (Object.is(a, b)) return true
 	if (typeof a !== typeof b) return false
 	if (
@@ -231,29 +239,49 @@ const deepEqual = (a: unknown, b: unknown): boolean => {
 	)
 		return false
 
-	const aIsArray = Array.isArray(a)
-	if (aIsArray !== Array.isArray(b)) return false
+	// Cycle guard: if `a` is already on the current recursion path, treat this
+	// pair as equal (ADR-0016). Scoped to the active path, not "every object
+	// ever visited" — the entry is removed once this call returns, so an
+	// object reached twice via different (non-cyclic) paths is still compared
+	// independently each time, not aliased away by an earlier, unrelated pair.
+	if (seen.has(a as object)) return true
+	seen.add(a as object)
 
-	if (aIsArray) {
-		const aa = a as unknown[]
-		const ba = b as unknown[]
-		if (aa.length !== ba.length) return false
-		for (let i = 0; i < aa.length; i++)
-			if (!deepEqual(aa[i], ba[i])) return false
-		return true
-	}
+	try {
+		const aIsArray = Array.isArray(a)
+		if (aIsArray !== Array.isArray(b)) return false
 
-	if (isRecord(a) && isRecord(b)) {
-		const aKeys = Object.keys(a)
-		if (aKeys.length !== Object.keys(b).length) return false
-		for (const key of aKeys) {
-			if (!(key in b)) return false
-			if (!deepEqual(a[key], b[key])) return false
+		if (aIsArray) {
+			const aa = a
+			const ba = b as unknown[]
+			if (aa.length !== ba.length) return false
+			for (let i = 0; i < aa.length; i++)
+				if (!deepEqualInner(aa[i], ba[i], seen)) return false
+			return true
 		}
-		return true
-	}
 
-	return false
+		// Value-semantic built-ins: compare by their intrinsic value, not identity.
+		// These are not plain records, so without explicit handling they would
+		// fall through to `return false` and force spurious downstream propagation.
+		if (a instanceof Date && b instanceof Date)
+			return a.getTime() === b.getTime()
+		if (a instanceof RegExp && b instanceof RegExp)
+			return a.source === b.source && a.flags === b.flags
+
+		if (isRecord(a) && isRecord(b)) {
+			const aKeys = Object.keys(a)
+			if (aKeys.length !== Object.keys(b).length) return false
+			for (const key of aKeys) {
+				if (!(key in b)) return false
+				if (!deepEqualInner(a[key], b[key], seen)) return false
+			}
+			return true
+		}
+
+		return false
+	} finally {
+		seen.delete(a)
+	}
 }
 
 /**
@@ -424,6 +452,8 @@ function recomputeMemo(node: MemoNode<unknown & {}>): void {
 	let changed = false
 	try {
 		const next = node.fn(node.value)
+		// fn misclassified as sync by isAsyncFunction (it checks the callback, not its return value)
+		if (next instanceof Promise) throw new PromiseValueError(TYPE_MEMO)
 		if (node.error || !node.equals(next, node.value)) {
 			node.value = next
 			node.error = undefined
@@ -463,6 +493,11 @@ function recomputeTask(node: TaskNode<unknown & {}>): void {
 	} catch (err) {
 		node.controller = undefined
 		node.error = err instanceof Error ? err : new Error(String(err))
+		// Keep the node recoverable: clear FLAG_RUNNING and reset pending,
+		// so subsequent reads report the SAME error instead of a spurious
+		// CircularDependencyError on the stuck RUNNING flag.
+		node.flags = FLAG_CLEAN
+		setState(node.pendingNode, false)
 		return
 	} finally {
 		activeSink = prevWatcher

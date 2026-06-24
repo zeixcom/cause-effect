@@ -11,6 +11,7 @@ import {
 	isList,
 	isMemo,
 	match,
+	NullishSignalValueError,
 } from '../index.ts'
 
 /* === Utility Functions === */
@@ -157,6 +158,26 @@ describe('List', () => {
 			list.update(arr => [...arr, 3])
 			expect(list.get()).toEqual([1, 2, 3])
 		})
+
+		test('should throw when callback is null (no InvalidCallbackError — gap vs State)', () => {
+			// NOTE: List.update does not validate its callback the way
+			// State.update does. A null callback throws a bare TypeError from
+			// invoking null(), not an InvalidCallbackError. This test locks in
+			// the current behavior; the inconsistency is documented.
+			const list = createList([1, 2])
+			expect(() => {
+				// @ts-expect-error - testing null callback
+				list.update(null)
+			}).toThrow(TypeError)
+		})
+
+		test('should throw when callback is a non-function (gap vs State)', () => {
+			const list = createList([1, 2])
+			expect(() => {
+				// @ts-expect-error - testing non-function
+				list.update(42)
+			}).toThrow(TypeError)
+		})
 	})
 
 	describe('add', () => {
@@ -181,6 +202,33 @@ describe('List', () => {
 			expect(() => list.add({ id: 'a', val: 2 })).toThrow(
 				'already exists',
 			)
+		})
+
+		test('DuplicateKeyError message includes [List] prefix and key', () => {
+			const list = createList([{ id: 'a', val: 1 }], {
+				keyConfig: item => item.id,
+			})
+			expect(() => list.add({ id: 'a', val: 2 })).toThrow(
+				'[List] Could not add key "a"',
+			)
+		})
+
+		test('DuplicateKeyError message includes a falsy value', () => {
+			// The constructor used a truthy check on `value`, so falsy-but-defined
+			// values like `0` were silently dropped from the message even though
+			// a value was passed.
+			const list = createList<number>([0], {
+				keyConfig: item => String(item),
+			})
+			expect(() => list.add(0)).toThrow('with value 0')
+		})
+
+		test('add with null throws NullishSignalValueError with item-for-key prefix', () => {
+			const list = createList<number>([1])
+			expect(() => {
+				// @ts-expect-error - testing null
+				list.add(null)
+			}).toThrow(NullishSignalValueError)
 		})
 	})
 
@@ -565,6 +613,105 @@ describe('List', () => {
 			list.remove(0)
 			expect(sum.get()).toBe(9)
 		})
+
+		// Content-based keys so item values map 1:1 to stable string keys —
+		// this is the realistic scenario where byKey()/indexOfKey() with a
+		// specific key matters. With auto-increment keys the key is positional.
+		test('byKey() tracks structural changes (add/remove)', () => {
+			type Item = { id: string; v: number }
+			const list = createList<Item>(
+				[
+					{ id: 'a', v: 1 },
+					{ id: 'b', v: 2 },
+				],
+				{ keyConfig: item => item.id },
+			)
+			let effectCount = 0
+			createEffect(() => {
+				list.byKey('a')
+				effectCount++
+			})
+
+			expect(effectCount).toBe(1)
+			list.add({ id: 'c', v: 3 })
+			expect(effectCount).toBe(2)
+			list.remove('a')
+			expect(effectCount).toBe(3)
+		})
+
+		test('at() tracks structural changes (add/remove)', () => {
+			const list = createList(['a'])
+			let effectCount = 0
+			createEffect(() => {
+				list.at(0)
+				effectCount++
+			})
+
+			expect(effectCount).toBe(1)
+			list.add('b')
+			expect(effectCount).toBe(2)
+			list.remove(0)
+			expect(effectCount).toBe(3)
+		})
+
+		test('keyAt() tracks structural changes (add/remove)', () => {
+			const list = createList(['a'])
+			let effectCount = 0
+			createEffect(() => {
+				list.keyAt(0)
+				effectCount++
+			})
+
+			expect(effectCount).toBe(1)
+			list.add('b')
+			expect(effectCount).toBe(2)
+			list.remove(0)
+			expect(effectCount).toBe(3)
+		})
+
+		test('indexOfKey() tracks structural changes (add/remove)', () => {
+			type Item = { id: string; v: number }
+			const list = createList<Item>([{ id: 'a', v: 1 }], {
+				keyConfig: item => item.id,
+			})
+			let effectCount = 0
+			createEffect(() => {
+				list.indexOfKey('a')
+				effectCount++
+			})
+
+			expect(effectCount).toBe(1)
+			list.add({ id: 'b', v: 2 })
+			expect(effectCount).toBe(2)
+			list.remove('a')
+			expect(effectCount).toBe(3)
+		})
+
+		test('Symbol.iterator tracks structural changes and is reached by replace()', () => {
+			type Item = { id: string; v: number }
+			const list = createList<Item>([{ id: 'a', v: 1 }], {
+				keyConfig: item => item.id,
+			})
+			let runs = 0
+			createEffect(() => {
+				for (const _sig of list) {
+					// iterate only — no item-level reads
+				}
+				runs++
+			})
+			expect(runs).toBe(1)
+
+			// add/remove → structural change reaches iterator subscriber
+			list.add({ id: 'b', v: 2 })
+			expect(runs).toBe(2)
+			list.remove('a')
+			expect(runs).toBe(3)
+
+			// replace() now reaches iterator subscribers (previously silent)
+			list.add({ id: 'c', v: 3 })
+			list.replace('c', { id: 'c', v: 30 })
+			expect(runs).toBe(5)
+		})
 	})
 
 	describe('options.itemEquals', () => {
@@ -841,6 +988,43 @@ describe('List', () => {
 				// @ts-expect-error - Testing invalid input
 				createList(null)
 			}).toThrow()
+		})
+	})
+
+	describe('Undefined handling', () => {
+		// `undefined` elements must be rejected the same way `null` is — otherwise
+		// `keys` grows sparse and `length` / `get()` disagree.
+		test('should throw NullishSignalValueError for undefined elements on init', () => {
+			expect(() => {
+				// @ts-expect-error - Testing invalid input
+				createList([1, undefined, 3])
+			}).toThrow(NullishSignalValueError)
+
+			// Compacted arrays should work as expected
+			const list = createList([1, undefined, 3].filter(x => x != null))
+			expect(list.length).toBe(list.get().length)
+		})
+
+		test('should throw NullishSignalValueError for undefined elements on set() with content-based keys', () => {
+			// The content-based diff path (diffArrays) skips undefined via
+			// `if (val === undefined) continue` — that must throw instead.
+			type Item = { id: string; v: number }
+			const list = createList<Item>([{ id: 'a', v: 1 }], {
+				keyConfig: item => item.id,
+			})
+			expect(() => {
+				// @ts-expect-error - Testing invalid input
+				list.set([{ id: 'a', v: 2 }, undefined])
+			}).toThrow(NullishSignalValueError)
+
+			// Compacted arrays should work as expected
+			list.set([{ id: 'a', v: 2 }, undefined].filter(x => x != null))
+			expect(list.length).toBe(list.get().length)
+		})
+
+		test('length and get() must agree when there are no undefined holes', () => {
+			const list = createList([0, 1, 2, 3])
+			expect(list.length).toBe(list.get().length)
 		})
 	})
 })
