@@ -1,6 +1,6 @@
 # Cause & Effect
 
-Version 1.3.3
+Version 1.3.4
 
 **Cause & Effect** is a reactive state management primitives library for TypeScript. It provides the foundational building blocks for managing complex, dynamic, composite, and asynchronous state — correctly and performantly — in a unified signal graph.
 
@@ -42,7 +42,7 @@ Every signal type participates in the same dependency graph with the same propag
 - **Explicit reactivity**: Dependencies are tracked through `.get()` calls — the graph always reflects the true dependency structure, with no hidden subscriptions
 - **Non-nullable types**: All signals enforce `T extends {}`, excluding `null` and `undefined` at the type level — you can trust returned values without null checks
 - **Unified graph**: Composite signals (Store, List, Collection) and async signals (Task) are first-class citizens, not afterthoughts — all derivable state can be derived
-- **Tree-shakable, zero dependencies**: Import only what you use — core signals (State, Memo, Task, Effect) stay below 4 kB gzipped, the full library below 8 kB
+- **Tree-shakable, zero dependencies**: Import only what you use — core signals (State, Memo, Task, Effect) are less than 3 kB gzipped, the full library is around 7 kB
 
 ## Installation
 

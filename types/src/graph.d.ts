@@ -67,7 +67,8 @@ type SignalOptions<T extends {}> = {
     /**
      * Optional custom equality function.
      * Used to determine if a new value is different from the old value.
-     * Defaults to reference equality (===).
+     * Defaults to reference equality (===). When equal, propagation stops for
+     * this signal's entire downstream subtree, not just this signal.
      */
     equals?: (a: T, b: T) => boolean;
 };

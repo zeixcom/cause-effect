@@ -26,7 +26,7 @@ describe('Bundle size', () => {
 		expect(gzipped).toBeLessThanOrEqual(8192)
 	})
 
-	test('core-signals-only (tree-shaken) gzipped bundle should stay below 5 kB', async () => {
+	test('core-signals-only (tree-shaken) gzipped bundle should stay below 4 kB', async () => {
 		// Imports only State, Memo, Task, Effect from the package barrel and
 		// actually wires them together — see test/util/core-entry.ts. A
 		// bare re-export would let the bundler eliminate code a real
