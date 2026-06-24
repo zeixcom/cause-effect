@@ -51,7 +51,7 @@ Consumers who want whole-store structural reactivity read `store.keys()`, `store
 
 ### For Store
 
-- **(a) Track uniformly with List/Collection**: Rejected. Breaks granular property-level subscriptions — verified by the `should support granular property-level subscriptions` test. `store.set({ name: 'John', age: 26 })` would spuriously re-run the `name` effect. This was implemented during CE-003 and reverted once the failure was observed.
+- **(a) Track uniformly with List/Collection**: Rejected. Breaks granular property-level subscriptions — verified by the `should support granular property-level subscriptions` test. `store.set({ name: 'John', age: 26 })` would spuriously re-run the `name` effect.
 - **(b) Leave untracked** *(chosen)*: Store proxy access is already the correct granular path; Store keys are statically typed and cannot "disappear" from under a typed reference the way a runtime key can. The original `direct_lookups_do_not_track` footgun did not apply to Store.
 
 ### Cross-cutting
@@ -68,7 +68,7 @@ Consumers who want whole-store structural reactivity read `store.keys()`, `store
 - ⚠️ **Behavior change (not API/type-breaking)**: effects that read *only* List/Collection lookup methods will now re-run on structural changes where they previously did not. This is the intended fix, but consumers relying on the old non-tracking behavior (rare, and previously documented as wrong) may see additional runs.
 - ⚠️ **Asymmetry requires documentation**: the difference between List/Collection (tracked) and Store (untracked) must be explained clearly in ARCHITECTURE.md and this ADR, so it is read as a principled design choice rather than an oversight.
 
-## Clarification (added by CE-009): Iterators also track
+## Clarification: Iterators also track
 
 This ADR originally addressed only the direct-lookup methods. The `Symbol.iterator` of every composite type is a structural accessor of the same class and was extended to track identically:
 

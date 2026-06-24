@@ -21,6 +21,7 @@ import {
 	isTask,
 	type List,
 	type Memo,
+	PromiseValueError,
 	type Signal,
 	type State,
 	type Store,
@@ -49,6 +50,14 @@ describe('createComputed', () => {
 			expect(typedResult).toBeDefined()
 		})
 		cleanup()
+	})
+
+	test('throws PromiseValueError when a non-async callback returns a Promise', () => {
+		const result = createComputed(
+			(): Promise<string> => Promise.resolve('hello'),
+		)
+		expect(isMemo(result)).toBe(true) // misclassified before invocation, as documented
+		expect(() => result.get()).toThrow(PromiseValueError)
 	})
 })
 

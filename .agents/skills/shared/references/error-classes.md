@@ -18,6 +18,7 @@ import {
   ReadonlySignalError,
   RequiredOwnerError,
   CircularDependencyError,
+  PromiseValueError,
 } from '@zeix/cause-effect'
 ```
 
@@ -35,6 +36,7 @@ All error classes are defined in `src/errors.ts` for library development.
 | `ReadonlySignalError` | Attempting to write to a read-only signal |
 | `RequiredOwnerError` | `createEffect` called outside an owner (scope or parent effect) |
 | `CircularDependencyError` | A cycle is detected in the reactive graph |
+| `PromiseValueError` | A non-`async` Memo/Slot callback returns a `Promise` |
 </error_table>
 
 <error_details>
@@ -137,6 +139,30 @@ evaluation order and are always a programming error.
 
 **Fix:** restructure the data flow so that values move in one direction only.
 </CircularDependencyError>
+
+<PromiseValueError>
+Thrown when a Memo or Slot callback returns a `Promise`. `createComputed`/`createSignal`
+decide Memo vs. Task by checking whether the callback is declared `async` — a check made
+before the callback ever runs. A callback that forgets `async` but still returns a `Promise`
+(e.g. `() => fetch(url).then(r => r.json())`) is created as a `Memo`. Without this check, the
+`Promise` object itself would be silently cached as the memo's value.
+
+```typescript
+import { createComputed, PromiseValueError } from '@zeix/cause-effect'
+
+// Wrong — sync callback, routed to Memo, returns a Promise
+const data = createComputed(() => fetch('/api').then(r => r.json()))
+data.get() // throws PromiseValueError
+
+// Correct — async keyword routes to Task
+const data2 = createComputed(async () => {
+  const r = await fetch('/api')
+  return r.json()
+})
+```
+
+**Fix:** add the `async` keyword to the callback so it routes to `createTask` instead.
+</PromiseValueError>
 
 </error_details>
 

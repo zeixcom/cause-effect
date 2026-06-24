@@ -174,13 +174,17 @@ children.
 <async_requires_async_syntax>
 **Async routing in `createSignal`/`createComputed` requires the `async`/`await` keyword.**
 The library detects async callbacks by their function prototype
-(`Object.getPrototypeOf(fn) === async-function prototype`), not by their return value. A
-*synchronous* function that happens to return a `Promise` is classified as a `Memo`, not a
-`Task` — so the memo caches the `Promise` object itself rather than its resolved value.
+(`Object.getPrototypeOf(fn) === async-function prototype`), not by their return value, because
+the routing decision is made before the callback ever runs. A *synchronous* function that
+happens to return a `Promise` is classified as a `Memo`, not a `Task`.
+
+This used to fail silently (the memo cached the raw `Promise` object). It now throws
+`PromiseValueError` the first time the misclassified Memo is read, since `recomputeMemo()`
+checks the computed value against `instanceof Promise`:
 
 ```typescript
-// WRONG — sync function returning a Promise becomes a Memo<number>,
-// caching the Promise object. equals/guard run against the Promise.
+// WRONG — sync function returning a Promise becomes a Memo<number>.
+// Throws PromiseValueError on first .get().
 const data = createComputed((): Promise<number> => fetch('/api').then(r => r.json()))
 
 // Correct — async keyword makes isAsyncFunction return true, routing to createTask.
@@ -211,20 +215,3 @@ createEffect(() => {
 Avoid writing to a signal that the same effect reads. If you need derived state, use a
 `createMemo` instead.
 </flush_has_no_loop_guard>
-
-<untrack_does_not_suppress_watched>
-**`untrack()` only suppresses dependency-edge creation (`activeSink` linking). It does NOT
-prevent `watched` activation on upstream signals.** The `watched` lifecycle keys on
-`node.sinks` (via `makeSubscribe`), not on `activeSink`. So wrapping a read in `untrack`
-inside a `deriveCollection`/constructor does not stop the upstream source's `watched`
-callback from firing.
-
-```typescript
-// This does NOT prevent the source's watched() from firing —
-// untrack only blocks edge creation.
-const keys = Array.from(untrack(() => source.keys()))
-```
-
-If you need to defer upstream resource setup, structure your graph so the upstream signal
-has no sinks until an effect actually reads it.
-</untrack_does_not_suppress_watched>

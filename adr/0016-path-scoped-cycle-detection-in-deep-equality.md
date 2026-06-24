@@ -53,4 +53,3 @@ Reinstate cycle detection in `deepEqual` (`src/graph.ts`), scoped to the current
 - Requirements: [Size and Performance Constraints](../REQUIREMENTS.md#size-and-performance-constraints)
 - Supersedes: [ADR-0005](0005-cycle-detection-omission-in-deep-equality.md)
 - Related: [ADR-0004](0004-isequal-placement-and-deprecation.md) (isEqual placement and deprecation), [ADR-0003](0003-equality-strategy-naming-convention.md) (equality strategy naming convention)
-- Tracking: TODO.md CE-010

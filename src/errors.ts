@@ -118,6 +118,23 @@ class RequiredOwnerError extends Error {
 	}
 }
 
+/**
+ * Error thrown when a synchronous Memo/Slot callback returns a Promise.
+ */
+class PromiseValueError extends TypeError {
+	/**
+	 * Constructs a new PromiseValueError.
+	 *
+	 * @param where - The location where the error occurred.
+	 */
+	constructor(where: string) {
+		super(
+			`[${where}] Callback returned a Promise — use an async callback to create a Task instead`,
+		)
+		this.name = 'PromiseValueError'
+	}
+}
+
 class DuplicateKeyError extends Error {
 	constructor(where: string, key: string, value?: unknown) {
 		super(
@@ -174,6 +191,7 @@ export {
 	ReadonlySignalError,
 	RequiredOwnerError,
 	DuplicateKeyError,
+	PromiseValueError,
 	validateSignalValue,
 	validateReadValue,
 	validateCallback,

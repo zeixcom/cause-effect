@@ -1,15 +1,17 @@
 /**
  * @name Cause & Effect
- * @version 1.3.4-beta.8
+ * @version 1.3.4
  * @author Esther Brunner
  */
 
 export {
 	CircularDependencyError,
+	DuplicateKeyError,
 	type Guard,
 	InvalidCallbackError,
 	InvalidSignalValueError,
 	NullishSignalValueError,
+	PromiseValueError,
 	ReadonlySignalError,
 	RequiredOwnerError,
 	UnsetSignalValueError,

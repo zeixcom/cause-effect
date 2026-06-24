@@ -213,11 +213,13 @@ describe('List', () => {
 			)
 		})
 
-		test('DuplicateKeyError message includes a falsy value (CE-012)', () => {
+		test('DuplicateKeyError message includes a falsy value', () => {
 			// The constructor used a truthy check on `value`, so falsy-but-defined
 			// values like `0` were silently dropped from the message even though
 			// a value was passed.
-			const list = createList<number>([0], { keyConfig: item => String(item) })
+			const list = createList<number>([0], {
+				keyConfig: item => String(item),
+			})
 			expect(() => list.add(0)).toThrow('with value 0')
 		})
 
@@ -687,10 +689,9 @@ describe('List', () => {
 
 		test('Symbol.iterator tracks structural changes and is reached by replace()', () => {
 			type Item = { id: string; v: number }
-			const list = createList<Item>(
-				[{ id: 'a', v: 1 }],
-				{ keyConfig: item => item.id },
-			)
+			const list = createList<Item>([{ id: 'a', v: 1 }], {
+				keyConfig: item => item.id,
+			})
 			let runs = 0
 			createEffect(() => {
 				for (const _sig of list) {

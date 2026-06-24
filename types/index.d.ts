@@ -1,9 +1,9 @@
 /**
  * @name Cause & Effect
- * @version 1.3.4-beta.8
+ * @version 1.3.4
  * @author Esther Brunner
  */
-export { CircularDependencyError, type Guard, InvalidCallbackError, InvalidSignalValueError, NullishSignalValueError, ReadonlySignalError, RequiredOwnerError, UnsetSignalValueError, } from './src/errors';
+export { CircularDependencyError, DuplicateKeyError, type Guard, InvalidCallbackError, InvalidSignalValueError, NullishSignalValueError, PromiseValueError, ReadonlySignalError, RequiredOwnerError, UnsetSignalValueError, } from './src/errors';
 /** @deprecated Use `DEEP_EQUALITY` instead. */
 export { batch, type Cleanup, type ComputedOptions, createScope, DEEP_EQUALITY, DEFAULT_EQUALITY, type EffectCallback, isEqual, type MaybeCleanup, type MemoCallback, type ScopeOptions, type Signal, type SignalOptions, SKIP_EQUALITY, type TaskCallback, unown, untrack, } from './src/graph';
 export { type Collection, type CollectionCallback, type CollectionChanges, type CollectionOptions, createCollection, type DeriveCollectionCallback, isCollection, } from './src/nodes/collection';

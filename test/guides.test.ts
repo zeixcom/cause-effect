@@ -55,7 +55,8 @@ describe('Guide: Keyed Collections', () => {
 		const seen: string[] = []
 		const itemSignal = todos.byKey('a')
 		const dispose = createEffect(() => {
-			seen.push(itemSignal.get().title)
+			// biome-ignore lint/style/noNonNullAssertion: just assigned before
+			seen.push(itemSignal!.get().title)
 		})
 		todos.replace('a', { id: 'a', title: 'Write final docs', done: false })
 		expect(seen).toEqual(['Write docs', 'Write final docs'])
@@ -196,8 +197,12 @@ describe('Guide: Async Data Pipelines', () => {
 		const states: string[] = []
 		const dispose = createEffect(() => {
 			match(results, {
-				stale: () => states.push('stale'),
-				ok: data => states.push(`ok:${data.total}`),
+				stale: () => {
+					states.push('stale')
+				},
+				ok: data => {
+					states.push(`ok:${data.total}`)
+				},
 			})
 		})
 		expect(states).toEqual(['stale'])

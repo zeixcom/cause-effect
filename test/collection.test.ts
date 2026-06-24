@@ -474,7 +474,7 @@ describe('Collection', () => {
 			dispose()
 		})
 
-		test('leaves no partial state when a later item in the batch collides (CE-011)', () => {
+		test('leaves no partial state when a later item in the batch collides', () => {
 			// Regression: the add-loop used to mutate signals/keys/itemToKey as it
 			// iterated, so a duplicate on the *second* item left the first item
 			// committed while node.value/flags were never updated — byKey()/keys()

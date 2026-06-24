@@ -1,5 +1,5 @@
 <required_reading>
-1. references/document-map.md — CLAUDE.md and copilot-instructions.md sections
+1. references/document-map.md — AGENTS.md and copilot-instructions.md sections
 2. references/tone-guide.md — agent-docs tone rules
 </required_reading>
 
@@ -7,12 +7,12 @@
 ## Step 1: Read the source
 
 Read the relevant `src/nodes/*.ts` file(s) and `src/graph.ts` if the change touches graph
-semantics. Read the current `CLAUDE.md` and `.github/copilot-instructions.md` in full.
+semantics. Read the current `AGENTS.md` and `.github/copilot-instructions.md` in full.
 Never update agent docs from memory — subtle inaccuracies are worse than gaps.
 
-## Step 2: Update CLAUDE.md
+## Step 2: Update AGENTS.md
 
-CLAUDE.md is the inference-time reference for Claude. It covers the mental model, internal
+AGENTS.md is the inference-time reference for AI agents. It covers the mental model, internal
 node shapes, and non-obvious behaviors. Token cost is real — every line must earn its place.
 
 **Mental model section**
@@ -68,10 +68,10 @@ patterns is critical — Copilot uses these as generation templates.
 
 <success_criteria>
 - Source file(s) read before any edits
-- CLAUDE.md non-obvious behavior entries accurate, terse, and consistently structured
-- CLAUDE.md node shapes consistent with `src/graph.ts`
+- AGENTS.md non-obvious behavior entries accurate, terse, and consistently structured
+- AGENTS.md node shapes consistent with `src/graph.ts`
 - copilot-instructions.md code patterns compile against the current `index.ts`
 - Both documents remain concise — no explanatory padding
-- Tone matches references/tone-guide.md: terse and direct for CLAUDE.md,
+- Tone matches references/tone-guide.md: terse and direct for AGENTS.md,
   structured and pattern-focused for copilot-instructions.md
 </success_criteria>

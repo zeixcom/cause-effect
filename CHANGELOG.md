@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.3.4
 
 ### Fixed
 
@@ -13,6 +13,7 @@
 - **`valueString` threw inside `Error` constructors on circular values** (`src/util.ts`): `JSON.stringify` throws on circular references, masking the original validation failure. Now wrapped in try/catch with a `String(value)` fallback.
 - **`Slot.set()` stack-overflowed on circular delegation** (`src/nodes/slot.ts`): Mutual delegation (A→B→A) infinite-looped. Now detects the cycle and throws a descriptive error.
 - **`DuplicateKeyError` dropped falsy values from its message** (`src/errors.ts`): The truthy check `value ? ... : ''` omitted `0`, `''`, and `false` from the message. Now checks `value != null`.
+- **Non-`async` callback returning a `Promise` was silently misclassified as a `Memo`** (`src/graph.ts`, `src/errors.ts`): `createComputed`/`createSignal` route to `Memo` or `Task` by checking whether the callback is declared `async` (`isAsyncFunction`) — a check made on the callback itself, before it ever runs. A callback that forgot `async` but still returned a `Promise` (e.g. `createComputed(() => fetch(url).then(r => r.json()))`) was created as a `Memo`, which then cached the `Promise` object itself as its value; `equals`/`guard` ran against the `Promise`, not the resolved data. Now `recomputeMemo()` checks the computed value with `next instanceof Promise` and throws a new `PromiseValueError` instead — this is the shared recompute path for Memo, Slot, and the internal structural nodes of List/Store/Collection, so the check covers `Slot`/`SlotDescriptor.get()` misuse too.
 
 ### Changed
 
@@ -20,8 +21,6 @@
 - **`Store` per-property access stays granular**: `Store.byKey()` and the proxy property access (`store.prop`) deliberately remain untracked for structural changes, because proxy reads are already granular — `store.name` returns the child `State`, whose `.get()` forms a property-level edge. Adding a structural edge would make `store.set({ name, age })` spuriously re-run the `name` effect. The only untracked accessors in the library are now these Store per-property paths; whole-store traversal (`get()`, `keys()`, iterator) tracks consistently. The principled line within Store is whole-store vs per-property.
 - **`List.replace()` is batched internally**: The item-signal `set()` and the structural node propagation are now wrapped in `batch()` so subscribers holding both an item-level edge and a structural edge (e.g. an effect calling `byKey(k).get()`) flush once instead of up to three times. This was a latent redundancy exposed by the accessor-tracking change above.
 - **`isComputed` return type corrected** (`src/signal.ts`): Was `value is Memo<T>` despite accepting `Task`s. Now `value is Memo<T> | Task<T>`, reflecting that a `Task` does not satisfy `Memo<T>`'s shape (no `isPending`/`abort`).
-- **`isUniformArray` removed** (`src/util.ts`): Deprecated, never-exported helper inlined at its two call sites in `src/signal.ts`. No behavior change.
-- **Bundle size budgets adjusted**: Core-signals-only target tightened to below 4 kB gzipped (was 5 kB), backed by a new dedicated regression test (`test/regression-bundle.test.ts`, entrypoint in `test/util/core-entry.ts`). Full-library limits raised to 24 kB minified / 8 kB gzipped (was 21 kB / 7 kB) to give routine fixes headroom. README/REQUIREMENTS updated to match.
 
 ## 1.3.3
 

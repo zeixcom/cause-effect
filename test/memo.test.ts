@@ -7,6 +7,7 @@ import {
 	createState,
 	isMemo,
 	isState,
+	PromiseValueError,
 	UnsetSignalValueError,
 } from '../index.ts'
 
@@ -196,6 +197,11 @@ describe('Memo', () => {
 			expect(a.get()).toBe(1)
 			x.set(1)
 			expect(() => a.get()).toThrow('Computation failed')
+		})
+
+		test('should throw PromiseValueError when the callback returns a Promise', () => {
+			const memo = createMemo((): Promise<number> => Promise.resolve(1))
+			expect(() => memo.get()).toThrow(PromiseValueError)
 		})
 
 		test('should allow downstream memos to recover from errors', () => {

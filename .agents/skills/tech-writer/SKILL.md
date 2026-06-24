@@ -2,7 +2,7 @@
 name: tech-writer
 description: >
   Keep developer-facing documents up to date with the @zeix/cause-effect source code:
-  README.md, GUIDE.md, ARCHITECTURE.md, REQUIREMENTS.md, CLAUDE.md,
+  README.md, GUIDE.md, ARCHITECTURE.md, REQUIREMENTS.md, AGENTS.md,
   .github/copilot-instructions.md, and JSDoc in src/. Use after code changes, to verify
   consistency, or to update a specific document.
 user_invocable: true
@@ -55,14 +55,14 @@ What do you need to do?
 |---|---|
 | `README.md` or `GUIDE.md` | workflows/update-public-api.md |
 | `ARCHITECTURE.md` | workflows/update-architecture.md |
-| `CLAUDE.md` or `copilot-instructions.md` | workflows/update-agent-docs.md |
+| `AGENTS.md` | workflows/update-agent-docs.md |
 | `REQUIREMENTS.md` | workflows/update-requirements.md |
 | JSDoc / `src/` | workflows/update-jsdoc.md |
 
 **Intent-based routing (clear intent without selecting a number):**
 - "document the new API" / "update README" → workflows/update-public-api.md
 - "update the architecture doc" → workflows/update-architecture.md
-- "update CLAUDE.md" / "add non-obvious behavior" → workflows/update-agent-docs.md
+- "update AGENTS.md" / "add non-obvious behavior" → workflows/update-agent-docs.md
 - "update JSDoc" / "inline docs" → workflows/update-jsdoc.md
 - "update requirements" → workflows/update-requirements.md
 - "review all docs" / "check consistency" → workflows/consistency-review.md
@@ -87,7 +87,7 @@ All in `workflows/`:
 | update-after-change.md | Determine which documents to update after a code change, then update them in order |
 | update-public-api.md | Update `README.md` and `GUIDE.md` |
 | update-architecture.md | Update `ARCHITECTURE.md` |
-| update-agent-docs.md | Update `CLAUDE.md` and `.github/copilot-instructions.md` |
+| update-agent-docs.md | Update `AGENTS.md` and `.github/copilot-instructions.md` |
 | update-requirements.md | Update `REQUIREMENTS.md` |
 | update-jsdoc.md | Update JSDoc comments in `src/` |
 | consistency-review.md | Review all documents for consistency with current source |

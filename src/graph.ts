@@ -1,4 +1,4 @@
-import { CircularDependencyError, type Guard } from './errors'
+import { CircularDependencyError, type Guard, PromiseValueError } from './errors'
 import { isRecord } from './util'
 
 /* === Internal Types === */
@@ -96,7 +96,8 @@ type SignalOptions<T extends {}> = {
 	/**
 	 * Optional custom equality function.
 	 * Used to determine if a new value is different from the old value.
-	 * Defaults to reference equality (===).
+	 * Defaults to reference equality (===). When equal, propagation stops for
+	 * this signal's entire downstream subtree, not just this signal.
 	 */
 	equals?: (a: T, b: T) => boolean
 }
@@ -451,6 +452,8 @@ function recomputeMemo(node: MemoNode<unknown & {}>): void {
 	let changed = false
 	try {
 		const next = node.fn(node.value)
+		// fn misclassified as sync by isAsyncFunction (it checks the callback, not its return value)
+		if (next instanceof Promise) throw new PromiseValueError(TYPE_MEMO)
 		if (node.error || !node.equals(next, node.value)) {
 			node.value = next
 			node.error = undefined

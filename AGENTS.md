@@ -14,6 +14,6 @@ Use these skills for targeted tasks. Each skill carries embedded reference knowl
 
 - **`/changelog-keeper`** — maintain CHANGELOG.md. Adds entries, prepares releases. Loads from `.agents/skills/changelog-keeper/SKILL.md`.
 
-- **`/tech-writer`** — keep documentation in sync with source code. Updates README.md, GUIDE.md, ARCHITECTURE.md, REQUIREMENTS.md, CLAUDE.md, JSDoc. Loads references from `.agents/skills/tech-writer/`.
+- **`/tech-writer`** — keep documentation in sync with source code. Updates README.md, GUIDE.md, ARCHITECTURE.md, REQUIREMENTS.md, AGENTS.md, JSDoc. Loads references from `.agents/skills/tech-writer/`.
 
 > **Note:** The `non-obvious-behaviors.md` reference (loaded by cause-effect and cause-effect-dev skills) contains all non-obvious behaviors that were previously documented here. All factual knowledge has been moved to skill reference files for better maintainability.

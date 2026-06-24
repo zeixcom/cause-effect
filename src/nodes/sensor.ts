@@ -77,13 +77,15 @@ type SensorCallback<T extends {}> = (set: (next: T) => void) => Cleanup
  *
  * @example Tracking external values
  * ```ts
+ * // An initial `value` avoids UnsetSignalValueError on the first read,
+ * // before any mousemove event has fired.
  * const mousePos = createSensor<{ x: number; y: number }>((set) => {
  *   const handler = (e: MouseEvent) => {
  *     set({ x: e.clientX, y: e.clientY });
  *   };
  *   window.addEventListener('mousemove', handler);
  *   return () => window.removeEventListener('mousemove', handler);
- * });
+ * }, { value: { x: 0, y: 0 } });
  * ```
  *
  * @example Observing a mutable object

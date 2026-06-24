@@ -42,7 +42,7 @@ describe('Bundle size', () => {
 		// REQUIREMENTS.md: "Core signals only ... Below 4 kB" gzipped (4096B).
 		// If this regresses, do not just raise the limit — update the "Below
 		// 4 kB" claim in REQUIREMENTS.md and README.md to the real figure,
-		// and leave a note in NOTES.md for the Architect (see TODO.md CE-014).
+		// and leave a note in NOTES.md for the Architect.
 		expect(gzipped).toBeLessThanOrEqual(4096)
 	})
 })

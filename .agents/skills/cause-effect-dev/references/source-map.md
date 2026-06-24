@@ -6,7 +6,7 @@ Where to find things in the @zeix/cause-effect codebase. Read this before locati
 | What you need | Where to look |
 |---|---|
 | Vision, audience, constraints, non-goals | `REQUIREMENTS.md` |
-| Mental model, non-obvious behaviors, TS constraints | `CLAUDE.md` |
+| Available skills and constraints | `AGENTS.md` |
 | Full API reference with examples | `README.md` |
 | Mapping from React/Vue/Angular patterns; when to use each signal type | `GUIDE.md` |
 | Graph engine architecture, node shapes, propagation | `ARCHITECTURE.md` |
@@ -40,6 +40,6 @@ Each signal type lives in its own file under `src/nodes/`:
 - Changing graph traversal, flags, or flush order → read `src/graph.ts` + `ARCHITECTURE.md`
 - Adding or changing error conditions → read `src/errors.ts`
 - Adding a shared utility → check `src/util.ts` first; add there if it belongs to multiple nodes
-- Checking type constraints or TS-specific decisions → read `CLAUDE.md`
+- Checking type constraints or TS-specific decisions → read `AGENTS.md`
 - Verifying a feature is in scope → read `REQUIREMENTS.md`
 </quick_lookup>

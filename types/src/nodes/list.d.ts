@@ -24,7 +24,7 @@ type KeyConfig<T> = string | ((item: T) => string | undefined);
 type ListOptions<T extends {}, S extends MutableSignal<T> = MutableSignal<T>> = {
     /** Key generation strategy. A string prefix or a function `(item) => string | undefined`. Defaults to auto-increment. */
     keyConfig?: KeyConfig<T>;
-    /** Lifecycle callback invoked when the list gains its first downstream subscriber. Must return a cleanup function. */
+    /** Lifecycle callback invoked when the list gains its first downstream subscriber. Must return a cleanup function. Stays active through structural mutations (add/remove/sort) — only the subscriber count matters. */
     watched?: () => Cleanup;
     /** Equality function for item state signals. Defaults to `DEEP_EQUALITY`. */
     itemEquals?: (a: T, b: T) => boolean;

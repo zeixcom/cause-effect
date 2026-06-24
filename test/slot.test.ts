@@ -7,7 +7,11 @@ import {
 	createState,
 	isSlot,
 } from '../index.ts'
-import { InvalidSignalValueError, NullishSignalValueError } from '../src/errors'
+import {
+	InvalidSignalValueError,
+	NullishSignalValueError,
+	PromiseValueError,
+} from '../src/errors'
 
 describe('Slot', () => {
 	test('should replace delegated signal and re-subscribe sinks', () => {
@@ -275,6 +279,13 @@ describe('Slot', () => {
 			const slot = createSlot({ get: () => state.get() * 2 })
 			expect(slot.get()).toBe(2)
 			expect(() => slot.set(100)).toThrow('[Slot] Signal is read-only')
+		})
+
+		test('should throw PromiseValueError if the descriptor get() returns a Promise', () => {
+			const slot = createSlot<Promise<number>>({
+				get: () => Promise.resolve(1),
+			})
+			expect(() => slot.get()).toThrow(PromiseValueError)
 		})
 	})
 

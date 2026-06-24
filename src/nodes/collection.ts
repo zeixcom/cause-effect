@@ -260,8 +260,7 @@ function deriveCollection<T extends {}, U extends {}>(
 	}
 
 	// Initialize signals for current source keys. untrack suppresses edge
-	// creation (activeSink linking) during construction, but note it does NOT
-	// prevent watched activation on the upstream source — that keys on
+	// creation (activeSink linking) during construction — that keys on
 	// node.sinks via makeSubscribe, not activeSink. The first refresh()
 	// (triggered by an effect) will establish proper graph edges; this just
 	// populates the signals map for direct access.
@@ -344,7 +343,9 @@ function deriveCollection<T extends {}, U extends {}>(
 /**
  * Creates an externally-driven Collection with a watched lifecycle.
  * Items are managed via the `applyChanges(changes)` helper passed to the watched callback.
- * The collection activates when first accessed by an effect and deactivates when no longer watched.
+ * The collection activates when first accessed by an effect and deactivates when no longer
+ * watched. Structural mutations applied via `applyChanges` do not restart this lifecycle —
+ * only the subscriber count matters.
  *
  * @since 0.18.0
  * @param watched - Callback invoked when the collection starts being watched, receives applyChanges helper
