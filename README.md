@@ -42,7 +42,7 @@ Every signal type participates in the same dependency graph with the same propag
 - **Explicit reactivity**: Dependencies are tracked through `.get()` calls — the graph always reflects the true dependency structure, with no hidden subscriptions
 - **Non-nullable types**: All signals enforce `T extends {}`, excluding `null` and `undefined` at the type level — you can trust returned values without null checks
 - **Unified graph**: Composite signals (Store, List, Collection) and async signals (Task) are first-class citizens, not afterthoughts — all derivable state can be derived
-- **Tree-shakable, zero dependencies**: Import only what you use — core signals (State, Memo, Task, Effect) stay below 5 kB gzipped, the full library below 10 kB
+- **Tree-shakable, zero dependencies**: Import only what you use — core signals (State, Memo, Task, Effect) stay below 4 kB gzipped, the full library below 8 kB
 
 ## Installation
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-✅ Accepted
+🗑️ Superseded by [ADR-0016](0016-path-scoped-cycle-detection-in-deep-equality.md)
 
 ## Context
 

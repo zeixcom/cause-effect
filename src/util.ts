@@ -46,16 +46,6 @@ function isRecord<T extends Record<string, unknown>>(
 }
 
 /**
- * @deprecated Use Array.isArray(value) && value.every(guard) instead.
- */
-function isUniformArray<T>(
-	value: unknown,
-	guard: (item: T) => item is T & {} = (item): item is T & {} => item != null,
-): value is T[] {
-	return Array.isArray(value) && value.every(guard)
-}
-
-/**
  * @deprecated
  */
 function valueString(value: unknown): string {
@@ -82,6 +72,5 @@ export {
 	isObjectOfType,
 	isSignalOfType,
 	isRecord,
-	isUniformArray,
 	valueString,
 }

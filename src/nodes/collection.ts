@@ -417,15 +417,23 @@ function createCollection<T extends {}, S extends Signal<T> = Signal<T>>(
 		let structural = false
 
 		batch(() => {
-			// Additions
+			// Additions — validate the whole batch (including duplicates within
+			// the batch itself) before mutating any state. Mirrors List.splice():
+			// staging first means a duplicate anywhere in the batch leaves
+			// signals/keys/itemToKey untouched, instead of committing earlier
+			// items and then throwing with node.flags/propagate() never run.
 			if (add) {
+				const staged = new Map<string, T>()
 				for (const item of add) {
 					const key = generateKey(item)
 					// Reject duplicate keys up front — matches List.add / Store.add.
 					// Previously this silently overwrote the existing child signal,
 					// orphaning its subscribers.
-					if (signals.has(key))
+					if (signals.has(key) || staged.has(key))
 						throw new DuplicateKeyError(TYPE_COLLECTION, key, item)
+					staged.set(key, item)
+				}
+				for (const [key, item] of staged) {
 					signals.set(key, itemFactory(item))
 					itemToKey.set(item, key)
 					if (!keys.includes(key)) keys.push(key)

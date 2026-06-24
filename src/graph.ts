@@ -238,43 +238,49 @@ const deepEqualInner = (
 	)
 		return false
 
-	// Cycle guard: if we are already comparing this pair, treat as equal.
-	// Using a single WeakSet keyed on `a` is sufficient because we always
-	// descend into (a[key], b[key]) pairs in lockstep.
+	// Cycle guard: if `a` is already on the current recursion path, treat this
+	// pair as equal (ADR-0016). Scoped to the active path, not "every object
+	// ever visited" — the entry is removed once this call returns, so an
+	// object reached twice via different (non-cyclic) paths is still compared
+	// independently each time, not aliased away by an earlier, unrelated pair.
 	if (seen.has(a as object)) return true
 	seen.add(a as object)
 
-	const aIsArray = Array.isArray(a)
-	if (aIsArray !== Array.isArray(b)) return false
+	try {
+		const aIsArray = Array.isArray(a)
+		if (aIsArray !== Array.isArray(b)) return false
 
-	if (aIsArray) {
-		const aa = a as unknown[]
-		const ba = b as unknown[]
-		if (aa.length !== ba.length) return false
-		for (let i = 0; i < aa.length; i++)
-			if (!deepEqualInner(aa[i], ba[i], seen)) return false
-		return true
-	}
-
-	// Value-semantic built-ins: compare by their intrinsic value, not identity.
-	// These are not plain records, so without explicit handling they would
-	// fall through to `return false` and force spurious downstream propagation.
-	if (a instanceof Date && b instanceof Date)
-		return a.getTime() === b.getTime()
-	if (a instanceof RegExp && b instanceof RegExp)
-		return a.source === b.source && a.flags === b.flags
-
-	if (isRecord(a) && isRecord(b)) {
-		const aKeys = Object.keys(a)
-		if (aKeys.length !== Object.keys(b).length) return false
-		for (const key of aKeys) {
-			if (!(key in b)) return false
-			if (!deepEqualInner(a[key], b[key], seen)) return false
+		if (aIsArray) {
+			const aa = a
+			const ba = b as unknown[]
+			if (aa.length !== ba.length) return false
+			for (let i = 0; i < aa.length; i++)
+				if (!deepEqualInner(aa[i], ba[i], seen)) return false
+			return true
 		}
-		return true
-	}
 
-	return false
+		// Value-semantic built-ins: compare by their intrinsic value, not identity.
+		// These are not plain records, so without explicit handling they would
+		// fall through to `return false` and force spurious downstream propagation.
+		if (a instanceof Date && b instanceof Date)
+			return a.getTime() === b.getTime()
+		if (a instanceof RegExp && b instanceof RegExp)
+			return a.source === b.source && a.flags === b.flags
+
+		if (isRecord(a) && isRecord(b)) {
+			const aKeys = Object.keys(a)
+			if (aKeys.length !== Object.keys(b).length) return false
+			for (const key of aKeys) {
+				if (!(key in b)) return false
+				if (!deepEqualInner(a[key], b[key], seen)) return false
+			}
+			return true
+		}
+
+		return false
+	} finally {
+		seen.delete(a)
+	}
 }
 
 /**

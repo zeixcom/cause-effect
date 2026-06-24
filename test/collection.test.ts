@@ -473,6 +473,46 @@ describe('Collection', () => {
 
 			dispose()
 		})
+
+		test('leaves no partial state when a later item in the batch collides (CE-011)', () => {
+			// Regression: the add-loop used to mutate signals/keys/itemToKey as it
+			// iterated, so a duplicate on the *second* item left the first item
+			// committed while node.value/flags were never updated — byKey()/keys()
+			// disagreed with get(). The whole batch must be validated before any
+			// mutation happens.
+			type Item = { id: string; v: number }
+			let apply: ((changes: CollectionChanges<Item>) => void) | undefined
+			const col = createCollection<Item>(
+				applyChanges => {
+					apply = applyChanges
+					return () => {}
+				},
+				{ keyConfig: item => item.id },
+			)
+
+			const dispose = createScope(() => {
+				createEffect(() => {
+					void col.get()
+				})
+			})
+
+			expect(() => {
+				// biome-ignore lint/style/noNonNullAssertion: test
+				apply!({
+					add: [
+						{ id: 'a', v: 1 },
+						{ id: 'a', v: 2 },
+					],
+				})
+			}).toThrow('already exists')
+
+			// None of the views should show the first item as added.
+			expect(col.get()).toEqual([])
+			expect(col.byKey('a')).toBeUndefined()
+			expect(Array.from(col.keys())).toEqual([])
+
+			dispose()
+		})
 	})
 
 	describe('createCollection lookup methods track structural changes', () => {
