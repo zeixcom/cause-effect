@@ -449,8 +449,10 @@ function createCollection<T extends {}, S extends Signal<T> = Signal<T>>(
 					if (!key) continue
 					const signal = signals.get(key)
 					if (signal && isState(signal)) {
-						// Update reverse map: remove old reference, add new
-						itemToKey.delete(signal.get())
+						// Update reverse map: remove old reference, add new.
+						// untrack prevents the read from leaking an edge into
+						// the caller's effect when applyChanges is called inside one.
+						itemToKey.delete(untrack(() => signal.get()))
 						signal.set(item)
 						itemToKey.set(item, key)
 					}

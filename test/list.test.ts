@@ -991,6 +991,99 @@ describe('List', () => {
 		})
 	})
 
+	describe('mutation tracking leak', () => {
+		// Mutation methods read child item signals internally (e.g. to diff
+		// old vs. new values). Those reads must be untracked — otherwise the
+		// caller's effect silently gains edges to every item signal touched,
+		// causing over-broad re-runs on unrelated item mutations.
+		//
+		// The leak has two observable modes:
+		//  (a) persistent — leaked edges survive and a later item mutation
+		//      re-runs the effect even though it never read the list.
+		//  (b) transient — the mutation itself propagates through the just-
+		//      leaked edge and re-runs the effect once during setup; after
+		//      that re-run trimSources removes the edges.
+
+		test('sort() inside an effect does not leak item-signal edges', () => {
+			const list = createList([3, 1, 2])
+			const trigger = createState(0)
+			let runs = 0
+			createEffect((): undefined => {
+				trigger.get()
+				runs++
+				if (runs === 1) list.sort()
+			})
+
+			expect(runs).toBe(1)
+
+			// Mutating an item value must NOT re-run the effect — it only
+			// ever read `trigger`, not the list. (persistent leak, mode a)
+			// biome-ignore lint/style/noNonNullAssertion: default key
+			list.byKey('0')!.set(99)
+			expect(runs).toBe(1)
+		})
+
+		test('splice() inside an effect does not leak item-signal edges', () => {
+			const list = createList([1, 2, 3, 4])
+			const trigger = createState(0)
+			let runs = 0
+			createEffect((): undefined => {
+				trigger.get()
+				runs++
+				if (runs === 1) list.splice(1, 2) // reads keys '1','2'
+			})
+
+			expect(runs).toBe(1)
+
+			// (persistent leak, mode a) — surviving items must not re-run
+			// biome-ignore lint/style/noNonNullAssertion: default key
+			list.byKey('0')!.set(99)
+			expect(runs).toBe(1)
+		})
+
+		test('update() inside an effect does not transiently re-run', () => {
+			// list.update calls list.get() (tracked) then list.set(). The
+			// tracked get() leaks an effect->list edge; the subsequent set()
+			// propagates through it, re-running the effect once during setup
+			// (transient leak, mode b).
+			const list = createList([1, 2, 3])
+			const trigger = createState(0)
+			let runs = 0
+			createEffect((): undefined => {
+				trigger.get()
+				runs++
+				if (runs === 1) list.update(arr => [...arr, 4])
+			})
+
+			// Without the fix, runs is 2 here (transient re-run).
+			expect(runs).toBe(1)
+		})
+
+		test('set() inside an effect does not leak item-signal edges (dirty node)', () => {
+			// A prior add() marks the node DIRTY, so set() takes the
+			// buildValue() path — reading each item signal tracked and
+			// leaking edges directly into the effect.
+			const list = createList([1, 2, 3])
+			const trigger = createState(0)
+			let runs = 0
+			createEffect((): undefined => {
+				trigger.get()
+				runs++
+				if (runs === 1) {
+					list.add(4) // marks node DIRTY
+					list.set([1, 2, 3, 4])
+				}
+			})
+
+			expect(runs).toBe(1)
+
+			// (persistent leak, mode a)
+			// biome-ignore lint/style/noNonNullAssertion: default key
+			list.byKey('0')!.set(99)
+			expect(runs).toBe(1)
+		})
+	})
+
 	describe('Undefined handling', () => {
 		// `undefined` elements must be rejected the same way `null` is — otherwise
 		// `keys` grows sparse and `length` / `get()` disagree.

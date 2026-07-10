@@ -422,7 +422,11 @@ function createList<
 		},
 
 		set(next: T[]) {
-			const prev = node.flags & FLAG_DIRTY ? buildValue() : node.value
+			// Use cached value if clean, recompute if dirty. untrack prevents
+			// buildValue's child .get() calls from leaking edges into whatever
+			// effect is currently active (which would cause over-broad re-runs).
+			const prev =
+				node.flags & FLAG_DIRTY ? untrack(buildValue) : node.value
 			const changes = diffArrays(
 				prev,
 				next,
@@ -441,7 +445,7 @@ function createList<
 		},
 
 		update(fn: (prev: T[]) => T[]) {
-			list.set(fn(list.get()))
+			list.set(fn(untrack(() => list.get())))
 		},
 
 		at(index: number) {
@@ -525,10 +529,12 @@ function createList<
 
 		sort(compareFn?: (a: T, b: T) => number) {
 			const entries: [string, T][] = []
-			for (const key of keys) {
-				const v = signals.get(key)?.get()
-				if (v !== undefined) entries.push([key, v])
-			}
+			untrack(() => {
+				for (const key of keys) {
+					const v = signals.get(key)?.get()
+					if (v !== undefined) entries.push([key, v])
+				}
+			})
 			entries.sort(
 				isFunction(compareFn)
 					? (a, b) => compareFn(a[1], b[1])
@@ -564,18 +570,21 @@ function createList<
 			const remove = {} as Record<string, T>
 			let hasRemove = false
 
-			// Collect items to delete
-			for (let i = 0; i < actualDeleteCount; i++) {
-				const index = actualStart + i
-				const key = keys[index]
-				if (key) {
-					const signal = signals.get(key)
-					if (signal) {
-						remove[key] = signal.get()
-						hasRemove = true
+			// Collect items to delete — untrack the reads so the caller's
+			// effect does not gain edges to the deleted item signals.
+			untrack(() => {
+				for (let i = 0; i < actualDeleteCount; i++) {
+					const index = actualStart + i
+					const key = keys[index]
+					if (key) {
+						const signal = signals.get(key)
+						if (signal) {
+							remove[key] = signal.get()
+							hasRemove = true
+						}
 					}
 				}
-			}
+			})
 
 			// Build new key order
 			const newOrder = keys.slice(0, actualStart)
