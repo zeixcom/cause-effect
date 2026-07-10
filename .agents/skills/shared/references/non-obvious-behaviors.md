@@ -226,3 +226,45 @@ state read by A). The error surfaces synchronously from the `set()`/`batch()`/
 Self-writes remain an anti-pattern for expressing derived values — prefer `createMemo`.
 Reserve them for genuine feedback like clamping user input to a valid range.
 </self_writing_effects_converge_or_throw>
+
+<store_proxy_rejects_direct_writes>
+**Direct property assignment, deletion, or `Object.defineProperty` on a `Store` proxy throws
+`InvalidStoreMutationError`.** The proxy has no public write path — use the reactive API
+instead. This prevents silent state divergence: without the guard, `store.name = 'Bob'` writes
+a raw value onto the proxy target, shadowing the child `State` signal so that `store.name`
+returns the raw string while `store.get()` returns the reactive value.
+
+```typescript
+const store = createStore({ name: 'Alice' })
+
+// ❌ Throws InvalidStoreMutationError — would silently corrupt the store
+store.name = 'Bob'
+delete store.name
+Object.defineProperty(store, 'x', { value: 1 })
+Object.assign(store, { name: 'Bob' })
+
+// ✅ Correct reactive mutation paths
+store.name.set('Bob')       // single property
+store.set({ name: 'Bob' })  // whole-value replacement with diffing
+store.add('email', 'a@b.c') // new key
+store.remove('name')        // delete a key
+```
+</store_proxy_rejects_direct_writes>
+
+<store_method_names_shadow_data_keys>
+**A data key named like a base method (`get`, `set`, `keys`, `update`, `add`, `remove`,
+`byKey`) shadows the method via proxy access.** The `get` trap checks `prop in target`
+first, so it returns the base method, not the child signal. Use `store.byKey(key)` to reach
+such a property — `byKey` reads directly from the internal signals map.
+
+```typescript
+type T = { get: string }
+const store = createStore<T>({ get: 'value' })
+
+store.get   // () => T  — the method, NOT the child State
+store.byKey('get')  // State<string> — the child signal via the escape hatch
+```
+
+This is inherent to the proxy design and is not considered a bug: base methods are a small
+fixed set, and `byKey` provides a reliable workaround.
+</store_method_names_shadow_data_keys>

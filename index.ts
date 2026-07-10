@@ -11,6 +11,7 @@ export {
 	type Guard,
 	InvalidCallbackError,
 	InvalidSignalValueError,
+	InvalidStoreMutationError,
 	NullishSignalValueError,
 	PromiseValueError,
 	ReadonlySignalError,

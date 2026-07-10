@@ -5,6 +5,7 @@ import {
 	createScope,
 	createState,
 	createStore,
+	InvalidStoreMutationError,
 	isList,
 	isState,
 	isStore,
@@ -709,6 +710,73 @@ describe('Store', () => {
 			store.set({ count: 5 })
 			expect(isState(store.count)).toBe(true)
 			expect(store.count.get()).toBe(5)
+		})
+	})
+
+	describe('proxy write guard', () => {
+		test('direct property assignment throws InvalidStoreMutationError and leaves state intact', () => {
+			const store = createStore({ name: 'Alice' })
+			expect(() => {
+				// @ts-expect-error deliberate misuse
+				store.name = 'Bob'
+			}).toThrow(InvalidStoreMutationError)
+			// The State signal is not shadowed
+			expect(isState(store.name)).toBe(true)
+			expect(store.name.get()).toBe('Alice')
+			// The reactive value is unchanged
+			expect(store.get()).toEqual({ name: 'Alice' })
+		})
+
+		test('delete via proxy throws and leaves state intact', () => {
+			const store = createStore<{ name?: string }>({ name: 'Alice' })
+			expect(() => {
+				delete store.name
+			}).toThrow(InvalidStoreMutationError)
+			expect(store.get()).toEqual({ name: 'Alice' })
+			// remove() still works after the failed delete
+			store.remove('name')
+			expect(store.get()).toEqual({})
+		})
+
+		test('Object.assign throws (routes through the set trap)', () => {
+			const store = createStore({ name: 'Alice' })
+			expect(() => Object.assign(store, { name: 'Bob' })).toThrow(
+				InvalidStoreMutationError,
+			)
+			expect(store.name.get()).toBe('Alice')
+		})
+
+		test('Object.defineProperty throws', () => {
+			const store = createStore<{ name: string; x?: number }>({
+				name: 'Alice',
+			})
+			expect(() =>
+				Object.defineProperty(store, 'x', { value: 1 }),
+			).toThrow(InvalidStoreMutationError)
+			expect(store.get()).toEqual({ name: 'Alice' })
+		})
+
+		test('error messages name the correct alternative API', () => {
+			const store = createStore<{ name?: string }>({ name: 'Alice' })
+			expect(() => {
+				// @ts-expect-error deliberate misuse
+				store.name = 'Bob'
+			}).toThrow(
+				'[Store] Cannot assign to property "name" directly — use store.name.set(value), store.set(next), or store.add(key, value)',
+			)
+			expect(() => {
+				delete store.name
+			}).toThrow(
+				'[Store] Cannot delete property "name" directly — use store.remove("name")',
+			)
+		})
+
+		test('symbol property assignment throws', () => {
+			const store = createStore<{ name: string }>({ name: 'Alice' })
+			expect(() => {
+				// @ts-expect-error deliberate misuse with symbol key
+				store[Symbol.for('x')] = 1
+			}).toThrow(InvalidStoreMutationError)
 		})
 	})
 })

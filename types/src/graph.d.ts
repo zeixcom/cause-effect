@@ -190,6 +190,11 @@ declare function runEffect(node: EffectNode): void;
 declare function refresh(node: SinkNode): void;
 declare function flush(): void;
 /**
+ * Enqueues an effect that is still dirty after running (it wrote to its own
+ * dependencies) and, outside a batch, flushes until the graph converges.
+ */
+declare function scheduleEffect(node: EffectNode): void;
+/**
  * Batches multiple signal updates together.
  * Effects will not run until the batch completes.
  * Batches can be nested; effects run when the outermost batch completes.
@@ -286,4 +291,4 @@ declare function createScope(fn: () => MaybeCleanup, options?: ScopeOptions): Cl
  */
 declare function unown<T>(fn: () => T): T;
 declare function makeSubscribe(node: SourceNode, onWatch?: () => Cleanup): () => void;
-export { type Cleanup, type ComputedOptions, type EffectCallback, type EffectNode, type MaybeCleanup, type MemoCallback, type MemoNode, type Scope, type ScopeOptions, type Signal, type SignalOptions, type SinkNode, type StateNode, type TaskCallback, type TaskNode, activeOwner, activeSink, batch, batchDepth, createScope, DEFAULT_EQUALITY, DEEP_EQUALITY, isEqual, SKIP_EQUALITY, FLAG_CHECK, FLAG_CLEAN, FLAG_DIRTY, FLAG_RELINK, flush, link, makeSubscribe, propagate, refresh, registerCleanup, runCleanup, runEffect, setState, trimSources, TYPE_COLLECTION, TYPE_LIST, TYPE_MEMO, TYPE_SENSOR, TYPE_STATE, TYPE_SLOT, TYPE_STORE, TYPE_TASK, unlink, unown, untrack, };
+export { type Cleanup, type ComputedOptions, type EffectCallback, type EffectNode, type MaybeCleanup, type MemoCallback, type MemoNode, type Scope, type ScopeOptions, type Signal, type SignalOptions, type SinkNode, type StateNode, type TaskCallback, type TaskNode, activeOwner, activeSink, batch, batchDepth, createScope, DEFAULT_EQUALITY, DEEP_EQUALITY, isEqual, SKIP_EQUALITY, FLAG_CHECK, FLAG_CLEAN, FLAG_DIRTY, FLAG_RELINK, flush, link, makeSubscribe, propagate, refresh, registerCleanup, runCleanup, runEffect, scheduleEffect, setState, trimSources, TYPE_COLLECTION, TYPE_LIST, TYPE_MEMO, TYPE_SENSOR, TYPE_STATE, TYPE_SLOT, TYPE_STORE, TYPE_TASK, unlink, unown, untrack, };
