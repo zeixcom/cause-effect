@@ -9,6 +9,7 @@ Import path for every item on this page: `@zeix/cause-effect`. Source files: `sr
 
 ```ts
 class CircularDependencyError extends Error
+class EffectConvergenceError extends Error
 class NullishSignalValueError extends TypeError
 class UnsetSignalValueError extends Error
 class InvalidSignalValueError extends TypeError
@@ -24,6 +25,7 @@ Typical triggers:
 | Error | When it appears |
 |-------|-----------------|
 | `CircularDependencyError` | A memo, task, or effect re-enters while already running. |
+| `EffectConvergenceError` | Effects keep re-triggering each other without settling within 1000 flush passes (e.g. an effect unconditionally writes a signal it reads). |
 | `NullishSignalValueError` | You try to create or set a signal to `null` or `undefined`. |
 | `UnsetSignalValueError` | A Sensor or Task is read before it has a value. |
 | `InvalidSignalValueError` | A factory helper receives an invalid input shape. |

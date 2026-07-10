@@ -7,6 +7,7 @@
 export {
 	CircularDependencyError,
 	DuplicateKeyError,
+	EffectConvergenceError,
 	type Guard,
 	InvalidCallbackError,
 	InvalidSignalValueError,

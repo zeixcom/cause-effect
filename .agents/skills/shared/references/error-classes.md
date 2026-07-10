@@ -18,6 +18,7 @@ import {
   ReadonlySignalError,
   RequiredOwnerError,
   CircularDependencyError,
+  EffectConvergenceError,
   PromiseValueError,
 } from '@zeix/cause-effect'
 ```
@@ -36,6 +37,7 @@ All error classes are defined in `src/errors.ts` for library development.
 | `ReadonlySignalError` | Attempting to write to a read-only signal |
 | `RequiredOwnerError` | `createEffect` called outside an owner (scope or parent effect) |
 | `CircularDependencyError` | A cycle is detected in the reactive graph |
+| `EffectConvergenceError` | Effects keep re-triggering each other without settling (1000 flush passes) |
 | `PromiseValueError` | A non-`async` Memo/Slot callback returns a `Promise` |
 </error_table>
 
@@ -139,6 +141,24 @@ evaluation order and are always a programming error.
 
 **Fix:** restructure the data flow so that values move in one direction only.
 </CircularDependencyError>
+
+<EffectConvergenceError>
+Thrown when queued effects did not settle within 1000 flush passes. An effect that writes
+to a signal it also depends on is re-run until the graph converges — converging writes
+(clamping, normalization, write-once initialization) are allowed and the effect always
+observes the final value. This error fires only when the graph can never settle.
+
+**Common causes:**
+- An effect that unconditionally writes a signal it reads: `createEffect(() => count.set(count.get() + 1))`
+- Two effects that write each other's dependencies (mutual ping-pong)
+
+The error surfaces from the `set()`/`update()`/`batch()`/`createEffect()` call that
+triggered the runaway. Other queued effects still run before it is thrown (it may arrive
+inside an `AggregateError` when other effects also threw).
+
+**Fix:** make the self-write conditional so it converges, or express the derived value as a
+`createMemo` instead of writing state from an effect.
+</EffectConvergenceError>
 
 <PromiseValueError>
 Thrown when a Memo or Slot callback returns a `Promise`. `createComputed`/`createSignal`

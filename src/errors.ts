@@ -30,6 +30,23 @@ class CircularDependencyError extends Error {
 }
 
 /**
+ * Error thrown when queued effects keep re-triggering each other without settling.
+ */
+class EffectConvergenceError extends Error {
+	/**
+	 * Constructs a new EffectConvergenceError.
+	 *
+	 * @param passes - The number of flush passes that ran without the graph settling.
+	 */
+	constructor(passes: number) {
+		super(
+			`[Effect] Effects did not settle after ${passes} flush passes — check for effects that write to signals they depend on`,
+		)
+		this.name = 'EffectConvergenceError'
+	}
+}
+
+/**
  * Error thrown when a signal value is null or undefined.
  */
 class NullishSignalValueError extends TypeError {
@@ -184,6 +201,7 @@ function validateCallback(
 export {
 	type Guard,
 	CircularDependencyError,
+	EffectConvergenceError,
 	NullishSignalValueError,
 	InvalidSignalValueError,
 	UnsetSignalValueError,

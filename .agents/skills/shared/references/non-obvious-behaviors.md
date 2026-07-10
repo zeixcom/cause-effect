@@ -198,20 +198,31 @@ If you must wrap a Promise-returning API, always use the `async` keyword so the 
 routes it to `createTask` (with abort/pending support) rather than `createMemo`.
 </async_requires_async_syntax>
 
-<flush_has_no_loop_guard>
-**`flush()` has no infinite-loop guard.** An effect that writes to a state it also reads
-will re-trigger itself on every run, looping until the call stack or heap is exhausted.
-This is standard behavior for fine-grained reactive systems and is intentional — the
-overhead of a per-flush iteration cap is not worth it for correct graphs.
+<self_writing_effects_converge_or_throw>
+**An effect that writes a signal it also depends on re-runs until the graph settles — and
+throws `EffectConvergenceError` if it never does.** Converging self-writes (clamping,
+normalization, write-once initialization) are safe: the effect's last run always observes
+the final signal value.
 
 ```typescript
-// BUG — infinite loop: effect reads and writes the same state
+// Safe — converges: the effect re-runs and observes the clamped value
 const count = createState(0)
 createEffect(() => {
-  count.set(count.get() + 1) // re-triggers itself forever
+  const v = count.get()
+  render(v)                     // last render always shows the settled value
+  if (v > 10) count.set(10)
+})
+
+// Error — never settles: throws EffectConvergenceError after 1000 flush passes
+createEffect(() => {
+  count.set(count.get() + 1)    // unconditional self-increment
 })
 ```
 
-Avoid writing to a signal that the same effect reads. If you need derived state, use a
-`createMemo` instead.
-</flush_has_no_loop_guard>
+The bound also catches cycles *between* effects (A writes a state read by B, B writes a
+state read by A). The error surfaces synchronously from the `set()`/`batch()`/
+`createEffect()` call that triggered the runaway; other queued effects still run first.
+
+Self-writes remain an anti-pattern for expressing derived values — prefer `createMemo`.
+Reserve them for genuine feedback like clamping user input to a valid range.
+</self_writing_effects_converge_or_throw>

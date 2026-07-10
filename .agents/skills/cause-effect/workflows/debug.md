@@ -19,6 +19,7 @@ Match the symptom to the most likely cause before reading any code:
 | `UnsetSignalValueError` thrown | Reading Sensor or Task before first value | ../shared/references/non-obvious-behaviors.md: `sensor-unset-before-first-value` |
 | `RequiredOwnerError` thrown | `createEffect` called outside a `createScope` or parent effect | ../shared/references/api-facts.md: `createEffect`, `createScope` |
 | `CircularDependencyError` thrown | A signal depends on itself, directly or transitively | ../shared/references/error-classes.md: `CircularDependencyError` |
+| `EffectConvergenceError` thrown | Effects write to signals they depend on without ever settling (unconditional self-write or mutual effect writes) | ../shared/references/error-classes.md: `EffectConvergenceError` |
 | Downstream Memo or Effect never updates despite source changing | Custom `equals` on an intermediate Memo is suppressing the subgraph | ../shared/references/non-obvious-behaviors.md: `equals-suppresses-subtrees` |
 | Cleanup not running / memory leak suspected | Effect created without an active owner, or `unown` used incorrectly | ../shared/references/api-facts.md: `unown`, `createScope` |
 
