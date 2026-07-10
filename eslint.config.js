@@ -6,7 +6,7 @@ import tseslint from 'typescript-eslint'
 export default [
 	// Global ignores to prevent warnings about these files
 	{
-		ignores: ['index.js', 'index.dev.js', 'types/**/*.d.ts', '**/*.min.js'],
+		ignores: ['index.js', 'types/**/*.d.ts', '**/*.min.js'],
 	},
 	{
 		files: ['**/*.{js,mjs,cjs,ts}'],

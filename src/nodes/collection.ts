@@ -61,9 +61,7 @@ type Collection<T extends {}, S extends Signal<T> = Signal<T>> = {
 	byKey(key: string): S | undefined
 	keyAt(index: number): string | undefined
 	indexOfKey(key: string): number
-	deriveCollection<R extends {}>(
-		callback: (sourceValue: T) => R,
-	): Collection<R>
+	deriveCollection<R extends {}>(callback: (sourceValue: T) => R): Collection<R>
 	deriveCollection<R extends {}>(
 		callback: (sourceValue: T, abort: AbortSignal) => Promise<R>,
 	): Collection<R>
@@ -154,10 +152,7 @@ function deriveCollection<T extends {}, U extends {}>(
 					const sourceValue = itemSignal.get() as U
 					if (sourceValue == null) return prev as T
 					return (
-						callback as (
-							sourceValue: U,
-							abort: AbortSignal,
-						) => Promise<T>
+						callback as (sourceValue: U, abort: AbortSignal) => Promise<T>
 					)(sourceValue, abort)
 				})
 			: createMemo(() => {
@@ -449,8 +444,10 @@ function createCollection<T extends {}, S extends Signal<T> = Signal<T>>(
 					if (!key) continue
 					const signal = signals.get(key)
 					if (signal && isState(signal)) {
-						// Update reverse map: remove old reference, add new
-						itemToKey.delete(signal.get())
+						// Update reverse map: remove old reference, add new.
+						// untrack prevents the read from leaking an edge into
+						// the caller's effect when applyChanges is called inside one.
+						itemToKey.delete(untrack(() => signal.get()))
 						signal.set(item)
 						itemToKey.set(item, key)
 					}
@@ -576,13 +573,13 @@ function isCollection<T extends {}, S extends Signal<T> = Signal<T>>(
 /* === Exports === */
 
 export {
-	createCollection,
-	deriveCollection,
-	isCollection,
 	type Collection,
 	type CollectionCallback,
 	type CollectionChanges,
 	type CollectionOptions,
 	type CollectionSource,
+	createCollection,
 	type DeriveCollectionCallback,
+	deriveCollection,
+	isCollection,
 }

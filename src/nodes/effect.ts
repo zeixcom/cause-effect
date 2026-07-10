@@ -15,6 +15,7 @@ import {
 	runCleanup,
 	runEffect,
 	type Signal,
+	scheduleEffect,
 	trimSources,
 } from '../graph'
 import { isTask } from './task'
@@ -31,9 +32,11 @@ type MaybePromise<T> = T | Promise<T>
  */
 type MatchHandlers<T extends readonly Signal<unknown & {}>[]> = {
 	/** Called when all signals have a value. Receives a tuple of resolved values. */
-	ok: (values: {
-		[K in keyof T]: T[K] extends Signal<infer V> ? V : never
-	}) => MaybePromise<MaybeCleanup>
+	ok: (
+		values: {
+			[K in keyof T]: T[K] extends Signal<infer V> ? V : never
+		},
+	) => MaybePromise<MaybeCleanup>
 	/** Called when one or more signals hold an error. Defaults to `console.error`. */
 	err?: (errors: readonly Error[]) => MaybePromise<MaybeCleanup>
 	/** Called when one or more signals are unset (pending). */
@@ -65,9 +68,16 @@ type SingleMatchHandlers<T extends {}> = {
  * Effects run immediately upon creation and re-run when any tracked signal changes.
  * Effects are executed during the flush phase, after all updates have been batched.
  *
+ * An effect that writes to a signal it also depends on re-runs until the graph
+ * settles, so its last run always observes the final signal values. Effect graphs
+ * that never settle (e.g. an unconditional self-increment, or two effects writing
+ * each other's dependencies) throw `EffectConvergenceError` after a bounded number
+ * of flush passes instead of looping forever.
+ *
  * @since 0.1.0
  * @param fn - The effect function that can track dependencies and register cleanup callbacks
  * @returns A cleanup function that can be called to dispose of the effect
+ * @throws EffectConvergenceError If effects keep re-triggering each other without settling
  *
  * @example
  * ```ts
@@ -111,6 +121,7 @@ function createEffect(fn: EffectCallback): Cleanup {
 	if (activeOwner) registerCleanup(activeOwner, dispose)
 
 	runEffect(node)
+	scheduleEffect(node)
 
 	return dispose
 }
@@ -212,19 +223,21 @@ function match(
 		const owner = activeOwner
 		const controller = new AbortController()
 		registerCleanup(owner, () => controller.abort())
-		out.then(cleanup => {
-			if (!controller.signal.aborted && typeof cleanup === 'function')
-				registerCleanup(owner, cleanup)
-		}).catch(e => {
-			err([e instanceof Error ? e : new Error(String(e))])
-		})
+		out
+			.then(cleanup => {
+				if (!controller.signal.aborted && typeof cleanup === 'function')
+					registerCleanup(owner, cleanup)
+			})
+			.catch(e => {
+				err([e instanceof Error ? e : new Error(String(e))])
+			})
 	}
 }
 
 export {
-	type MaybePromise,
-	type MatchHandlers,
-	type SingleMatchHandlers,
 	createEffect,
+	type MatchHandlers,
+	type MaybePromise,
 	match,
+	type SingleMatchHandlers,
 }

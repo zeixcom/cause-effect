@@ -1,4 +1,8 @@
-import { DuplicateKeyError, validateSignalValue } from '../errors'
+import {
+	DuplicateKeyError,
+	InvalidStoreMutationError,
+	validateSignalValue,
+} from '../errors'
 import {
 	batch,
 	batchDepth,
@@ -40,10 +44,7 @@ type BaseStore<T extends UnknownRecord> = {
 	readonly [Symbol.toStringTag]: 'Store'
 	readonly [Symbol.isConcatSpreadable]: false
 	[Symbol.iterator](): IterableIterator<
-		[
-			string,
-			State<T[keyof T] & {}> | Store<UnknownRecord> | List<unknown & {}>,
-		]
+		[string, State<T[keyof T] & {}> | Store<UnknownRecord> | List<unknown & {}>]
 	>
 	keys(): IterableIterator<string>
 	byKey<K extends keyof T & string>(
@@ -95,10 +96,7 @@ function diffRecords<T extends UnknownRecord>(prev: T, next: T): DiffResult {
 	for (const key of nextKeys) {
 		if (key in prev) {
 			if (
-				!DEEP_EQUALITY(
-					prev[key] as unknown & {},
-					next[key] as unknown & {},
-				)
+				!DEEP_EQUALITY(prev[key] as unknown & {}, next[key] as unknown & {})
 			) {
 				change[key] = next[key]
 				changed = true
@@ -136,6 +134,18 @@ function diffRecords<T extends UnknownRecord>(prev: T, next: T): DiffResult {
  * user.name.set('Bob'); // Only name subscribers react
  * console.log(user.get()); // { name: 'Bob', age: 30 }
  * ```
+ *
+ * Direct property assignment, deletion, or `Object.defineProperty` through the
+ * proxy throws `InvalidStoreMutationError` — use `store.key.set(value)`,
+ * `store.set(next)`, `store.add(key, value)`, or `store.remove(key)` instead.
+ * Properties are typed as signals (not raw values) so destructuring preserves
+ * reactivity; this means proxy assignment is a compile-time error for typed
+ * stores. The runtime guard extends that protection to `any`-typed access,
+ * JS consumers, and `Object.assign`. See ADR-0017 for the full rationale.
+ *
+ * Note: a data key named like a base method (`get`, `set`, `keys`, `update`,
+ * `add`, `remove`, `byKey`) shadows the method via proxy access. Use
+ * `store.byKey(key)` to reach such a property.
  */
 function createStore<T extends UnknownRecord>(
 	value: T,
@@ -258,11 +268,7 @@ function createStore<T extends UnknownRecord>(
 			for (const [key, signal] of signals) {
 				yield [key, signal] as [
 					string,
-					(
-						| State<T[keyof T] & {}>
-						| Store<UnknownRecord>
-						| List<unknown & {}>
-					),
+					State<T[keyof T] & {}> | Store<UnknownRecord> | List<unknown & {}>,
 				]
 			}
 		},
@@ -273,8 +279,7 @@ function createStore<T extends UnknownRecord>(
 		},
 
 		byKey<K extends keyof T & string>(key: K) {
-			return signals.get(key) as T[K] extends readonly (infer U extends
-				{})[]
+			return signals.get(key) as T[K] extends readonly (infer U extends {})[]
 				? List<U>
 				: T[K] extends UnknownRecord
 					? Store<T[K]>
@@ -315,8 +320,7 @@ function createStore<T extends UnknownRecord>(
 			// Use cached value if clean, recompute if dirty. untrack prevents
 			// buildValue's child .get() calls from leaking edges into whatever
 			// effect is currently active (which would cause over-broad re-runs).
-			const prev =
-				node.flags & FLAG_DIRTY ? untrack(buildValue) : node.value
+			const prev = node.flags & FLAG_DIRTY ? untrack(buildValue) : node.value
 
 			const changes = diffRecords(prev, next)
 			if (applyChanges(changes)) {
@@ -327,12 +331,11 @@ function createStore<T extends UnknownRecord>(
 		},
 
 		update(fn: (prev: T) => T) {
-			store.set(fn(store.get()))
+			store.set(fn(untrack(() => store.get())))
 		},
 
 		add<K extends keyof T & string>(key: K, value: T[K]) {
-			if (signals.has(key))
-				throw new DuplicateKeyError(TYPE_STORE, key, value)
+			if (signals.has(key)) throw new DuplicateKeyError(TYPE_STORE, key, value)
 			addSignal(key, value)
 			node.flags |= FLAG_DIRTY | FLAG_RELINK
 			for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
@@ -357,6 +360,15 @@ function createStore<T extends UnknownRecord>(
 			if (typeof prop !== 'symbol')
 				return target.byKey(prop as keyof T & string)
 		},
+		set(_target, prop) {
+			throw new InvalidStoreMutationError(String(prop), 'assign to')
+		},
+		deleteProperty(_target, prop) {
+			throw new InvalidStoreMutationError(String(prop), 'delete')
+		},
+		defineProperty(_target, prop) {
+			throw new InvalidStoreMutationError(String(prop), 'define')
+		},
 		has(target, prop) {
 			if (prop in target) return true
 			return target.byKey(String(prop) as keyof T & string) !== undefined
@@ -365,8 +377,7 @@ function createStore<T extends UnknownRecord>(
 			return Array.from(target.keys())
 		},
 		getOwnPropertyDescriptor(target, prop) {
-			if (prop in target)
-				return Reflect.getOwnPropertyDescriptor(target, prop)
+			if (prop in target) return Reflect.getOwnPropertyDescriptor(target, prop)
 			if (typeof prop === 'symbol') return undefined
 			const signal = target.byKey(String(prop) as keyof T & string)
 			return signal

@@ -24,9 +24,7 @@ export function makeGraph(
 	const { width, totalLayers, staticFraction, nSources } = config
 
 	return framework.withBuild(() => {
-		const sources = new Array(width)
-			.fill(0)
-			.map((_, i) => framework.signal(i))
+		const sources = new Array(width).fill(0).map((_, i) => framework.signal(i))
 		const rows = makeDependentRows(
 			sources,
 			totalLayers - 1,

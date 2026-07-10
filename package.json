@@ -1,6 +1,6 @@
 {
 	"name": "@zeix/cause-effect",
-	"version": "1.3.4",
+	"version": "1.4.0",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/zeixcom/cause-effect"
@@ -9,10 +9,24 @@
 	"author": "Esther Brunner",
 	"type": "module",
 	"main": "index.js",
-	"module": "index.ts",
 	"types": "types/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./types/index.d.ts",
+			"bun": "./index.ts",
+			"default": "./index.js"
+		},
+		"./package.json": "./package.json"
+	},
+	"files": [
+		"index.js",
+		"index.ts",
+		"src",
+		"types",
+		"SECURITY.md"
+	],
 	"devDependencies": {
-		"@biomejs/biome": "2.4.6",
+		"@biomejs/biome": "^2.5.3",
 		"@types/bun": "^1.3.14",
 		"@zeix/cause-effect-stable": "npm:@zeix/cause-effect",
 		"mitata": "^1.0.34",
@@ -21,6 +35,11 @@
 	},
 	"peerDependencies": {
 		"typescript": ">=5.8.0"
+	},
+	"peerDependenciesMeta": {
+		"typescript": {
+			"optional": true
+		}
 	},
 	"description": "Cause & Effect - reactive state management primitives library for TypeScript.",
 	"license": "MIT",
@@ -34,10 +53,11 @@
 		"access": "public"
 	},
 	"scripts": {
-		"build": "bunx tsc --project tsconfig.build.json && bun build index.ts --outdir ./ --minify && bun build index.ts --outfile index.dev.js",
+		"build": "bunx tsc --project tsconfig.build.json && bun build index.ts --outfile index.js",
 		"bench": "bun run bench/reactivity.bench.ts",
 		"test": "bun test --path-ignore-patterns=**/regression*",
 		"regression": "bun test test/regression-performance.test.ts && bun test test/regression-bundle.test.ts",
-		"lint": "bunx biome lint --write"
+		"check": "bunx tsc --noEmit && bunx biome check . && bun run test && bun test test/regression-bundle.test.ts",
+		"lint": "bunx biome check --write"
 	}
 }

@@ -89,8 +89,7 @@ function createSignal(value: unknown): unknown {
 	if (value == null) throw new InvalidSignalValueError('createSignal', value)
 	if (isAsyncFunction(value))
 		return createTask(value as TaskCallback<unknown & {}>)
-	if (isFunction(value))
-		return createMemo(value as MemoCallback<unknown & {}>)
+	if (isFunction(value)) return createMemo(value as MemoCallback<unknown & {}>)
 	if (Array.isArray(value) && value.every(item => item != null))
 		return createList(value as (unknown & {})[])
 	if (isRecord(value)) return createStore(value)
@@ -159,11 +158,11 @@ function isMutableSignal(value: unknown): value is MutableSignal<unknown & {}> {
 }
 
 export {
-	type MutableSignal,
 	createComputed,
-	createSignal,
 	createMutableSignal,
+	createSignal,
 	isComputed,
-	isSignal,
 	isMutableSignal,
+	isSignal,
+	type MutableSignal,
 }

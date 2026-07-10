@@ -113,9 +113,9 @@ describe('Collection', () => {
 			expect(isCollection(42)).toBe(false)
 			expect(isCollection(null)).toBe(false)
 			expect(isCollection({})).toBe(false)
-			expect(
-				isList(createCollection(() => () => {}, { value: [1] })),
-			).toBe(false)
+			expect(isList(createCollection(() => () => {}, { value: [1] }))).toBe(
+				false,
+			)
 		})
 	})
 
@@ -175,9 +175,7 @@ describe('Collection', () => {
 
 	describe('applyChanges', () => {
 		test('should add items', () => {
-			let apply:
-				| ((changes: CollectionChanges<number>) => void)
-				| undefined
+			let apply: ((changes: CollectionChanges<number>) => void) | undefined
 			const col = createCollection<number>(applyChanges => {
 				apply = applyChanges
 				return () => {}
@@ -204,9 +202,7 @@ describe('Collection', () => {
 
 		test('should change item values', () => {
 			let apply:
-				| ((
-						changes: CollectionChanges<{ id: string; val: number }>,
-				  ) => void)
+				| ((changes: CollectionChanges<{ id: string; val: number }>) => void)
 				| undefined
 			const col = createCollection(
 				applyChanges => {
@@ -239,9 +235,7 @@ describe('Collection', () => {
 
 		test('should remove items', () => {
 			let apply:
-				| ((
-						changes: CollectionChanges<{ id: string; v: number }>,
-				  ) => void)
+				| ((changes: CollectionChanges<{ id: string; v: number }>) => void)
 				| undefined
 			const col = createCollection(
 				applyChanges => {
@@ -286,9 +280,7 @@ describe('Collection', () => {
 
 		test('should handle mixed add/change/remove', () => {
 			let apply:
-				| ((
-						changes: CollectionChanges<{ id: string; v: number }>,
-				  ) => void)
+				| ((changes: CollectionChanges<{ id: string; v: number }>) => void)
 				| undefined
 			const col = createCollection(
 				applyChanges => {
@@ -328,9 +320,7 @@ describe('Collection', () => {
 		})
 
 		test('should skip when no changes provided', () => {
-			let apply:
-				| ((changes: CollectionChanges<number>) => void)
-				| undefined
+			let apply: ((changes: CollectionChanges<number>) => void) | undefined
 			const col = createCollection(
 				applyChanges => {
 					apply = applyChanges
@@ -358,9 +348,7 @@ describe('Collection', () => {
 		})
 
 		test('should trigger effects on structural changes', () => {
-			let apply:
-				| ((changes: CollectionChanges<string>) => void)
-				| undefined
+			let apply: ((changes: CollectionChanges<string>) => void) | undefined
 			const col = createCollection<string>(applyChanges => {
 				apply = applyChanges
 				return () => {}
@@ -386,9 +374,7 @@ describe('Collection', () => {
 		})
 
 		test('should batch multiple calls', () => {
-			let apply:
-				| ((changes: CollectionChanges<number>) => void)
-				| undefined
+			let apply: ((changes: CollectionChanges<number>) => void) | undefined
 			const col = createCollection<number>(applyChanges => {
 				apply = applyChanges
 				return () => {}
@@ -610,6 +596,48 @@ describe('Collection', () => {
 			// biome-ignore lint/style/noNonNullAssertion: test
 			apply!({ remove: [{ id: 'a', v: 1 }] })
 			expect(runs).toBe(3)
+			dispose()
+		})
+	})
+
+	describe('onChanges change-branch tracking leak', () => {
+		// The change branch of onChanges reads signal.get() to update the
+		// itemToKey reverse map. That read must be untracked — otherwise,
+		// when applyChanges is called inside an effect, it leaks an
+		// item->effect edge and the subsequent propagate re-runs the effect
+		// once during setup (transient leak, mode b).
+		test('applyChanges({ change }) inside an effect does not transiently re-run', () => {
+			type Item = { id: string; v: number }
+			let apply: ((changes: CollectionChanges<Item>) => void) | undefined
+			const col = createCollection<Item>(
+				applyChanges => {
+					apply = applyChanges
+					return () => {}
+				},
+				{ keyConfig: item => item.id, value: [{ id: 'a', v: 1 }] },
+			)
+
+			// Subscribe to activate the collection (triggers watched -> sets apply)
+			const dispose = createScope(() => {
+				createEffect(() => {
+					col.get()
+				})
+			})
+
+			const trigger = createState(0)
+			let runs = 0
+			createEffect((): undefined => {
+				trigger.get()
+				runs++
+				if (runs === 1) {
+					// biome-ignore lint/style/noNonNullAssertion: activated above
+					apply!({ change: [{ id: 'a', v: 2 }] })
+				}
+			})
+
+			// Without the fix, runs is 2 here (transient re-run).
+			expect(runs).toBe(1)
+			expect(col.byKey('a')?.get()).toEqual({ id: 'a', v: 2 })
 			dispose()
 		})
 	})
@@ -986,9 +1014,6 @@ test('Type Inference for custom createItem', () => {
 			? true
 			: false
 	type _Test = Expect<
-		Equal<
-			typeof byKey,
-			ReturnType<typeof createStore<TodoItem>> | undefined
-		>
+		Equal<typeof byKey, ReturnType<typeof createStore<TodoItem>> | undefined>
 	>
 })

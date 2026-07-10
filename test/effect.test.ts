@@ -6,6 +6,7 @@ import {
 	createScope,
 	createState,
 	createTask,
+	EffectConvergenceError,
 	match,
 	RequiredOwnerError,
 } from '../index.ts'
@@ -344,6 +345,190 @@ describe('createEffect', () => {
 		})
 	})
 
+	describe('Error Containment', () => {
+		test('should run sibling effects even when an earlier effect throws', () => {
+			const source = createState(0)
+			let goodRuns = 0
+			createEffect(() => {
+				if (source.get() > 0) throw new Error('boom')
+			})
+			createEffect(() => {
+				source.get()
+				goodRuns++
+			})
+			expect(goodRuns).toBe(1)
+			expect(() => source.set(1)).toThrow('boom')
+			expect(goodRuns).toBe(2)
+		})
+
+		test('should aggregate multiple effect errors and still run non-throwing siblings', () => {
+			const source = createState(0)
+			let goodRuns = 0
+			createEffect(() => {
+				if (source.get() > 0) throw new Error('first')
+			})
+			createEffect(() => {
+				if (source.get() > 0) throw new Error('second')
+			})
+			createEffect(() => {
+				source.get()
+				goodRuns++
+			})
+			let caught: unknown
+			try {
+				source.set(1)
+			} catch (err) {
+				caught = err
+			}
+			expect(caught).toBeInstanceOf(AggregateError)
+			expect((caught as AggregateError).errors.length).toBe(2)
+			expect(((caught as AggregateError).errors[0] as Error).message).toBe(
+				'first',
+			)
+			expect(((caught as AggregateError).errors[1] as Error).message).toBe(
+				'second',
+			)
+			expect(goodRuns).toBe(2)
+		})
+
+		test('should re-run a previously throwing effect without CircularDependencyError', () => {
+			const source = createState(0)
+			let lastSeen = 0
+			createEffect(() => {
+				const value = source.get()
+				if (value === 1) throw new Error('boom')
+				lastSeen = value
+			})
+			expect(() => source.set(1)).toThrow('boom')
+
+			let caught: unknown
+			try {
+				source.set(2)
+			} catch (err) {
+				caught = err
+			}
+			expect(caught).toBeUndefined()
+			expect(lastSeen).toBe(2)
+		})
+
+		test('should contain effect errors thrown during batch', () => {
+			const source = createState(0)
+			let goodRuns = 0
+			createEffect(() => {
+				if (source.get() > 0) throw new Error('boom')
+			})
+			createEffect(() => {
+				source.get()
+				goodRuns++
+			})
+			expect(() => {
+				batch(() => {
+					source.set(1)
+				})
+			}).toThrow('boom')
+			expect(goodRuns).toBe(2)
+		})
+	})
+
+	describe('Convergence', () => {
+		test('should re-run a clamping effect so it observes the final value', () => {
+			const source = createState(0)
+			const seen: number[] = []
+			createEffect(() => {
+				const v = source.get()
+				seen.push(v)
+				if (v > 10) source.set(10)
+			})
+			source.set(15)
+			expect(source.get()).toBe(10)
+			expect(seen).toEqual([0, 15, 10])
+		})
+
+		test('should converge a clamping effect inside batch', () => {
+			const source = createState(0)
+			const seen: number[] = []
+			createEffect(() => {
+				const v = source.get()
+				seen.push(v)
+				if (v > 10) source.set(10)
+			})
+			batch(() => {
+				source.set(20)
+			})
+			expect(source.get()).toBe(10)
+			expect(seen).toEqual([0, 20, 10])
+		})
+
+		test('should throw EffectConvergenceError for an unconditional self-write via set()', () => {
+			const source = createState(0)
+			createEffect(() => {
+				if (source.get() > 0) source.set(source.get() + 1)
+			})
+			let caught: unknown
+			try {
+				source.set(1)
+			} catch (err) {
+				caught = err
+			}
+			expect(caught).toBeInstanceOf(EffectConvergenceError)
+			expect((caught as Error).message).toContain('did not settle')
+		})
+
+		test('should throw EffectConvergenceError for a runaway effect at creation', () => {
+			const source = createState(0)
+			expect(() =>
+				createEffect(() => {
+					source.set(source.get() + 1)
+				}),
+			).toThrow(EffectConvergenceError)
+		})
+
+		test('should throw EffectConvergenceError for mutual effect writes', () => {
+			const a = createState(0)
+			const b = createState(0)
+			expect(() => {
+				createEffect(() => {
+					b.set(a.get() + 1)
+				})
+				createEffect(() => {
+					a.set(b.get() + 1)
+				})
+			}).toThrow(EffectConvergenceError)
+		})
+
+		test('should still run healthy siblings when another effect fails to converge', () => {
+			const source = createState(0)
+			let siblingRuns = 0
+			createEffect(() => {
+				if (source.get() > 0) source.set(source.get() + 1)
+			})
+			createEffect(() => {
+				source.get()
+				siblingRuns++
+			})
+			expect(siblingRuns).toBe(1)
+			expect(() => source.set(1)).toThrow(EffectConvergenceError)
+			expect(siblingRuns).toBeGreaterThan(1)
+		})
+
+		test('should recover after a convergence error', () => {
+			const source = createState(0)
+			const seen: number[] = []
+			createEffect(() => {
+				seen.push(source.get())
+			})
+			const runaway = createState(0)
+			createEffect(() => {
+				if (runaway.get() > 0) runaway.set(runaway.get() + 1)
+			})
+			expect(() => runaway.set(1)).toThrow(EffectConvergenceError)
+
+			// The queue was cleared; unrelated signals keep working normally
+			source.set(5)
+			expect(seen).toEqual([0, 5])
+		})
+	})
+
 	describe('Input Validation', () => {
 		test('should throw InvalidCallbackError for non-function', () => {
 			// @ts-expect-error - Testing invalid input
@@ -351,9 +536,7 @@ describe('createEffect', () => {
 				'[Effect] Callback null is invalid',
 			)
 			// @ts-expect-error - Testing invalid input
-			expect(() => createEffect(42)).toThrow(
-				'[Effect] Callback 42 is invalid',
-			)
+			expect(() => createEffect(42)).toThrow('[Effect] Callback 42 is invalid')
 		})
 	})
 })
@@ -1092,10 +1275,7 @@ describe('match', () => {
 						ok: () =>
 							new Promise<undefined>((_resolve, reject) => {
 								// Reject asynchronously, after disposal.
-								setTimeout(
-									() => reject(new Error('late reject')),
-									10,
-								)
+								setTimeout(() => reject(new Error('late reject')), 10)
 							}),
 						err: e => {
 							errCount++

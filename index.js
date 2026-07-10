@@ -1,1 +1,1872 @@
-var dz=Object.getPrototypeOf(async()=>{});function c(z){return typeof z==="function"}function Jz(z){return c(z)&&Object.getPrototypeOf(z)===dz}function Wz(z){return c(z)&&Object.getPrototypeOf(z)!==dz}function oz(z,J){return Object.prototype.toString.call(z)===`[object ${J}]`}function A(z,J){return z!=null&&z[Symbol.toStringTag]===J}function k(z){return z!==null&&typeof z==="object"&&Object.getPrototypeOf(z)===Object.prototype}function Oz(z){if(typeof z==="string")return`"${z}"`;if(z!=null&&typeof z==="object")try{return JSON.stringify(z)}catch{return String(z)}return String(z)}class wz extends Error{constructor(z){super(`[${z}] Circular dependency detected`);this.name="CircularDependencyError"}}class Nz extends TypeError{constructor(z){super(`[${z}] Signal value cannot be null or undefined`);this.name="NullishSignalValueError"}}class Xz extends Error{constructor(z){super(`[${z}] Signal value is unset`);this.name="UnsetSignalValueError"}}class Hz extends TypeError{constructor(z,J){super(`[${z}] Signal value ${Oz(J)} is invalid`);this.name="InvalidSignalValueError"}}class Lz extends TypeError{constructor(z,J){super(`[${z}] Callback ${Oz(J)} is invalid`);this.name="InvalidCallbackError"}}class Cz extends Error{constructor(z){super(`[${z}] Signal is read-only`);this.name="ReadonlySignalError"}}class xz extends Error{constructor(z){super(`[${z}] Active owner is required`);this.name="RequiredOwnerError"}}class Fz extends TypeError{constructor(z){super(`[${z}] Callback returned a Promise — use an async callback to create a Task instead`);this.name="PromiseValueError"}}class u extends Error{constructor(z,J,X){super(`[${z}] Could not add key "${J}"${X!=null?` with value ${JSON.stringify(X)}`:""} because it already exists`);this.name="DuplicateKeyError"}}function O(z,J,X){if(J==null)throw new Nz(z);if(X&&!X(J))throw new Hz(z,J)}function Bz(z,J){if(J==null)throw new Xz(z)}function h(z,J,X=c){if(!X(J))throw new Lz(z,J)}var r="State",l="Memo",n="Task",a="Sensor",_="List",t="Collection",e="Store",zz="Slot",T=0,Zz=1,D=2,Dz=4,L=8,G=null,b=null,Iz=[],x=0,bz=!1,y=(z,J)=>z===J,Ez=(z,J)=>!1,iz=(z,J)=>Tz(z,J,new WeakSet),Tz=(z,J,X)=>{if(Object.is(z,J))return!0;if(typeof z!==typeof J)return!1;if(z==null||typeof z!=="object"||J==null||typeof J!=="object")return!1;if(X.has(z))return!0;X.add(z);try{let Z=Array.isArray(z);if(Z!==Array.isArray(J))return!1;if(Z){let B=z,U=J;if(B.length!==U.length)return!1;for(let N=0;N<B.length;N++)if(!Tz(B[N],U[N],X))return!1;return!0}if(z instanceof Date&&J instanceof Date)return z.getTime()===J.getTime();if(z instanceof RegExp&&J instanceof RegExp)return z.source===J.source&&z.flags===J.flags;if(k(z)&&k(J)){let B=Object.keys(z);if(B.length!==Object.keys(J).length)return!1;for(let U of B){if(!(U in J))return!1;if(!Tz(z[U],J[U],X))return!1}return!0}return!1}finally{X.delete(z)}},s=(z,J)=>iz(z,J),rz=s;function nz(z,J){let X=J.sourcesTail;if(X){let Z=J.sources;while(Z){if(Z===z)return!0;if(Z===X)break;Z=Z.nextSource}}return!1}function f(z,J){let X=J.sourcesTail;if(X?.source===z)return;let Z=null,B=J.flags&Dz;if(B){if(Z=X?X.nextSource:J.sources,Z?.source===z){J.sourcesTail=Z;return}}let U=z.sinksTail;if(U?.sink===J&&(!B||nz(U,J)))return;let N={source:z,sink:J,nextSource:Z,prevSink:U,nextSink:null};if(J.sourcesTail=z.sinksTail=N,X)X.nextSource=N;else J.sources=N;if(U)U.nextSink=N;else z.sinks=N}function az(z){let{source:J,nextSource:X,nextSink:Z,prevSink:B}=z;if(Z)Z.prevSink=B;else J.sinksTail=B;if(B)B.nextSink=Z;else J.sinks=Z;if(!J.sinks){if(J.stop)J.stop(),J.stop=void 0;if("sources"in J&&J.sources){let U=J;U.sourcesTail=null,Qz(U),U.flags|=D}}return X}function Qz(z){let J=z.sourcesTail,X=J?J.nextSource:z.sources;while(X)X=az(X);if(J)J.nextSource=null;else z.sources=null}function w(z,J=D){let X=z.flags;if("sinks"in z){if((X&(D|Zz))>=J)return;if(z.flags=X|J,"controller"in z&&z.controller)z.controller.abort(),z.controller=void 0;for(let Z=z.sinks;Z;Z=Z.nextSink)w(Z.sink,Zz)}else{if((X&(D|Zz))>=J)return;let Z=X&(D|Zz);if(z.flags=J,!Z)Iz.push(z)}}function g(z,J){if(z.equals(z.value,J))return;z.value=J;for(let X=z.sinks;X;X=X.nextSink)w(X.sink);if(x===0)m()}function $z(z,J){if(!z.cleanup)z.cleanup=J;else if(Array.isArray(z.cleanup))z.cleanup.push(J);else z.cleanup=[z.cleanup,J]}function Yz(z){if(!z.cleanup)return;if(Array.isArray(z.cleanup))for(let J=0;J<z.cleanup.length;J++)z.cleanup[J]();else z.cleanup();z.cleanup=null}function ez(z){let J=G;G=z,z.sourcesTail=null,z.flags=Dz;let X=!1;try{let Z=z.fn(z.value);if(Z instanceof Promise)throw new Fz(l);if(z.error||!z.equals(Z,z.value))z.value=Z,z.error=void 0,X=!0}catch(Z){X=!0,z.error=Z instanceof Error?Z:Error(String(Z))}finally{G=J,Qz(z)}if(X){for(let Z=z.sinks;Z;Z=Z.nextSink)if(Z.sink.flags&Zz)Z.sink.flags|=D}z.flags=T}function zJ(z){z.controller?.abort();let J=new AbortController;z.controller=J,z.error=void 0;let X=G;G=z,z.sourcesTail=null,z.flags=Dz;let Z;try{Z=z.fn(z.value,J.signal)}catch(B){z.controller=void 0,z.error=B instanceof Error?B:Error(String(B)),z.flags=T,g(z.pendingNode,!1);return}finally{G=X,Qz(z)}g(z.pendingNode,!0),Z.then((B)=>{if(J.signal.aborted)return;z.controller=void 0,d(()=>{if(z.error||!z.equals(B,z.value)){z.value=B,z.error=void 0;for(let U=z.sinks;U;U=U.nextSink)w(U.sink)}g(z.pendingNode,!1)})},(B)=>{if(J.signal.aborted)return;z.controller=void 0;let U=B instanceof Error?B:Error(String(B));d(()=>{if(!z.error||U.name!==z.error.name||U.message!==z.error.message){z.error=U;for(let N=z.sinks;N;N=N.nextSink)w(N.sink)}g(z.pendingNode,!1)})}),z.flags=T}function Sz(z){Yz(z);let J=G,X=b;G=b=z,z.sourcesTail=null,z.flags=Dz;try{let Z=z.fn();if(typeof Z==="function")$z(z,Z)}finally{G=J,b=X,Qz(z)}z.flags=T}function Y(z){if(z.flags&Zz)for(let J=z.sources;J;J=J.nextSource){if("fn"in J.source)Y(J.source);if(z.flags&D)break}if(z.flags&Dz)throw new wz("controller"in z?n:("value"in z)?l:"Effect");if(z.flags&D)if("controller"in z)zJ(z);else if("value"in z)ez(z);else Sz(z);else z.flags=T}function m(){if(bz)return;bz=!0;try{for(let z=0;z<Iz.length;z++){let J=Iz[z];if(J.flags&(D|Zz))Y(J)}Iz.length=0}finally{bz=!1}}function d(z){x++;try{z()}finally{if(x--,x===0)m()}}function E(z){let J=G;G=null;try{return z()}finally{G=J}}function JJ(z,J){let X=b,Z={cleanup:null};b=Z;let B=()=>Yz(Z);try{let U=z();if(typeof U==="function")$z(Z,U);return B}finally{if(b=X,!J?.root&&X)$z(X,B)}}function XJ(z){let J=b;b=null;try{return z()}finally{b=J}}function v(z,J){return J?()=>{if(G){if(!z.sinks)z.stop=J();f(z,G)}}:()=>{if(G)f(z,G)}}function o(z,J){O(r,z,J?.guard);let X={value:z,sinks:null,sinksTail:null,equals:J?.equals??y,guard:J?.guard};return{[Symbol.toStringTag]:r,get(){if(G)f(X,G);return X.value},set(Z){O(r,Z,X.guard),g(X,Z)},update(Z){h(r,Z);let B=Z(X.value);O(r,B,X.guard),g(X,B)}}}function Gz(z){return A(z,r)}function mz(z,J){if(z.length!==J.length)return!1;for(let X=0;X<z.length;X++)if(z[X]!==J[X])return!1;return!0}function hz(z){let J=0,X=typeof z==="function";return[typeof z==="string"?()=>`${z}${J++}`:X?(Z)=>z(Z)||String(J++):()=>String(J++),X]}function ZJ(z,J,X,Z,B){let U={},N={},V={},P=[],Q=!1,K=Math.min(z.length,J.length);for(let j=0;j<K;j++){let q=X[j];if(P.push(q),!B(z[j],J[j]))N[q]=J[j],Q=!0}for(let j=K;j<J.length;j++){let q=J[j],$=Z(q);P.push($),U[$]=q,Q=!0}for(let j=K;j<z.length;j++)V[X[j]]=null,Q=!0;return{add:U,change:N,remove:V,newKeys:P,changed:Q}}function $J(z,J,X,Z,B,U){if(!B)return ZJ(z,J,X,Z,U);let N={},V={},P={},Q=[],K=!1,j=new Map;for(let $=0;$<z.length;$++){let H=X[$],W=z[$];if(H&&W!==void 0)j.set(H,W)}let q=new Set;for(let $=0;$<J.length;$++){let H=J[$];O(`${_} item at index ${$}`,H);let W=Z(H);if(q.has(W))throw new u(_,W,H);if(Q.push(W),q.add(W),!j.has(W))N[W]=H,K=!0;else if(!U(j.get(W),H))V[W]=H,K=!0}for(let[$]of j)if(!q.has($))P[$]=null,K=!0;if(!K&&!mz(X,Q))K=!0;return{add:N,change:V,remove:P,newKeys:Q,changed:K}}function qz(z,J){O(_,z,Array.isArray);let X=new Map,Z=[],[B,U]=hz(J?.keyConfig),N=J?.itemEquals??s,V=J?.createItem??(($)=>o($,{equals:N})),P=()=>{let $=[];for(let H of Z){let W=X.get(H)?.get();if(W!==void 0)$.push(W)}return $},Q={fn:P,value:z,flags:D,sources:null,sourcesTail:null,sinks:null,sinksTail:null,equals:s,error:void 0},K=($)=>{let H=!1;for(let M in $.add){let R=$.add[M];O(`${_} item for key "${M}"`,R),X.set(M,V(R)),H=!0}let W=!1;for(let M in $.change){W=!0;break}if(W)d(()=>{for(let M in $.change){let R=$.change[M];O(`${_} item for key "${M}"`,R);let p=X.get(M);if(p)p.set(R)}});for(let M in $.remove){X.delete(M);let R=Z.indexOf(M);if(R!==-1)Z.splice(R,1);H=!0}if(H)Q.flags|=L;return $.changed},j=v(Q,J?.watched);for(let $=0;$<z.length;$++){let H=z[$];if(H==null)throw new Nz(`${_} item ${$}`);let W=Z[$];if(!W)W=B(H),Z[$]=W;X.set(W,V(H))}Q.value=z,Q.flags=0;let q={[Symbol.toStringTag]:_,[Symbol.isConcatSpreadable]:!0,*[Symbol.iterator](){j();for(let $ of Z){let H=X.get($);if(H)yield H}},get length(){return j(),Z.length},get(){if(j(),Q.sources){if(Q.flags){let $=Q.flags&L;if(Q.value=E(P),$){if(Q.flags=D,Y(Q),Q.error)throw Q.error}else Q.flags=T}}else if(Y(Q),Q.error)throw Q.error;return Q.value},set($){let H=Q.flags&D?P():Q.value,W=$J(H,$,Z,B,U,N);if(W.changed){Z=W.newKeys,K(W),Q.flags|=D;for(let M=Q.sinks;M;M=M.nextSink)w(M.sink);if(x===0)m()}},update($){q.set($(q.get()))},at($){j();let H=Z[$];return H!==void 0?X.get(H):void 0},keys(){return j(),Z.values()},byKey($){return j(),X.get($)},keyAt($){return j(),Z[$]},indexOfKey($){return j(),Z.indexOf($)},add($){let H=B($);if(X.has(H))throw new u(_,H,$);Z.push(H),O(`${_} item for key "${H}"`,$),X.set(H,V($)),Q.flags|=D|L;for(let W=Q.sinks;W;W=W.nextSink)w(W.sink);if(x===0)m();return H},remove($){let H=typeof $==="number"?Z[$]:$;if(H===void 0)return;if(X.delete(H)){let M=typeof $==="number"?$:Z.indexOf(H);if(M>=0)Z.splice(M,1);Q.flags|=D|L;for(let R=Q.sinks;R;R=R.nextSink)w(R.sink);if(x===0)m()}},replace($,H){let W=X.get($);if(!W)return;if(O(`${_} item for key "${$}"`,H),N(E(()=>W.get()),H))return;if(d(()=>{W.set(H),Q.flags|=D;for(let M=Q.sinks;M;M=M.nextSink)w(M.sink)}),x===0)m()},sort($){let H=[];for(let M of Z){let R=X.get(M)?.get();if(R!==void 0)H.push([M,R])}H.sort(c($)?(M,R)=>$(M[1],R[1]):(M,R)=>String(M[1]).localeCompare(String(R[1])));let W=[];for(let[M]of H)W.push(M);if(!mz(Z,W)){Z=W,Q.flags|=D;for(let M=Q.sinks;M;M=M.nextSink)w(M.sink);if(x===0)m()}},splice($,H,...W){let M=Z.length,R=$<0?Math.max(0,M+$):Math.min($,M),p=Math.max(0,Math.min(H??Math.max(0,M-Math.max(0,R)),M-R)),jz={},C={},F=!1;for(let S=0;S<p;S++){let i=R+S,_z=Z[i];if(_z){let uz=X.get(_z);if(uz)C[_z]=uz.get(),F=!0}}let I=Z.slice(0,R),kz={},gz=!1,vz=!1;for(let S of W){let i=B(S);if(i in C)delete C[i],kz[i]=S,vz=!0;else if(X.has(i))throw new u(_,i,S);else jz[i]=S,gz=!0;I.push(i)}I.push(...Z.slice(R+p));let cz=gz||F||vz;if(cz){K({add:jz,change:kz,remove:C,changed:cz}),Z=I,Q.flags|=D;for(let S=Q.sinks;S;S=S.nextSink)w(S.sink);if(x===0)m()}return Object.values(C)},deriveCollection($){return Az(q,$)}};return q}function Pz(z){return A(z,_)}function Mz(z,J){if(h(l,z,Wz),J?.value!==void 0)O(l,J.value,J?.guard);let X={fn:z,value:J?.value,flags:D,sources:null,sourcesTail:null,sinks:null,sinksTail:null,equals:J?.equals??y,error:void 0,stop:void 0},Z=J?.watched,B=v(X,Z?()=>Z(()=>{if(w(X),x===0)m()}):void 0);return{[Symbol.toStringTag]:l,get(){if(B(),Y(X),X.error)throw X.error;return Bz(l,X.value),X.value}}}function pz(z){return A(z,l)}function Uz(z,J){if(h(n,z,Jz),J?.value!==void 0)O(n,J.value,J?.guard);let X={value:!1,sinks:null,sinksTail:null,equals:y},Z={fn:z,value:J?.value,sources:null,sourcesTail:null,sinks:null,sinksTail:null,flags:D,equals:J?.equals??y,controller:void 0,error:void 0,stop:void 0,pendingNode:X},B=J?.watched,U=v(Z,B?()=>B(()=>{if(w(Z),x===0)m()}):void 0),N=v(X);return{[Symbol.toStringTag]:n,get(){if(U(),Y(Z),Z.error)throw Z.error;return Bz(n,Z.value),Z.value},isPending(){return N(),Z.pendingNode.value},abort(){Z.controller?.abort(),Z.controller=void 0,g(Z.pendingNode,!1)}}}function Vz(z){return A(z,n)}function Az(z,J){h(t,J);let X=Jz(J),Z=new Map,B=[],U=($)=>{let H=X?Uz(async(W,M)=>{let R=E(()=>z.byKey($));if(!R)return W;let p=R.get();if(p==null)return W;return J(p,M)}):Mz(()=>{let W=E(()=>z.byKey($));if(!W)return;let M=W.get();if(M==null)return;return J(M)});Z.set($,H)};function N($){if(!mz(B,$)){let H=new Set($);for(let W of B)if(!H.has(W))Z.delete(W);for(let W of $)if(!Z.has(W))U(W);B=$,Q.flags|=L}}function V(){N(Array.from(z.keys()));let $=[];for(let H of B)try{let W=Z.get(H)?.get();if(W!=null)$.push(W)}catch(W){if(!(W instanceof Xz))throw W}return $}let Q={fn:V,value:[],flags:D,sources:null,sourcesTail:null,sinks:null,sinksTail:null,equals:($,H)=>{if($.length!==H.length)return!1;for(let W=0;W<$.length;W++)if($[W]!==H[W])return!1;return!0},error:void 0};function K(){if(Q.sources){if(Q.flags)if(Q.value=E(V),Q.flags&L){if(Q.flags=D,Y(Q),Q.error)throw Q.error}else Q.flags=T}else if(Q.sinks){if(Y(Q),Q.error)throw Q.error}else Q.value=E(V)}let j=Array.from(E(()=>z.keys()));for(let $ of j)U($);B=j;let q={[Symbol.toStringTag]:t,[Symbol.isConcatSpreadable]:!0,*[Symbol.iterator](){if(G)f(Q,G);K();for(let $ of B){let H=Z.get($);if(H)yield H}},get length(){if(G)f(Q,G);return K(),B.length},keys(){if(G)f(Q,G);return K(),B.values()},get(){if(G)f(Q,G);return K(),Q.value},at($){if(G)f(Q,G);K();let H=B[$];return H!==void 0?Z.get(H):void 0},byKey($){if(G)f(Q,G);return K(),Z.get($)},keyAt($){if(G)f(Q,G);return K(),B[$]},indexOfKey($){if(G)f(Q,G);return K(),B.indexOf($)},deriveCollection($){return Az(q,$)}};return q}function jJ(z,J){let X=J?.value??[];if(X.length)O(t,X,Array.isArray);h(t,z,Wz);let Z=new Map,B=[],U=new Map,[N,V]=hz(J?.keyConfig),P=(W)=>U.get(W)??(V?N(W):void 0),Q=J?.createItem??((W)=>o(W,{equals:J?.itemEquals??s}));function K(){let W=[];for(let M of B)try{let R=Z.get(M)?.get();if(R!=null)W.push(R)}catch(R){if(!(R instanceof Xz))throw R}return W}let j={fn:K,value:X,flags:D,sources:null,sourcesTail:null,sinks:null,sinksTail:null,equals:Ez,error:void 0};for(let W of X){let M=N(W);Z.set(M,Q(W)),U.set(W,M),B.push(M)}j.value=X,j.flags=D;let q=(W)=>{let{add:M,change:R,remove:p}=W;if(!M?.length&&!R?.length&&!p?.length)return;let jz=!1;d(()=>{if(M){let C=new Map;for(let F of M){let I=N(F);if(Z.has(I)||C.has(I))throw new u(t,I,F);C.set(I,F)}for(let[F,I]of C){if(Z.set(F,Q(I)),U.set(I,F),!B.includes(F))B.push(F);jz=!0}}if(R)for(let C of R){let F=P(C);if(!F)continue;let I=Z.get(F);if(I&&Gz(I))U.delete(I.get()),I.set(C),U.set(C,F)}if(p)for(let C of p){let F=P(C);if(!F)continue;U.delete(C),Z.delete(F);let I=B.indexOf(F);if(I!==-1)B.splice(I,1);jz=!0}j.flags=D|(jz?L:0);for(let C=j.sinks;C;C=C.nextSink)w(C.sink)})},$=v(j,()=>z(q)),H={[Symbol.toStringTag]:t,[Symbol.isConcatSpreadable]:!0,*[Symbol.iterator](){$();for(let W of B){let M=Z.get(W);if(M)yield M}},get length(){return $(),B.length},keys(){return $(),B.values()},get(){if($(),j.sources){if(j.flags){let W=j.flags&L;if(j.value=E(K),W){if(j.flags=D,Y(j),j.error)throw j.error}else j.flags=T}}else if(Y(j),j.error)throw j.error;return j.value},at(W){$();let M=B[W];return M!==void 0?Z.get(M):void 0},byKey(W){return $(),Z.get(W)},keyAt(W){return $(),B[W]},indexOfKey(W){return $(),B.indexOf(W)},deriveCollection(W){return Az(H,W)}};return H}function WJ(z){return A(z,t)}function HJ(z){h("Effect",z);let J={fn:z,flags:D,sources:null,sourcesTail:null,cleanup:null},X=()=>{Yz(J),J.fn=void 0,J.flags=T,J.sourcesTail=null,Qz(J)};if(b)$z(b,X);return Sz(J),X}function BJ(z,J){if(!b)throw new xz("match");let X=!Array.isArray(z),Z=X?[z]:z,{nil:B,stale:U}=J,N=X?(q)=>J.ok(q[0]):(q)=>J.ok(q),V=X&&J.err?(q)=>J.err(q[0]):J.err??console.error,P,Q=!1,K=Array(Z.length);for(let q=0;q<Z.length;q++)try{K[q]=Z[q].get()}catch($){if($ instanceof Xz){Q=!0;continue}if(!P)P=[];P.push($ instanceof Error?$:Error(String($)))}let j;try{if(Q)j=B?.();else if(P)j=V(P);else if(U&&(X?Vz(Z[0])&&Z[0].isPending():Z.some((q)=>Vz(q)&&q.isPending())))j=U();else j=N(K)}catch(q){j=V([q instanceof Error?q:Error(String(q))])}if(typeof j==="function")return j;if(j instanceof Promise){let q=b,$=new AbortController;$z(q,()=>$.abort()),j.then((H)=>{if(!$.signal.aborted&&typeof H==="function")$z(q,H)}).catch((H)=>{V([H instanceof Error?H:Error(String(H))])})}}function QJ(z,J){if(h(a,z,Wz),J?.value!==void 0)O(a,J.value,J?.guard);let X={value:J?.value,sinks:null,sinksTail:null,equals:J?.equals??y,guard:J?.guard,stop:void 0};return{[Symbol.toStringTag]:a,get(){if(G){if(!X.sinks)X.stop=z((Z)=>{O(a,Z,X.guard),g(X,Z)});f(X,G)}return Bz(a,X.value),X.value}}}function qJ(z){return A(z,a)}function MJ(z,J){let X={},Z={},B={},U=!1,N=Object.keys(z),V=Object.keys(J);for(let P of V)if(P in z){if(!s(z[P],J[P]))Z[P]=J[P],U=!0}else X[P]=J[P],U=!0;for(let P of N)if(!(P in J))B[P]=void 0,U=!0;return{add:X,change:Z,remove:B,changed:U}}function Rz(z,J){O(e,z,k);let X=new Map,Z=(j,q)=>{if(O(`${e} for key "${j}"`,q),Array.isArray(q))X.set(j,qz(q));else if(k(q))X.set(j,Rz(q));else X.set(j,o(q))},B=(j)=>{if(Array.isArray(j))return"list";if(k(j))return"store";return"state"},U=(j)=>{if(Pz(j))return"list";if(fz(j))return"store";return"state"},N=()=>{let j={};for(let[q,$]of X)j[q]=$.get();return j},V={fn:N,value:z,flags:D,sources:null,sourcesTail:null,sinks:null,sinksTail:null,equals:s,error:void 0},P=(j)=>{let q=!1;for(let H in j.add)Z(H,j.add[H]),q=!0;let $=!1;for(let H in j.change){$=!0;break}if($)d(()=>{for(let H in j.change){let W=j.change[H];O(`${e} for key "${H}"`,W);let M=X.get(H);if(M)if(B(W)!==U(M))Z(H,W),q=!0;else M.set(W)}});for(let H in j.remove)X.delete(H),q=!0;if(q)V.flags|=L;return j.changed},Q=v(V,J?.watched);for(let j of Object.keys(z))Z(j,z[j]);let K={[Symbol.toStringTag]:e,[Symbol.isConcatSpreadable]:!1,*[Symbol.iterator](){Q();for(let[j,q]of X)yield[j,q]},keys(){return Q(),X.keys()},byKey(j){return X.get(j)},get(){if(Q(),V.sources){if(V.flags){let j=V.flags&L;if(V.value=E(N),j){if(V.flags=D,Y(V),V.error)throw V.error}else V.flags=T}}else if(Y(V),V.error)throw V.error;return V.value},set(j){let q=V.flags&D?E(N):V.value,$=MJ(q,j);if(P($)){V.flags|=D;for(let H=V.sinks;H;H=H.nextSink)w(H.sink);if(x===0)m()}},update(j){K.set(j(K.get()))},add(j,q){if(X.has(j))throw new u(e,j,q);Z(j,q),V.flags|=D|L;for(let $=V.sinks;$;$=$.nextSink)w($.sink);if(x===0)m();return j},remove(j){if(X.delete(j)){V.flags|=D|L;for(let $=V.sinks;$;$=$.nextSink)w($.sink);if(x===0)m()}}};return new Proxy(K,{get(j,q){if(q in j)return Reflect.get(j,q);if(typeof q!=="symbol")return j.byKey(q)},has(j,q){if(q in j)return!0;return j.byKey(String(q))!==void 0},ownKeys(j){return Array.from(j.keys())},getOwnPropertyDescriptor(j,q){if(q in j)return Reflect.getOwnPropertyDescriptor(j,q);if(typeof q==="symbol")return;let $=j.byKey(String(q));return $?{enumerable:!0,configurable:!0,writable:!0,value:$}:void 0}})}function fz(z){return A(z,e)}var UJ=new Set([r,l,n,a,zz,_,t,e]);function VJ(z,J){return Jz(z)?Uz(z,J):Mz(z,J)}function NJ(z){if(Kz(z))return z;if(z==null)throw new Hz("createSignal",z);if(Jz(z))return Uz(z);if(c(z))return Mz(z);if(Array.isArray(z)&&z.every((J)=>J!=null))return qz(z);if(k(z))return Rz(z);return o(z)}function DJ(z){if(lz(z))return z;if(z==null||c(z)||Kz(z))throw new Hz("createMutableSignal",z);if(Array.isArray(z)&&z.every((J)=>J!=null))return qz(z);if(k(z))return Rz(z);return o(z)}function GJ(z){return pz(z)||Vz(z)}function Kz(z){return z!=null&&UJ.has(z[Symbol.toStringTag])}function lz(z){return Gz(z)||fz(z)||Pz(z)}var yz=new WeakSet;function tz(z){if(Kz(z))return!0;return z!==null&&typeof z==="object"&&"get"in z&&typeof z.get==="function"}function PJ(z,J){O(zz,z,tz);let X=z,Z=J?.guard,B={fn:()=>X.get(),value:void 0,flags:D,sources:null,sourcesTail:null,sinks:null,sinksTail:null,equals:J?.equals??y,error:void 0},U=()=>{if(G)f(B,G);if(Y(B),B.error)throw B.error;return B.value},N=(P)=>{if(yz.has(B))throw Error("[Slot] Circular delegation detected in set()");yz.add(B);try{if(sz(X))return void X.set(P);if("set"in X&&typeof X.set==="function")O(zz,P,Z),X.set(P);else throw new Cz(zz)}finally{yz.delete(B)}},V=(P)=>{O(zz,P,tz),X=P,B.flags|=D;for(let Q=B.sinks;Q;Q=Q.nextSink)w(Q.sink);if(x===0)m()};return{[Symbol.toStringTag]:zz,configurable:!0,enumerable:!0,get:U,set:N,replace:V,current:()=>X}}function sz(z){return A(z,zz)}export{Oz as valueString,E as untrack,XJ as unown,BJ as match,Vz as isTask,fz as isStore,Gz as isState,sz as isSlot,A as isSignalOfType,Kz as isSignal,qJ as isSensor,k as isRecord,oz as isObjectOfType,lz as isMutableSignal,pz as isMemo,Pz as isList,c as isFunction,rz as isEqual,GJ as isComputed,WJ as isCollection,Jz as isAsyncFunction,Uz as createTask,Rz as createStore,o as createState,PJ as createSlot,NJ as createSignal,QJ as createSensor,JJ as createScope,DJ as createMutableSignal,Mz as createMemo,qz as createList,HJ as createEffect,VJ as createComputed,jJ as createCollection,d as batch,Xz as UnsetSignalValueError,Ez as SKIP_EQUALITY,xz as RequiredOwnerError,Cz as ReadonlySignalError,Fz as PromiseValueError,Nz as NullishSignalValueError,Hz as InvalidSignalValueError,Lz as InvalidCallbackError,u as DuplicateKeyError,y as DEFAULT_EQUALITY,s as DEEP_EQUALITY,wz as CircularDependencyError};
+// src/util.ts
+var ASYNC_FUNCTION_PROTO = Object.getPrototypeOf(async () => {});
+function isFunction(fn) {
+  return typeof fn === "function";
+}
+function isAsyncFunction(fn) {
+  return isFunction(fn) && Object.getPrototypeOf(fn) === ASYNC_FUNCTION_PROTO;
+}
+function isSyncFunction(fn) {
+  return isFunction(fn) && Object.getPrototypeOf(fn) !== ASYNC_FUNCTION_PROTO;
+}
+function isObjectOfType(value, type) {
+  return Object.prototype.toString.call(value) === `[object ${type}]`;
+}
+function isSignalOfType(value, type) {
+  return value != null && value[Symbol.toStringTag] === type;
+}
+function isRecord(value) {
+  return value !== null && typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype;
+}
+function valueString(value) {
+  if (typeof value === "string")
+    return `"${value}"`;
+  if (value != null && typeof value === "object") {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
+}
+
+// src/errors.ts
+class CircularDependencyError extends Error {
+  constructor(where) {
+    super(`[${where}] Circular dependency detected`);
+    this.name = "CircularDependencyError";
+  }
+}
+
+class EffectConvergenceError extends Error {
+  constructor(passes) {
+    super(`[Effect] Effects did not settle after ${passes} flush passes — check for effects that write to signals they depend on`);
+    this.name = "EffectConvergenceError";
+  }
+}
+
+class NullishSignalValueError extends TypeError {
+  constructor(where) {
+    super(`[${where}] Signal value cannot be null or undefined`);
+    this.name = "NullishSignalValueError";
+  }
+}
+
+class UnsetSignalValueError extends Error {
+  constructor(where) {
+    super(`[${where}] Signal value is unset`);
+    this.name = "UnsetSignalValueError";
+  }
+}
+
+class InvalidSignalValueError extends TypeError {
+  constructor(where, value) {
+    super(`[${where}] Signal value ${valueString(value)} is invalid`);
+    this.name = "InvalidSignalValueError";
+  }
+}
+
+class InvalidCallbackError extends TypeError {
+  constructor(where, value) {
+    super(`[${where}] Callback ${valueString(value)} is invalid`);
+    this.name = "InvalidCallbackError";
+  }
+}
+
+class ReadonlySignalError extends Error {
+  constructor(where) {
+    super(`[${where}] Signal is read-only`);
+    this.name = "ReadonlySignalError";
+  }
+}
+
+class RequiredOwnerError extends Error {
+  constructor(where) {
+    super(`[${where}] Active owner is required`);
+    this.name = "RequiredOwnerError";
+  }
+}
+
+class PromiseValueError extends TypeError {
+  constructor(where) {
+    super(`[${where}] Callback returned a Promise — use an async callback to create a Task instead`);
+    this.name = "PromiseValueError";
+  }
+}
+
+class DuplicateKeyError extends Error {
+  constructor(where, key, value) {
+    super(`[${where}] Could not add key "${key}"${value != null ? ` with value ${JSON.stringify(value)}` : ""} because it already exists`);
+    this.name = "DuplicateKeyError";
+  }
+}
+
+class InvalidStoreMutationError extends TypeError {
+  constructor(prop, action) {
+    const guidance = action === "delete" ? `use store.remove(${JSON.stringify(prop)})` : `use store.${prop}.set(value), store.set(next), or store.add(key, value)`;
+    super(`[Store] Cannot ${action} property "${prop}" directly — ${guidance}`);
+    this.name = "InvalidStoreMutationError";
+  }
+}
+function validateSignalValue(where, value, guard) {
+  if (value == null)
+    throw new NullishSignalValueError(where);
+  if (guard && !guard(value))
+    throw new InvalidSignalValueError(where, value);
+}
+function validateReadValue(where, value) {
+  if (value == null)
+    throw new UnsetSignalValueError(where);
+}
+function validateCallback(where, value, guard = isFunction) {
+  if (!guard(value))
+    throw new InvalidCallbackError(where, value);
+}
+// src/graph.ts
+var TYPE_STATE = "State";
+var TYPE_MEMO = "Memo";
+var TYPE_TASK = "Task";
+var TYPE_SENSOR = "Sensor";
+var TYPE_LIST = "List";
+var TYPE_COLLECTION = "Collection";
+var TYPE_STORE = "Store";
+var TYPE_SLOT = "Slot";
+var FLAG_CLEAN = 0;
+var FLAG_CHECK = 1 << 0;
+var FLAG_DIRTY = 1 << 1;
+var FLAG_RUNNING = 1 << 2;
+var FLAG_RELINK = 1 << 3;
+var activeSink = null;
+var activeOwner = null;
+var queuedEffects = [];
+var batchDepth = 0;
+var flushing = false;
+var DEFAULT_EQUALITY = (a, b) => a === b;
+var SKIP_EQUALITY = (_a, _b) => false;
+var deepEqual = (a, b) => deepEqualInner(a, b, new WeakSet);
+var deepEqualInner = (a, b, seen) => {
+  if (Object.is(a, b))
+    return true;
+  if (typeof a !== typeof b)
+    return false;
+  if (a == null || typeof a !== "object" || b == null || typeof b !== "object")
+    return false;
+  if (seen.has(a))
+    return true;
+  seen.add(a);
+  try {
+    const aIsArray = Array.isArray(a);
+    if (aIsArray !== Array.isArray(b))
+      return false;
+    if (aIsArray) {
+      const aa = a;
+      const ba = b;
+      if (aa.length !== ba.length)
+        return false;
+      for (let i = 0;i < aa.length; i++)
+        if (!deepEqualInner(aa[i], ba[i], seen))
+          return false;
+      return true;
+    }
+    if (a instanceof Date && b instanceof Date)
+      return a.getTime() === b.getTime();
+    if (a instanceof RegExp && b instanceof RegExp)
+      return a.source === b.source && a.flags === b.flags;
+    if (isRecord(a) && isRecord(b)) {
+      const aKeys = Object.keys(a);
+      if (aKeys.length !== Object.keys(b).length)
+        return false;
+      for (const key of aKeys) {
+        if (!(key in b))
+          return false;
+        if (!deepEqualInner(a[key], b[key], seen))
+          return false;
+      }
+      return true;
+    }
+    return false;
+  } finally {
+    seen.delete(a);
+  }
+};
+var DEEP_EQUALITY = (a, b) => deepEqual(a, b);
+var isEqual = DEEP_EQUALITY;
+function isValidEdge(checkEdge, node) {
+  const sourcesTail = node.sourcesTail;
+  if (sourcesTail) {
+    let edge = node.sources;
+    while (edge) {
+      if (edge === checkEdge)
+        return true;
+      if (edge === sourcesTail)
+        break;
+      edge = edge.nextSource;
+    }
+  }
+  return false;
+}
+function link(source, sink) {
+  const prevSource = sink.sourcesTail;
+  if (prevSource?.source === source)
+    return;
+  let nextSource = null;
+  const isRecomputing = sink.flags & FLAG_RUNNING;
+  if (isRecomputing) {
+    nextSource = prevSource ? prevSource.nextSource : sink.sources;
+    if (nextSource?.source === source) {
+      sink.sourcesTail = nextSource;
+      return;
+    }
+  }
+  const prevSink = source.sinksTail;
+  if (prevSink?.sink === sink && (!isRecomputing || isValidEdge(prevSink, sink)))
+    return;
+  const newEdge = { source, sink, nextSource, prevSink, nextSink: null };
+  sink.sourcesTail = source.sinksTail = newEdge;
+  if (prevSource)
+    prevSource.nextSource = newEdge;
+  else
+    sink.sources = newEdge;
+  if (prevSink)
+    prevSink.nextSink = newEdge;
+  else
+    source.sinks = newEdge;
+}
+function unlink(edge) {
+  const { source, nextSource, nextSink, prevSink } = edge;
+  if (nextSink)
+    nextSink.prevSink = prevSink;
+  else
+    source.sinksTail = prevSink;
+  if (prevSink)
+    prevSink.nextSink = nextSink;
+  else
+    source.sinks = nextSink;
+  if (!source.sinks) {
+    if (source.stop) {
+      source.stop();
+      source.stop = undefined;
+    }
+    if ("sources" in source && source.sources) {
+      const sinkNode = source;
+      sinkNode.sourcesTail = null;
+      trimSources(sinkNode);
+      sinkNode.flags |= FLAG_DIRTY;
+    }
+  }
+  return nextSource;
+}
+function trimSources(node) {
+  const tail = node.sourcesTail;
+  let source = tail ? tail.nextSource : node.sources;
+  while (source)
+    source = unlink(source);
+  if (tail)
+    tail.nextSource = null;
+  else
+    node.sources = null;
+}
+function propagate(node, newFlag = FLAG_DIRTY) {
+  const flags = node.flags;
+  if ("sinks" in node) {
+    if ((flags & (FLAG_DIRTY | FLAG_CHECK)) >= newFlag)
+      return;
+    node.flags = flags | newFlag;
+    if ("controller" in node && node.controller) {
+      node.controller.abort();
+      node.controller = undefined;
+    }
+    for (let e = node.sinks;e; e = e.nextSink)
+      propagate(e.sink, FLAG_CHECK);
+  } else {
+    if ((flags & (FLAG_DIRTY | FLAG_CHECK)) >= newFlag)
+      return;
+    const wasQueued = flags & (FLAG_DIRTY | FLAG_CHECK);
+    node.flags = flags & FLAG_RUNNING | newFlag;
+    if (!wasQueued)
+      queuedEffects.push(node);
+  }
+}
+function setState(node, next) {
+  if (node.equals(node.value, next))
+    return;
+  node.value = next;
+  for (let e = node.sinks;e; e = e.nextSink)
+    propagate(e.sink);
+  if (batchDepth === 0)
+    flush();
+}
+function registerCleanup(owner, fn) {
+  if (!owner.cleanup)
+    owner.cleanup = fn;
+  else if (Array.isArray(owner.cleanup))
+    owner.cleanup.push(fn);
+  else
+    owner.cleanup = [owner.cleanup, fn];
+}
+function runCleanup(owner) {
+  if (!owner.cleanup)
+    return;
+  if (Array.isArray(owner.cleanup))
+    for (let i = 0;i < owner.cleanup.length; i++)
+      owner.cleanup[i]();
+  else
+    owner.cleanup();
+  owner.cleanup = null;
+}
+function recomputeMemo(node) {
+  const prevWatcher = activeSink;
+  activeSink = node;
+  node.sourcesTail = null;
+  node.flags = FLAG_RUNNING;
+  let changed = false;
+  try {
+    const next = node.fn(node.value);
+    if (next instanceof Promise)
+      throw new PromiseValueError(TYPE_MEMO);
+    if (node.error || !node.equals(next, node.value)) {
+      node.value = next;
+      node.error = undefined;
+      changed = true;
+    }
+  } catch (err) {
+    changed = true;
+    node.error = err instanceof Error ? err : new Error(String(err));
+  } finally {
+    activeSink = prevWatcher;
+    trimSources(node);
+  }
+  if (changed) {
+    for (let e = node.sinks;e; e = e.nextSink)
+      if (e.sink.flags & FLAG_CHECK)
+        e.sink.flags |= FLAG_DIRTY;
+  }
+  node.flags = FLAG_CLEAN;
+}
+function recomputeTask(node) {
+  node.controller?.abort();
+  const controller = new AbortController;
+  node.controller = controller;
+  node.error = undefined;
+  const prevWatcher = activeSink;
+  activeSink = node;
+  node.sourcesTail = null;
+  node.flags = FLAG_RUNNING;
+  let promise;
+  try {
+    promise = node.fn(node.value, controller.signal);
+  } catch (err) {
+    node.controller = undefined;
+    node.error = err instanceof Error ? err : new Error(String(err));
+    node.flags = FLAG_CLEAN;
+    setState(node.pendingNode, false);
+    return;
+  } finally {
+    activeSink = prevWatcher;
+    trimSources(node);
+  }
+  setState(node.pendingNode, true);
+  promise.then((next) => {
+    if (controller.signal.aborted)
+      return;
+    node.controller = undefined;
+    batch(() => {
+      if (node.error || !node.equals(next, node.value)) {
+        node.value = next;
+        node.error = undefined;
+        for (let e = node.sinks;e; e = e.nextSink)
+          propagate(e.sink);
+      }
+      setState(node.pendingNode, false);
+    });
+  }, (err) => {
+    if (controller.signal.aborted)
+      return;
+    node.controller = undefined;
+    const error = err instanceof Error ? err : new Error(String(err));
+    batch(() => {
+      if (!node.error || error.name !== node.error.name || error.message !== node.error.message) {
+        node.error = error;
+        for (let e = node.sinks;e; e = e.nextSink)
+          propagate(e.sink);
+      }
+      setState(node.pendingNode, false);
+    });
+  });
+  node.flags = FLAG_CLEAN;
+}
+function runEffect(node) {
+  runCleanup(node);
+  const prevContext = activeSink;
+  const prevOwner = activeOwner;
+  activeSink = activeOwner = node;
+  node.sourcesTail = null;
+  node.flags = FLAG_RUNNING;
+  try {
+    const out = node.fn();
+    if (typeof out === "function")
+      registerCleanup(node, out);
+  } finally {
+    activeSink = prevContext;
+    activeOwner = prevOwner;
+    trimSources(node);
+    node.flags &= FLAG_DIRTY | FLAG_CHECK;
+  }
+}
+function refresh(node) {
+  if (node.flags & FLAG_CHECK) {
+    for (let e = node.sources;e; e = e.nextSource) {
+      if ("fn" in e.source)
+        refresh(e.source);
+      if (node.flags & FLAG_DIRTY)
+        break;
+    }
+  }
+  if (node.flags & FLAG_RUNNING) {
+    throw new CircularDependencyError("controller" in node ? TYPE_TASK : ("value" in node) ? TYPE_MEMO : "Effect");
+  }
+  if (node.flags & FLAG_DIRTY) {
+    if ("controller" in node)
+      recomputeTask(node);
+    else if ("value" in node)
+      recomputeMemo(node);
+    else
+      runEffect(node);
+  } else {
+    node.flags = FLAG_CLEAN;
+  }
+}
+var MAX_FLUSH_PASSES = 1000;
+function flush() {
+  if (flushing)
+    return;
+  flushing = true;
+  let errors;
+  let passes = 0;
+  try {
+    while (queuedEffects.length > 0) {
+      if (++passes > MAX_FLUSH_PASSES) {
+        queuedEffects.length = 0;
+        if (!errors)
+          errors = [];
+        errors.push(new EffectConvergenceError(MAX_FLUSH_PASSES));
+        break;
+      }
+      const batch = queuedEffects.slice();
+      queuedEffects.length = 0;
+      for (let i = 0;i < batch.length; i++) {
+        const effect = batch[i];
+        if (effect.flags & FLAG_RUNNING)
+          continue;
+        if (effect.flags & (FLAG_DIRTY | FLAG_CHECK)) {
+          try {
+            refresh(effect);
+          } catch (err) {
+            if (!errors)
+              errors = [];
+            errors.push(err);
+          }
+        }
+      }
+    }
+  } finally {
+    flushing = false;
+  }
+  if (errors) {
+    if (errors.length === 1)
+      throw errors[0];
+    throw new AggregateError(errors, "Multiple effects threw during flush");
+  }
+}
+function scheduleEffect(node) {
+  if (node.flags & (FLAG_DIRTY | FLAG_CHECK)) {
+    queuedEffects.push(node);
+    if (batchDepth === 0)
+      flush();
+  }
+}
+function batch(fn) {
+  batchDepth++;
+  try {
+    fn();
+  } finally {
+    batchDepth--;
+    if (batchDepth === 0)
+      flush();
+  }
+}
+function untrack(fn) {
+  const prev = activeSink;
+  activeSink = null;
+  try {
+    return fn();
+  } finally {
+    activeSink = prev;
+  }
+}
+function createScope(fn, options) {
+  const prevOwner = activeOwner;
+  const scope = { cleanup: null };
+  activeOwner = scope;
+  const dispose = () => runCleanup(scope);
+  try {
+    const out = fn();
+    if (typeof out === "function")
+      registerCleanup(scope, out);
+    return dispose;
+  } finally {
+    activeOwner = prevOwner;
+    if (!options?.root && prevOwner)
+      registerCleanup(prevOwner, dispose);
+  }
+}
+function unown(fn) {
+  const prev = activeOwner;
+  activeOwner = null;
+  try {
+    return fn();
+  } finally {
+    activeOwner = prev;
+  }
+}
+function makeSubscribe(node, onWatch) {
+  return onWatch ? () => {
+    if (activeSink) {
+      if (!node.sinks)
+        node.stop = onWatch();
+      link(node, activeSink);
+    }
+  } : () => {
+    if (activeSink)
+      link(node, activeSink);
+  };
+}
+// src/nodes/state.ts
+function createState(value, options) {
+  validateSignalValue(TYPE_STATE, value, options?.guard);
+  const node = {
+    value,
+    sinks: null,
+    sinksTail: null,
+    equals: options?.equals ?? DEFAULT_EQUALITY,
+    guard: options?.guard
+  };
+  return {
+    [Symbol.toStringTag]: TYPE_STATE,
+    get() {
+      if (activeSink)
+        link(node, activeSink);
+      return node.value;
+    },
+    set(next) {
+      validateSignalValue(TYPE_STATE, next, node.guard);
+      setState(node, next);
+    },
+    update(fn) {
+      validateCallback(TYPE_STATE, fn);
+      const next = fn(node.value);
+      validateSignalValue(TYPE_STATE, next, node.guard);
+      setState(node, next);
+    }
+  };
+}
+function isState(value) {
+  return isSignalOfType(value, TYPE_STATE);
+}
+
+// src/nodes/list.ts
+function keysEqual(a, b) {
+  if (a.length !== b.length)
+    return false;
+  for (let i = 0;i < a.length; i++)
+    if (a[i] !== b[i])
+      return false;
+  return true;
+}
+function getKeyGenerator(keyConfig) {
+  let keyCounter = 0;
+  const contentBased = typeof keyConfig === "function";
+  return [
+    typeof keyConfig === "string" ? () => `${keyConfig}${keyCounter++}` : contentBased ? (item) => keyConfig(item) || String(keyCounter++) : () => String(keyCounter++),
+    contentBased
+  ];
+}
+function diffPositional(prev, next, prevKeys, generateKey, itemEquals) {
+  const add = {};
+  const change = {};
+  const remove = {};
+  const nextKeys = [];
+  let changed = false;
+  const minLen = Math.min(prev.length, next.length);
+  for (let i = 0;i < minLen; i++) {
+    const key = prevKeys[i];
+    nextKeys.push(key);
+    if (!itemEquals(prev[i], next[i])) {
+      change[key] = next[i];
+      changed = true;
+    }
+  }
+  for (let i = minLen;i < next.length; i++) {
+    const val = next[i];
+    const key = generateKey(val);
+    nextKeys.push(key);
+    add[key] = val;
+    changed = true;
+  }
+  for (let i = minLen;i < prev.length; i++) {
+    remove[prevKeys[i]] = null;
+    changed = true;
+  }
+  return { add, change, remove, newKeys: nextKeys, changed };
+}
+function diffArrays(prev, next, prevKeys, generateKey, contentBased, itemEquals) {
+  if (!contentBased)
+    return diffPositional(prev, next, prevKeys, generateKey, itemEquals);
+  const add = {};
+  const change = {};
+  const remove = {};
+  const nextKeys = [];
+  let changed = false;
+  const prevByKey = new Map;
+  for (let i = 0;i < prev.length; i++) {
+    const key = prevKeys[i];
+    const item = prev[i];
+    if (key && item !== undefined)
+      prevByKey.set(key, item);
+  }
+  const seenKeys = new Set;
+  for (let i = 0;i < next.length; i++) {
+    const val = next[i];
+    validateSignalValue(`${TYPE_LIST} item at index ${i}`, val);
+    const key = generateKey(val);
+    if (seenKeys.has(key))
+      throw new DuplicateKeyError(TYPE_LIST, key, val);
+    nextKeys.push(key);
+    seenKeys.add(key);
+    if (!prevByKey.has(key)) {
+      add[key] = val;
+      changed = true;
+    } else if (!itemEquals(prevByKey.get(key), val)) {
+      change[key] = val;
+      changed = true;
+    }
+  }
+  for (const [key] of prevByKey) {
+    if (!seenKeys.has(key)) {
+      remove[key] = null;
+      changed = true;
+    }
+  }
+  if (!changed && !keysEqual(prevKeys, nextKeys))
+    changed = true;
+  return { add, change, remove, newKeys: nextKeys, changed };
+}
+function createList(value, options) {
+  validateSignalValue(TYPE_LIST, value, Array.isArray);
+  const signals = new Map;
+  let keys = [];
+  const [generateKey, contentBased] = getKeyGenerator(options?.keyConfig);
+  const itemEquals = options?.itemEquals ?? DEEP_EQUALITY;
+  const itemFactory = options?.createItem ?? ((item) => createState(item, { equals: itemEquals }));
+  const buildValue = () => {
+    const result = [];
+    for (const key of keys) {
+      const v = signals.get(key)?.get();
+      if (v !== undefined)
+        result.push(v);
+    }
+    return result;
+  };
+  const node = {
+    fn: buildValue,
+    value,
+    flags: FLAG_DIRTY,
+    sources: null,
+    sourcesTail: null,
+    sinks: null,
+    sinksTail: null,
+    equals: DEEP_EQUALITY,
+    error: undefined
+  };
+  const applyChanges = (changes) => {
+    let structural = false;
+    for (const key in changes.add) {
+      const val = changes.add[key];
+      validateSignalValue(`${TYPE_LIST} item for key "${key}"`, val);
+      signals.set(key, itemFactory(val));
+      structural = true;
+    }
+    let hasChange = false;
+    for (const _key in changes.change) {
+      hasChange = true;
+      break;
+    }
+    if (hasChange) {
+      batch(() => {
+        for (const key in changes.change) {
+          const val = changes.change[key];
+          validateSignalValue(`${TYPE_LIST} item for key "${key}"`, val);
+          const signal = signals.get(key);
+          if (signal)
+            signal.set(val);
+        }
+      });
+    }
+    for (const key in changes.remove) {
+      signals.delete(key);
+      const index = keys.indexOf(key);
+      if (index !== -1)
+        keys.splice(index, 1);
+      structural = true;
+    }
+    if (structural)
+      node.flags |= FLAG_RELINK;
+    return changes.changed;
+  };
+  const subscribe = makeSubscribe(node, options?.watched);
+  for (let i = 0;i < value.length; i++) {
+    const val = value[i];
+    if (val == null)
+      throw new NullishSignalValueError(`${TYPE_LIST} item ${i}`);
+    let key = keys[i];
+    if (!key) {
+      key = generateKey(val);
+      keys[i] = key;
+    }
+    signals.set(key, itemFactory(val));
+  }
+  node.value = value;
+  node.flags = 0;
+  const list = {
+    [Symbol.toStringTag]: TYPE_LIST,
+    [Symbol.isConcatSpreadable]: true,
+    *[Symbol.iterator]() {
+      subscribe();
+      for (const key of keys) {
+        const signal = signals.get(key);
+        if (signal)
+          yield signal;
+      }
+    },
+    get length() {
+      subscribe();
+      return keys.length;
+    },
+    get() {
+      subscribe();
+      if (node.sources) {
+        if (node.flags) {
+          const relink = node.flags & FLAG_RELINK;
+          node.value = untrack(buildValue);
+          if (relink) {
+            node.flags = FLAG_DIRTY;
+            refresh(node);
+            if (node.error)
+              throw node.error;
+          } else {
+            node.flags = FLAG_CLEAN;
+          }
+        }
+      } else {
+        refresh(node);
+        if (node.error)
+          throw node.error;
+      }
+      return node.value;
+    },
+    set(next) {
+      const prev = node.flags & FLAG_DIRTY ? untrack(buildValue) : node.value;
+      const changes = diffArrays(prev, next, keys, generateKey, contentBased, itemEquals);
+      if (changes.changed) {
+        keys = changes.newKeys;
+        applyChanges(changes);
+        node.flags |= FLAG_DIRTY;
+        for (let e = node.sinks;e; e = e.nextSink)
+          propagate(e.sink);
+        if (batchDepth === 0)
+          flush();
+      }
+    },
+    update(fn) {
+      list.set(fn(untrack(() => list.get())));
+    },
+    at(index) {
+      subscribe();
+      const key = keys[index];
+      return key !== undefined ? signals.get(key) : undefined;
+    },
+    keys() {
+      subscribe();
+      return keys.values();
+    },
+    byKey(key) {
+      subscribe();
+      return signals.get(key);
+    },
+    keyAt(index) {
+      subscribe();
+      return keys[index];
+    },
+    indexOfKey(key) {
+      subscribe();
+      return keys.indexOf(key);
+    },
+    add(value2) {
+      const key = generateKey(value2);
+      if (signals.has(key))
+        throw new DuplicateKeyError(TYPE_LIST, key, value2);
+      keys.push(key);
+      validateSignalValue(`${TYPE_LIST} item for key "${key}"`, value2);
+      signals.set(key, itemFactory(value2));
+      node.flags |= FLAG_DIRTY | FLAG_RELINK;
+      for (let e = node.sinks;e; e = e.nextSink)
+        propagate(e.sink);
+      if (batchDepth === 0)
+        flush();
+      return key;
+    },
+    remove(keyOrIndex) {
+      const key = typeof keyOrIndex === "number" ? keys[keyOrIndex] : keyOrIndex;
+      if (key === undefined)
+        return;
+      const ok = signals.delete(key);
+      if (ok) {
+        const index = typeof keyOrIndex === "number" ? keyOrIndex : keys.indexOf(key);
+        if (index >= 0)
+          keys.splice(index, 1);
+        node.flags |= FLAG_DIRTY | FLAG_RELINK;
+        for (let e = node.sinks;e; e = e.nextSink)
+          propagate(e.sink);
+        if (batchDepth === 0)
+          flush();
+      }
+    },
+    replace(key, value2) {
+      const signal = signals.get(key);
+      if (!signal)
+        return;
+      validateSignalValue(`${TYPE_LIST} item for key "${key}"`, value2);
+      if (itemEquals(untrack(() => signal.get()), value2))
+        return;
+      batch(() => {
+        signal.set(value2);
+        node.flags |= FLAG_DIRTY;
+        for (let e = node.sinks;e; e = e.nextSink)
+          propagate(e.sink);
+      });
+      if (batchDepth === 0)
+        flush();
+    },
+    sort(compareFn) {
+      const entries = [];
+      untrack(() => {
+        for (const key of keys) {
+          const v = signals.get(key)?.get();
+          if (v !== undefined)
+            entries.push([key, v]);
+        }
+      });
+      entries.sort(isFunction(compareFn) ? (a, b) => compareFn(a[1], b[1]) : (a, b) => String(a[1]).localeCompare(String(b[1])));
+      const newOrder = [];
+      for (const [key] of entries)
+        newOrder.push(key);
+      if (!keysEqual(keys, newOrder)) {
+        keys = newOrder;
+        node.flags |= FLAG_DIRTY;
+        for (let e = node.sinks;e; e = e.nextSink)
+          propagate(e.sink);
+        if (batchDepth === 0)
+          flush();
+      }
+    },
+    splice(start, deleteCount, ...items) {
+      const length = keys.length;
+      const actualStart = start < 0 ? Math.max(0, length + start) : Math.min(start, length);
+      const actualDeleteCount = Math.max(0, Math.min(deleteCount ?? Math.max(0, length - Math.max(0, actualStart)), length - actualStart));
+      const add = {};
+      const remove = {};
+      let hasRemove = false;
+      untrack(() => {
+        for (let i = 0;i < actualDeleteCount; i++) {
+          const index = actualStart + i;
+          const key = keys[index];
+          if (key) {
+            const signal = signals.get(key);
+            if (signal) {
+              remove[key] = signal.get();
+              hasRemove = true;
+            }
+          }
+        }
+      });
+      const newOrder = keys.slice(0, actualStart);
+      const change = {};
+      let hasAdd = false;
+      let hasChange = false;
+      for (const item of items) {
+        const key = generateKey(item);
+        if (key in remove) {
+          delete remove[key];
+          change[key] = item;
+          hasChange = true;
+        } else if (signals.has(key)) {
+          throw new DuplicateKeyError(TYPE_LIST, key, item);
+        } else {
+          add[key] = item;
+          hasAdd = true;
+        }
+        newOrder.push(key);
+      }
+      newOrder.push(...keys.slice(actualStart + actualDeleteCount));
+      const changed = hasAdd || hasRemove || hasChange;
+      if (changed) {
+        applyChanges({
+          add,
+          change,
+          remove,
+          changed
+        });
+        keys = newOrder;
+        node.flags |= FLAG_DIRTY;
+        for (let e = node.sinks;e; e = e.nextSink)
+          propagate(e.sink);
+        if (batchDepth === 0)
+          flush();
+      }
+      return Object.values(remove);
+    },
+    deriveCollection(cb) {
+      return deriveCollection(list, cb);
+    }
+  };
+  return list;
+}
+function isList(value) {
+  return isSignalOfType(value, TYPE_LIST);
+}
+
+// src/nodes/memo.ts
+function createMemo(fn, options) {
+  validateCallback(TYPE_MEMO, fn, isSyncFunction);
+  if (options?.value !== undefined)
+    validateSignalValue(TYPE_MEMO, options.value, options?.guard);
+  const node = {
+    fn,
+    value: options?.value,
+    flags: FLAG_DIRTY,
+    sources: null,
+    sourcesTail: null,
+    sinks: null,
+    sinksTail: null,
+    equals: options?.equals ?? DEFAULT_EQUALITY,
+    error: undefined,
+    stop: undefined
+  };
+  const watched = options?.watched;
+  const subscribe = makeSubscribe(node, watched ? () => watched(() => {
+    propagate(node);
+    if (batchDepth === 0)
+      flush();
+  }) : undefined);
+  return {
+    [Symbol.toStringTag]: TYPE_MEMO,
+    get() {
+      subscribe();
+      refresh(node);
+      if (node.error)
+        throw node.error;
+      validateReadValue(TYPE_MEMO, node.value);
+      return node.value;
+    }
+  };
+}
+function isMemo(value) {
+  return isSignalOfType(value, TYPE_MEMO);
+}
+
+// src/nodes/task.ts
+function createTask(fn, options) {
+  validateCallback(TYPE_TASK, fn, isAsyncFunction);
+  if (options?.value !== undefined)
+    validateSignalValue(TYPE_TASK, options.value, options?.guard);
+  const pendingNode = {
+    value: false,
+    sinks: null,
+    sinksTail: null,
+    equals: DEFAULT_EQUALITY
+  };
+  const node = {
+    fn,
+    value: options?.value,
+    sources: null,
+    sourcesTail: null,
+    sinks: null,
+    sinksTail: null,
+    flags: FLAG_DIRTY,
+    equals: options?.equals ?? DEFAULT_EQUALITY,
+    controller: undefined,
+    error: undefined,
+    stop: undefined,
+    pendingNode
+  };
+  const watched = options?.watched;
+  const subscribe = makeSubscribe(node, watched ? () => watched(() => {
+    propagate(node);
+    if (batchDepth === 0)
+      flush();
+  }) : undefined);
+  const pendingSubscribe = makeSubscribe(pendingNode);
+  return {
+    [Symbol.toStringTag]: TYPE_TASK,
+    get() {
+      subscribe();
+      refresh(node);
+      if (node.error)
+        throw node.error;
+      validateReadValue(TYPE_TASK, node.value);
+      return node.value;
+    },
+    isPending() {
+      pendingSubscribe();
+      return node.pendingNode.value;
+    },
+    abort() {
+      node.controller?.abort();
+      node.controller = undefined;
+      setState(node.pendingNode, false);
+    }
+  };
+}
+function isTask(value) {
+  return isSignalOfType(value, TYPE_TASK);
+}
+
+// src/nodes/collection.ts
+function deriveCollection(source, callback) {
+  validateCallback(TYPE_COLLECTION, callback);
+  const isAsync = isAsyncFunction(callback);
+  const signals = new Map;
+  let keys = [];
+  const addSignal = (key) => {
+    const signal = isAsync ? createTask(async (prev, abort) => {
+      const itemSignal = untrack(() => source.byKey(key));
+      if (!itemSignal)
+        return prev;
+      const sourceValue = itemSignal.get();
+      if (sourceValue == null)
+        return prev;
+      return callback(sourceValue, abort);
+    }) : createMemo(() => {
+      const itemSignal = untrack(() => source.byKey(key));
+      if (!itemSignal)
+        return;
+      const sourceValue = itemSignal.get();
+      if (sourceValue == null)
+        return;
+      return callback(sourceValue);
+    });
+    signals.set(key, signal);
+  };
+  function syncKeys(nextKeys) {
+    if (!keysEqual(keys, nextKeys)) {
+      const nextSet = new Set(nextKeys);
+      for (const key of keys)
+        if (!nextSet.has(key))
+          signals.delete(key);
+      for (const key of nextKeys)
+        if (!signals.has(key))
+          addSignal(key);
+      keys = nextKeys;
+      node.flags |= FLAG_RELINK;
+    }
+  }
+  function buildValue() {
+    syncKeys(Array.from(source.keys()));
+    const result = [];
+    for (const key of keys) {
+      try {
+        const v = signals.get(key)?.get();
+        if (v != null)
+          result.push(v);
+      } catch (e) {
+        if (!(e instanceof UnsetSignalValueError))
+          throw e;
+      }
+    }
+    return result;
+  }
+  const valuesEqual = (a, b) => {
+    if (a.length !== b.length)
+      return false;
+    for (let i = 0;i < a.length; i++)
+      if (a[i] !== b[i])
+        return false;
+    return true;
+  };
+  const node = {
+    fn: buildValue,
+    value: [],
+    flags: FLAG_DIRTY,
+    sources: null,
+    sourcesTail: null,
+    sinks: null,
+    sinksTail: null,
+    equals: valuesEqual,
+    error: undefined
+  };
+  function ensureFresh() {
+    if (node.sources) {
+      if (node.flags) {
+        node.value = untrack(buildValue);
+        if (node.flags & FLAG_RELINK) {
+          node.flags = FLAG_DIRTY;
+          refresh(node);
+          if (node.error)
+            throw node.error;
+        } else {
+          node.flags = FLAG_CLEAN;
+        }
+      }
+    } else if (node.sinks) {
+      refresh(node);
+      if (node.error)
+        throw node.error;
+    } else {
+      node.value = untrack(buildValue);
+    }
+  }
+  const initialKeys = Array.from(untrack(() => source.keys()));
+  for (const key of initialKeys)
+    addSignal(key);
+  keys = initialKeys;
+  const collection = {
+    [Symbol.toStringTag]: TYPE_COLLECTION,
+    [Symbol.isConcatSpreadable]: true,
+    *[Symbol.iterator]() {
+      if (activeSink)
+        link(node, activeSink);
+      ensureFresh();
+      for (const key of keys) {
+        const signal = signals.get(key);
+        if (signal)
+          yield signal;
+      }
+    },
+    get length() {
+      if (activeSink)
+        link(node, activeSink);
+      ensureFresh();
+      return keys.length;
+    },
+    keys() {
+      if (activeSink)
+        link(node, activeSink);
+      ensureFresh();
+      return keys.values();
+    },
+    get() {
+      if (activeSink)
+        link(node, activeSink);
+      ensureFresh();
+      return node.value;
+    },
+    at(index) {
+      if (activeSink)
+        link(node, activeSink);
+      ensureFresh();
+      const key = keys[index];
+      return key !== undefined ? signals.get(key) : undefined;
+    },
+    byKey(key) {
+      if (activeSink)
+        link(node, activeSink);
+      ensureFresh();
+      return signals.get(key);
+    },
+    keyAt(index) {
+      if (activeSink)
+        link(node, activeSink);
+      ensureFresh();
+      return keys[index];
+    },
+    indexOfKey(key) {
+      if (activeSink)
+        link(node, activeSink);
+      ensureFresh();
+      return keys.indexOf(key);
+    },
+    deriveCollection(cb) {
+      return deriveCollection(collection, cb);
+    }
+  };
+  return collection;
+}
+function createCollection(watched, options) {
+  const value = options?.value ?? [];
+  if (value.length)
+    validateSignalValue(TYPE_COLLECTION, value, Array.isArray);
+  validateCallback(TYPE_COLLECTION, watched, isSyncFunction);
+  const signals = new Map;
+  const keys = [];
+  const itemToKey = new Map;
+  const [generateKey, contentBased] = getKeyGenerator(options?.keyConfig);
+  const resolveKey = (item) => itemToKey.get(item) ?? (contentBased ? generateKey(item) : undefined);
+  const itemFactory = options?.createItem ?? ((item) => createState(item, {
+    equals: options?.itemEquals ?? DEEP_EQUALITY
+  }));
+  function buildValue() {
+    const result = [];
+    for (const key of keys) {
+      try {
+        const v = signals.get(key)?.get();
+        if (v != null)
+          result.push(v);
+      } catch (e) {
+        if (!(e instanceof UnsetSignalValueError))
+          throw e;
+      }
+    }
+    return result;
+  }
+  const node = {
+    fn: buildValue,
+    value,
+    flags: FLAG_DIRTY,
+    sources: null,
+    sourcesTail: null,
+    sinks: null,
+    sinksTail: null,
+    equals: SKIP_EQUALITY,
+    error: undefined
+  };
+  for (const item of value) {
+    const key = generateKey(item);
+    signals.set(key, itemFactory(item));
+    itemToKey.set(item, key);
+    keys.push(key);
+  }
+  node.value = value;
+  node.flags = FLAG_DIRTY;
+  const onChanges = (changes) => {
+    const { add, change, remove } = changes;
+    if (!add?.length && !change?.length && !remove?.length)
+      return;
+    let structural = false;
+    batch(() => {
+      if (add) {
+        const staged = new Map;
+        for (const item of add) {
+          const key = generateKey(item);
+          if (signals.has(key) || staged.has(key))
+            throw new DuplicateKeyError(TYPE_COLLECTION, key, item);
+          staged.set(key, item);
+        }
+        for (const [key, item] of staged) {
+          signals.set(key, itemFactory(item));
+          itemToKey.set(item, key);
+          if (!keys.includes(key))
+            keys.push(key);
+          structural = true;
+        }
+      }
+      if (change) {
+        for (const item of change) {
+          const key = resolveKey(item);
+          if (!key)
+            continue;
+          const signal = signals.get(key);
+          if (signal && isState(signal)) {
+            itemToKey.delete(untrack(() => signal.get()));
+            signal.set(item);
+            itemToKey.set(item, key);
+          }
+        }
+      }
+      if (remove) {
+        for (const item of remove) {
+          const key = resolveKey(item);
+          if (!key)
+            continue;
+          itemToKey.delete(item);
+          signals.delete(key);
+          const index = keys.indexOf(key);
+          if (index !== -1)
+            keys.splice(index, 1);
+          structural = true;
+        }
+      }
+      node.flags = FLAG_DIRTY | (structural ? FLAG_RELINK : 0);
+      for (let e = node.sinks;e; e = e.nextSink)
+        propagate(e.sink);
+    });
+  };
+  const subscribe = makeSubscribe(node, () => watched(onChanges));
+  const collection = {
+    [Symbol.toStringTag]: TYPE_COLLECTION,
+    [Symbol.isConcatSpreadable]: true,
+    *[Symbol.iterator]() {
+      subscribe();
+      for (const key of keys) {
+        const signal = signals.get(key);
+        if (signal)
+          yield signal;
+      }
+    },
+    get length() {
+      subscribe();
+      return keys.length;
+    },
+    keys() {
+      subscribe();
+      return keys.values();
+    },
+    get() {
+      subscribe();
+      if (node.sources) {
+        if (node.flags) {
+          const relink = node.flags & FLAG_RELINK;
+          node.value = untrack(buildValue);
+          if (relink) {
+            node.flags = FLAG_DIRTY;
+            refresh(node);
+            if (node.error)
+              throw node.error;
+          } else {
+            node.flags = FLAG_CLEAN;
+          }
+        }
+      } else {
+        refresh(node);
+        if (node.error)
+          throw node.error;
+      }
+      return node.value;
+    },
+    at(index) {
+      subscribe();
+      const key = keys[index];
+      return key !== undefined ? signals.get(key) : undefined;
+    },
+    byKey(key) {
+      subscribe();
+      return signals.get(key);
+    },
+    keyAt(index) {
+      subscribe();
+      return keys[index];
+    },
+    indexOfKey(key) {
+      subscribe();
+      return keys.indexOf(key);
+    },
+    deriveCollection(cb) {
+      return deriveCollection(collection, cb);
+    }
+  };
+  return collection;
+}
+function isCollection(value) {
+  return isSignalOfType(value, TYPE_COLLECTION);
+}
+// src/nodes/effect.ts
+function createEffect(fn) {
+  validateCallback("Effect", fn);
+  const node = {
+    fn,
+    flags: FLAG_DIRTY,
+    sources: null,
+    sourcesTail: null,
+    cleanup: null
+  };
+  const dispose = () => {
+    runCleanup(node);
+    node.fn = undefined;
+    node.flags = FLAG_CLEAN;
+    node.sourcesTail = null;
+    trimSources(node);
+  };
+  if (activeOwner)
+    registerCleanup(activeOwner, dispose);
+  runEffect(node);
+  scheduleEffect(node);
+  return dispose;
+}
+function match(signalOrSignals, handlers) {
+  if (!activeOwner)
+    throw new RequiredOwnerError("match");
+  const isSingle = !Array.isArray(signalOrSignals);
+  const signals = isSingle ? [signalOrSignals] : signalOrSignals;
+  const { nil, stale } = handlers;
+  const ok = isSingle ? (values2) => handlers.ok(values2[0]) : (values2) => handlers.ok(values2);
+  const err = isSingle && handlers.err ? (errors2) => handlers.err(errors2[0]) : handlers.err ?? console.error;
+  let errors;
+  let pending = false;
+  const values = new Array(signals.length);
+  for (let i = 0;i < signals.length; i++) {
+    try {
+      values[i] = signals[i].get();
+    } catch (e) {
+      if (e instanceof UnsetSignalValueError) {
+        pending = true;
+        continue;
+      }
+      if (!errors)
+        errors = [];
+      errors.push(e instanceof Error ? e : new Error(String(e)));
+    }
+  }
+  let out;
+  try {
+    if (pending)
+      out = nil?.();
+    else if (errors)
+      out = err(errors);
+    else if (stale && (isSingle ? isTask(signals[0]) && signals[0].isPending() : signals.some((s) => isTask(s) && s.isPending())))
+      out = stale();
+    else
+      out = ok(values);
+  } catch (e) {
+    out = err([e instanceof Error ? e : new Error(String(e))]);
+  }
+  if (typeof out === "function")
+    return out;
+  if (out instanceof Promise) {
+    const owner = activeOwner;
+    const controller = new AbortController;
+    registerCleanup(owner, () => controller.abort());
+    out.then((cleanup) => {
+      if (!controller.signal.aborted && typeof cleanup === "function")
+        registerCleanup(owner, cleanup);
+    }).catch((e) => {
+      err([e instanceof Error ? e : new Error(String(e))]);
+    });
+  }
+}
+// src/nodes/sensor.ts
+function createSensor(watched, options) {
+  validateCallback(TYPE_SENSOR, watched, isSyncFunction);
+  if (options?.value !== undefined)
+    validateSignalValue(TYPE_SENSOR, options.value, options?.guard);
+  const node = {
+    value: options?.value,
+    sinks: null,
+    sinksTail: null,
+    equals: options?.equals ?? DEFAULT_EQUALITY,
+    guard: options?.guard,
+    stop: undefined
+  };
+  return {
+    [Symbol.toStringTag]: TYPE_SENSOR,
+    get() {
+      if (activeSink) {
+        if (!node.sinks)
+          node.stop = watched((next) => {
+            validateSignalValue(TYPE_SENSOR, next, node.guard);
+            setState(node, next);
+          });
+        link(node, activeSink);
+      }
+      validateReadValue(TYPE_SENSOR, node.value);
+      return node.value;
+    }
+  };
+}
+function isSensor(value) {
+  return isSignalOfType(value, TYPE_SENSOR);
+}
+// src/nodes/store.ts
+function diffRecords(prev, next) {
+  const add = {};
+  const change = {};
+  const remove = {};
+  let changed = false;
+  const prevKeys = Object.keys(prev);
+  const nextKeys = Object.keys(next);
+  for (const key of nextKeys) {
+    if (key in prev) {
+      if (!DEEP_EQUALITY(prev[key], next[key])) {
+        change[key] = next[key];
+        changed = true;
+      }
+    } else {
+      add[key] = next[key];
+      changed = true;
+    }
+  }
+  for (const key of prevKeys) {
+    if (!(key in next)) {
+      remove[key] = undefined;
+      changed = true;
+    }
+  }
+  return { add, change, remove, changed };
+}
+function createStore(value, options) {
+  validateSignalValue(TYPE_STORE, value, isRecord);
+  const signals = new Map;
+  const addSignal = (key, val) => {
+    validateSignalValue(`${TYPE_STORE} for key "${key}"`, val);
+    if (Array.isArray(val))
+      signals.set(key, createList(val));
+    else if (isRecord(val))
+      signals.set(key, createStore(val));
+    else
+      signals.set(key, createState(val));
+  };
+  const shapeCategory = (val) => {
+    if (Array.isArray(val))
+      return "list";
+    if (isRecord(val))
+      return "store";
+    return "state";
+  };
+  const signalCategory = (signal) => {
+    if (isList(signal))
+      return "list";
+    if (isStore(signal))
+      return "store";
+    return "state";
+  };
+  const buildValue = () => {
+    const record = {};
+    for (const [key, signal] of signals)
+      record[key] = signal.get();
+    return record;
+  };
+  const node = {
+    fn: buildValue,
+    value,
+    flags: FLAG_DIRTY,
+    sources: null,
+    sourcesTail: null,
+    sinks: null,
+    sinksTail: null,
+    equals: DEEP_EQUALITY,
+    error: undefined
+  };
+  const applyChanges = (changes) => {
+    let structural = false;
+    for (const key in changes.add) {
+      addSignal(key, changes.add[key]);
+      structural = true;
+    }
+    let hasChange = false;
+    for (const _key in changes.change) {
+      hasChange = true;
+      break;
+    }
+    if (hasChange) {
+      batch(() => {
+        for (const key in changes.change) {
+          const val = changes.change[key];
+          validateSignalValue(`${TYPE_STORE} for key "${key}"`, val);
+          const signal = signals.get(key);
+          if (signal) {
+            if (shapeCategory(val) !== signalCategory(signal)) {
+              addSignal(key, val);
+              structural = true;
+            } else
+              signal.set(val);
+          }
+        }
+      });
+    }
+    for (const key in changes.remove) {
+      signals.delete(key);
+      structural = true;
+    }
+    if (structural)
+      node.flags |= FLAG_RELINK;
+    return changes.changed;
+  };
+  const subscribe = makeSubscribe(node, options?.watched);
+  for (const key of Object.keys(value))
+    addSignal(key, value[key]);
+  const store = {
+    [Symbol.toStringTag]: TYPE_STORE,
+    [Symbol.isConcatSpreadable]: false,
+    *[Symbol.iterator]() {
+      subscribe();
+      for (const [key, signal] of signals) {
+        yield [key, signal];
+      }
+    },
+    keys() {
+      subscribe();
+      return signals.keys();
+    },
+    byKey(key) {
+      return signals.get(key);
+    },
+    get() {
+      subscribe();
+      if (node.sources) {
+        if (node.flags) {
+          const relink = node.flags & FLAG_RELINK;
+          node.value = untrack(buildValue);
+          if (relink) {
+            node.flags = FLAG_DIRTY;
+            refresh(node);
+            if (node.error)
+              throw node.error;
+          } else {
+            node.flags = FLAG_CLEAN;
+          }
+        }
+      } else {
+        refresh(node);
+        if (node.error)
+          throw node.error;
+      }
+      return node.value;
+    },
+    set(next) {
+      const prev = node.flags & FLAG_DIRTY ? untrack(buildValue) : node.value;
+      const changes = diffRecords(prev, next);
+      if (applyChanges(changes)) {
+        node.flags |= FLAG_DIRTY;
+        for (let e = node.sinks;e; e = e.nextSink)
+          propagate(e.sink);
+        if (batchDepth === 0)
+          flush();
+      }
+    },
+    update(fn) {
+      store.set(fn(untrack(() => store.get())));
+    },
+    add(key, value2) {
+      if (signals.has(key))
+        throw new DuplicateKeyError(TYPE_STORE, key, value2);
+      addSignal(key, value2);
+      node.flags |= FLAG_DIRTY | FLAG_RELINK;
+      for (let e = node.sinks;e; e = e.nextSink)
+        propagate(e.sink);
+      if (batchDepth === 0)
+        flush();
+      return key;
+    },
+    remove(key) {
+      const ok = signals.delete(key);
+      if (ok) {
+        node.flags |= FLAG_DIRTY | FLAG_RELINK;
+        for (let e = node.sinks;e; e = e.nextSink)
+          propagate(e.sink);
+        if (batchDepth === 0)
+          flush();
+      }
+    }
+  };
+  return new Proxy(store, {
+    get(target, prop) {
+      if (prop in target)
+        return Reflect.get(target, prop);
+      if (typeof prop !== "symbol")
+        return target.byKey(prop);
+    },
+    set(_target, prop) {
+      throw new InvalidStoreMutationError(String(prop), "assign to");
+    },
+    deleteProperty(_target, prop) {
+      throw new InvalidStoreMutationError(String(prop), "delete");
+    },
+    defineProperty(_target, prop) {
+      throw new InvalidStoreMutationError(String(prop), "define");
+    },
+    has(target, prop) {
+      if (prop in target)
+        return true;
+      return target.byKey(String(prop)) !== undefined;
+    },
+    ownKeys(target) {
+      return Array.from(target.keys());
+    },
+    getOwnPropertyDescriptor(target, prop) {
+      if (prop in target)
+        return Reflect.getOwnPropertyDescriptor(target, prop);
+      if (typeof prop === "symbol")
+        return;
+      const signal = target.byKey(String(prop));
+      return signal ? {
+        enumerable: true,
+        configurable: true,
+        writable: true,
+        value: signal
+      } : undefined;
+    }
+  });
+}
+function isStore(value) {
+  return isSignalOfType(value, TYPE_STORE);
+}
+
+// src/signal.ts
+var SIGNAL_TYPES = new Set([
+  TYPE_STATE,
+  TYPE_MEMO,
+  TYPE_TASK,
+  TYPE_SENSOR,
+  TYPE_SLOT,
+  TYPE_LIST,
+  TYPE_COLLECTION,
+  TYPE_STORE
+]);
+function createComputed(callback, options) {
+  return isAsyncFunction(callback) ? createTask(callback, options) : createMemo(callback, options);
+}
+function createSignal(value) {
+  if (isSignal(value))
+    return value;
+  if (value == null)
+    throw new InvalidSignalValueError("createSignal", value);
+  if (isAsyncFunction(value))
+    return createTask(value);
+  if (isFunction(value))
+    return createMemo(value);
+  if (Array.isArray(value) && value.every((item) => item != null))
+    return createList(value);
+  if (isRecord(value))
+    return createStore(value);
+  return createState(value);
+}
+function createMutableSignal(value) {
+  if (isMutableSignal(value))
+    return value;
+  if (value == null || isFunction(value) || isSignal(value))
+    throw new InvalidSignalValueError("createMutableSignal", value);
+  if (Array.isArray(value) && value.every((item) => item != null))
+    return createList(value);
+  if (isRecord(value))
+    return createStore(value);
+  return createState(value);
+}
+function isComputed(value) {
+  return isMemo(value) || isTask(value);
+}
+function isSignal(value) {
+  return value != null && SIGNAL_TYPES.has(value[Symbol.toStringTag]);
+}
+function isMutableSignal(value) {
+  return isState(value) || isStore(value) || isList(value);
+}
+
+// src/nodes/slot.ts
+var settingSlots = new WeakSet;
+function isSignalOrDescriptor(value) {
+  if (isSignal(value))
+    return true;
+  return value !== null && typeof value === "object" && "get" in value && typeof value.get === "function";
+}
+function createSlot(initialSignal, options) {
+  validateSignalValue(TYPE_SLOT, initialSignal, isSignalOrDescriptor);
+  let delegated = initialSignal;
+  const guard = options?.guard;
+  const node = {
+    fn: () => delegated.get(),
+    value: undefined,
+    flags: FLAG_DIRTY,
+    sources: null,
+    sourcesTail: null,
+    sinks: null,
+    sinksTail: null,
+    equals: options?.equals ?? DEFAULT_EQUALITY,
+    error: undefined
+  };
+  const get = () => {
+    if (activeSink)
+      link(node, activeSink);
+    refresh(node);
+    if (node.error)
+      throw node.error;
+    return node.value;
+  };
+  const set = (next) => {
+    if (settingSlots.has(node))
+      throw new Error("[Slot] Circular delegation detected in set()");
+    settingSlots.add(node);
+    try {
+      if (isSlot(delegated))
+        return void delegated.set(next);
+      if ("set" in delegated && typeof delegated.set === "function") {
+        validateSignalValue(TYPE_SLOT, next, guard);
+        delegated.set(next);
+      } else {
+        throw new ReadonlySignalError(TYPE_SLOT);
+      }
+    } finally {
+      settingSlots.delete(node);
+    }
+  };
+  const replace = (next) => {
+    validateSignalValue(TYPE_SLOT, next, isSignalOrDescriptor);
+    delegated = next;
+    node.flags |= FLAG_DIRTY;
+    for (let e = node.sinks;e; e = e.nextSink)
+      propagate(e.sink);
+    if (batchDepth === 0)
+      flush();
+  };
+  return {
+    [Symbol.toStringTag]: TYPE_SLOT,
+    configurable: true,
+    enumerable: true,
+    get,
+    set,
+    replace,
+    current: () => delegated
+  };
+}
+function isSlot(value) {
+  return isSignalOfType(value, TYPE_SLOT);
+}
+export {
+  valueString,
+  untrack,
+  unown,
+  match,
+  isTask,
+  isStore,
+  isState,
+  isSlot,
+  isSignalOfType,
+  isSignal,
+  isSensor,
+  isRecord,
+  isObjectOfType,
+  isMutableSignal,
+  isMemo,
+  isList,
+  isFunction,
+  isEqual,
+  isComputed,
+  isCollection,
+  isAsyncFunction,
+  createTask,
+  createStore,
+  createState,
+  createSlot,
+  createSignal,
+  createSensor,
+  createScope,
+  createMutableSignal,
+  createMemo,
+  createList,
+  createEffect,
+  createComputed,
+  createCollection,
+  batch,
+  UnsetSignalValueError,
+  SKIP_EQUALITY,
+  RequiredOwnerError,
+  ReadonlySignalError,
+  PromiseValueError,
+  NullishSignalValueError,
+  InvalidStoreMutationError,
+  InvalidSignalValueError,
+  InvalidCallbackError,
+  EffectConvergenceError,
+  DuplicateKeyError,
+  DEFAULT_EQUALITY,
+  DEEP_EQUALITY,
+  CircularDependencyError
+};

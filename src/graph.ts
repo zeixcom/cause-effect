@@ -1,4 +1,9 @@
-import { CircularDependencyError, type Guard, PromiseValueError } from './errors'
+import {
+	CircularDependencyError,
+	EffectConvergenceError,
+	type Guard,
+	PromiseValueError,
+} from './errors'
 import { isRecord } from './util'
 
 /* === Internal Types === */
@@ -231,12 +236,7 @@ const deepEqualInner = (
 ): boolean => {
 	if (Object.is(a, b)) return true
 	if (typeof a !== typeof b) return false
-	if (
-		a == null ||
-		typeof a !== 'object' ||
-		b == null ||
-		typeof b !== 'object'
-	)
+	if (a == null || typeof a !== 'object' || b == null || typeof b !== 'object')
 		return false
 
 	// Cycle guard: if `a` is already on the current recursion path, treat this
@@ -401,14 +401,13 @@ function propagate(node: SinkNode, newFlag = FLAG_DIRTY): void {
 		}
 
 		// Propagate Check to sinks
-		for (let e = node.sinks; e; e = e.nextSink)
-			propagate(e.sink, FLAG_CHECK)
+		for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink, FLAG_CHECK)
 	} else {
 		if ((flags & (FLAG_DIRTY | FLAG_CHECK)) >= newFlag) return
 
 		// Enqueue effect for later execution
 		const wasQueued = flags & (FLAG_DIRTY | FLAG_CHECK)
-		node.flags = newFlag
+		node.flags = (flags & FLAG_RUNNING) | newFlag
 		if (!wasQueued) queuedEffects.push(node as EffectNode)
 	}
 }
@@ -515,8 +514,7 @@ function recomputeTask(node: TaskNode<unknown & {}>): void {
 				if (node.error || !node.equals(next, node.value)) {
 					node.value = next
 					node.error = undefined
-					for (let e = node.sinks; e; e = e.nextSink)
-						propagate(e.sink)
+					for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
 				}
 				setState(node.pendingNode, false)
 			})
@@ -534,8 +532,7 @@ function recomputeTask(node: TaskNode<unknown & {}>): void {
 				) {
 					// We don't clear old value on errors
 					node.error = error
-					for (let e = node.sinks; e; e = e.nextSink)
-						propagate(e.sink)
+					for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
 				}
 				setState(node.pendingNode, false)
 			})
@@ -560,9 +557,9 @@ function runEffect(node: EffectNode): void {
 		activeSink = prevContext
 		activeOwner = prevOwner
 		trimSources(node)
+		// Keep a re-mark from the effect's own writes so it converges
+		node.flags &= FLAG_DIRTY | FLAG_CHECK
 	}
-
-	node.flags = FLAG_CLEAN
 }
 
 function refresh(node: SinkNode): void {
@@ -575,11 +572,7 @@ function refresh(node: SinkNode): void {
 
 	if (node.flags & FLAG_RUNNING) {
 		throw new CircularDependencyError(
-			'controller' in node
-				? TYPE_TASK
-				: 'value' in node
-					? TYPE_MEMO
-					: 'Effect',
+			'controller' in node ? TYPE_TASK : 'value' in node ? TYPE_MEMO : 'Effect',
 		)
 	}
 
@@ -594,18 +587,55 @@ function refresh(node: SinkNode): void {
 
 /* === Batching === */
 
+const MAX_FLUSH_PASSES = 1000
+
 function flush(): void {
 	if (flushing) return
 	flushing = true
+	let errors: unknown[] | undefined
+	let passes = 0
 	try {
-		for (let i = 0; i < queuedEffects.length; i++) {
-			// biome-ignore lint/style/noNonNullAssertion: index is always within bounds of a populated EffectNode[]
-			const effect = queuedEffects[i]!
-			if (effect.flags & (FLAG_DIRTY | FLAG_CHECK)) refresh(effect)
+		while (queuedEffects.length > 0) {
+			if (++passes > MAX_FLUSH_PASSES) {
+				queuedEffects.length = 0
+				if (!errors) errors = []
+				errors.push(new EffectConvergenceError(MAX_FLUSH_PASSES))
+				break
+			}
+			const batch = queuedEffects.slice()
+			queuedEffects.length = 0
+			for (let i = 0; i < batch.length; i++) {
+				// biome-ignore lint/style/noNonNullAssertion: index is always within bounds of a populated EffectNode[]
+				const effect = batch[i]!
+				// A running effect is converged by its own runner after its fn returns
+				if (effect.flags & FLAG_RUNNING) continue
+				if (effect.flags & (FLAG_DIRTY | FLAG_CHECK)) {
+					try {
+						refresh(effect)
+					} catch (err) {
+						if (!errors) errors = []
+						errors.push(err)
+					}
+				}
+			}
 		}
-		queuedEffects.length = 0
 	} finally {
 		flushing = false
+	}
+	if (errors) {
+		if (errors.length === 1) throw errors[0]
+		throw new AggregateError(errors, 'Multiple effects threw during flush')
+	}
+}
+
+/**
+ * Enqueues an effect that is still dirty after running (it wrote to its own
+ * dependencies) and, outside a batch, flushes until the graph converges.
+ */
+function scheduleEffect(node: EffectNode): void {
+	if (node.flags & (FLAG_DIRTY | FLAG_CHECK)) {
+		queuedEffects.push(node)
+		if (batchDepth === 0) flush()
 	}
 }
 
@@ -763,52 +793,53 @@ function makeSubscribe(node: SourceNode, onWatch?: () => Cleanup): () => void {
 }
 
 export {
-	type Cleanup,
-	type ComputedOptions,
-	type EffectCallback,
-	type EffectNode,
-	type MaybeCleanup,
-	type MemoCallback,
-	type MemoNode,
-	type Scope,
-	type ScopeOptions,
-	type Signal,
-	type SignalOptions,
-	type SinkNode,
-	type StateNode,
-	type TaskCallback,
-	type TaskNode,
 	activeOwner,
 	activeSink,
 	batch,
 	batchDepth,
+	type Cleanup,
+	type ComputedOptions,
 	createScope,
-	DEFAULT_EQUALITY,
 	DEEP_EQUALITY,
-	isEqual,
-	SKIP_EQUALITY,
+	DEFAULT_EQUALITY,
+	type EffectCallback,
+	type EffectNode,
 	FLAG_CHECK,
 	FLAG_CLEAN,
 	FLAG_DIRTY,
 	FLAG_RELINK,
 	flush,
+	isEqual,
 	link,
+	type MaybeCleanup,
+	type MemoCallback,
+	type MemoNode,
 	makeSubscribe,
 	propagate,
 	refresh,
 	registerCleanup,
 	runCleanup,
 	runEffect,
+	type Scope,
+	type ScopeOptions,
+	type Signal,
+	type SignalOptions,
+	type SinkNode,
+	SKIP_EQUALITY,
+	type StateNode,
+	scheduleEffect,
 	setState,
-	trimSources,
+	type TaskCallback,
+	type TaskNode,
 	TYPE_COLLECTION,
 	TYPE_LIST,
 	TYPE_MEMO,
 	TYPE_SENSOR,
-	TYPE_STATE,
 	TYPE_SLOT,
+	TYPE_STATE,
 	TYPE_STORE,
 	TYPE_TASK,
+	trimSources,
 	unlink,
 	unown,
 	untrack,

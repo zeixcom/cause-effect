@@ -99,9 +99,7 @@ type List<T extends {}, S extends MutableSignal<T> = MutableSignal<T>> = {
 	replace(key: string, value: T): void
 	sort(compareFn?: (a: T, b: T) => number): void
 	splice(start: number, deleteCount?: number, ...items: T[]): T[]
-	deriveCollection<R extends {}>(
-		callback: (sourceValue: T) => R,
-	): Collection<R>
+	deriveCollection<R extends {}>(callback: (sourceValue: T) => R): Collection<R>
 	deriveCollection<R extends {}>(
 		callback: (sourceValue: T, abort: AbortSignal) => Promise<R>,
 	): Collection<R>
@@ -281,9 +279,7 @@ function createList<
 	const [generateKey, contentBased] = getKeyGenerator(options?.keyConfig)
 	const itemEquals = options?.itemEquals ?? DEEP_EQUALITY
 	const itemFactory = (options?.createItem ??
-		((item: T) => createState(item, { equals: itemEquals }))) as (
-		value: T,
-	) => S
+		((item: T) => createState(item, { equals: itemEquals }))) as (value: T) => S
 
 	// --- Internal helpers ---
 
@@ -334,10 +330,7 @@ function createList<
 			batch(() => {
 				for (const key in changes.change) {
 					const val = changes.change[key]
-					validateSignalValue(
-						`${TYPE_LIST} item for key "${key}"`,
-						val,
-					)
+					validateSignalValue(`${TYPE_LIST} item for key "${key}"`, val)
 					const signal = signals.get(key)
 					if (signal) signal.set(val as T)
 				}
@@ -362,8 +355,7 @@ function createList<
 	// --- Initialize ---
 	for (let i = 0; i < value.length; i++) {
 		const val = value[i]
-		if (val == null)
-			throw new NullishSignalValueError(`${TYPE_LIST} item ${i}`)
+		if (val == null) throw new NullishSignalValueError(`${TYPE_LIST} item ${i}`)
 		let key = keys[i]
 		if (!key) {
 			key = generateKey(val)
@@ -422,7 +414,10 @@ function createList<
 		},
 
 		set(next: T[]) {
-			const prev = node.flags & FLAG_DIRTY ? buildValue() : node.value
+			// Use cached value if clean, recompute if dirty. untrack prevents
+			// buildValue's child .get() calls from leaking edges into whatever
+			// effect is currently active (which would cause over-broad re-runs).
+			const prev = node.flags & FLAG_DIRTY ? untrack(buildValue) : node.value
 			const changes = diffArrays(
 				prev,
 				next,
@@ -441,7 +436,7 @@ function createList<
 		},
 
 		update(fn: (prev: T[]) => T[]) {
-			list.set(fn(list.get()))
+			list.set(fn(untrack(() => list.get())))
 		},
 
 		at(index: number) {
@@ -472,8 +467,7 @@ function createList<
 
 		add(value: T) {
 			const key = generateKey(value)
-			if (signals.has(key))
-				throw new DuplicateKeyError(TYPE_LIST, key, value)
+			if (signals.has(key)) throw new DuplicateKeyError(TYPE_LIST, key, value)
 			keys.push(key)
 			validateSignalValue(`${TYPE_LIST} item for key "${key}"`, value)
 			signals.set(key, itemFactory(value))
@@ -484,15 +478,12 @@ function createList<
 		},
 
 		remove(keyOrIndex: string | number) {
-			const key =
-				typeof keyOrIndex === 'number' ? keys[keyOrIndex] : keyOrIndex
+			const key = typeof keyOrIndex === 'number' ? keys[keyOrIndex] : keyOrIndex
 			if (key === undefined) return
 			const ok = signals.delete(key)
 			if (ok) {
 				const index =
-					typeof keyOrIndex === 'number'
-						? keyOrIndex
-						: keys.indexOf(key)
+					typeof keyOrIndex === 'number' ? keyOrIndex : keys.indexOf(key)
 				if (index >= 0) keys.splice(index, 1)
 				node.flags |= FLAG_DIRTY | FLAG_RELINK
 				for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
@@ -525,10 +516,12 @@ function createList<
 
 		sort(compareFn?: (a: T, b: T) => number) {
 			const entries: [string, T][] = []
-			for (const key of keys) {
-				const v = signals.get(key)?.get()
-				if (v !== undefined) entries.push([key, v])
-			}
+			untrack(() => {
+				for (const key of keys) {
+					const v = signals.get(key)?.get()
+					if (v !== undefined) entries.push([key, v])
+				}
+			})
 			entries.sort(
 				isFunction(compareFn)
 					? (a, b) => compareFn(a[1], b[1])
@@ -548,14 +541,11 @@ function createList<
 		splice(start: number, deleteCount?: number, ...items: T[]) {
 			const length = keys.length
 			const actualStart =
-				start < 0
-					? Math.max(0, length + start)
-					: Math.min(start, length)
+				start < 0 ? Math.max(0, length + start) : Math.min(start, length)
 			const actualDeleteCount = Math.max(
 				0,
 				Math.min(
-					deleteCount ??
-						Math.max(0, length - Math.max(0, actualStart)),
+					deleteCount ?? Math.max(0, length - Math.max(0, actualStart)),
 					length - actualStart,
 				),
 			)
@@ -564,18 +554,21 @@ function createList<
 			const remove = {} as Record<string, T>
 			let hasRemove = false
 
-			// Collect items to delete
-			for (let i = 0; i < actualDeleteCount; i++) {
-				const index = actualStart + i
-				const key = keys[index]
-				if (key) {
-					const signal = signals.get(key)
-					if (signal) {
-						remove[key] = signal.get()
-						hasRemove = true
+			// Collect items to delete — untrack the reads so the caller's
+			// effect does not gain edges to the deleted item signals.
+			untrack(() => {
+				for (let i = 0; i < actualDeleteCount; i++) {
+					const index = actualStart + i
+					const key = keys[index]
+					if (key) {
+						const signal = signals.get(key)
+						if (signal) {
+							remove[key] = signal.get()
+							hasRemove = true
+						}
 					}
 				}
-			}
+			})
 
 			// Build new key order
 			const newOrder = keys.slice(0, actualStart)
@@ -650,14 +643,14 @@ function isList<T extends {}, S extends MutableSignal<T> = MutableSignal<T>>(
 /* === Exports === */
 
 export {
+	createList,
 	type DiffResult,
+	getKeyGenerator,
+	isList,
 	type KeyConfig,
+	keysEqual,
 	type List,
 	type ListOptions,
-	type UnknownRecord,
-	createList,
-	isList,
-	getKeyGenerator,
-	keysEqual,
 	TYPE_LIST,
+	type UnknownRecord,
 }

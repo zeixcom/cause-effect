@@ -1,7 +1,7 @@
 # ADR Index
 
-**Last updated:** 2026-06-24
-**Total ADRs:** 16
+**Last updated:** 2026-07-10
+**Total ADRs:** 17
 
 | # | ADR | Status | Related Requirements |
 |---|-----|--------|---------------------|
@@ -21,6 +21,7 @@
 | [0014](../../../../adr/0014-two-path-access-pattern-for-composite-signals.md) | Two-Path Access Pattern for Composite Signals | ✅ Accepted | Performance |
 | [0015](../../../../adr/0015-composite-lookup-methods-track-structural-changes.md) | Composite Lookup Methods Track Structural Changes (Asymmetrically) | ✅ Accepted | Explicit Reactivity, Non-Nullable Types, Minimal Surface |
 | [0016](../../../../adr/0016-path-scoped-cycle-detection-in-deep-equality.md) | Path-Scoped Cycle Detection in Deep Equality | ✅ Accepted | Performance |
+| [0017](../../../../adr/0017-store-proxy-rejects-direct-writes.md) | Store Proxy Rejects Direct Writes | ✅ Accepted | Explicit Reactivity, Minimal Surface |
 
 ---
 

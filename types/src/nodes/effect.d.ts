@@ -38,9 +38,16 @@ type SingleMatchHandlers<T extends {}> = {
  * Effects run immediately upon creation and re-run when any tracked signal changes.
  * Effects are executed during the flush phase, after all updates have been batched.
  *
+ * An effect that writes to a signal it also depends on re-runs until the graph
+ * settles, so its last run always observes the final signal values. Effect graphs
+ * that never settle (e.g. an unconditional self-increment, or two effects writing
+ * each other's dependencies) throw `EffectConvergenceError` after a bounded number
+ * of flush passes instead of looping forever.
+ *
  * @since 0.1.0
  * @param fn - The effect function that can track dependencies and register cleanup callbacks
  * @returns A cleanup function that can be called to dispose of the effect
+ * @throws EffectConvergenceError If effects keep re-triggering each other without settling
  *
  * @example
  * ```ts

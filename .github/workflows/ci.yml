@@ -1,0 +1,58 @@
+name: CI
+
+on:
+    push:
+        branches: [main, next]
+    pull_request:
+        branches: [main, next]
+
+permissions:
+    contents: read
+
+jobs:
+    test:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: Setup Bun
+              uses: oven-sh/setup-bun@v1
+              with:
+                  bun-version: latest
+
+            - name: Install dependencies
+              run: bun install --frozen-lockfile
+
+            - name: Typecheck
+              run: bunx tsc --noEmit
+
+            - name: Lint and format
+              run: bunx biome check .
+
+            - name: Unit tests
+              run: bun run test
+
+            - name: Bundle size regression
+              run: bun test test/regression-bundle.test.ts
+
+            - name: Build
+              run: bun run build
+
+    performance:
+        runs-on: ubuntu-latest
+        continue-on-error: true # informational only — shared runners are too noisy for timing assertions
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: Setup Bun
+              uses: oven-sh/setup-bun@v1
+              with:
+                  bun-version: latest
+
+            - name: Install dependencies
+              run: bun install --frozen-lockfile
+
+            - name: Performance regression (informational)
+              run: bun test test/regression-performance.test.ts
