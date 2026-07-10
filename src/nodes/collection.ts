@@ -573,13 +573,13 @@ function isCollection<T extends {}, S extends Signal<T> = Signal<T>>(
 /* === Exports === */
 
 export {
-	createCollection,
-	deriveCollection,
-	isCollection,
 	type Collection,
 	type CollectionCallback,
 	type CollectionChanges,
 	type CollectionOptions,
 	type CollectionSource,
+	createCollection,
 	type DeriveCollectionCallback,
+	deriveCollection,
+	isCollection,
 }
