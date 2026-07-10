@@ -158,11 +158,11 @@ function isMutableSignal(value: unknown): value is MutableSignal<unknown & {}> {
 }
 
 export {
-	type MutableSignal,
 	createComputed,
-	createSignal,
 	createMutableSignal,
+	createSignal,
 	isComputed,
-	isSignal,
 	isMutableSignal,
+	isSignal,
+	type MutableSignal,
 }

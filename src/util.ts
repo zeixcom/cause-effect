@@ -66,11 +66,11 @@ function valueString(value: unknown): string {
 /* === Exports === */
 
 export {
-	isFunction,
 	isAsyncFunction,
-	isSyncFunction,
+	isFunction,
 	isObjectOfType,
-	isSignalOfType,
 	isRecord,
+	isSignalOfType,
+	isSyncFunction,
 	valueString,
 }

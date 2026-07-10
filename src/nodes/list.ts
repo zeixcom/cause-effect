@@ -643,14 +643,14 @@ function isList<T extends {}, S extends MutableSignal<T> = MutableSignal<T>>(
 /* === Exports === */
 
 export {
+	createList,
 	type DiffResult,
+	getKeyGenerator,
+	isList,
 	type KeyConfig,
+	keysEqual,
 	type List,
 	type ListOptions,
-	type UnknownRecord,
-	createList,
-	isList,
-	getKeyGenerator,
-	keysEqual,
 	TYPE_LIST,
+	type UnknownRecord,
 }

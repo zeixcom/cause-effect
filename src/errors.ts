@@ -219,19 +219,19 @@ function validateCallback(
 }
 
 export {
-	type Guard,
 	CircularDependencyError,
+	DuplicateKeyError,
 	EffectConvergenceError,
-	NullishSignalValueError,
-	InvalidSignalValueError,
-	UnsetSignalValueError,
+	type Guard,
 	InvalidCallbackError,
+	InvalidSignalValueError,
 	InvalidStoreMutationError,
+	NullishSignalValueError,
+	PromiseValueError,
 	ReadonlySignalError,
 	RequiredOwnerError,
-	DuplicateKeyError,
-	PromiseValueError,
-	validateSignalValue,
-	validateReadValue,
+	UnsetSignalValueError,
 	validateCallback,
+	validateReadValue,
+	validateSignalValue,
 }

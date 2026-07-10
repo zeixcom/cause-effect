@@ -235,9 +235,9 @@ function match(
 }
 
 export {
-	type MaybePromise,
-	type MatchHandlers,
-	type SingleMatchHandlers,
 	createEffect,
+	type MatchHandlers,
+	type MaybePromise,
 	match,
+	type SingleMatchHandlers,
 }
