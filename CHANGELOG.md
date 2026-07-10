@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Package distribution metadata overhauled** (`package.json`, `.npmignore`): The published entry point is now the *unminified* ESM bundle (`index.js`, ~50 KB readable) instead of the previous minified artifact; consumers' bundlers minify anyway, and unminified source improves debugging and bug reports. An explicit `exports` map (`.`: `types` → `bun` → `default`, plus `./package.json`) replaces the bare `main`/`module` pair: the `"bun"` condition lets Bun consumers resolve TypeScript source directly, while `"default"` serves the bundled `index.js` to all other toolchains. The `"module": "index.ts"` field is removed — it pointed at raw TypeScript, which broke webpack and older Rollup configs that transcribe `node_modules`. TypeScript is now an *optional* peer dependency (`peerDependenciesMeta`), so JS-only consumers no longer get an unresolvable-peer warning on install. A `files` allowlist replaces the fragile `.npmignore` negation patterns. The unused `index.dev.js` artifact is removed. **Migration:** this is a **minor** (not patch) version bump. The `exports` map intentionally blocks deep imports into package internals (e.g. `@zeix/cause-effect/src/nodes/list.ts`) — nothing in the repo or docs advertised these, and the barrel re-exports the full public API, but code relying on deep imports must switch to named imports from the package root. If your toolchain read the `module` field to consume TypeScript source, switch to the `"bun"` exports condition or import the bundled `index.js`.
+
 ### Added
 
 - **`EffectConvergenceError`**: New error class (exported from the package root), thrown when queued effects keep re-triggering each other without settling within 1000 flush passes. Typical triggers: an effect that unconditionally writes a signal it reads (`createEffect(() => count.set(count.get() + 1))`), or two effects that write each other's dependencies. The error surfaces synchronously from the `set()`/`update()`/`batch()`/`createEffect()` call that triggered the runaway; other queued effects still run before it is thrown.
