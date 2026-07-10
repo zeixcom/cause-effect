@@ -327,7 +327,7 @@ function createStore<T extends UnknownRecord>(
 		},
 
 		update(fn: (prev: T) => T) {
-			store.set(fn(store.get()))
+			store.set(fn(untrack(() => store.get())))
 		},
 
 		add<K extends keyof T & string>(key: K, value: T[K]) {

@@ -614,6 +614,50 @@ describe('Collection', () => {
 		})
 	})
 
+	describe('onChanges change-branch tracking leak', () => {
+		// The change branch of onChanges reads signal.get() to update the
+		// itemToKey reverse map. That read must be untracked — otherwise,
+		// when applyChanges is called inside an effect, it leaks an
+		// item->effect edge and the subsequent propagate re-runs the effect
+		// once during setup (transient leak, mode b).
+		test('applyChanges({ change }) inside an effect does not transiently re-run', () => {
+			type Item = { id: string; v: number }
+			let apply:
+				| ((changes: CollectionChanges<Item>) => void)
+				| undefined
+			const col = createCollection<Item>(
+				applyChanges => {
+					apply = applyChanges
+					return () => {}
+				},
+				{ keyConfig: item => item.id, value: [{ id: 'a', v: 1 }] },
+			)
+
+			// Subscribe to activate the collection (triggers watched -> sets apply)
+			const dispose = createScope(() => {
+				createEffect(() => {
+					col.get()
+				})
+			})
+
+			const trigger = createState(0)
+			let runs = 0
+			createEffect((): undefined => {
+				trigger.get()
+				runs++
+				if (runs === 1) {
+					// biome-ignore lint/style/noNonNullAssertion: activated above
+					apply!({ change: [{ id: 'a', v: 2 }] })
+				}
+			})
+
+			// Without the fix, runs is 2 here (transient re-run).
+			expect(runs).toBe(1)
+			expect(col.byKey('a')?.get()).toEqual({ id: 'a', v: 2 })
+			dispose()
+		})
+	})
+
 	describe('Input Validation', () => {
 		test('should throw InvalidCallbackError for non-function watched', () => {
 			expect(() => {

@@ -657,6 +657,31 @@ describe('Store', () => {
 		})
 	})
 
+	describe('update re-subscription leak', () => {
+		// store.update calls store.get() (tracked) then store.set(). The
+		// tracked get() leaks an effect->store edge; the subsequent set()
+		// propagates through it, re-running the effect once during setup
+		// (transient leak). After the fix, update reads the current value
+		// untracked, matching State.update (which reads node.value directly).
+		test('effect calling store.update should not transiently re-run', () => {
+			const store = createStore<{ name: string; age: number }>({
+				name: 'Alice',
+				age: 30,
+			})
+			const trigger = createState(0)
+			let runs = 0
+			createEffect((): undefined => {
+				trigger.get()
+				runs++
+				if (runs === 1) store.update(prev => ({ ...prev, age: 31 }))
+			})
+
+			// Without the fix, runs is 2 here (transient re-run).
+			expect(runs).toBe(1)
+			expect(store.age.get()).toBe(31)
+		})
+	})
+
 	describe('set type-change routing', () => {
 		// When a property changes shape (primitive -> array), store.set must
 		// route through addSignal/createList, not stuff the array into the
