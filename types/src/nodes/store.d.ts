@@ -49,6 +49,18 @@ type Store<T extends UnknownRecord> = BaseStore<T> & {
  * user.name.set('Bob'); // Only name subscribers react
  * console.log(user.get()); // { name: 'Bob', age: 30 }
  * ```
+ *
+ * Direct property assignment, deletion, or `Object.defineProperty` through the
+ * proxy throws `InvalidStoreMutationError` — use `store.key.set(value)`,
+ * `store.set(next)`, `store.add(key, value)`, or `store.remove(key)` instead.
+ * Properties are typed as signals (not raw values) so destructuring preserves
+ * reactivity; this means proxy assignment is a compile-time error for typed
+ * stores. The runtime guard extends that protection to `any`-typed access,
+ * JS consumers, and `Object.assign`. See ADR-0017 for the full rationale.
+ *
+ * Note: a data key named like a base method (`get`, `set`, `keys`, `update`,
+ * `add`, `remove`, `byKey`) shadows the method via proxy access. Use
+ * `store.byKey(key)` to reach such a property.
  */
 declare function createStore<T extends UnknownRecord>(value: T, options?: StoreOptions): Store<T>;
 /**

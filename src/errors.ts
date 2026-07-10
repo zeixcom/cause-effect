@@ -163,6 +163,29 @@ class DuplicateKeyError extends Error {
 	}
 }
 
+/**
+ * Error thrown when a Store property is assigned, deleted, or defined directly via the proxy.
+ */
+class InvalidStoreMutationError extends TypeError {
+	/**
+	 * Constructs a new InvalidStoreMutationError.
+	 *
+	 * @param prop - The property name that was directly mutated.
+	 * @param action - The kind of mutation attempted (`'assign to'`, `'delete'`, or `'define'`).
+	 */
+	constructor(
+		prop: string,
+		action: 'assign to' | 'delete' | 'define',
+	) {
+		const guidance =
+			action === 'delete'
+				? `use store.remove(${JSON.stringify(prop)})`
+				: `use store.${prop}.set(value), store.set(next), or store.add(key, value)`
+		super(`[Store] Cannot ${action} property "${prop}" directly — ${guidance}`)
+		this.name = 'InvalidStoreMutationError'
+	}
+}
+
 /* === Validation Functions === */
 
 function validateSignalValue<T extends {}>(
@@ -206,6 +229,7 @@ export {
 	InvalidSignalValueError,
 	UnsetSignalValueError,
 	InvalidCallbackError,
+	InvalidStoreMutationError,
 	ReadonlySignalError,
 	RequiredOwnerError,
 	DuplicateKeyError,

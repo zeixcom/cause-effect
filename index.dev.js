@@ -39,6 +39,13 @@ class CircularDependencyError extends Error {
   }
 }
 
+class EffectConvergenceError extends Error {
+  constructor(passes) {
+    super(`[Effect] Effects did not settle after ${passes} flush passes — check for effects that write to signals they depend on`);
+    this.name = "EffectConvergenceError";
+  }
+}
+
 class NullishSignalValueError extends TypeError {
   constructor(where) {
     super(`[${where}] Signal value cannot be null or undefined`);
@@ -92,6 +99,14 @@ class DuplicateKeyError extends Error {
   constructor(where, key, value) {
     super(`[${where}] Could not add key "${key}"${value != null ? ` with value ${JSON.stringify(value)}` : ""} because it already exists`);
     this.name = "DuplicateKeyError";
+  }
+}
+
+class InvalidStoreMutationError extends TypeError {
+  constructor(prop, action) {
+    const guidance = action === "delete" ? `use store.remove(${JSON.stringify(prop)})` : `use store.${prop}.set(value), store.set(next), or store.add(key, value)`;
+    super(`[Store] Cannot ${action} property "${prop}" directly — ${guidance}`);
+    this.name = "InvalidStoreMutationError";
   }
 }
 function validateSignalValue(where, value, guard) {
@@ -268,7 +283,7 @@ function propagate(node, newFlag = FLAG_DIRTY) {
     if ((flags & (FLAG_DIRTY | FLAG_CHECK)) >= newFlag)
       return;
     const wasQueued = flags & (FLAG_DIRTY | FLAG_CHECK);
-    node.flags = newFlag;
+    node.flags = flags & FLAG_RUNNING | newFlag;
     if (!wasQueued)
       queuedEffects.push(node);
   }
@@ -396,8 +411,8 @@ function runEffect(node) {
     activeSink = prevContext;
     activeOwner = prevOwner;
     trimSources(node);
+    node.flags &= FLAG_DIRTY | FLAG_CHECK;
   }
-  node.flags = FLAG_CLEAN;
 }
 function refresh(node) {
   if (node.flags & FLAG_CHECK) {
@@ -422,19 +437,53 @@ function refresh(node) {
     node.flags = FLAG_CLEAN;
   }
 }
+var MAX_FLUSH_PASSES = 1000;
 function flush() {
   if (flushing)
     return;
   flushing = true;
+  let errors;
+  let passes = 0;
   try {
-    for (let i = 0;i < queuedEffects.length; i++) {
-      const effect = queuedEffects[i];
-      if (effect.flags & (FLAG_DIRTY | FLAG_CHECK))
-        refresh(effect);
+    while (queuedEffects.length > 0) {
+      if (++passes > MAX_FLUSH_PASSES) {
+        queuedEffects.length = 0;
+        if (!errors)
+          errors = [];
+        errors.push(new EffectConvergenceError(MAX_FLUSH_PASSES));
+        break;
+      }
+      const batch = queuedEffects.slice();
+      queuedEffects.length = 0;
+      for (let i = 0;i < batch.length; i++) {
+        const effect = batch[i];
+        if (effect.flags & FLAG_RUNNING)
+          continue;
+        if (effect.flags & (FLAG_DIRTY | FLAG_CHECK)) {
+          try {
+            refresh(effect);
+          } catch (err) {
+            if (!errors)
+              errors = [];
+            errors.push(err);
+          }
+        }
+      }
     }
-    queuedEffects.length = 0;
   } finally {
     flushing = false;
+  }
+  if (errors) {
+    if (errors.length === 1)
+      throw errors[0];
+    throw new AggregateError(errors, "Multiple effects threw during flush");
+  }
+}
+function scheduleEffect(node) {
+  if (node.flags & (FLAG_DIRTY | FLAG_CHECK)) {
+    queuedEffects.push(node);
+    if (batchDepth === 0)
+      flush();
   }
 }
 function batch(fn) {
@@ -727,7 +776,7 @@ function createList(value, options) {
       return node.value;
     },
     set(next) {
-      const prev = node.flags & FLAG_DIRTY ? buildValue() : node.value;
+      const prev = node.flags & FLAG_DIRTY ? untrack(buildValue) : node.value;
       const changes = diffArrays(prev, next, keys, generateKey, contentBased, itemEquals);
       if (changes.changed) {
         keys = changes.newKeys;
@@ -740,7 +789,7 @@ function createList(value, options) {
       }
     },
     update(fn) {
-      list.set(fn(list.get()));
+      list.set(fn(untrack(() => list.get())));
     },
     at(index) {
       subscribe();
@@ -811,11 +860,13 @@ function createList(value, options) {
     },
     sort(compareFn) {
       const entries = [];
-      for (const key of keys) {
-        const v = signals.get(key)?.get();
-        if (v !== undefined)
-          entries.push([key, v]);
-      }
+      untrack(() => {
+        for (const key of keys) {
+          const v = signals.get(key)?.get();
+          if (v !== undefined)
+            entries.push([key, v]);
+        }
+      });
       entries.sort(isFunction(compareFn) ? (a, b) => compareFn(a[1], b[1]) : (a, b) => String(a[1]).localeCompare(String(b[1])));
       const newOrder = [];
       for (const [key] of entries)
@@ -836,17 +887,19 @@ function createList(value, options) {
       const add = {};
       const remove = {};
       let hasRemove = false;
-      for (let i = 0;i < actualDeleteCount; i++) {
-        const index = actualStart + i;
-        const key = keys[index];
-        if (key) {
-          const signal = signals.get(key);
-          if (signal) {
-            remove[key] = signal.get();
-            hasRemove = true;
+      untrack(() => {
+        for (let i = 0;i < actualDeleteCount; i++) {
+          const index = actualStart + i;
+          const key = keys[index];
+          if (key) {
+            const signal = signals.get(key);
+            if (signal) {
+              remove[key] = signal.get();
+              hasRemove = true;
+            }
           }
         }
-      }
+      });
       const newOrder = keys.slice(0, actualStart);
       const change = {};
       let hasAdd = false;
@@ -1224,7 +1277,7 @@ function createCollection(watched, options) {
             continue;
           const signal = signals.get(key);
           if (signal && isState(signal)) {
-            itemToKey.delete(signal.get());
+            itemToKey.delete(untrack(() => signal.get()));
             signal.set(item);
             itemToKey.set(item, key);
           }
@@ -1336,6 +1389,7 @@ function createEffect(fn) {
   if (activeOwner)
     registerCleanup(activeOwner, dispose);
   runEffect(node);
+  scheduleEffect(node);
   return dispose;
 }
 function match(signalOrSignals, handlers) {
@@ -1579,7 +1633,7 @@ function createStore(value, options) {
       }
     },
     update(fn) {
-      store.set(fn(store.get()));
+      store.set(fn(untrack(() => store.get())));
     },
     add(key, value2) {
       if (signals.has(key))
@@ -1609,6 +1663,15 @@ function createStore(value, options) {
         return Reflect.get(target, prop);
       if (typeof prop !== "symbol")
         return target.byKey(prop);
+    },
+    set(_target, prop) {
+      throw new InvalidStoreMutationError(String(prop), "assign to");
+    },
+    deleteProperty(_target, prop) {
+      throw new InvalidStoreMutationError(String(prop), "delete");
+    },
+    defineProperty(_target, prop) {
+      throw new InvalidStoreMutationError(String(prop), "define");
     },
     has(target, prop) {
       if (prop in target)
@@ -1798,8 +1861,10 @@ export {
   ReadonlySignalError,
   PromiseValueError,
   NullishSignalValueError,
+  InvalidStoreMutationError,
   InvalidSignalValueError,
   InvalidCallbackError,
+  EffectConvergenceError,
   DuplicateKeyError,
   DEFAULT_EQUALITY,
   DEEP_EQUALITY,

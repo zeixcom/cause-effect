@@ -19,6 +19,17 @@ declare class CircularDependencyError extends Error {
     constructor(where: string);
 }
 /**
+ * Error thrown when queued effects keep re-triggering each other without settling.
+ */
+declare class EffectConvergenceError extends Error {
+    /**
+     * Constructs a new EffectConvergenceError.
+     *
+     * @param passes - The number of flush passes that ran without the graph settling.
+     */
+    constructor(passes: number);
+}
+/**
  * Error thrown when a signal value is null or undefined.
  */
 declare class NullishSignalValueError extends TypeError {
@@ -97,8 +108,20 @@ declare class PromiseValueError extends TypeError {
 declare class DuplicateKeyError extends Error {
     constructor(where: string, key: string, value?: unknown);
 }
+/**
+ * Error thrown when a Store property is assigned, deleted, or defined directly via the proxy.
+ */
+declare class InvalidStoreMutationError extends TypeError {
+    /**
+     * Constructs a new InvalidStoreMutationError.
+     *
+     * @param prop - The property name that was directly mutated.
+     * @param action - The kind of mutation attempted (`'assign to'`, `'delete'`, or `'define'`).
+     */
+    constructor(prop: string, action: 'assign to' | 'delete' | 'define');
+}
 declare function validateSignalValue<T extends {}>(where: string, value: unknown, guard?: Guard<T>): asserts value is T;
 declare function validateReadValue<T extends {}>(where: string, value: T | null | undefined): asserts value is T;
 declare function validateCallback(where: string, value: unknown): asserts value is (...args: unknown[]) => unknown;
 declare function validateCallback<T>(where: string, value: unknown, guard: (value: unknown) => value is T): asserts value is T;
-export { type Guard, CircularDependencyError, NullishSignalValueError, InvalidSignalValueError, UnsetSignalValueError, InvalidCallbackError, ReadonlySignalError, RequiredOwnerError, DuplicateKeyError, PromiseValueError, validateSignalValue, validateReadValue, validateCallback, };
+export { type Guard, CircularDependencyError, EffectConvergenceError, NullishSignalValueError, InvalidSignalValueError, UnsetSignalValueError, InvalidCallbackError, InvalidStoreMutationError, ReadonlySignalError, RequiredOwnerError, DuplicateKeyError, PromiseValueError, validateSignalValue, validateReadValue, validateCallback, };
