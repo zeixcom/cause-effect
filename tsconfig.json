@@ -37,8 +37,8 @@
 
 		/* Performance */
 		"incremental": true,
-		"tsBuildInfoFile": "./.tsbuildinfo",
+		"tsBuildInfoFile": "./.tsbuildinfo"
 	},
 	"include": ["./**/*.ts"],
-	"exclude": ["node_modules", "types", "index.js"],
+	"exclude": ["node_modules", "types", "index.js"]
 }

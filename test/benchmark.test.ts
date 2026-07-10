@@ -291,9 +291,7 @@ for (const framework of [v18]) {
 		})
 
 		test('mux', async () => {
-			const heads = new Array(100)
-				.fill(null)
-				.map(_ => framework.signal(0))
+			const heads = new Array(100).fill(null).map(_ => framework.signal(0))
 			const mux = framework.computed(() =>
 				Object.fromEntries(heads.map(h => h.read()).entries()),
 			)
@@ -451,9 +449,7 @@ for (const framework of [v18]) {
 			framework.withBuild(() => {
 				const A = framework.signal(0)
 				const B = framework.signal(0)
-				const C = framework.computed(
-					() => (A.read() % 2) + (B.read() % 2),
-				)
+				const C = framework.computed(() => (A.read() % 2) + (B.read() % 2))
 				const D = framework.computed(() =>
 					numbers.map(i => ({
 						x: i + (A.read() % 2) - (B.read() % 2),
@@ -547,12 +543,8 @@ for (const framework of [v18]) {
 					const m: CellxLayer = layer
 					const s = {
 						prop1: framework.computed(() => m.prop2.read()),
-						prop2: framework.computed(
-							() => m.prop1.read() - m.prop3.read(),
-						),
-						prop3: framework.computed(
-							() => m.prop2.read() + m.prop4.read(),
-						),
+						prop2: framework.computed(() => m.prop1.read() - m.prop3.read()),
+						prop3: framework.computed(() => m.prop2.read() + m.prop4.read()),
 						prop4: framework.computed(() => m.prop3.read()),
 					}
 

@@ -38,6 +38,7 @@
 		"bench": "bun run bench/reactivity.bench.ts",
 		"test": "bun test --path-ignore-patterns=**/regression*",
 		"regression": "bun test test/regression-performance.test.ts && bun test test/regression-bundle.test.ts",
-		"lint": "bunx biome lint --write"
+		"check": "bunx tsc --noEmit && bunx biome check . && bun run test && bun test test/regression-bundle.test.ts",
+		"lint": "bunx biome check --write"
 	}
 }

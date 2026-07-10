@@ -46,8 +46,7 @@ describe('Recipes', () => {
 
 		const wizardState = createMemo(() => {
 			const step = currentStep.get()
-			const canProceed =
-				step === 1 ? isStep1Valid.get() : isStep2Valid.get()
+			const canProceed = step === 1 ? isStep1Valid.get() : isStep2Valid.get()
 			const isComplete = step === totalSteps && canProceed
 
 			return {
@@ -59,10 +58,7 @@ describe('Recipes', () => {
 		})
 
 		function nextStep() {
-			if (
-				wizardState.get().canProceed &&
-				currentStep.get() < totalSteps
-			) {
+			if (wizardState.get().canProceed && currentStep.get() < totalSteps) {
 				currentStep.update(s => s + 1)
 			}
 		}
@@ -163,9 +159,7 @@ describe('Recipes', () => {
 		applyComplexServerSync({
 			removed: ['w2'],
 			modified: [{ id: 'w1', newMembers: ['Alice', 'Bob', 'Dave'] }],
-			added: [
-				{ id: 'w3', name: 'Marketing', members: ['Eve'], active: true },
-			],
+			added: [{ id: 'w3', name: 'Marketing', members: ['Eve'], active: true }],
 		})
 
 		expect(totalCount.get()).toBe(4)

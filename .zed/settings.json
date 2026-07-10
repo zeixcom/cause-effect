@@ -4,22 +4,22 @@
 			"language_servers": ["!eslint", "..."],
 			"code_actions_on_format": {
 				"source.fixAll.biome": true,
-				"source.organizeImports.biome": true,
-			},
+				"source.organizeImports.biome": true
+			}
 		},
 		"JavaScript": {
 			"language_servers": ["!eslint", "..."],
 			"code_actions_on_format": {
 				"source.fixAll.biome": true,
-				"source.organizeImports.biome": true,
-			},
+				"source.organizeImports.biome": true
+			}
 		},
 		"TSX": {
 			"language_servers": ["!eslint", "..."],
 			"code_actions_on_format": {
 				"source.fixAll.biome": true,
-				"source.organizeImports.biome": true,
-			},
-		},
-	},
+				"source.organizeImports.biome": true
+			}
+		}
+	}
 }

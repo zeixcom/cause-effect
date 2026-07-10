@@ -14,8 +14,8 @@ import {
 	registerCleanup,
 	runCleanup,
 	runEffect,
-	scheduleEffect,
 	type Signal,
+	scheduleEffect,
 	trimSources,
 } from '../graph'
 import { isTask } from './task'
@@ -32,9 +32,11 @@ type MaybePromise<T> = T | Promise<T>
  */
 type MatchHandlers<T extends readonly Signal<unknown & {}>[]> = {
 	/** Called when all signals have a value. Receives a tuple of resolved values. */
-	ok: (values: {
-		[K in keyof T]: T[K] extends Signal<infer V> ? V : never
-	}) => MaybePromise<MaybeCleanup>
+	ok: (
+		values: {
+			[K in keyof T]: T[K] extends Signal<infer V> ? V : never
+		},
+	) => MaybePromise<MaybeCleanup>
 	/** Called when one or more signals hold an error. Defaults to `console.error`. */
 	err?: (errors: readonly Error[]) => MaybePromise<MaybeCleanup>
 	/** Called when one or more signals are unset (pending). */
@@ -221,12 +223,14 @@ function match(
 		const owner = activeOwner
 		const controller = new AbortController()
 		registerCleanup(owner, () => controller.abort())
-		out.then(cleanup => {
-			if (!controller.signal.aborted && typeof cleanup === 'function')
-				registerCleanup(owner, cleanup)
-		}).catch(e => {
-			err([e instanceof Error ? e : new Error(String(e))])
-		})
+		out
+			.then(cleanup => {
+				if (!controller.signal.aborted && typeof cleanup === 'function')
+					registerCleanup(owner, cleanup)
+			})
+			.catch(e => {
+				err([e instanceof Error ? e : new Error(String(e))])
+			})
 	}
 }
 

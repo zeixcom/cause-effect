@@ -4,8 +4,8 @@
 		"noEmit": false,
 		"declaration": true,
 		"declarationDir": "./types",
-		"emitDeclarationOnly": true,
+		"emitDeclarationOnly": true
 	},
 	"include": ["./index.ts", "./src/**/*.ts"],
-	"exclude": ["node_modules", "types", "test", "archive"],
+	"exclude": ["node_modules", "types", "test", "archive"]
 }

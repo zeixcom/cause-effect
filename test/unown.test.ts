@@ -1,19 +1,18 @@
 import { describe, expect, test } from 'bun:test'
-import {
-	createEffect,
-	createScope,
-	createState,
-	unown,
-} from '../index.ts'
+import { createEffect, createScope, createState, unown } from '../index.ts'
 
 describe('createScope with root option', () => {
-
 	test('root scope is not registered on enclosing scope', () => {
 		let rootCleanupRan = false
 		const outerDispose = createScope(() => {
-			createScope(() => {
-				return () => { rootCleanupRan = true }
-			}, { root: true })
+			createScope(
+				() => {
+					return () => {
+						rootCleanupRan = true
+					}
+				},
+				{ root: true },
+			)
 		})
 		outerDispose()
 		expect(rootCleanupRan).toBe(false)
@@ -26,9 +25,14 @@ describe('createScope with root option', () => {
 		const outerDispose = createScope(() => {
 			createEffect((): undefined => {
 				trigger.get()
-				createScope(() => {
-					return () => { rootCleanupRuns++ }
-				}, { root: true })
+				createScope(
+					() => {
+						return () => {
+							rootCleanupRuns++
+						}
+					},
+					{ root: true },
+				)
 			})
 		})
 
@@ -47,12 +51,17 @@ describe('createScope with root option', () => {
 		let componentCleanupRuns = 0
 
 		const connectComponent = () =>
-			createScope(() => {
-				createEffect((): undefined => {
-					componentEffectRuns++
-				})
-				return () => { componentCleanupRuns++ }
-			}, { root: true })
+			createScope(
+				() => {
+					createEffect((): undefined => {
+						componentEffectRuns++
+					})
+					return () => {
+						componentCleanupRuns++
+					}
+				},
+				{ root: true },
+			)
 
 		const outerDispose = createScope(() => {
 			createEffect((): undefined => {
@@ -73,9 +82,14 @@ describe('createScope with root option', () => {
 
 	test('dispose returned from root scope still works', () => {
 		let cleanupRan = false
-		const dispose = createScope(() => {
-			return () => { cleanupRan = true }
-		}, { root: true })
+		const dispose = createScope(
+			() => {
+				return () => {
+					cleanupRan = true
+				}
+			},
+			{ root: true },
+		)
 		expect(cleanupRan).toBe(false)
 		dispose()
 		expect(cleanupRan).toBe(true)
@@ -85,12 +99,15 @@ describe('createScope with root option', () => {
 		const source = createState('a')
 		let effectRuns = 0
 
-		const dispose = createScope(() => {
-			createEffect((): undefined => {
-				source.get()
-				effectRuns++
-			})
-		}, { root: true })
+		const dispose = createScope(
+			() => {
+				createEffect((): undefined => {
+					source.get()
+					effectRuns++
+				})
+			},
+			{ root: true },
+		)
 
 		expect(effectRuns).toBe(1)
 		source.set('b')
@@ -105,22 +122,27 @@ describe('createScope with root option', () => {
 		let postCleanupRan = false
 		const outerDispose = createScope(() => {
 			try {
-				createScope(() => { throw new Error('boom') }, { root: true })
+				createScope(
+					() => {
+						throw new Error('boom')
+					},
+					{ root: true },
+				)
 			} catch {
 				// swallow
 			}
 			createScope(() => {
-				return () => { postCleanupRan = true }
+				return () => {
+					postCleanupRan = true
+				}
 			})
 		})
 		outerDispose()
 		expect(postCleanupRan).toBe(true)
 	})
-
 })
 
 describe('unown', () => {
-
 	test('should return the value of the callback', () => {
 		const result = unown(() => 42)
 		expect(result).toBe(42)
@@ -128,7 +150,9 @@ describe('unown', () => {
 
 	test('should run the callback immediately and synchronously', () => {
 		let ran = false
-		unown(() => { ran = true })
+		unown(() => {
+			ran = true
+		})
 		expect(ran).toBe(true)
 	})
 
@@ -137,7 +161,9 @@ describe('unown', () => {
 		const outerDispose = createScope(() => {
 			unown(() => {
 				createScope(() => {
-					return () => { innerCleanupRan = true }
+					return () => {
+						innerCleanupRan = true
+					}
 				})
 			})
 		})
@@ -154,7 +180,9 @@ describe('unown', () => {
 				trigger.get()
 				unown(() => {
 					createScope(() => {
-						return () => { innerCleanupRuns++ }
+						return () => {
+							innerCleanupRuns++
+						}
 					})
 				})
 			})
@@ -174,14 +202,17 @@ describe('unown', () => {
 		let componentEffectRuns = 0
 		let componentCleanupRuns = 0
 
-		const connectComponent = () => unown(() =>
-			createScope(() => {
-				createEffect((): undefined => {
-					componentEffectRuns++
-				})
-				return () => { componentCleanupRuns++ }
-			})
-		)
+		const connectComponent = () =>
+			unown(() =>
+				createScope(() => {
+					createEffect((): undefined => {
+						componentEffectRuns++
+					})
+					return () => {
+						componentCleanupRuns++
+					}
+				}),
+			)
 
 		const outerDispose = createScope(() => {
 			createEffect((): undefined => {
@@ -210,7 +241,7 @@ describe('unown', () => {
 					source.get()
 					effectRuns++
 				})
-			})
+			}),
 		)
 
 		expect(effectRuns).toBe(1)
@@ -226,8 +257,10 @@ describe('unown', () => {
 		let cleanupRan = false
 		const dispose = unown(() =>
 			createScope(() => {
-				return () => { cleanupRan = true }
-			})
+				return () => {
+					cleanupRan = true
+				}
+			}),
 		)
 		expect(cleanupRan).toBe(false)
 		dispose()
@@ -240,7 +273,9 @@ describe('unown', () => {
 			unown(() => {
 				unown(() => {
 					createScope(() => {
-						return () => { innerCleanupRan = true }
+						return () => {
+							innerCleanupRan = true
+						}
 					})
 				})
 			})
@@ -252,9 +287,13 @@ describe('unown', () => {
 	test('restores the active owner after the callback completes', () => {
 		let postCleanupRan = false
 		const outerDispose = createScope(() => {
-			unown(() => { /* some unowned work */ })
+			unown(() => {
+				/* some unowned work */
+			})
 			createScope(() => {
-				return () => { postCleanupRan = true }
+				return () => {
+					postCleanupRan = true
+				}
 			})
 		})
 		outerDispose()
@@ -265,12 +304,16 @@ describe('unown', () => {
 		let postCleanupRan = false
 		const outerDispose = createScope(() => {
 			try {
-				unown(() => { throw new Error('boom') })
+				unown(() => {
+					throw new Error('boom')
+				})
 			} catch {
 				// swallow
 			}
 			createScope(() => {
-				return () => { postCleanupRan = true }
+				return () => {
+					postCleanupRan = true
+				}
 			})
 		})
 		outerDispose()
@@ -288,5 +331,4 @@ describe('unown', () => {
 		expect(ran).toBe(true)
 		expect(typeof dispose).toBe('function')
 	})
-
 })

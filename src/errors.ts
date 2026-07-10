@@ -173,10 +173,7 @@ class InvalidStoreMutationError extends TypeError {
 	 * @param prop - The property name that was directly mutated.
 	 * @param action - The kind of mutation attempted (`'assign to'`, `'delete'`, or `'define'`).
 	 */
-	constructor(
-		prop: string,
-		action: 'assign to' | 'delete' | 'define',
-	) {
+	constructor(prop: string, action: 'assign to' | 'delete' | 'define') {
 		const guidance =
 			action === 'delete'
 				? `use store.remove(${JSON.stringify(prop)})`

@@ -61,9 +61,7 @@ type Collection<T extends {}, S extends Signal<T> = Signal<T>> = {
 	byKey(key: string): S | undefined
 	keyAt(index: number): string | undefined
 	indexOfKey(key: string): number
-	deriveCollection<R extends {}>(
-		callback: (sourceValue: T) => R,
-	): Collection<R>
+	deriveCollection<R extends {}>(callback: (sourceValue: T) => R): Collection<R>
 	deriveCollection<R extends {}>(
 		callback: (sourceValue: T, abort: AbortSignal) => Promise<R>,
 	): Collection<R>
@@ -154,10 +152,7 @@ function deriveCollection<T extends {}, U extends {}>(
 					const sourceValue = itemSignal.get() as U
 					if (sourceValue == null) return prev as T
 					return (
-						callback as (
-							sourceValue: U,
-							abort: AbortSignal,
-						) => Promise<T>
+						callback as (sourceValue: U, abort: AbortSignal) => Promise<T>
 					)(sourceValue, abort)
 				})
 			: createMemo(() => {

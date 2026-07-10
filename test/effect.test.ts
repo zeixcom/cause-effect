@@ -536,9 +536,7 @@ describe('createEffect', () => {
 				'[Effect] Callback null is invalid',
 			)
 			// @ts-expect-error - Testing invalid input
-			expect(() => createEffect(42)).toThrow(
-				'[Effect] Callback 42 is invalid',
-			)
+			expect(() => createEffect(42)).toThrow('[Effect] Callback 42 is invalid')
 		})
 	})
 })
@@ -1277,10 +1275,7 @@ describe('match', () => {
 						ok: () =>
 							new Promise<undefined>((_resolve, reject) => {
 								// Reject asynchronously, after disposal.
-								setTimeout(
-									() => reject(new Error('late reject')),
-									10,
-								)
+								setTimeout(() => reject(new Error('late reject')), 10)
 							}),
 						err: e => {
 							errCount++

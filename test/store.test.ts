@@ -385,13 +385,11 @@ describe('Store', () => {
 		test('should maintain property key ordering', () => {
 			const config = createStore({ alpha: 1, beta: 2, gamma: 3 })
 			const entries = [...config]
-			expect(entries.map(([key, signal]) => [key, signal.get()])).toEqual(
-				[
-					['alpha', 1],
-					['beta', 2],
-					['gamma', 3],
-				],
-			)
+			expect(entries.map(([key, signal]) => [key, signal.get()])).toEqual([
+				['alpha', 1],
+				['beta', 2],
+				['gamma', 3],
+			])
 		})
 	})
 
@@ -750,9 +748,9 @@ describe('Store', () => {
 			const store = createStore<{ name: string; x?: number }>({
 				name: 'Alice',
 			})
-			expect(() =>
-				Object.defineProperty(store, 'x', { value: 1 }),
-			).toThrow(InvalidStoreMutationError)
+			expect(() => Object.defineProperty(store, 'x', { value: 1 })).toThrow(
+				InvalidStoreMutationError,
+			)
 			expect(store.get()).toEqual({ name: 'Alice' })
 		})
 

@@ -4,7 +4,12 @@
  * path a real consumer uses — and actually wires the four core signal types
  * together so the bundler can't eliminate code a real usage would retain.
  */
-import { createEffect, createMemo, createState, createTask } from '../../index.ts'
+import {
+	createEffect,
+	createMemo,
+	createState,
+	createTask,
+} from '../../index.ts'
 
 const count = createState(0)
 const doubled = createMemo(() => count.get() * 2)

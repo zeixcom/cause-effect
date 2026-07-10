@@ -147,9 +147,7 @@ function createSlot<T extends {}>(
 		}
 	}
 
-	const replace = <U extends T>(
-		next: Signal<U> | SlotDescriptor<U>,
-	): void => {
+	const replace = <U extends T>(next: Signal<U> | SlotDescriptor<U>): void => {
 		validateSignalValue(TYPE_SLOT, next, isSignalOrDescriptor)
 
 		delegated = next

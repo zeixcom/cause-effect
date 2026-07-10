@@ -199,9 +199,7 @@ describe('List', () => {
 			const list = createList([{ id: 'a', val: 1 }], {
 				keyConfig: item => item.id,
 			})
-			expect(() => list.add({ id: 'a', val: 2 })).toThrow(
-				'already exists',
-			)
+			expect(() => list.add({ id: 'a', val: 2 })).toThrow('already exists')
 		})
 
 		test('DuplicateKeyError message includes [List] prefix and key', () => {
@@ -603,9 +601,7 @@ describe('List', () => {
 
 		test('computed signals should react to list changes', () => {
 			const list = createList([1, 2, 3])
-			const sum = createMemo(() =>
-				list.get().reduce((acc, n) => acc + n, 0),
-			)
+			const sum = createMemo(() => list.get().reduce((acc, n) => acc + n, 0))
 
 			expect(sum.get()).toBe(6)
 			list.add(4)
@@ -1141,9 +1137,6 @@ test('Type Inference for custom createItem', () => {
 			? true
 			: false
 	type _Test = Expect<
-		Equal<
-			typeof byKey,
-			ReturnType<typeof createStore<TodoItem>> | undefined
-		>
+		Equal<typeof byKey, ReturnType<typeof createStore<TodoItem>> | undefined>
 	>
 })
