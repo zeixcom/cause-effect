@@ -97,10 +97,7 @@ describe('State', () => {
 
 	describe('options.equals', () => {
 		test('should use custom equality function to skip updates', () => {
-			const state = createState(
-				{ x: 1 },
-				{ equals: (a, b) => a.x === b.x },
-			)
+			const state = createState({ x: 1 }, { equals: (a, b) => a.x === b.x })
 			let effectCount = 0
 			createEffect(() => {
 				state.get()
@@ -142,9 +139,7 @@ describe('State', () => {
 			const state = createState(1, {
 				guard: (v): v is number => typeof v === 'number' && v > 0,
 			})
-			expect(() => state.set(0)).toThrow(
-				'[State] Signal value 0 is invalid',
-			)
+			expect(() => state.set(0)).toThrow('[State] Signal value 0 is invalid')
 			expect(state.get()).toBe(1) // unchanged
 		})
 

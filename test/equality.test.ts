@@ -131,9 +131,9 @@ describe('DEEP_EQUALITY', () => {
 		})
 
 		test('differ in length', () => {
-			expect(
-				DEEP_EQUALITY([1, 2] as number[], [1, 2, 3] as number[]),
-			).toBe(false)
+			expect(DEEP_EQUALITY([1, 2] as number[], [1, 2, 3] as number[])).toBe(
+				false,
+			)
 		})
 
 		test('differ in one element', () => {
@@ -149,15 +149,15 @@ describe('DEEP_EQUALITY', () => {
 		})
 
 		test('array of equal objects', () => {
-			expect(
-				DEEP_EQUALITY([{ x: 1 }, { x: 2 }], [{ x: 1 }, { x: 2 }]),
-			).toBe(true)
+			expect(DEEP_EQUALITY([{ x: 1 }, { x: 2 }], [{ x: 1 }, { x: 2 }])).toBe(
+				true,
+			)
 		})
 
 		test('array of objects differing in one element', () => {
-			expect(
-				DEEP_EQUALITY([{ x: 1 }, { x: 2 }], [{ x: 1 }, { x: 9 }]),
-			).toBe(false)
+			expect(DEEP_EQUALITY([{ x: 1 }, { x: 2 }], [{ x: 1 }, { x: 9 }])).toBe(
+				false,
+			)
 		})
 	})
 

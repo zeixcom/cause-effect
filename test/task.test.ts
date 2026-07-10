@@ -462,13 +462,9 @@ describe('Task', () => {
 
 		test('should throw InvalidCallbackError for non-function callback', () => {
 			// @ts-expect-error - Testing invalid input
-			expect(() => createTask(null)).toThrow(
-				'[Task] Callback null is invalid',
-			)
+			expect(() => createTask(null)).toThrow('[Task] Callback null is invalid')
 			// @ts-expect-error - Testing invalid input
-			expect(() => createTask(42)).toThrow(
-				'[Task] Callback 42 is invalid',
-			)
+			expect(() => createTask(42)).toThrow('[Task] Callback 42 is invalid')
 		})
 
 		test('should throw NullishSignalValueError for null initial value', () => {
@@ -519,9 +515,7 @@ describe('Task', () => {
 			}
 			expect(caught).toBeInstanceOf(Error)
 			expect((caught as Error).message).toBe('sync boom')
-			expect((caught as Error).message).not.toContain(
-				'Circular dependency',
-			)
+			expect((caught as Error).message).not.toContain('Circular dependency')
 		})
 	})
 

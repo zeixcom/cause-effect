@@ -109,9 +109,7 @@ describe('Performance — primitive nodes', () => {
 			const branches = Array.from({ length: 5 }, () =>
 				f.createMemo(() => head.get() + 1),
 			)
-			const sum = f.createMemo(() =>
-				branches.reduce((a, b) => a + b.get(), 0),
-			)
+			const sum = f.createMemo(() => branches.reduce((a, b) => a + b.get(), 0))
 			f.createEffect(() => {
 				sum.get()
 			})
@@ -233,9 +231,7 @@ describe('Performance — composite nodes', () => {
 
 	test('derived collection item update (2000 iterations)', () => {
 		const setup = (f: typeof current) => () => {
-			const list = f.createList<number>(
-				Array.from({ length: 5 }, (_, i) => i),
-			)
+			const list = f.createList<number>(Array.from({ length: 5 }, (_, i) => i))
 			const derived = list.deriveCollection((v: number) => v * 2)
 			// biome-ignore lint/style/noNonNullAssertion: list is pre-populated
 			const firstKey = list.keyAt(0)!

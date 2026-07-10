@@ -44,10 +44,7 @@ type BaseStore<T extends UnknownRecord> = {
 	readonly [Symbol.toStringTag]: 'Store'
 	readonly [Symbol.isConcatSpreadable]: false
 	[Symbol.iterator](): IterableIterator<
-		[
-			string,
-			State<T[keyof T] & {}> | Store<UnknownRecord> | List<unknown & {}>,
-		]
+		[string, State<T[keyof T] & {}> | Store<UnknownRecord> | List<unknown & {}>]
 	>
 	keys(): IterableIterator<string>
 	byKey<K extends keyof T & string>(
@@ -99,10 +96,7 @@ function diffRecords<T extends UnknownRecord>(prev: T, next: T): DiffResult {
 	for (const key of nextKeys) {
 		if (key in prev) {
 			if (
-				!DEEP_EQUALITY(
-					prev[key] as unknown & {},
-					next[key] as unknown & {},
-				)
+				!DEEP_EQUALITY(prev[key] as unknown & {}, next[key] as unknown & {})
 			) {
 				change[key] = next[key]
 				changed = true
@@ -274,11 +268,7 @@ function createStore<T extends UnknownRecord>(
 			for (const [key, signal] of signals) {
 				yield [key, signal] as [
 					string,
-					(
-						| State<T[keyof T] & {}>
-						| Store<UnknownRecord>
-						| List<unknown & {}>
-					),
+					State<T[keyof T] & {}> | Store<UnknownRecord> | List<unknown & {}>,
 				]
 			}
 		},
@@ -289,8 +279,7 @@ function createStore<T extends UnknownRecord>(
 		},
 
 		byKey<K extends keyof T & string>(key: K) {
-			return signals.get(key) as T[K] extends readonly (infer U extends
-				{})[]
+			return signals.get(key) as T[K] extends readonly (infer U extends {})[]
 				? List<U>
 				: T[K] extends UnknownRecord
 					? Store<T[K]>
@@ -331,8 +320,7 @@ function createStore<T extends UnknownRecord>(
 			// Use cached value if clean, recompute if dirty. untrack prevents
 			// buildValue's child .get() calls from leaking edges into whatever
 			// effect is currently active (which would cause over-broad re-runs).
-			const prev =
-				node.flags & FLAG_DIRTY ? untrack(buildValue) : node.value
+			const prev = node.flags & FLAG_DIRTY ? untrack(buildValue) : node.value
 
 			const changes = diffRecords(prev, next)
 			if (applyChanges(changes)) {
@@ -347,8 +335,7 @@ function createStore<T extends UnknownRecord>(
 		},
 
 		add<K extends keyof T & string>(key: K, value: T[K]) {
-			if (signals.has(key))
-				throw new DuplicateKeyError(TYPE_STORE, key, value)
+			if (signals.has(key)) throw new DuplicateKeyError(TYPE_STORE, key, value)
 			addSignal(key, value)
 			node.flags |= FLAG_DIRTY | FLAG_RELINK
 			for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
@@ -390,8 +377,7 @@ function createStore<T extends UnknownRecord>(
 			return Array.from(target.keys())
 		},
 		getOwnPropertyDescriptor(target, prop) {
-			if (prop in target)
-				return Reflect.getOwnPropertyDescriptor(target, prop)
+			if (prop in target) return Reflect.getOwnPropertyDescriptor(target, prop)
 			if (typeof prop === 'symbol') return undefined
 			const signal = target.byKey(String(prop) as keyof T & string)
 			return signal

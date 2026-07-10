@@ -648,8 +648,7 @@ group('Collection: chain 5 derivations (100 items)', () => {
 	bench('cause-effect', () => {
 		const list = createList(Array.from({ length: 100 }, (_, i) => i + 1))
 		let col = list.deriveCollection((v: number) => v * 2)
-		for (let i = 1; i < 5; i++)
-			col = col.deriveCollection((v: number) => v + 1)
+		for (let i = 1; i < 5; i++) col = col.deriveCollection((v: number) => v + 1)
 		col.get()
 	})
 })

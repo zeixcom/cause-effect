@@ -254,20 +254,20 @@ describe('Slot', () => {
 				get: () => state.get() * 2,
 				set: (val: number) => state.set(val / 2),
 			})
-			
+
 			expect(slot.get()).toBe(2)
-			
+
 			let runs = 0
 			createEffect(() => {
 				slot.get()
 				runs++
 			})
 			expect(runs).toBe(1)
-			
+
 			state.set(5)
 			expect(runs).toBe(2)
 			expect(slot.get()).toBe(10)
-			
+
 			slot.set(100)
 			expect(state.get()).toBe(50)
 			expect(runs).toBe(3)
@@ -326,7 +326,7 @@ describe('Slot', () => {
 			const slot = createSlot(state, {
 				// Only compare by x — changes to y should not propagate.
 				// First call receives undefined prev, so guard against that.
-				equals: (a, b) => b == null ? false : a.x === b.x,
+				equals: (a, b) => (b == null ? false : a.x === b.x),
 			})
 			let runs = 0
 			let seenX = 0

@@ -362,13 +362,9 @@ describe('Memo', () => {
 	describe('Input Validation', () => {
 		test('should throw InvalidCallbackError for non-function callback', () => {
 			// @ts-expect-error - Testing invalid input
-			expect(() => createMemo(null)).toThrow(
-				'[Memo] Callback null is invalid',
-			)
+			expect(() => createMemo(null)).toThrow('[Memo] Callback null is invalid')
 			// @ts-expect-error - Testing invalid input
-			expect(() => createMemo(42)).toThrow(
-				'[Memo] Callback 42 is invalid',
-			)
+			expect(() => createMemo(42)).toThrow('[Memo] Callback 42 is invalid')
 			// @ts-expect-error - Testing invalid input
 			expect(() => createMemo('str')).toThrow(
 				'[Memo] Callback "str" is invalid',

@@ -236,12 +236,7 @@ const deepEqualInner = (
 ): boolean => {
 	if (Object.is(a, b)) return true
 	if (typeof a !== typeof b) return false
-	if (
-		a == null ||
-		typeof a !== 'object' ||
-		b == null ||
-		typeof b !== 'object'
-	)
+	if (a == null || typeof a !== 'object' || b == null || typeof b !== 'object')
 		return false
 
 	// Cycle guard: if `a` is already on the current recursion path, treat this
@@ -406,8 +401,7 @@ function propagate(node: SinkNode, newFlag = FLAG_DIRTY): void {
 		}
 
 		// Propagate Check to sinks
-		for (let e = node.sinks; e; e = e.nextSink)
-			propagate(e.sink, FLAG_CHECK)
+		for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink, FLAG_CHECK)
 	} else {
 		if ((flags & (FLAG_DIRTY | FLAG_CHECK)) >= newFlag) return
 
@@ -520,8 +514,7 @@ function recomputeTask(node: TaskNode<unknown & {}>): void {
 				if (node.error || !node.equals(next, node.value)) {
 					node.value = next
 					node.error = undefined
-					for (let e = node.sinks; e; e = e.nextSink)
-						propagate(e.sink)
+					for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
 				}
 				setState(node.pendingNode, false)
 			})
@@ -539,8 +532,7 @@ function recomputeTask(node: TaskNode<unknown & {}>): void {
 				) {
 					// We don't clear old value on errors
 					node.error = error
-					for (let e = node.sinks; e; e = e.nextSink)
-						propagate(e.sink)
+					for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
 				}
 				setState(node.pendingNode, false)
 			})
@@ -580,11 +572,7 @@ function refresh(node: SinkNode): void {
 
 	if (node.flags & FLAG_RUNNING) {
 		throw new CircularDependencyError(
-			'controller' in node
-				? TYPE_TASK
-				: 'value' in node
-					? TYPE_MEMO
-					: 'Effect',
+			'controller' in node ? TYPE_TASK : 'value' in node ? TYPE_MEMO : 'Effect',
 		)
 	}
 
