@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **`EffectConvergenceError`**: New error class (exported from the package root), thrown when queued effects keep re-triggering each other without settling within 1000 flush passes. Typical triggers: an effect that unconditionally writes a signal it reads (`createEffect(() => count.set(count.get() + 1))`), or two effects that write each other's dependencies. The error surfaces synchronously from the `set()`/`update()`/`batch()`/`createEffect()` call that triggered the runaway; other queued effects still run before it is thrown.
+
+### Fixed
+
+- **A throwing effect no longer skips sibling effects in the same flush** (`src/graph.ts`): Previously, an exception from one effect's callback propagated out of `flush()` immediately — all effects queued after it were silently skipped (their DOM updates and subscriptions lost until some arbitrary later flush), and the throwing effect was left stuck with `FLAG_RUNNING` set, so its next `refresh()` threw a spurious `CircularDependencyError`. Now `flush()` catches per-effect errors, drains the entire queue, and rethrows after: a single error is rethrown as-is (error identity preserved for existing `catch` code), multiple errors are wrapped in an `AggregateError`. `runEffect()` clears `FLAG_RUNNING` in its `finally`, so a previously-throwing effect re-runs normally on the next update.
+- **Effects that write signals they depend on now converge** (`src/graph.ts`, `src/nodes/effect.ts`): Previously, `runEffect()` unconditionally overwrote the node's flags with `FLAG_CLEAN` after running, clobbering the dirty re-mark set by the effect's own write — so even a converging clamp effect (`if (v > 10) s.set(10)`) ended one run stale, having rendered the pre-clamp value while the signal held the clamped one; two subscribers of the same signal could disagree. Now `flush()` drains `queuedEffects` in passes over snapshots (effects re-queued during a pass run in the next pass), `propagate()` preserves `FLAG_RUNNING` on effects, and `runEffect()` preserves `FLAG_DIRTY`/`FLAG_CHECK` from the effect's own writes — a self-writing effect re-runs until the graph settles and its last run always observes the final signal values. Creation-time self-writes converge through the same path via a new internal `scheduleEffect()`, which also removes a re-entrant `runEffect` hazard (a write during an effect's creation run previously re-entered the still-running effect via the nested flush).
+- **Mutual effect writes no longer hang the process** (`src/graph.ts`): Previously, two effects writing each other's dependencies re-queued each other forever inside one `flush()`, growing the queue until heap exhaustion — there was no loop guard. Now the flush-pass cap (1000) converts this into a loud `EffectConvergenceError` while sibling effects still run.
+
 ## 1.3.4
 
 ### Fixed

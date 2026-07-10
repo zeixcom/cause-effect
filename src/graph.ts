@@ -1,4 +1,9 @@
-import { CircularDependencyError, type Guard, PromiseValueError } from './errors'
+import {
+	CircularDependencyError,
+	EffectConvergenceError,
+	type Guard,
+	PromiseValueError,
+} from './errors'
 import { isRecord } from './util'
 
 /* === Internal Types === */
@@ -408,7 +413,7 @@ function propagate(node: SinkNode, newFlag = FLAG_DIRTY): void {
 
 		// Enqueue effect for later execution
 		const wasQueued = flags & (FLAG_DIRTY | FLAG_CHECK)
-		node.flags = newFlag
+		node.flags = (flags & FLAG_RUNNING) | newFlag
 		if (!wasQueued) queuedEffects.push(node as EffectNode)
 	}
 }
@@ -560,9 +565,9 @@ function runEffect(node: EffectNode): void {
 		activeSink = prevContext
 		activeOwner = prevOwner
 		trimSources(node)
+		// Keep a re-mark from the effect's own writes so it converges
+		node.flags &= FLAG_DIRTY | FLAG_CHECK
 	}
-
-	node.flags = FLAG_CLEAN
 }
 
 function refresh(node: SinkNode): void {
@@ -594,18 +599,55 @@ function refresh(node: SinkNode): void {
 
 /* === Batching === */
 
+const MAX_FLUSH_PASSES = 1000
+
 function flush(): void {
 	if (flushing) return
 	flushing = true
+	let errors: unknown[] | undefined
+	let passes = 0
 	try {
-		for (let i = 0; i < queuedEffects.length; i++) {
-			// biome-ignore lint/style/noNonNullAssertion: index is always within bounds of a populated EffectNode[]
-			const effect = queuedEffects[i]!
-			if (effect.flags & (FLAG_DIRTY | FLAG_CHECK)) refresh(effect)
+		while (queuedEffects.length > 0) {
+			if (++passes > MAX_FLUSH_PASSES) {
+				queuedEffects.length = 0
+				if (!errors) errors = []
+				errors.push(new EffectConvergenceError(MAX_FLUSH_PASSES))
+				break
+			}
+			const batch = queuedEffects.slice()
+			queuedEffects.length = 0
+			for (let i = 0; i < batch.length; i++) {
+				// biome-ignore lint/style/noNonNullAssertion: index is always within bounds of a populated EffectNode[]
+				const effect = batch[i]!
+				// A running effect is converged by its own runner after its fn returns
+				if (effect.flags & FLAG_RUNNING) continue
+				if (effect.flags & (FLAG_DIRTY | FLAG_CHECK)) {
+					try {
+						refresh(effect)
+					} catch (err) {
+						if (!errors) errors = []
+						errors.push(err)
+					}
+				}
+			}
 		}
-		queuedEffects.length = 0
 	} finally {
 		flushing = false
+	}
+	if (errors) {
+		if (errors.length === 1) throw errors[0]
+		throw new AggregateError(errors, 'Multiple effects threw during flush')
+	}
+}
+
+/**
+ * Enqueues an effect that is still dirty after running (it wrote to its own
+ * dependencies) and, outside a batch, flushes until the graph converges.
+ */
+function scheduleEffect(node: EffectNode): void {
+	if (node.flags & (FLAG_DIRTY | FLAG_CHECK)) {
+		queuedEffects.push(node)
+		if (batchDepth === 0) flush()
 	}
 }
 
@@ -799,6 +841,7 @@ export {
 	registerCleanup,
 	runCleanup,
 	runEffect,
+	scheduleEffect,
 	setState,
 	trimSources,
 	TYPE_COLLECTION,
