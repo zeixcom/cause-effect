@@ -293,6 +293,23 @@ console.log(items.indexOfKey(key))   // current index
 
 Lists have `.keys()`, `.add()`, and `.remove()` methods like stores. Additionally, they have `.replace()`, `.sort()`, `.splice()`, and a reactive `.length` property. But unlike stores, deeply nested properties in items are not converted to individual signals.
 
+To rebuild a list's contents from inside a reactive handler (e.g. after a `Task` resolves), use `.set()` or `.update()` rather than a manual remove-then-add loop. `.set()` diffs the desired content against the previous value in one step; a `remove()` + `add()` loop that reads `.keys()` first (linking the list into the effect's dependencies) writes and then reverts that dependency within the same run, which throws `EffectConvergenceError` even when the net content is unchanged:
+
+```js
+// ✗ Don't: remove+add inside an effect that already depends on the list
+createEffect(() => match(task, {
+  ok: data => {
+    for (const k of Array.from(forecast.keys())) forecast.remove(k)
+    forecast.add(data)
+  }
+}))
+
+// ✓ Do: .set() replaces the content in one atomic step
+createEffect(() => match(task, {
+  ok: data => forecast.set([data])
+}))
+```
+
 ### Collection
 
 A reactive collection with item-level memoization. Collections can be externally-driven (via a watched callback) or derived from a List or another Collection.
@@ -427,6 +444,8 @@ createEffect(() => {
   })
 })
 ```
+
+**Handler bodies run in the caller's tracking scope.** `match()` calls `ok`, `err`, `nil`, and `stale` synchronously inside whatever scope invoked it — usually the enclosing effect. Any signal read inside a handler becomes a tracked dependency of that effect, including implicit reads made by collection methods like `List.keys()` or `List.at()` (no `.get()` needed). Wrap a handler body in `untrack()` to opt out.
 
 **Handler routing precedence: `nil` > `err` > `stale` > `ok`.** `nil` fires when any signal has no value yet (Task still in its first computation, no initial value provided). `err` fires when any signal holds an error. `stale` fires when all signals have a value but at least one Task signal is currently re-computing — i.e. it has a retained value from a previous resolution but its dependencies changed and a new computation is in flight. If `stale` is omitted, `ok` is called instead, preserving backward compatibility for callers that don't need to distinguish stale from fresh values.
 

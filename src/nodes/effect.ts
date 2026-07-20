@@ -135,6 +135,11 @@ function createEffect(fn: EffectCallback): Cleanup {
  * @param handlers - Object with an `ok` branch (receives the value directly) and optional `err`, `nil`, and `stale` branches.
  * @returns An optional cleanup function if the active handler returns one.
  * @throws RequiredOwnerError If called without an active owner.
+ *
+ * @remarks
+ * Handler bodies run synchronously in the caller's tracking scope — any signal read
+ * inside a handler becomes a dependency of the enclosing effect. Wrap reads in
+ * `untrack()` to opt out.
  */
 function match<T extends {}>(
 	signal: Signal<T>,
@@ -151,6 +156,13 @@ function match<T extends {}>(
  * @throws RequiredOwnerError If called without an active owner.
  *
  * @remarks
+ * **Sync handler bodies run in the caller's tracking scope.** `match()` invokes `ok`,
+ * `err`, `nil`, and `stale` synchronously in whatever scope called it — typically an
+ * effect body. Any signal read inside a handler, including implicit reads made by
+ * collection accessors like `List.keys()` or `List.at()`, becomes a tracked dependency
+ * of that effect just as if it were read outside `match()`. Wrap reads in `untrack()`
+ * to opt out.
+ *
  * **Async handlers are for external side effects only** — DOM mutations, analytics, logging,
  * or any fire-and-forget API call whose result does not need to drive reactive state.
  * Do not call `.set()` on a signal inside an async handler: use a `Task` node instead,

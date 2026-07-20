@@ -225,7 +225,56 @@ state read by A). The error surfaces synchronously from the `set()`/`batch()`/
 
 Self-writes remain an anti-pattern for expressing derived values — prefer `createMemo`.
 Reserve them for genuine feedback like clamping user input to a valid range.
+
+**Writing a tracked dependency and then reverting it within the same run still throws** —
+the graph compares each write to the value at that instant, not the net effect across
+the whole run. Two writes that cancel out (`state.set(y); state.set(x)`, or `list.remove(k);
+list.add(k)` restoring the same content) are indistinguishable from a genuine unconditional
+mutation, because the first write is a real transition when it happens; the graph has no way
+to know a later write in the same run will undo it. This applies identically to every mutable
+signal type, including `List.add()`/`.remove()`.
+
+```typescript
+// Throws EffectConvergenceError — each write is a real change at the moment it runs,
+// even though the net value at the end of the run is unchanged
+const forecast = createList([{ day: 'mon', high: 20 }], { keyConfig: 'day' })
+createEffect(() => {
+  for (const k of Array.from(forecast.keys())) forecast.remove(k)  // real change: item → empty
+  forecast.add({ day: 'mon', high: 20 })                           // real change: empty → item
+})
+
+// Converges — set() diffs the full desired content against the previous committed
+// value in one step, with no intermediate empty state to trip the self-write check
+createEffect(() => {
+  forecast.set([{ day: 'mon', high: 20 }])
+})
+```
+
+Use `List.set()`/`.update()` (or the equivalent whole-value replace on `Store`) to rebuild
+collection contents inside a reactive handler, rather than a manual remove-then-add loop.
 </self_writing_effects_converge_or_throw>
+
+<match_sync_handlers_are_tracked>
+**`match()`'s synchronous handler bodies run in the caller's tracking scope.** `ok`, `err`,
+`nil`, and `stale` are invoked directly inside whatever scope called `match()` — normally an
+effect body. Any signal read performed inside a handler becomes a tracked dependency of that
+effect, exactly as if the read happened outside `match()`.
+
+This includes reads with no `.get()` in sight: `List`/`Collection` accessor methods
+(`.keys()`, `.at()`, `.byKey()`, `.length`, iteration) all call `subscribe()` internally, so
+using them inside a handler links the collection into the effect's dependencies even though
+no `.get()` was written.
+
+```typescript
+createEffect(() => match(task, {
+  ok: data => {
+    // forecast becomes a tracked dependency of this effect — no .get() call needed
+    for (const k of Array.from(forecast.keys())) forecast.remove(k)
+    forecast.add(data)
+  }
+}))
+```
+</match_sync_handlers_are_tracked>
 
 <store_proxy_rejects_direct_writes>
 **Direct property assignment, deletion, or `Object.defineProperty` on a `Store` proxy throws
