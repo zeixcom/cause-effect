@@ -364,10 +364,14 @@ function createList<
 		signals.set(key, itemFactory(val))
 	}
 
-	// Starts clean: mutation methods (add/remove/set/splice) explicitly call
-	// propagate() + invalidate edges, so refresh() on first get() is not needed.
+	// Stays dirty: the initial value is correct, but child signals are not
+	// yet linked as sources of this node. get()'s first-access branch relies
+	// on refresh() calling recomputeMemo() (which only runs when FLAG_DIRTY
+	// is set) to tracked-call buildValue() and establish those edges — a
+	// clean node here would make refresh() a no-op and leave get() returning
+	// this same unlinked snapshot forever, even after a nested item signal
+	// (e.g. a Store) changes directly.
 	node.value = value
-	node.flags = 0
 
 	// --- List object ---
 	const list: List<T, S> = {
