@@ -85,4 +85,4 @@ declare function createList<T extends {}, S extends MutableSignal<T> = MutableSi
  * @returns True if the value is a List
  */
 declare function isList<T extends {}, S extends MutableSignal<T> = MutableSignal<T>>(value: unknown): value is List<T, S>;
-export { type DiffResult, type KeyConfig, type List, type ListOptions, type UnknownRecord, createList, isList, getKeyGenerator, keysEqual, TYPE_LIST, };
+export { createList, type DiffResult, getKeyGenerator, isList, type KeyConfig, keysEqual, type List, type ListOptions, TYPE_LIST, type UnknownRecord, };

@@ -5,6 +5,7 @@ import {
 	createCollection,
 	createEffect,
 	createList,
+	createMemo,
 	createScope,
 	createState,
 	createStore,
@@ -991,6 +992,49 @@ describe('Collection', () => {
 			list.remove(0)
 			expect(runs).toBe(3)
 			dispose()
+		})
+
+		describe('Reactivity', () => {
+			test('an eager out-of-band byKey() read does not drop the change cascade to a downstream aggregate', () => {
+				// Regression: ensureFresh()'s structural-relink branch used to
+				// pre-write node.value via an untracked buildValue() call
+				// BEFORE calling refresh() (which runs recomputeMemo()).
+				// recomputeMemo() diffs its freshly built result against
+				// node.value to decide whether to promote downstream
+				// FLAG_CHECK sinks to FLAG_DIRTY — with node.value already
+				// overwritten to the same result, that diff was always
+				// trivially "unchanged". priceTotal is a memo two hops
+				// downstream of the list (list -> Collection -> memo), so it
+				// only ever gets FLAG_CHECK from propagate() directly and
+				// depends entirely on that cascade to be promoted to DIRTY;
+				// it got stuck forever. Reproduces via an effect that eagerly
+				// touches rowPrices.byKey() for every key ahead of the effect
+				// that consumes the aggregate — mirroring reconcile()'s
+				// driving effect running before the aggregate consumer.
+				const list = createList(
+					[{ id: 'item1', amount: 3, pricePerUnit: 12.5 }],
+					{ keyConfig: (item: { id: string }) => item.id },
+				)
+				const rowPrices = list.deriveCollection(
+					(item: { amount: number; pricePerUnit: number }) =>
+						item.amount * item.pricePerUnit,
+				)
+				const priceTotal = createMemo(() =>
+					rowPrices.get().reduce((sum, v) => sum + v, 0),
+				)
+
+				const seen: number[] = []
+				createEffect(() => {
+					for (const key of list.keys()) rowPrices.byKey(key)
+				})
+				createEffect(() => {
+					seen.push(priceTotal.get())
+				})
+				expect(seen).toEqual([37.5])
+
+				list.add({ id: 'item2', amount: 5, pricePerUnit: 8 })
+				expect(seen).toEqual([37.5, 77.5])
+			})
 		})
 	})
 })

@@ -737,7 +737,6 @@ function createList(value, options) {
     signals.set(key, itemFactory(val));
   }
   node.value = value;
-  node.flags = 0;
   const list = {
     [Symbol.toStringTag]: TYPE_LIST,
     [Symbol.isConcatSpreadable]: true,
@@ -757,14 +756,13 @@ function createList(value, options) {
       subscribe();
       if (node.sources) {
         if (node.flags) {
-          const relink = node.flags & FLAG_RELINK;
-          node.value = untrack(buildValue);
-          if (relink) {
+          if (node.flags & FLAG_RELINK) {
             node.flags = FLAG_DIRTY;
             refresh(node);
             if (node.error)
               throw node.error;
           } else {
+            node.value = untrack(buildValue);
             node.flags = FLAG_CLEAN;
           }
         }
@@ -1118,13 +1116,14 @@ function deriveCollection(source, callback) {
   function ensureFresh() {
     if (node.sources) {
       if (node.flags) {
-        node.value = untrack(buildValue);
+        const result = untrack(buildValue);
         if (node.flags & FLAG_RELINK) {
           node.flags = FLAG_DIRTY;
           refresh(node);
           if (node.error)
             throw node.error;
         } else {
+          node.value = result;
           node.flags = FLAG_CLEAN;
         }
       }
@@ -1325,14 +1324,13 @@ function createCollection(watched, options) {
       subscribe();
       if (node.sources) {
         if (node.flags) {
-          const relink = node.flags & FLAG_RELINK;
-          node.value = untrack(buildValue);
-          if (relink) {
+          if (node.flags & FLAG_RELINK) {
             node.flags = FLAG_DIRTY;
             refresh(node);
             if (node.error)
               throw node.error;
           } else {
+            node.value = untrack(buildValue);
             node.flags = FLAG_CLEAN;
           }
         }
@@ -1603,14 +1601,13 @@ function createStore(value, options) {
       subscribe();
       if (node.sources) {
         if (node.flags) {
-          const relink = node.flags & FLAG_RELINK;
-          node.value = untrack(buildValue);
-          if (relink) {
+          if (node.flags & FLAG_RELINK) {
             node.flags = FLAG_DIRTY;
             refresh(node);
             if (node.error)
               throw node.error;
           } else {
+            node.value = untrack(buildValue);
             node.flags = FLAG_CLEAN;
           }
         }
