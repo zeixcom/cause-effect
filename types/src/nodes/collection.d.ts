@@ -100,4 +100,4 @@ declare function createCollection<T extends {}, S extends Signal<T> = Signal<T>>
  * @returns True if the value is a Collection
  */
 declare function isCollection<T extends {}, S extends Signal<T> = Signal<T>>(value: unknown): value is Collection<T, S>;
-export { createCollection, deriveCollection, isCollection, type Collection, type CollectionCallback, type CollectionChanges, type CollectionOptions, type CollectionSource, type DeriveCollectionCallback, };
+export { type Collection, type CollectionCallback, type CollectionChanges, type CollectionOptions, type CollectionSource, createCollection, type DeriveCollectionCallback, deriveCollection, isCollection, };

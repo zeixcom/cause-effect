@@ -364,10 +364,14 @@ function createList<
 		signals.set(key, itemFactory(val))
 	}
 
-	// Starts clean: mutation methods (add/remove/set/splice) explicitly call
-	// propagate() + invalidate edges, so refresh() on first get() is not needed.
+	// Stays dirty: the initial value is correct, but child signals are not
+	// yet linked as sources of this node. get()'s first-access branch relies
+	// on refresh() calling recomputeMemo() (which only runs when FLAG_DIRTY
+	// is set) to tracked-call buildValue() and establish those edges — a
+	// clean node here would make refresh() a no-op and leave get() returning
+	// this same unlinked snapshot forever, even after a nested item signal
+	// (e.g. a Store) changes directly.
 	node.value = value
-	node.flags = 0
 
 	// --- List object ---
 	const list: List<T, S> = {
@@ -392,16 +396,24 @@ function createList<
 			if (node.sources) {
 				// Fast path: edges already established, rebuild value directly
 				if (node.flags) {
-					const relink = node.flags & FLAG_RELINK
-					node.value = untrack(buildValue)
-					if (relink) {
+					if (node.flags & FLAG_RELINK) {
 						// Structural mutation added/removed child signals —
 						// tracked recompute so link() adds new edges and
 						// trimSources() removes stale ones without orphaning.
+						// Must NOT pre-write node.value here: recomputeMemo()
+						// (inside refresh()) diffs its freshly built result
+						// against the CURRENT node.value to decide whether to
+						// promote downstream FLAG_CHECK sinks to FLAG_DIRTY.
+						// Overwriting node.value first makes that comparison
+						// trivially equal, silently dropping the cascade to
+						// any sink queued earlier in the same propagate pass
+						// (e.g. an eager out-of-band read racing ahead of the
+						// effect queue).
 						node.flags = FLAG_DIRTY
 						refresh(node as unknown as SinkNode)
 						if (node.error) throw node.error
 					} else {
+						node.value = untrack(buildValue)
 						node.flags = FLAG_CLEAN
 					}
 				}

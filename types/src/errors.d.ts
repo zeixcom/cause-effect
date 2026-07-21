@@ -124,4 +124,4 @@ declare function validateSignalValue<T extends {}>(where: string, value: unknown
 declare function validateReadValue<T extends {}>(where: string, value: T | null | undefined): asserts value is T;
 declare function validateCallback(where: string, value: unknown): asserts value is (...args: unknown[]) => unknown;
 declare function validateCallback<T>(where: string, value: unknown, guard: (value: unknown) => value is T): asserts value is T;
-export { type Guard, CircularDependencyError, EffectConvergenceError, NullishSignalValueError, InvalidSignalValueError, UnsetSignalValueError, InvalidCallbackError, InvalidStoreMutationError, ReadonlySignalError, RequiredOwnerError, DuplicateKeyError, PromiseValueError, validateSignalValue, validateReadValue, validateCallback, };
+export { CircularDependencyError, DuplicateKeyError, EffectConvergenceError, type Guard, InvalidCallbackError, InvalidSignalValueError, InvalidStoreMutationError, NullishSignalValueError, PromiseValueError, ReadonlySignalError, RequiredOwnerError, UnsetSignalValueError, validateCallback, validateReadValue, validateSignalValue, };

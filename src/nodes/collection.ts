@@ -227,15 +227,30 @@ function deriveCollection<T extends {}, U extends {}>(
 	function ensureFresh(): void {
 		if (node.sources) {
 			if (node.flags) {
-				node.value = untrack(buildValue)
+				// Unlike List/Store (whose mutation methods set FLAG_RELINK
+				// explicitly before this runs), Collection's buildValue()
+				// discovers key changes itself via syncKeys() and sets
+				// FLAG_RELINK as a side effect of running — so it must run
+				// once, untracked, before we can know which branch applies.
+				const result = untrack(buildValue)
 				if (node.flags & FLAG_RELINK) {
 					// Keys changed — new child signals need graph edges.
 					// Tracked recompute so link() adds new edges and
 					// trimSources() removes stale ones without orphaning.
+					// Must NOT use `result` for node.value here: recomputeMemo()
+					// (inside refresh()) diffs its own freshly tracked-built
+					// value against the CURRENT node.value to decide whether
+					// to promote downstream FLAG_CHECK sinks to FLAG_DIRTY.
+					// Pre-writing node.value from `result` would make that
+					// comparison trivially equal, silently dropping the
+					// cascade to any sink queued earlier in the same
+					// propagate pass (e.g. an eager out-of-band read racing
+					// ahead of the effect queue).
 					node.flags = FLAG_DIRTY
 					refresh(node as unknown as SinkNode)
 					if (node.error) throw node.error
 				} else {
+					node.value = result
 					node.flags = FLAG_CLEAN
 				}
 			}
@@ -501,16 +516,24 @@ function createCollection<T extends {}, S extends Signal<T> = Signal<T>>(
 			subscribe()
 			if (node.sources) {
 				if (node.flags) {
-					const relink = node.flags & FLAG_RELINK
-					node.value = untrack(buildValue)
-					if (relink) {
+					if (node.flags & FLAG_RELINK) {
 						// Structural mutation added/removed child signals —
 						// tracked recompute so link() adds new edges and
 						// trimSources() removes stale ones without orphaning.
+						// Must NOT pre-write node.value here: recomputeMemo()
+						// (inside refresh()) diffs its freshly built result
+						// against the CURRENT node.value to decide whether to
+						// promote downstream FLAG_CHECK sinks to FLAG_DIRTY.
+						// Overwriting node.value first makes that comparison
+						// trivially equal, silently dropping the cascade to
+						// any sink queued earlier in the same propagate pass
+						// (e.g. an eager out-of-band read racing ahead of the
+						// effect queue).
 						node.flags = FLAG_DIRTY
 						refresh(node as unknown as SinkNode)
 						if (node.error) throw node.error
 					} else {
+						node.value = untrack(buildValue)
 						node.flags = FLAG_CLEAN
 					}
 				}

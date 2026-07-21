@@ -708,6 +708,37 @@ describe('List', () => {
 			list.replace('c', { id: 'c', v: 30 })
 			expect(runs).toBe(5)
 		})
+
+		test('get() reacts to a nested Store field set directly, with no prior List mutation', () => {
+			// Regression: List's structural node used to start FLAG_CLEAN, so
+			// refresh() on the very first get() skipped recomputeMemo() entirely
+			// (it only recomputes when FLAG_DIRTY is set). buildValue() was
+			// therefore never invoked tracked, so child item signals were never
+			// linked as sources of the list node — a direct set() on a nested
+			// Store field never propagated, even though list.get() was read
+			// inside an effect. No List mutation method (add/remove/etc.) was
+			// ever called, so the explicit invalidation those methods perform
+			// could not mask the missing initial edge.
+			const list = createList([{ id: 'a', amount: 3 }], {
+				keyConfig: (item: { id: string }) => item.id,
+				createItem: createStore,
+			})
+
+			const seen: number[] = []
+			createEffect(() => {
+				// biome-ignore lint/style/noNonNullAssertion: single-item list
+				seen.push(list.get()[0]!.amount as number)
+			})
+			expect(seen).toEqual([3])
+
+			// biome-ignore lint/style/noNonNullAssertion: key exists
+			list.byKey('a')!.amount.set(10)
+			expect(seen).toEqual([3, 10])
+
+			// A fresh, untracked read must also reflect the change.
+			// biome-ignore lint/style/noNonNullAssertion: single-item list
+			expect(list.get()[0]!.amount).toBe(10)
+		})
 	})
 
 	describe('options.itemEquals', () => {
