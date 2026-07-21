@@ -14,4 +14,4 @@ declare function isRecord<T extends Record<string, unknown>>(value: unknown): va
  * @deprecated
  */
 declare function valueString(value: unknown): string;
-export { isFunction, isAsyncFunction, isSyncFunction, isObjectOfType, isSignalOfType, isRecord, valueString, };
+export { isAsyncFunction, isFunction, isObjectOfType, isRecord, isSignalOfType, isSyncFunction, valueString, };

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.1
+
+### Fixed
+
+- **`List.get()` never established child-signal edges on first read, leaving reads permanently stale** (`src/nodes/list.ts`): `createList()` reset a freshly initialized node's flags from `FLAG_DIRTY` to `0` right after building its items, on the theory that the cached value was already correct and no recompute was needed. But `get()`'s first-access branch relies on `refresh()` calling `recomputeMemo()` — which tracked-calls `buildValue()` and thereby links each child item signal as a source of the list's node — and `refresh()` only does this when `FLAG_DIRTY` is set. With the node starting clean, the very first `get()` no-op'd, `node.sources` stayed `null` forever, and the list never reacted to a nested item's own signal changing unless a mutation method (`add`/`remove`/`splice`/etc.) later forced `FLAG_DIRTY | FLAG_RELINK`. Now the node starts `FLAG_DIRTY`, matching how every other `MemoNode` initializes.
+- **`ensureFresh()`'s eager re-entrant access path silently dropped the changed-cascade to downstream sinks** (`src/nodes/list.ts`, `src/nodes/store.ts`, `src/nodes/collection.ts`): `List.get()`, `Store.get()`, `createCollection().get()`, and `deriveCollection`'s `ensureFresh()` shared a two-step recompute shape — an untracked `buildValue()` pre-write to `node.value`, followed by a tracked `refresh()`/`recomputeMemo()` only when `FLAG_RELINK` was set. `recomputeMemo()` decides whether to promote downstream `FLAG_CHECK` sinks to `FLAG_DIRTY` by diffing its freshly tracked-built value against `node.value` — but that value had already been overwritten to the same result by the untracked pre-step, so the diff was always trivially "unchanged" and the cascade never fired. This only surfaced when a sink two-plus hops downstream, reachable only via `FLAG_CHECK`, was read out-of-band — e.g. an eager `.byKey()`/`.get()`/`.keys()` call racing ahead of the normal effect-queue-driven `refresh()` cascade. `List.get()`, `Store.get()`, and `createCollection().get()` now check `FLAG_RELINK` *before* calling `buildValue()`, skipping the untracked pre-write when a tracked recompute is about to happen. `deriveCollection`'s `ensureFresh()` still needs its untracked `buildValue()` call (it discovers `FLAG_RELINK` as a side effect via `syncKeys()`), so instead it stops writing that result into `node.value` when the flag comes back set, leaving `recomputeMemo()`'s own tracked build as the sole write.
+
 ## 1.4.0
 
 ### Changed
