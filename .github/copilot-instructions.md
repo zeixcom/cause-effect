@@ -2,26 +2,29 @@
 
 ## Project Overview
 
-Cause & Effect is a reactive state management library for JavaScript/TypeScript that provides signals-based reactivity. The library is built on a linked graph of source and sink nodes (`src/graph.ts`) with functional factory functions for all signal types.
+Cause & Effect is a reactive state management library for JavaScript and TypeScript. It is built on a linked graph of source and sink nodes (`src/graph.ts`). Every signal type has a factory function.
+
+`CONTEXT.md` at the repo root defines the domain vocabulary. Use the approved term for each concept and avoid the listed synonyms.
 
 ## Core Architecture
 
 ### Graph Engine (`src/graph.ts`)
 - **Nodes**: StateNode (source + equality), MemoNode (source + sink), TaskNode (source + sink + async), EffectNode (sink + owner)
 - **Edges**: Doubly-linked list connecting sources to sinks
-- **Operations**: `link()` creates edges, `propagate()` flags sinks dirty, `flush()` runs queued effects, `batch()` defers flushing
-- **Flags**: FLAG_CLEAN, FLAG_CHECK, FLAG_DIRTY, FLAG_RUNNING, FLAG_RELINK for efficient dirty checking
+- **Operations**: `link()` creates edges, `propagate()` flags sinks dirty, `flush()` runs queued effects, `batch()` defers the flush
+- **Flags**: FLAG_CLEAN, FLAG_CHECK, FLAG_DIRTY, FLAG_RUNNING, FLAG_RELINK — the two-level flag state machine
+- **Convergence**: `flush()` drains in passes, bounded by `MAX_FLUSH_PASSES`; exceeding it throws `EffectConvergenceError`
 
 ### Signal Types (all in `src/nodes/`)
 - **State** (`createState`): Mutable signals for values (`get`, `set`, `update`)
-- **Sensor** (`createSensor`): Read-only signals for external input with automatic state updates. Use `SKIP_EQUALITY` for mutable object observation.
-- **Memo** (`createMemo`): Synchronous derived computations with memoization, reducer capabilities, and optional `watched(invalidate)` for external invalidation
-- **Task** (`createTask`): Async derived computations with automatic AbortController cancellation and optional `watched(invalidate)` for external invalidation
-- **Store** (`createStore`): Proxy-based reactive objects with per-property State/Store signals
-- **List** (`createList`): Reactive arrays with stable keys and per-item State signals
-- **Collection** (`createCollection`): Reactive collections — either externally-driven with watched lifecycle, or derived from List/Collection with item-level memoization
-- **Slot** (`createSlot`): Stable delegation signal with swappable backing signal, designed for integration layers (property descriptors, custom elements)
-- **Effect** (`createEffect`): Side effects that react to signal changes
+- **Sensor** (`createSensor`): Read-only source for external input. Activates when watched. Use `SKIP_EQUALITY` when the reference stays the same and internal state changes.
+- **Memo** (`createMemo`): Synchronous computed with memoization. Supports a reducer form and an optional `watched(invalidate)` callback
+- **Task** (`createTask`): Asynchronous computed. Cancels through an AbortController. Supports an optional `watched(invalidate)` callback
+- **Store** (`createStore`): Proxy-based reactive object with a per-property State, Store, or List signal
+- **List** (`createList`): Reactive array with stable keys and a per-item State signal
+- **Collection** (`createCollection`): Keyed items with per-item memoization. Either externally driven with a watched lifecycle, or derived from a List or a Collection. Not a reactive `Map`
+- **Slot** (`createSlot`): Forwarding layer to a swappable backing signal, for integration layers such as property descriptors and custom elements. Not an event bus, and has no `update()`
+- **Effect** (`createEffect`): Terminal sink that runs side effects. Runs synchronously
 
 ## Key Files Structure
 
@@ -68,16 +71,16 @@ Cause & Effect is a reactive state management library for JavaScript/TypeScript 
 - `batch()` defers `flush()` to minimize effect re-runs
 - Lazy evaluation: Memos only recompute when accessed and dirty
 - `trimSources()` removes stale edges after recomputation
-- `unlink()` calls `source.stop()` when last sink disconnects (auto-cleanup)
+- `unlink()` calls `source.stop()` when the last sink disconnects (auto-cleanup)
 
 ### API Design Principles
 - All signals created via `create*()` factory functions (no class constructors)
 - All signals have `.get()` for value access
 - Mutable signals (State) have `.set(value)` and `.update(fn)`
 - Store properties are automatically reactive signals via Proxy
-- Sensor/Collection use a watched callback returning Cleanup (lazy activation)
-- Memo/Task use optional `watched(invalidate)` callback in options for external invalidation
-- Store/List use optional `watched` callback in options returning Cleanup
+- Sensor and Collection take a watched callback that returns a Cleanup (lazy activation)
+- Memo and Task take an optional `watched(invalidate)` callback in options
+- Store and List take an optional `watched` callback in options that returns a Cleanup
 - Effects return a dispose function (Cleanup)
 
 ### Testing Patterns
@@ -102,14 +105,13 @@ const mouse = createSensor<{ x: number; y: number }>((set) => {
   return () => window.removeEventListener('mousemove', h)
 })
 
-// Sensor for mutable object observation (SKIP_EQUALITY)
+// Sensor for a mutable object (SKIP_EQUALITY)
+const box = document.getElementById('box')!
 const element = createSensor<HTMLElement>((set) => {
-  const node = document.getElementById('box')!
-  set(node)
-  const obs = new MutationObserver(() => set(node))
-  obs.observe(node, { attributes: true })
+  const obs = new MutationObserver(() => set(box))
+  obs.observe(box, { attributes: true })
   return () => obs.disconnect()
-}, { value: node, equals: SKIP_EQUALITY })
+}, { value: box, equals: SKIP_EQUALITY })
 
 // Store for reactive objects
 const user = createStore({ name: 'Alice', age: 30 })
@@ -121,7 +123,7 @@ const users = createList(
   { keyConfig: u => u.id }
 )
 const key = users.add({ id: 'bob', name: 'Bob' })
-users.replace(key, { id: 'bob', name: 'Bobby' }) // update item, propagates to all subscribers
+users.replace(key, { id: 'bob', name: 'Bobby' }) // update item, propagates to every sink
 users.remove(key)
 
 // Memo for synchronous derived values
@@ -141,9 +143,13 @@ const userData = createTask(async (prev, abort) => {
   return response.json()
 })
 
-// Collection for derived transformations
-const doubled = numbers.deriveCollection((n: number) => n * 2)
-const enriched = users.deriveCollection(async (user, abort) => {
+// Collection derived from a List
+const numbers = createList([1, 2, 3])
+const doubledItems = numbers.deriveCollection((n: number) => n * 2)
+// Async form: annotate both parameters — overload resolution picks the sync
+// signature first, so unannotated params fall back to implicit `any`.
+type User = { id: string; name: string }
+const enriched = users.deriveCollection(async (user: User, abort: AbortSignal) => {
   const res = await fetch(`/api/${user.id}`, { signal: abort })
   return { ...user, details: await res.json() }
 })
@@ -164,7 +170,7 @@ slot.replace(createMemo(() => parentState.get())) // swap backing signal
 
 ### Reactivity
 ```typescript
-// Effects run when dependencies change, return Cleanup
+// Effects run when a dependency changes and return a Cleanup
 const dispose = createEffect(() => {
   console.log(`Count is ${count.get()}`)
 })

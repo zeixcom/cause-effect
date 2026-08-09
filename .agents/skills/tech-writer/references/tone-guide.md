@@ -65,6 +65,47 @@ Approachable but never condescending.
 - Sections that say "this is the same as in other frameworks" without adding nuance
 </GUIDE>
 
+<RECIPES>
+**Primary audience:** Developers who know the API and face a problem that needs several
+signal types working together.
+
+**Register:** Architectural. Problem first, then the recommended structure, then a worked
+example. Assumes the reader has already read README.md — never re-explain a signal type.
+
+**Structure rules:**
+- Each recipe follows the same three-part shape: the problem, the architecture, the example.
+  Do not vary the shape between recipes.
+- Examples are complete and runnable. A recipe example may be long; that is the point of the
+  document. Truncated fragments belong in README.md instead.
+- Name the signal types doing the work in the architecture section, and say why each was
+  chosen over the alternative.
+
+**What to cut:**
+- API reference detail — link to README.md
+- Recipes solvable with one signal type; those are README.md examples
+- Framework comparisons — those belong in GUIDE.md
+</RECIPES>
+
+<REACT_INTEGRATION>
+**Primary audience:** Developers evaluating whether to build a React binding, or building one.
+
+**Register:** Decision-oriented. States the non-goal and the reasoning, then documents what a
+correct integration requires. Neutral about React — no advocacy in either direction.
+
+**Structure rules:**
+- Code sketches are specifications, not working code. They may show a signature with no body.
+  Every type name in them must still exist in `index.ts`.
+- Each hook subsection names the non-obvious requirement explicitly — the first-run guard, the
+  `untrack()` in `getSnapshot`, `useLayoutEffect` over `useEffect`. That is the value of the
+  document.
+- Recommend the alternatives (Jotai, Zustand, TanStack Query) plainly where they fit better.
+
+**What to cut:**
+- Explanations of how React hooks work — assume the reader knows React
+- Speculation about a future official package
+- Any implication that an integration ships from this repository
+</REACT_INTEGRATION>
+
 <ARCHITECTURE>
 **Primary audience:** Contributors to the library and AI agents that need to understand
 internals to implement or review changes correctly.
@@ -87,8 +128,8 @@ are used freely without definition — this document assumes the reader has the 
 - Any sentence that could be replaced by reading the source directly
 </ARCHITECTURE>
 
-<CLAUDE_MD>
-**Primary audience:** Claude (this model) at inference time. Every token has a cost.
+<AGENTS_MD>
+**Primary audience:** All LLM agents at inference time. Every token has a cost.
 
 **Register:** Terse, declarative, maximally dense. No hand-holding. No transitions.
 Bold key terms. Bullet lists over prose. Code examples only when the correct pattern is
@@ -110,7 +151,7 @@ non-obvious from the statement.
 - Explanations of standard reactive concepts (memoization, lazy evaluation, dependency tracking)
 - "Note that…", "Keep in mind…", "Be aware that…" — state it directly
 - Examples that illustrate obvious correct usage; examples only for non-obvious patterns
-</CLAUDE_MD>
+</AGENTS_MD>
 
 <copilot_instructions>
 **Primary audience:** GitHub Copilot during code generation. The document drives what

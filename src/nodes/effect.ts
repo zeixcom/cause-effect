@@ -64,15 +64,15 @@ type SingleMatchHandlers<T extends {}> = {
 /* === Exported Functions === */
 
 /**
- * Creates a reactive effect that automatically runs when its dependencies change.
- * Effects run immediately upon creation and re-run when any tracked signal changes.
- * Effects are executed during the flush phase, after all updates have been batched.
+ * Creates a reactive effect that runs when a dependency changes.
  *
- * An effect that writes to a signal it also depends on re-runs until the graph
- * settles, so its last run always observes the final signal values. Effect graphs
- * that never settle (e.g. an unconditional self-increment, or two effects writing
- * each other's dependencies) throw `EffectConvergenceError` after a bounded number
- * of flush passes instead of looping forever.
+ * The effect runs once on creation, then on every change to a tracked signal. Effects
+ * run during the flush, after the batch merges the writes.
+ *
+ * An effect that writes to a signal it also depends on re-runs until the graph settles.
+ * Its last run therefore reads the final values. A graph that never settles throws
+ * `EffectConvergenceError` after a bounded number of flush passes. Two examples are an
+ * unconditional self-increment, and two effects that write each other's dependencies.
  *
  * @since 0.1.0
  * @param fn - The effect function that can track dependencies and register cleanup callbacks
@@ -137,8 +137,8 @@ function createEffect(fn: EffectCallback): Cleanup {
  * @throws RequiredOwnerError If called without an active owner.
  *
  * @remarks
- * Handler bodies run synchronously in the caller's tracking scope — any signal read
- * inside a handler becomes a dependency of the enclosing effect. Wrap reads in
+ * Handler bodies run synchronously in the caller's tracking scope. A signal read
+ * inside a handler becomes a dependency of the enclosing effect. Wrap the read in
  * `untrack()` to opt out.
  */
 function match<T extends {}>(
@@ -156,22 +156,21 @@ function match<T extends {}>(
  * @throws RequiredOwnerError If called without an active owner.
  *
  * @remarks
- * **Sync handler bodies run in the caller's tracking scope.** `match()` invokes `ok`,
- * `err`, `nil`, and `stale` synchronously in whatever scope called it — typically an
- * effect body. Any signal read inside a handler, including implicit reads made by
- * collection accessors like `List.keys()` or `List.at()`, becomes a tracked dependency
- * of that effect just as if it were read outside `match()`. Wrap reads in `untrack()`
- * to opt out.
+ * **Sync handler bodies run in the caller's tracking scope.** `match()` calls `ok`,
+ * `err`, `nil`, and `stale` synchronously in the calling scope, typically an effect body.
+ * A signal read inside a handler becomes a dependency of that effect, exactly as a read
+ * outside `match()` does. This includes the implicit reads of a collection accessor such
+ * as `List.keys()` or `List.at()`. Wrap the read in `untrack()` to opt out.
  *
- * **Async handlers are for external side effects only** — DOM mutations, analytics, logging,
- * or any fire-and-forget API call whose result does not need to drive reactive state.
- * Do not call `.set()` on a signal inside an async handler: use a `Task` node instead,
- * which receives an `AbortSignal`, is auto-cancelled on re-run, and integrates cleanly
- * with `nil` and `err` branches.
+ * **Async handlers are for external side effects only.** Use them for DOM mutations,
+ * analytics, logging, and any fire-and-forget API call whose result does not drive
+ * reactive state. Do not call `.set()` on a signal inside an async handler. Use a `Task`
+ * instead: it receives an `AbortSignal`, cancels on re-run, and composes with the `nil`
+ * and `err` branches.
  *
- * Rejections from async handlers are always routed to `err`, including rejections from
- * stale runs that were already superseded by a newer signal value. The library cannot
- * cancel external operations it did not start.
+ * A rejection from an async handler always routes to `err`. This includes a rejection
+ * from a stale run that a newer signal value already superseded. The library cannot
+ * cancel an external operation it did not start.
  */
 function match<T extends readonly Signal<unknown & {}>[]>(
 	signals: readonly [...T],

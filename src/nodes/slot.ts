@@ -34,11 +34,11 @@ type SlotDescriptor<T extends {}> = {
 /**
  * A signal that delegates its value to a swappable backing signal.
  *
- * Slots provide a stable reactive source at a fixed position (e.g. an object property)
- * while allowing the backing signal to be replaced without breaking subscribers.
- * The object shape is compatible with `Object.defineProperty()` descriptors:
- * `get`, `set`, `configurable`, and `enumerable` are used by the property definition;
- * `replace()` and `current()` are kept on the slot object for integration-layer control.
+ * A slot is a stable source at a fixed position, such as an object property. `replace()`
+ * swaps the backing signal without breaking the edges to its sinks.
+ * The object shape is compatible with `Object.defineProperty()` descriptors. The property
+ * definition uses `get`, `set`, `configurable`, and `enumerable`. The slot object also
+ * carries `replace()` and `current()` for control from an integration layer.
  *
  * Slots are not `MutableSignal`s: they are forwarding layers, not value owners.
  * `set()` delegates to the backing signal; `update()` is intentionally absent.
@@ -55,7 +55,7 @@ type Slot<T extends {}> = {
 	get(): T
 	/** Writes a value to the delegated signal. Throws `ReadonlySignalError` if the delegated signal is read-only. */
 	set(next: T): void
-	/** Swaps the backing signal, invalidating all downstream subscribers. Narrowing (`U extends T`) is allowed. */
+	/** Swaps the backing signal and invalidates every downstream sink. Narrowing (`U extends T`) is allowed. */
 	replace<U extends T>(next: Signal<U> | SlotDescriptor<U>): void
 	/** Returns the currently delegated signal. */
 	current(): Signal<T> | SlotDescriptor<T>
@@ -86,10 +86,10 @@ function isSignalOrDescriptor<T extends {}>(
  * Creates a slot signal that delegates its value to a swappable backing signal.
  *
  * A slot acts as a stable reactive source usable as a property descriptor via
- * `Object.defineProperty(target, key, slot)`. Subscribers link to the slot itself,
- * so replacing the backing signal with `replace()` invalidates them without breaking
- * existing edges. `set()` forwards to the current backing signal if it is writable;
- * `update()` is absent — a slot is a forwarding layer, not a value owner.
+ * `Object.defineProperty(target, key, slot)`. Sinks link to the slot itself, so
+ * `replace()` invalidates them without breaking existing edges. `set()` forwards to the
+ * current backing signal if it is writable. `update()` is absent, because a slot is a
+ * forwarding layer, not a value owner.
  *
  * @since 0.18.3
  * @template T - The type of value held by the delegated signal.

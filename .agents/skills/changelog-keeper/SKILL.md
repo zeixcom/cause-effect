@@ -53,6 +53,7 @@ When asked to release a version:
 1. Rename `## [Unreleased]` to `## X.Y.Z` — do not leave an empty `[Unreleased]` section behind.
 2. Update `version` in `package.json` to match.
 3. Update the `@version` tag in `index.ts` to match.
+4. After the release is published to npm, re-point the performance baseline at it — required for a minor bump, recommended for a patch that touched hot paths. See `../cause-effect-dev/workflows/update-perf-baseline.md`.
 </preparing_a_release>
 
 <entry_style>

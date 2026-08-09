@@ -51,7 +51,7 @@ type Task<T extends {}> = {
 
 	/**
 	 * Aborts the current computation if one is running.
-	 * The task's AbortSignal will be triggered.
+	 * The task's AbortSignal aborts.
 	 */
 	abort(): void
 }
