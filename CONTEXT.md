@@ -61,7 +61,7 @@ A forwarding layer to a swappable backing **Signal**. Holds no value of its own.
 delegates to the backing Signal, and `replace()` swaps that Signal without breaking existing
 **Edge** connections. Created with `createSlot()`. Backed by a `MemoNode`.
 
-A Slot is **not** an event bus, a channel, or an emitter. It has no `emit()` method. It is
+A Slot is **not** an event bus, a channel, or an emitter. It is
 also not a value owner, which is why it has no `update()` method and is excluded from
 **Mutable Signal**.
 _Avoid_: event bus, channel, emitter, port, container, wrapper, holder, proxy

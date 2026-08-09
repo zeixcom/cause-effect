@@ -245,9 +245,7 @@ To rebuild a list from inside a reactive handler, use `.set()` or `.update()` ra
 
 ### Collection
 
-A Collection is **not** a reactive `Map`. It does not expose `Map` semantics. It is a set of keyed items with per-item memoization, so a change to one item does not invalidate the others.
-
-A Collection is externally-driven through a watched callback, or derived from a List or another Collection.
+A Collection is a set of keyed items with per-item memoization, so a change to one item does not invalidate the others. A Collection is externally-driven through a watched callback, or derived from a List or another Collection.
 
 **Externally-driven collections** receive data through `applyChanges()`:
 
@@ -298,9 +296,7 @@ const processed = users
 
 ### Slot
 
-A Slot is **not** an event bus, a channel, or an emitter. It has no `emit()` method. It is a forwarding layer to a swappable backing signal, and it holds no value of its own. A Slot is also not a value owner: it has no `update()` method, and `isMutableSignal()` excludes it.
-
-Slots serve integration layers such as custom element systems, where a property must switch its backing signal without breaking existing sinks. The slot object doubles as a property descriptor for `Object.defineProperty()`:
+A Slot is a forwarding layer to a swappable backing signal, and it holds no value of its own. It has no `update()` method, and `isMutableSignal()` excludes it. Slots serve integration layers such as custom element systems, where a property must switch its backing signal without breaking existing sinks. The slot object doubles as a property descriptor for `Object.defineProperty()`:
 
 ```js
 import { createState, createMemo, createSlot, createEffect } from '@zeix/cause-effect'

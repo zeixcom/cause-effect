@@ -421,7 +421,7 @@ Write through `.replace()` rather than `byKey().set()` — see [List](README.md#
 
 ### Collection: derived arrays with item-level memoization
 
-A Collection is **not** a reactive `Map`. It does not expose `Map` semantics. It is a set of keyed items with per-item memoization, so a change to one item does not invalidate the others.
+A Collection is a set of keyed items with per-item memoization, so a change to one item does not invalidate the others.
 
 Frameworks solve this with memoized child components — `React.memo` plus a stable `key`, or Vue's per-child reactivity. Those work at the render layer. `.deriveCollection()` works at the data layer, so the memoization holds regardless of what renders it:
 
@@ -454,7 +454,7 @@ The start callback runs lazily — only when an effect first reads the sensor. W
 
 ### Slot: stable property delegation
 
-A Slot is **not** an event bus, a channel, or an emitter. It has no `emit()` method. It is a forwarding layer to a swappable backing signal, and it holds no value of its own. A Slot is also not a value owner: it has no `update()` method, and `isMutableSignal()` excludes it.
+A Slot is a forwarding layer to a swappable backing signal, and it holds no value of its own. It has no `update()` method, and `isMutableSignal()` excludes it.
 
 If you are building a component system, you often need to expose signals as object properties via `Object.defineProperty()`. The challenge arises when a property must switch its backing signal without breaking existing sinks. A property may switch from a local writable `State` to a parent-controlled read-only `Memo`.
 
