@@ -30,6 +30,7 @@ What kind of task is this?
 2. **Fix** — debug or fix unexpected behavior
 3. **Test** — write or update tests
 4. **Question** — understand the API, internals, or a design decision
+5. **Baseline** — re-point the performance regression test at a new release
 
 **Wait for response before proceeding.**
 </intake>
@@ -41,12 +42,14 @@ What kind of task is this?
 | 2, "fix", "bug", "debug", "broken", "wrong" | workflows/fix-bug.md |
 | 3, "test", "spec", "coverage" | workflows/write-tests.md |
 | 4, "question", "explain", "how", "why", "what" | workflows/answer-question.md |
+| 5, "baseline", "release", "perf baseline" | workflows/update-perf-baseline.md |
 
 **Intent-based routing** (if user provides clear context without selecting):
 - Describes a change to make → workflows/implement-feature.md
 - Describes something not working → workflows/fix-bug.md
 - Asks to write/update tests → workflows/write-tests.md
 - Asks how something works → workflows/answer-question.md
+- Just published a minor release, or the performance test fails on a branch that changed no source → workflows/update-perf-baseline.md
 
 **After identifying the workflow, read it and follow it exactly.**
 </routing>
@@ -77,4 +80,5 @@ All in `workflows/`:
 | fix-bug.md | Diagnose and fix unexpected behavior |
 | write-tests.md | Write or update tests for a signal type or behavior |
 | answer-question.md | Answer questions about the API, internals, or design |
+| update-perf-baseline.md | Re-point the performance regression test at a new release |
 </workflows_index>
