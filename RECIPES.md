@@ -84,7 +84,7 @@ Handling deeply nested reactive data inside large collections often involves two
 
 ### The Problem
 
-When multiple dependent signals are updated sequentially without batching, the graph propagates changes immediately. This can cause unnecessary intermediate effect executions ("glitches") and layout thrashing as each update triggers a separate evaluation.
+When several signals that depend on each other are updated in sequence without batching, the graph propagates each change immediately. This can cause unnecessary intermediate effect executions ("glitches") and layout thrashing as each update triggers a separate evaluation.
 
 ### The Solution: `batch()` and Granular Lists
 
@@ -164,3 +164,163 @@ applyComplexServerSync({
 });
 // The output jumps straight to: "Total active members: 4" without intermediate logs
 ```
+
+---
+
+## 3. Rebuilding a List from a Reactive Handler
+
+### The Problem
+
+An effect reads a `List` structurally — through `.keys()`, `.length`, or the iterator — and then rebuilds that same list inside its own body, typically after a `Task` resolves. The structural read links the list into the effect's dependencies. A `remove()` + `add()` loop then writes to that dependency and reverts it within the same run, which throws `EffectConvergenceError` even when the net content is unchanged.
+
+### The Solution
+
+Replace the content in one atomic step. `.set()` diffs the desired content against the previous value and emits a single structural change, so the effect's dependency settles once. Use `.update()` when the next content derives from the current content.
+
+### Example
+
+```js
+// ✗ Don't: remove+add inside an effect that already depends on the list
+createEffect(() => match(task, {
+  ok: data => {
+    for (const k of Array.from(forecast.keys())) forecast.remove(k)
+    forecast.add(data)
+  }
+}))
+
+// ✓ Do: .set() replaces the content in one atomic step
+createEffect(() => match(task, {
+  ok: data => forecast.set([data])
+}))
+```
+
+The same rule applies to `Store`: prefer `.set()` over an `.remove()` + `.add()` sequence when a reactive handler owns the rebuild.
+
+---
+
+## 4. Async Side Effects in `match()`
+
+### The Problem
+
+An `ok` or `err` handler needs to do asynchronous work. Handlers may return a `Promise`, but an async handler that writes signal state creates a side-channel write: it is untracked, uncancellable, and races against newer runs of the same effect.
+
+### The Solution
+
+Split the two cases:
+
+- **Fire-and-forget external work** — analytics, an IndexedDB write, a toast notification — belongs in an async handler. A cleanup function returned by the resolved `Promise` is registered and runs synchronously before the next re-run.
+- **Async work that drives reactive state** belongs in a `Task`. A `Task` receives an `AbortSignal`, cancels automatically when its dependencies change, and exposes pending, resolved, and error states that compose with `nil` and `err`.
+
+### Example
+
+```js
+// ✗ Don't: async handler that writes back into the graph
+createEffect(() => match(trigger, {
+  ok: async () => {
+    const data = await fetch('/api/data').then(r => r.json())
+    result.set(data) // ← side-channel write, not tracked, no cancellation
+  }
+}))
+
+// ✓ Do: derive the async value as a Task, read it in match()
+const result = createTask(async (_, signal) =>
+  fetch('/api/data', { signal }).then(r => r.json()))
+
+createEffect(() => match(result, {
+  ok: data => render(data),
+  nil: () => showSpinner(),
+  err: e => showError(e)
+}))
+```
+
+### Stale-run rejections still reach `err`
+
+When a signal changes and the effect re-runs, the in-flight async handler from the previous run cannot be cancelled — the library did not initiate the underlying operation. If that stale operation later rejects, `err` runs even though a newer run is already active.
+
+This is a second reason to keep async handlers free of state writes. Routing errors to `err` is safe while `err` is a pure side effect such as logging or showing a notification. It becomes incorrect once `err` calls `.set()` on a signal that the newer run has already updated.
+
+---
+
+## 5. Lazy Resources with Watched Callbacks
+
+### The Problem
+
+An event listener, a WebSocket, or a `MutationObserver` should exist only while something actually reads the data it produces. Creating it eagerly wastes a connection; tearing it down at the wrong moment drops updates.
+
+### The Architecture
+
+`Sensor` and `Collection` take a watched callback as their first argument. `Store` and `List` accept one as the `watched` option. In every case the callback runs when an effect first reads the signal, and its returned cleanup runs when no effect watches it any more.
+
+`Memo` and `Task` also accept `watched`, but their callback receives an `invalidate` function instead. This activates a computed signal that must react to an external event as well as to its tracked dependencies.
+
+### Example
+
+```js
+import { createSensor, createCollection, createEffect } from '@zeix/cause-effect'
+
+// Sensor: track external input
+const windowSize = createSensor((set) => {
+  const update = () => set({ w: innerWidth, h: innerHeight })
+  update()
+  window.addEventListener('resize', update)
+  return () => window.removeEventListener('resize', update)
+})
+
+// Collection: receive external data
+const feed = createCollection((applyChanges) => {
+  const es = new EventSource('/feed')
+  es.onmessage = (e) => applyChanges(JSON.parse(e.data))
+  return () => es.close()
+}, { keyConfig: item => item.id })
+
+// Resources are created only when the effect runs
+const cleanup = createEffect(() => {
+  console.log('Window size:', windowSize.get())
+  console.log('Feed items:', feed.get())
+})
+
+// Resources are cleaned up when the effect stops
+cleanup()
+```
+
+### Propagation through `deriveCollection()`
+
+When an effect reads a derived collection, the `watched` callback on the source List, Store, or Collection activates automatically, through any number of chained levels. Mutating the source does not tear the resource down. When the last effect disposes, cleanup cascades upstream through every intermediate node.
+
+### Activation timing: conditional reads delay it
+
+Dependencies are tracked from the `.get()` calls that actually execute. A read inside a branch that has not run yet — for example inside `match()`'s `ok` branch while a Task is still pending — does not activate `watched` until that branch runs. Read signals eagerly, before the conditional logic, when you need immediate activation:
+
+```js
+createEffect(() => {
+  match([task, derived], { // derived is always tracked
+    ok: ([result, values]) => renderList(values, result),
+    nil: () => showLoading(),
+  })
+})
+```
+
+### The `invalidate` pattern
+
+```js
+const changes = createMemo((prev) => {
+  const next = new Set(parent.querySelectorAll(selector))
+  // ... diff prev vs next ...
+  return { current: next, added, removed }
+}, {
+  value: { current: new Set(), added: [], removed: [] },
+  watched: (invalidate) => {
+    const observer = new MutationObserver(() => invalidate())
+    observer.observe(parent, { childList: true, subtree: true })
+    return () => observer.disconnect()
+  }
+})
+```
+
+This pattern suits:
+
+- Event listeners that should be active only while data is watched
+- Network connections that can be established lazily
+- Expensive computations that should pause when nothing needs them
+- External subscriptions such as WebSocket or Server-Sent Events
+- Computed signals that must react to external events like DOM mutations or timers

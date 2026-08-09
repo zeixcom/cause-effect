@@ -31,7 +31,53 @@ If you've written a `computed` in Vue or a `useMemo` in React, this should feel 
 
 ## Coming from State Management Libraries
 
-If you work in a React codebase, you're likely using one or more of these libraries alongside the framework. This section maps their concepts to Cause & Effect equivalents and calls out what the library handles automatically that you would otherwise write by hand.
+If you work in a React codebase, you likely use one or more of these libraries alongside the framework. This section maps their concepts to Cause & Effect equivalents. All four share one gap, so read the next part first.
+
+### The async state machine they all make you write
+
+Every library below asks you to coordinate three fields by hand: the data, a status, and an error. None of them cancel an in-flight request when its input changes. Zustand shows the shape most plainly, but Redux `extraReducers` and a Jotai async atom have the same structure:
+
+```ts
+// Typical: you write the state machine and manage race conditions manually
+create(set => ({
+  data: null, status: 'idle', error: null,
+  fetch: async (id) => {
+    set({ status: 'loading' })  // must NOT clear data here — stale case
+    try {
+      set({ data: await fetchUser(id), status: 'idle' })
+    } catch (e) {
+      set({ status: 'error', error: e })
+    }
+  }
+}))
+```
+
+`createTask()` and `match()` replace all of it:
+
+```ts
+const userId = createState(1)
+const user = createTask(async (prev, abort) => {
+  const res = await fetch(`/api/users/${userId.get()}`, { signal: abort })
+  return res.json()
+})
+
+createEffect(() => match(user, {
+  nil:   () => showSpinner(),      // no value yet
+  stale: () => dimContent(),       // re-fetching, previous value retained
+  ok:    data => renderUser(data), // data is User, never undefined
+  err:   e => showError(e),
+}))
+```
+
+Three things disappear:
+
+- **The trigger.** `userId` is a dependency, so changing it re-runs the Task. You never call the fetch by hand.
+- **The race.** A dependency change aborts the in-flight request through `abort`. The slower response cannot win.
+- **The coordination.** `stale` fires during a re-fetch with the previous value retained, so data and status never disagree.
+
+The sections below cover only what is specific to each library.
+
+---
 
 ### Redux Toolkit
 
@@ -43,45 +89,7 @@ If you work in a React codebase, you're likely using one or more of these librar
 | `createEntityAdapter` | `createList()` |
 | `pending` / `fulfilled` / `rejected` | `nil` / `ok` / `err` in `match()` |
 
-**Async.** With `createAsyncThunk`, you handle `pending`, `fulfilled`, and `rejected` in `extraReducers` and manage loading state manually. The stale case — re-fetching while retaining previous data — is not a built-in state; you must keep `data` populated while simultaneously setting `status: 'loading'`, and coordinate those two fields correctly on every code path:
-
-```ts
-// Redux Toolkit: you manage the state machine
-const slice = createSlice({
-  name: 'user',
-  initialState: { data: null, status: 'idle', error: null },
-  extraReducers: builder => {
-    builder
-      .addCase(fetchUser.pending,   state => { state.status = 'loading' })
-      .addCase(fetchUser.fulfilled, (state, action) => {
-        state.data = action.payload; state.status = 'idle'
-      })
-      .addCase(fetchUser.rejected,  (state, action) => {
-        state.status = 'error'; state.error = action.error.message
-      })
-  }
-})
-```
-
-```ts
-// Cause & Effect: Task manages all states; match() routes them
-const userId = createState(1)
-const user = createTask(async (prev, abort) => {
-  const res = await fetch(`/api/users/${userId.get()}`, { signal: abort })
-  return res.json()
-})
-
-createEffect(() => match(user, {
-  nil:   () => showSpinner(),
-  stale: () => dimContent(),      // re-fetching with retained data — automatic
-  ok:    data => renderUser(data),
-  err:   e => showError(e),
-}))
-```
-
-When `userId` changes, the in-flight request is cancelled automatically via the `AbortSignal`. The `stale` state fires during re-fetch with the retained previous value — no `data`/`status` coordination needed.
-
-**Derived state.** Reselect's `createSelector` requires explicit input selectors to memoize derived values. `createMemo()` tracks dependencies by reading — any signal accessed inside the memo is automatically a dependency. When the memo recomputes to the same value, downstream effects don't re-run, stopping propagation through the graph without any selector discipline:
+**Derived state.** Reselect's `createSelector` requires explicit input selectors to memoize derived values. `createMemo()` tracks dependencies by reading — any signal accessed inside the memo is a dependency. When the memo recomputes to the same value, propagation stops, without any selector discipline:
 
 ```ts
 // Redux Toolkit: explicit input selectors
@@ -99,7 +107,7 @@ const filtered = createMemo(() =>
 )
 ```
 
-**Collections.** `createEntityAdapter` normalizes items into `{ ids, entities }` with CRUD helpers. Every selector over `selectAll` returns a new array reference when any entity changes, re-rendering every subscribed component. `createList()` gives each item its own signal — effects subscribed to one item don't re-run when another changes, and stable keys survive sorting:
+**Collections.** `createEntityAdapter` normalizes items into `{ ids, entities }` with CRUD helpers. Every selector over `selectAll` returns a new array reference when any entity changes, re-rendering every component that reads it. `createList()` gives each item its own signal, and stable keys survive sorting:
 
 ```ts
 const todos = createList(initialTodos, { keyConfig: t => t.id })
@@ -118,30 +126,13 @@ todos.sort((a, b) => a.text.localeCompare(b.text)) // 't1' still points to the s
 | Manual `loading` / `error` flags | `match(nil/err/stale/ok)` |
 | `subscribeWithSelector` | `createMemo()` |
 
-Zustand has no async primitive. You write async functions in the store and call `set()` after each `await`, manually managing loading, error, and stale state as separate fields. There is no `AbortSignal` integration — if you trigger a fetch twice in quick succession, both are in flight and the slower one wins:
-
-```ts
-// Zustand: write the state machine yourself, manage race conditions manually
-create(set => ({
-  data: null, status: 'idle', error: null,
-  fetch: async (id) => {
-    set({ status: 'loading' })  // must NOT clear data here — stale case
-    try {
-      set({ data: await fetchUser(id), status: 'idle' })
-    } catch (e) {
-      set({ status: 'error', error: e })
-    }
-  }
-}))
-```
-
-With `createTask()`, reactive dependencies replace the manual trigger, the previous in-flight request is cancelled automatically when dependencies change, and `match()` encodes the state machine structurally. Most Zustand users pair it with TanStack Query for server state precisely to get these guarantees — `createTask()` provides them for all async, not just HTTP.
+Zustand has no async primitive at all. The state machine above is exactly what you write in the store, for every async call, with no `AbortSignal` anywhere. Most Zustand users add TanStack Query for server state precisely to avoid it. `createTask()` covers all async, not only HTTP.
 
 ---
 
 ### Jotai
 
-Jotai's mental model is closest to Cause & Effect: atoms are independent, composable reactive cells that auto-track dependencies. The main gaps are in async cancellation, the stale state, and collection structural integrity.
+Jotai's mental model is closest to Cause & Effect: atoms are independent, composable reactive cells that auto-track dependencies. The gaps are async cancellation, the stale state, and collection structural integrity.
 
 | Jotai | Cause & Effect |
 |---|---|
@@ -152,22 +143,9 @@ Jotai's mental model is closest to Cause & Effect: atoms are independent, compos
 | Keys atom + `atomFamily` | `createList()` |
 | `loadable(atom)` | `match(nil/err/ok)` |
 
-**Async.** Jotai async atoms have no `AbortSignal`. When a dependency changes while a fetch is in flight, the previous promise is abandoned — not cancelled. Responses can arrive out of order. The `loadable` utility provides explicit pending/error/data states, but has no stale case: when re-fetching, state transitions back to `'loading'` and data clears:
+**Async.** Jotai async atoms have no `AbortSignal`. A dependency change abandons the previous promise rather than cancelling it, so responses can arrive out of order. The `loadable` utility gives explicit pending, error, and data states, but has no stale case — a re-fetch returns to `'loading'` and clears the data.
 
-```ts
-// Jotai: no cancellation; stale state not available
-const userAtom = atom(async (get) => {
-  const id = get(idAtom)
-  return fetch(`/api/users/${id}`).then(r => r.json())
-  // if idAtom changes mid-flight, previous fetch is abandoned — not cancelled
-})
-const loadable = useAtomValue(loadable(userAtom))
-// loadable.state: 'loading' | 'hasData' | 'hasError' — no 'stale'
-```
-
-`createTask()` passes an `AbortSignal` and cancels previous computations automatically. `match()` routes `stale` separately from `nil` so previous data is retained and displayed during re-fetch.
-
-**Collections.** `atomFamily` creates a stable atom per key, equivalent to `list.byKey(key)`. But there is no structural atom — adding or removing keys requires coordinating writes to a separate keys atom and `atomFamily`, and keeping them in sync is your responsibility:
+**Collections.** `atomFamily` creates a stable atom per key, equivalent to `list.byKey(key)`. There is no structural atom, so adding or removing keys means coordinating two writes yourself:
 
 ```ts
 // Jotai: two atoms to keep consistent manually
@@ -188,7 +166,7 @@ items.add(newItem)  // keys and item signal created atomically
 
 ### TanStack Query
 
-TanStack Query is a server-state cache, not a general state manager. It handles HTTP caching, request deduplication, background refetch, and cache invalidation — patterns that are outside Cause & Effect's scope. Its query states map directly to `match()` handlers:
+TanStack Query is a server-state cache, not a general state manager. It handles HTTP caching, request deduplication, background refetch, and cache invalidation — patterns outside Cause & Effect's scope. Its query states map directly to `match()` handlers:
 
 | TanStack Query | `match()` handler |
 |---|---|
@@ -197,8 +175,9 @@ TanStack Query is a server-state cache, not a general state manager. It handles 
 | `isError` | `err` |
 | `data` resolved | `ok` |
 
+Types are the other difference. `data` is `User | undefined` in every branch, so the render needs an assertion:
+
 ```ts
-// TanStack Query: data is User | undefined in all branches
 const { data, isPending, isFetching, isError, error } = useQuery({
   queryKey: ['user', userId],
   queryFn: ({ signal }) => fetch(`/api/users/${userId}`, { signal }).then(r => r.json()),
@@ -208,25 +187,11 @@ if (isError) return <Error error={error} />
 return <Profile user={data!} />  // ! required — TypeScript cannot narrow further
 ```
 
-```ts
-// Cause & Effect: value is User inside ok — no assertion needed
-const userId = createState(1)
-const user = createTask(async (prev, abort) => {
-  const res = await fetch(`/api/users/${userId.get()}`, { signal: abort })
-  return res.json()
-})
+Inside `match()`'s `ok` handler the value is `User`, and no assertion is needed.
 
-createEffect(() => match(user, {
-  nil:   () => showSpinner(),
-  err:   e => showError(e),
-  stale: () => dimContent(),
-  ok:    u => renderProfile(u),  // u: User, guaranteed
-}))
-```
+**Where TanStack Query still wins.** For HTTP server state specifically — caching identical requests across components, background refetch intervals, tag-based cache invalidation, optimistic mutations, paginated and infinite queries — TanStack Query remains the better tool. The two compose well: feed query results into a `createState()` or `createSensor()`, and let Cause & Effect handle derived computation on top.
 
-**Where TanStack Query still wins.** For HTTP server state specifically — caching identical requests across components, background refetch intervals, tag-based cache invalidation, optimistic mutations, paginated and infinite queries — TanStack Query remains the better tool. The two libraries compose well: feed query results into a `createState()` or `createSensor()` and let Cause & Effect handle derived computation and local state on top.
-
-**Where `createTask()` fills the gap.** TanStack Query is designed for fetch-based server state. For client-side async — IndexedDB reads, WebWorker results, WebSocket-derived values, or any async derivation that depends on other signals — `createTask()` provides the same `AbortSignal`, stale-state, and type-safe routing that TanStack Query provides for HTTP, but for any async operation in the graph.
+**Where `createTask()` fills the gap.** TanStack Query is designed for fetch-based server state. For client-side async — IndexedDB reads, WebWorker results, WebSocket-derived values, or any async derivation that depends on other signals — `createTask()` provides the same `AbortSignal`, stale state, and type-safe routing, for any async operation in the graph.
 
 ## What Works Differently
 
@@ -252,7 +217,7 @@ createEffect(() => {
 
 There are no dependency arrays to maintain, no lint rules to enforce them, and no stale closure bugs from forgetting a dependency. Vue and Angular developers will find this familiar — it works like `watchEffect()` and Angular's `effect()`.
 
-One consequence of tracking-by-reading: a signal read inside a branch that hasn't executed yet — an unresolved `match()` case, an `if`, a ternary — isn't a dependency yet either. Read the signals you care about unconditionally, before branching, so they're tracked on the first run regardless of which branch executes. See the README's [conditional-reads tip](README.md#resource-management-with-watch-callbacks) for the lazy-resource implications.
+One consequence of tracking-by-reading: a signal read inside a branch that hasn't executed yet — an unresolved `match()` case, an `if`, a ternary — isn't a dependency yet either. Read the signals you care about unconditionally, before branching, so they're tracked on the first run regardless of which branch executes. See [Lazy resources with watched callbacks](RECIPES.md#5-lazy-resources-with-watched-callbacks) for the implications.
 
 ### Effects run synchronously
 
@@ -279,10 +244,12 @@ batch(() => {
 }) // effect runs once, after both updates
 ```
 
-React catches an effect that triggers its own re-render and throws "Too many re-renders." Cause & Effect has no equivalent guard: an effect that writes to a signal it also reads re-triggers itself every time, looping until the stack or heap is exhausted.
+React catches an effect that triggers its own re-render and throws "Too many re-renders." Cause & Effect converges instead. `flush()` drains queued effects in passes, so an effect that writes to a signal it also reads re-runs until the value settles. A clamp or a write-once initialiser works as intended, and always observes the final value.
+
+An effect that never settles is caught too. After 1000 passes the graph gives up and throws `EffectConvergenceError` at the triggering `set()`:
 
 ```ts
-// Loops forever — count.set() re-runs this same effect, which calls count.set() again
+// Throws EffectConvergenceError — count never stops changing
 createEffect(() => {
   count.set(count.get() + 1)
 })
@@ -405,52 +372,9 @@ The primitives above cover what most reactive libraries provide. The following s
 
 ### Task: async derivations with cancellation
 
-In React, async data fetching requires `useEffect` + cleanup + state management (or a library like React Query). In Angular, you'd use RxJS with `switchMap`. In Cause & Effect, `createTask()` is a signal that happens to be async:
+In React, async data fetching needs `useEffect` plus cleanup plus state management, or a dedicated library. In Angular, you reach for RxJS and `switchMap`. In Cause & Effect, `createTask()` is a signal that happens to be async. [The async state machine](#the-async-state-machine-they-all-make-you-write) above shows the full pattern.
 
-```ts
-import { createState, createTask, createEffect, match } from '@zeix/cause-effect'
-
-const userId = createState(1)
-
-const user = createTask(async (prev, abort) => {
-  const res = await fetch(`/api/users/${userId.get()}`, { signal: abort })
-  return res.json()
-})
-
-userId.set(2) // cancels the in-flight request, starts a new one
-```
-
-The `abort` signal is managed automatically — when dependencies change, the previous computation is cancelled. No cleanup functions to write, no race conditions to handle.
-
-Use `match()` inside effects to handle all states declaratively:
-
-```ts
-createEffect(() => {
-  match(user, {
-    ok: data => console.log('User:', data),
-    nil: () => console.log('Loading...'),
-    err: error => console.error(error)
-  })
-})
-```
-
-When the user ID changes and a new fetch starts, the previous result is retained until the new one resolves. `nil` fires only when there is no value at all — the initial fetch before any result. For the re-fetch case, add a `stale` handler:
-
-```ts
-createEffect(() => {
-  match(user, {
-    ok: data => renderUser(data),
-    nil: () => showSpinner(),
-    stale: () => {
-      dimContent()       // overlay a refresh indicator over stale content
-      return clearDimmed // called automatically before ok or err fires next
-    },
-    err: error => showError(error)
-  })
-})
-```
-
-In React Query terms: `nil` maps to `isLoading` (no data yet); `stale` maps to `isFetching` with existing data. The cleanup returned by `stale` runs before the next handler dispatch — it is the right place to remove the refresh indicator. Omitting `stale` falls back to `ok`, showing the retained value unchanged while re-fetching.
+`switchMap` is the closest analogue: both cancel the previous in-flight operation when a new input arrives. The difference is that a Task is a value you read, not a stream you subscribe to. Nothing downstream needs to know it was ever asynchronous.
 
 ### Store: per-property reactivity
 
@@ -493,51 +417,23 @@ todos.replace('t1', { id: 't1', text: 'Learn signals', done: true })
 
 Each item is its own signal. Sorting reorders keys without destroying signals or their downstream dependencies. Adding and removing items is granular — unaffected items and their effects don't re-run.
 
-`todos.byKey('t1')` returns that item's own signal — calling `.set()` on it directly updates the item, but skips the list's own structural bookkeeping, so an effect that only reads `todos.keys()` or `todos.length` (not the item itself) won't see it. `.replace()` updates the item *and* notifies the list, so use it instead of reaching into `byKey()` for writes.
+Write through `.replace()` rather than `byKey().set()` — see [List](README.md#list) for why.
 
 ### Collection: derived arrays with item-level memoization
 
-Collections provide reactive transformations over arrays with automatic per-item memoization. They come in two forms: **derived collections** (transformations of Lists or other Collections) and **externally-driven collections** (fed by external sources like WebSockets or Server-Sent Events).
+A Collection is **not** a reactive `Map`. It does not expose `Map` semantics. It is a set of keyed items with per-item memoization, so a change to one item does not invalidate the others.
 
-**Derived collections** are created via `.deriveCollection()` on a List or Collection:
+Frameworks solve this with memoized child components — `React.memo` plus a stable `key`, or Vue's per-child reactivity. Those work at the render layer. `.deriveCollection()` works at the data layer, so the memoization holds regardless of what renders it:
 
 ```ts
 const display = todos.deriveCollection(todo => ({
   label: todo.done ? `[x] ${todo.text}` : `[ ] ${todo.text}`
 }))
-
-// Async transformations with automatic cancellation
-const enriched = todos.deriveCollection(async (todo, abort) => {
-  const res = await fetch(`/api/details/${todo.id}`, { signal: abort })
-  return { ...todo, details: await res.json() }
-})
-
-// Chain collections for data pipelines
-const pipeline = todos
-  .deriveCollection(todo => ({ ...todo, urgent: todo.priority > 8 }))
-  .deriveCollection(todo => todo.urgent ? `URGENT: ${todo.text}` : todo.text)
 ```
 
-When one item changes, only its derived signal recomputes. Structural changes (additions, removals) are tracked separately from value changes.
+When one item changes, only its derived signal recomputes. Structural changes are tracked separately from value changes, so adding an item does not re-derive the rest.
 
-**Externally-driven collections** are created with `createCollection()` and a start callback for keyed data arriving from external sources:
-
-```ts
-import { createCollection, createEffect } from '@zeix/cause-effect'
-
-const messages = createCollection((applyChanges) => {
-  const ws = new WebSocket('/messages')
-  ws.onmessage = (e) => applyChanges({ add: JSON.parse(e.data) })
-  return () => ws.close()
-}, { keyConfig: msg => msg.id })
-
-// Same Collection interface — .get(), .byKey(), .deriveCollection()
-createEffect(() => {
-  console.log('Messages:', messages.get().length)
-})
-```
-
-The WebSocket connects when the first effect reads the collection and disconnects when no effects are watching. Incoming data is applied as granular add/change/remove operations, not wholesale array replacement. The connection itself stays open across those operations — adding or removing messages doesn't reconnect the WebSocket; only the subscriber count (first effect in, last effect out) does.
+A Collection can also be externally-driven: `createCollection()` takes a start callback and applies incoming data as granular add, change, and remove operations rather than replacing the array. See the [Collection API](README.md#collection) for both forms, async mapping, and chaining.
 
 ### Sensor: lazy external input
 
@@ -558,9 +454,11 @@ The start callback runs lazily — only when an effect first reads the sensor. W
 
 ### Slot: stable property delegation
 
-If you are building a component system, you often need to expose signals as object properties via `Object.defineProperty()`. The challenge arises when a property must switch its backing signal — for example, from a local writable `State` to a parent-controlled read-only `Memo` — without breaking existing subscribers.
+A Slot is **not** an event bus, a channel, or an emitter. It has no `emit()` method. It is a forwarding layer to a swappable backing signal, and it holds no value of its own. A Slot is also not a value owner: it has no `update()` method, and `isMutableSignal()` excludes it.
 
-`createSlot()` solves this by providing a stable reactive source that delegates to a swappable backing signal. The slot object itself is a valid property descriptor:
+If you are building a component system, you often need to expose signals as object properties via `Object.defineProperty()`. The challenge arises when a property must switch its backing signal without breaking existing sinks. A property may switch from a local writable `State` to a parent-controlled read-only `Memo`.
+
+`createSlot()` solves this. It provides a stable reactive source that delegates to a swappable backing signal. The slot object itself is a valid property descriptor:
 
 ```ts
 import { createState, createMemo, createSlot, createEffect } from '@zeix/cause-effect'
@@ -576,4 +474,98 @@ const parentLabel = createMemo(() => `Parent: ${parentState.get()}`)
 slot.replace(parentLabel) // effect re-runs with new value
 ```
 
-Setter calls forward to the current backing signal when it is writable. If the backing signal is read-only (e.g. a Memo), setting throws `ReadonlySignalError`. The `replace()` and `current()` methods are on the slot object but not on the installed property — keep the slot reference for later control.
+Writes forward to the current backing signal when it is writable. See [Slot](README.md#slot) for the read-only case and for `current()`.
+
+## Utilities for Generic Code
+
+Framework code rarely needs these. They matter when you write a layer that accepts state from a caller and cannot know in advance which signal type it will receive — a component factory, a binding helper, or an adapter. React's equivalent problem is a hook that must accept "a value or a state setter"; here the polymorphic factories resolve it at the type level.
+
+**`createSignal(value)`** converts any value to its corresponding signal type:
+
+```ts
+import { createSignal } from '@zeix/cause-effect'
+
+createSignal(0)                          // → State<number>
+createSignal([1, 2, 3])                  // → List<number>
+createSignal({ x: 0 })                   // → Store<{ x: number }>
+createSignal(() => x.get() * 2)          // → Memo<number>
+createSignal(async (_, s) =>
+  fetch('/api', { signal: s }).then(r => r.json()))  // → Task<Response>
+```
+
+A value that is already a signal is returned unchanged, which makes the function safe to call on caller-supplied input.
+
+**`createMutableSignal(value)`** is the same, restricted to `State`, `Store`, and `List`. It throws `InvalidSignalValueError` for a function or a read-only signal.
+
+**`createComputed(callback, options?)`** creates a `Memo` or a `Task`, by detecting whether the callback is async:
+
+```ts
+const doubled = createComputed(() => count.get() * 2)
+const data    = createComputed(async (_, signal) =>
+  fetch(url.get(), { signal }).then(r => r.json()))
+```
+
+The split is decided from the callback itself, before it runs. A callback that omits `async` but returns a `Promise` becomes a `Memo`, and throws `PromiseValueError` on first read rather than caching the `Promise` as its value.
+
+**Type predicates**
+
+| Predicate | True for |
+|---|---|
+| `isSignal(value)` | Any signal (all 9 types) |
+| `isMutableSignal(value)` | `State`, `Store`, `List` — signals with `.set()` and `.update()` |
+| `isComputed(value)` | `Memo`, `Task` — derived signals |
+
+`MutableSignal<T>` is the TypeScript type matching `isMutableSignal`. Use it as a parameter type in generic code that accepts any writable signal.
+
+## Choosing the Right Signal
+
+```
+Does the data come from *outside* the reactive system?
+│
+├─ Yes, single value → `createSensor(set => { ... })`
+│   (mouse position, window resize, media queries, DOM observers, etc.)
+│   Tip: Use `{ equals: SKIP_EQUALITY }` for mutable object observation
+│
+├─ Yes, keyed collection → `createCollection(applyChanges => { ... })`
+│   (WebSocket streams, Server-Sent Events, external data feeds, etc.)
+│
+└─ No, managed internally? What kind of data is it?
+    │
+    ├─ *Primitive* (number/string/boolean)
+    │   │
+    │   ├─ Do you want to mutate it directly?
+    │   │     └─ Yes → `createState()`
+    │   │
+    │   └─ Is it derived from other signals?
+    │         │
+    │         ├─ Sync derived
+    │         │     ├─ Simple/cheap → plain function (preferred)
+    │         │     └─ Expensive/shared/stateful → `createMemo()`
+    │         │
+    │         └─ Async derived → `createTask()`
+    │            (cancellation + memoization + pending/error state)
+    │
+    ├─ *Plain Object*
+    │   │
+    │   ├─ Do you want to mutate individual properties?
+    │   │     ├─ Yes → `createStore()`
+    │   │     └─ No, whole object mutations only → `createState()`
+    │   │
+    │   └─ Is it derived from other signals?
+    │         ├─ Sync derived → plain function or `createMemo()`
+    │         └─ Async derived → `createTask()`
+    │
+    └─ *Array*
+        │
+        ├─ Do you need to mutate it (add/remove/sort) with stable item identity?
+        │     ├─ Yes → `createList()`
+        │     └─ No, whole array mutations only → `createState()`
+        │
+        └─ Is it derived / read-only transformation of a `List` or `Collection`?
+              └─ Yes → `.deriveCollection()`
+                 (memoized + supports async mapping + chaining)
+
+Do you need a *stable property position* that can swap its backing signal?
+└─ Yes → `createSlot(existingSignal)`
+   (integration layers, custom elements, property descriptors)
+```
