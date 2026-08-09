@@ -34,9 +34,9 @@ import { createTask } from './task'
 type CollectionSource<T extends {}> = List<T> | Collection<T>
 
 /**
- * Transformation callback for `deriveCollection` — sync or async.
- * Sync callbacks produce a `Memo<T>` per item; async callbacks produce a `Task<T>`
- * with automatic cancellation when the source item changes.
+ * Transformation callback for `deriveCollection`, either sync or async.
+ * A sync callback produces a `Memo<T>` per item. An async callback produces a `Task<T>`
+ * per item, which cancels when the source item changes.
  *
  * @template T - The type of derived items
  * @template U - The type of source items
@@ -47,7 +47,8 @@ type DeriveCollectionCallback<T extends {}, U extends {}> =
 
 /**
  * A read-only reactive keyed collection with per-item reactivity.
- * Created by `createCollection` (externally driven) or via `.deriveCollection()` on a `List` or `Collection`.
+ * `createCollection()` creates an externally driven one. `.deriveCollection()` on a `List`
+ * or a `Collection` creates a derived one.
  *
  * @template T - The type of items in the collection
  */
@@ -99,12 +100,12 @@ type CollectionOptions<T extends {}, S extends Signal<T> = Signal<T>> = {
 }
 
 /**
- * Setup callback for `createCollection`. Invoked when the collection gains its first downstream
- * subscriber; receives an `applyChanges` function to push granular mutations into the graph.
+ * Setup callback for `createCollection`. Runs when the collection becomes watched.
+ * Receives an `applyChanges` function to push granular mutations into the graph.
  *
  * @template T - The type of items in the collection
  * @param apply - Call with a `CollectionChanges` object to add, update, or remove items
- * @returns A cleanup function invoked when the collection loses all subscribers
+ * @returns A cleanup function that runs when the collection is no longer watched
  */
 type CollectionCallback<T extends {}> = (
 	apply: (changes: CollectionChanges<T>) => void,
@@ -113,9 +114,9 @@ type CollectionCallback<T extends {}> = (
 /* === Functions === */
 
 /**
- * Creates a derived Collection from a List or another Collection with item-level memoization.
- * Sync callbacks use createMemo, async callbacks use createTask.
- * Structural changes are tracked reactively via the source's keys.
+ * Creates a derived Collection from a List or another Collection, with per-item memoization.
+ * A sync callback creates a Memo per item. An async callback creates a Task per item.
+ * The node reads the source keys, so a structural change propagates.
  *
  * @since 0.18.0
  * @param source - The source List or Collection to derive from
@@ -146,7 +147,7 @@ function deriveCollection<T extends {}, U extends {}>(
 					// Look up the item signal without a structural edge (byKey now
 					// tracks structure), then read its value tracked so the Task
 					// depends on the item's value but not on structural changes.
-					// Key synchronization is handled by syncKeys() reading source.keys().
+					// syncKeys() synchronizes the keys by reading source.keys().
 					const itemSignal = untrack(() => source.byKey(key))
 					if (!itemSignal) return prev as T
 					const sourceValue = itemSignal.get() as U
@@ -159,7 +160,7 @@ function deriveCollection<T extends {}, U extends {}>(
 					// Look up the item signal without a structural edge (byKey now
 					// tracks structure), then read its value tracked so the Memo
 					// depends on the item's value but not on structural changes.
-					// Key synchronization is handled by syncKeys() reading source.keys().
+					// syncKeys() synchronizes the keys by reading source.keys().
 					const itemSignal = untrack(() => source.byKey(key))
 					if (!itemSignal) return undefined as unknown as T
 					const sourceValue = itemSignal.get() as U
@@ -255,16 +256,16 @@ function deriveCollection<T extends {}, U extends {}>(
 				}
 			}
 		} else if (node.sinks) {
-			// First access with a downstream subscriber — use refresh()
-			// to establish graph edges via recomputeMemo
+			// First access with a downstream sink — use refresh()
+			// to establish edges via recomputeMemo
 			refresh(node as unknown as SinkNode)
 			if (node.error) throw node.error
 		} else {
-			// No subscribers yet (e.g., chained deriveCollection init) —
-			// compute value without establishing graph edges to prevent
+			// No sinks yet (e.g., chained deriveCollection init) —
+			// compute the value without establishing edges, to prevent
 			// premature watched activation on upstream sources.
-			// Keep FLAG_DIRTY so the first refresh() with a real subscriber
-			// will establish proper graph edges.
+			// Keep FLAG_DIRTY so the first refresh() with a real sink
+			// establishes proper edges.
 			node.value = untrack(buildValue)
 		}
 	}
@@ -352,13 +353,13 @@ function deriveCollection<T extends {}, U extends {}>(
 
 /**
  * Creates an externally-driven Collection with a watched lifecycle.
- * Items are managed via the `applyChanges(changes)` helper passed to the watched callback.
- * The collection activates when first accessed by an effect and deactivates when no longer
- * watched. Structural mutations applied via `applyChanges` do not restart this lifecycle —
- * only the subscriber count matters.
+ *
+ * The watched callback receives an `applyChanges(changes)` helper to manage items. The
+ * collection activates when an effect first reads it, and deactivates when it is no longer
+ * watched. A structural mutation through `applyChanges` does not restart that lifecycle.
  *
  * @since 0.18.0
- * @param watched - Callback invoked when the collection starts being watched, receives applyChanges helper
+ * @param watched - Callback that runs when the collection becomes watched. Receives the applyChanges helper.
  * @param options - Optional configuration including initial value, key generation, and item signal creation
  * @returns A read-only Collection signal
  */
@@ -438,8 +439,7 @@ function createCollection<T extends {}, S extends Signal<T> = Signal<T>>(
 				for (const item of add) {
 					const key = generateKey(item)
 					// Reject duplicate keys up front — matches List.add / Store.add.
-					// Previously this silently overwrote the existing child signal,
-					// orphaning its subscribers.
+					// An overwrite would orphan the sinks of the existing child signal.
 					if (signals.has(key) || staged.has(key))
 						throw new DuplicateKeyError(TYPE_COLLECTION, key, item)
 					staged.set(key, item)

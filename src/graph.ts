@@ -94,7 +94,7 @@ type MaybeCleanup = Cleanup | undefined | void
 type SignalOptions<T extends {}> = {
 	/**
 	 * Optional type guard to validate values.
-	 * If provided, will throw an error if an invalid value is set.
+	 * If provided, `set()` throws an error for an invalid value.
 	 */
 	guard?: Guard<T>
 
@@ -132,11 +132,11 @@ type ComputedOptions<T extends {}> = SignalOptions<T> & {
 type ScopeOptions = {
 	/**
 	 * When `true`, the scope is not registered on the current parent owner.
-	 * The returned `dispose` function becomes the sole mechanism for tearing down the scope.
+	 * The returned `dispose` function becomes the only way to dispose the scope.
 	 *
-	 * Use this for scopes with an external lifecycle authority (e.g. a web component
-	 * whose `disconnectedCallback` is the teardown point) — without it, a scope created
-	 * inside a re-runnable effect would be silently disposed on the next effect re-run.
+	 * Use this for a scope with an external lifecycle authority, such as a web
+	 * component that disposes in `disconnectedCallback`. Without it, a scope created
+	 * inside a re-runnable effect is silently disposed on the next run of that effect.
 	 */
 	root?: boolean
 }
@@ -155,7 +155,7 @@ type MemoCallback<T extends {}> = (prev: T | undefined) => T
  *
  * @template T - The type of value computed
  * @param prev - The previous computed value
- * @param signal - An AbortSignal that will be triggered if the task is aborted
+ * @param signal - An AbortSignal that aborts when the task is cancelled
  * @returns A promise that resolves to the new computed value
  */
 type TaskCallback<T extends {}> = (
@@ -166,7 +166,7 @@ type TaskCallback<T extends {}> = (
 /**
  * A callback function for effects that can perform side effects.
  *
- * @returns An optional cleanup function that will be called before the effect re-runs or is disposed
+ * @returns An optional cleanup function that runs before the next run and on disposal
  */
 type EffectCallback = () => MaybeCleanup
 
@@ -209,9 +209,9 @@ let flushing = false
 const DEFAULT_EQUALITY = <T extends {}>(a: T, b: T): boolean => a === b
 
 /**
- * Equality function that always returns false, causing propagation on every update.
- * Use with `createSensor` for observing mutable objects where the reference stays the same
- * but internal state changes (e.g., DOM elements observed via MutationObserver).
+ * Equality function that always returns false, so every write propagates.
+ * Use with `createSensor` to observe a mutable object whose reference stays the same
+ * while its internal state changes. A DOM element under a MutationObserver is one example.
  *
  * @example
  * ```ts
@@ -286,8 +286,8 @@ const deepEqualInner = (
 
 /**
  * Deep structural equality check for plain objects and arrays.
- * Use when a signal holds an object or array and you want to avoid unnecessary
- * downstream propagation when the value re-evaluates to a structurally identical result.
+ * Use it when a signal holds an object or an array. It stops downstream propagation
+ * when the value re-evaluates to a structurally identical result.
  *
  * @example
  * ```ts
@@ -629,8 +629,8 @@ function flush(): void {
 }
 
 /**
- * Enqueues an effect that is still dirty after running (it wrote to its own
- * dependencies) and, outside a batch, flushes until the graph converges.
+ * Enqueues an effect that is still dirty after it ran, because it wrote to its own
+ * dependencies. Outside a batch, flushes until the graph converges.
  */
 function scheduleEffect(node: EffectNode): void {
 	if (node.flags & (FLAG_DIRTY | FLAG_CHECK)) {
@@ -641,8 +641,7 @@ function scheduleEffect(node: EffectNode): void {
 
 /**
  * Batches multiple signal updates together.
- * Effects will not run until the batch completes.
- * Batches can be nested; effects run when the outermost batch completes.
+ * Effects run once, when the outermost batch completes. Batches nest.
  *
  * @param fn - The function to execute within the batch
  *
@@ -671,7 +670,7 @@ function batch(fn: () => void): void {
 
 /**
  * Runs a callback without tracking dependencies.
- * Any signal reads inside the callback will not create edges to the current active sink.
+ * A signal read inside the callback creates no edge to the active sink.
  *
  * @param fn - The function to execute without tracking
  * @returns The return value of the function
@@ -701,15 +700,13 @@ function untrack<T>(fn: () => T): T {
 /* === Scope Management === */
 
 /**
- * Creates a new ownership scope for managing cleanup of nested effects and resources.
- * All effects created within the scope will be automatically disposed when the scope is disposed.
- * Scopes can be nested — disposing a parent scope disposes all child scopes.
+ * Creates an ownership scope that disposes the effects and resources created inside it.
  *
- * By default, if the scope is created inside another owner (an effect or a parent scope),
- * its disposal is automatically registered on that owner. Pass `{ root: true }` to suppress
- * this registration, making the returned `dispose` the sole teardown mechanism — required
- * when an external lifecycle authority (such as a web component's `disconnectedCallback`)
- * is responsible for cleanup.
+ * Scopes nest. Disposing a parent scope disposes every child scope. A scope created inside
+ * another owner registers its disposal on that owner by default. Pass `{ root: true }` to
+ * suppress that registration. The returned `dispose` then becomes the only way to dispose
+ * the scope. Use it when an external lifecycle authority owns the cleanup, such as a web
+ * component's `disconnectedCallback`.
  *
  * @param fn - The function to execute within the scope, may return a cleanup function
  * @param options - Optional scope configuration
@@ -760,10 +757,10 @@ function createScope(fn: () => MaybeCleanup, options?: ScopeOptions): Cleanup {
 
 /**
  * Runs a callback without any active owner.
- * Any scopes or effects created inside the callback will not be registered as
- * children of the current active owner (e.g. a re-runnable effect). Use this
- * when a component or resource manages its own lifecycle independently of the
- * reactive graph.
+ *
+ * A scope or an effect created inside the callback gets no parent owner. It does not
+ * become a child of the active owner, such as a re-runnable effect. Use this when a component or a resource
+ * manages its own lifecycle independently of the graph.
  *
  * @since 0.18.5
  * @param fn - The function to execute without an active owner

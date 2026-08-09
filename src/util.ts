@@ -22,7 +22,7 @@ function isSyncFunction<T extends unknown & { then?: undefined }>(
 
 /**
  * @deprecated Use `isSignalOfType()` for signal type guards.
- * This function allocates two strings per call and will be removed in a future release.
+ * This function allocates two strings per call. Removal is planned for v2.0.
  */
 function isObjectOfType<T>(value: unknown, type: string): value is T {
 	return Object.prototype.toString.call(value) === `[object ${type}]`

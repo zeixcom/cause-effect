@@ -1,19 +1,41 @@
 # Agent Skills for Cause & Effect
 
+## Vocabulary
+
+`CONTEXT.md` at the repo root defines the domain vocabulary. Use the approved term for every
+concept. The _Avoid_ list under each entry names disallowed synonyms.
+
 ## Available Skills
 
-Use these skills for targeted tasks. Each skill carries embedded reference knowledge and step-by-step workflows:
+Each skill carries its own reference knowledge and workflows. Invoke the one that matches the
+task.
 
-- **`/cause-effect-dev`** — implement features, fix bugs, write tests, or answer questions about the library's internals or public API. Requires access to library source files. Loads references from `.agents/skills/cause-effect-dev/references/` including source-map, internal-types, and shared references (api-facts, non-obvious-behaviors, error-classes).
+- **`/cause-effect-dev`** — implement features, fix bugs, write tests, answer questions about
+  internals or public API. Needs library source files. References:
+  `.agents/skills/cause-effect-dev/references/` (source-map, internal-types) plus shared
+  references (api-facts, non-obvious-behaviors, error-classes).
 
-- **`/cause-effect`** — use the library from a consumer project. All knowledge is embedded; no source files required. Loads references from `.agents/skills/cause-effect/references/` including signal-types and shared references (api-facts, non-obvious-behaviors, error-classes).
+- **`/cause-effect`** — use the library from a consumer project. Needs no source files.
+  References: `.agents/skills/cause-effect/references/` (signal-types) plus the same shared
+  references.
 
-- **`/architect`** — triage issues, gather requirements, design solutions, review API changes. Maintains REQUIREMENTS.md, ARCHITECTURE.md, TODO.md. Loads references from `.agents/skills/architect/workflows/`.
+- **`/architect`** — triage issues, gather requirements, design solutions, review API changes.
+  Maintains `REQUIREMENTS.md`, `ARCHITECTURE.md`, `TODO.md`. Workflows:
+  `.agents/skills/architect/workflows/`.
 
-- **`/adr-keeper`** — manage Architectural Decision Records. Creates, updates, lists, and supersedes ADRs in the `/adr/` directory. Loads references from `.agents/skills/adr-keeper/`.
+- **`/adr-keeper`** — create, update, list, and supersede Architectural Decision Records in
+  `adr/`.
 
-- **`/changelog-keeper`** — maintain CHANGELOG.md. Adds entries, prepares releases. Loads from `.agents/skills/changelog-keeper/SKILL.md`.
+- **`/changelog-keeper`** — maintain `CHANGELOG.md`. Adds entries and prepares releases.
 
-- **`/tech-writer`** — keep documentation in sync with source code. Updates README.md, GUIDE.md, ARCHITECTURE.md, REQUIREMENTS.md, AGENTS.md, JSDoc. Loads references from `.agents/skills/tech-writer/`.
+- **`/tech-writer`** — keep documentation in sync with the source. Maintains `README.md`,
+  `GUIDE.md`, `RECIPES.md`, `REACT_INTEGRATION.md`, `ARCHITECTURE.md`, `REQUIREMENTS.md`,
+  `AGENTS.md`, `.github/copilot-instructions.md`, and JSDoc in `src/`. Applies
+  `.agents/skills/tech-writer/references/ste100-style.md` and `CONTEXT.md`.
 
-> **Note:** The `non-obvious-behaviors.md` reference (loaded by cause-effect and cause-effect-dev skills) contains all non-obvious behaviors that were previously documented here. All factual knowledge has been moved to skill reference files for better maintainability.
+## Where the Facts Live
+
+Non-obvious runtime behaviors live in
+`.agents/skills/shared/references/non-obvious-behaviors.md`, not in this file. The
+`cause-effect` and `cause-effect-dev` skills load it. Read that reference before you reason
+about propagation, convergence, or lifecycle edge cases.

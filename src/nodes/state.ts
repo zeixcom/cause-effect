@@ -23,7 +23,7 @@ type UpdateCallback<T extends {}> = (prev: T) => T
 
 /**
  * A mutable reactive state container.
- * Changes to the state will automatically propagate to dependent computations and effects.
+ * A write propagates to every sink that depends on the state.
  *
  * @template T - The type of value stored in the state
  */
@@ -39,7 +39,7 @@ type State<T extends {}> = {
 
 	/**
 	 * Sets a new value for the state.
-	 * If the new value is different (according to the equality function), all dependents will be notified.
+	 * The write propagates to every sink only if the equality strategy reports a change.
 	 * @param next - The new value to set
 	 */
 	set(next: T): void
