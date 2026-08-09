@@ -82,6 +82,53 @@ the library.
 - Code examples compile against current `index.ts`
 </GUIDE_md>
 
+<RECIPES_md>
+**Path:** `RECIPES.md`
+**Audience:** Developers who already know the API and face a multi-signal architectural problem
+**Register:** Instructional, architectural — leads with the problem, then the recommended structure, then a worked example
+**Scope:** Patterns that combine three or more signal types to solve a real-world problem —
+multi-step wizards, nested reactive structures, batched server sync
+
+**Update triggers:**
+- A factory signature or option used in a recipe changes
+- A new pattern becomes the recommended way to solve a problem already covered here
+- A signal type is added that supersedes an existing recipe's approach
+- A recipe's approach becomes discouraged or incorrect
+
+**Do NOT update for:** internal refactors, new options that no recipe uses.
+
+**Consistency checks:**
+- Every code example compiles against current `index.ts`
+- `keyConfig`, `byKey()`, `deriveCollection()` and other composite API calls match current signatures
+- No recipe contradicts a guarantee stated in `README.md`
+- Cross-links to `GUIDE.md`, `ARCHITECTURE.md`, and `REACT_INTEGRATION.md` resolve
+</RECIPES_md>
+
+<REACT_INTEGRATION_md>
+**Path:** `REACT_INTEGRATION.md`
+**Audience:** Developers evaluating or building a React binding for the library
+**Register:** Explanatory and decision-oriented — states a non-goal, then documents what a
+correct integration requires
+**Scope:** Why React integration is out of scope, when building one is justified, the hooks a
+complete integration needs (`useSyncExternalStore`, scope lifecycle, Task states, prop
+conversion, keyed lists, `match()` in render, SSR), package shape, and the DevTools cost
+
+**Update triggers:**
+- A public API used in a sketch changes (`createScope`, `createEffect`, `untrack`, `match`, `List.byKey`)
+- An exported type referenced here is added, renamed, or removed
+- `Task` state names or `match()` handler semantics change
+- The non-goal stance changes
+
+**Do NOT update for:** React version releases that do not change `useSyncExternalStore`
+semantics, or internal library refactors.
+
+**Consistency checks:**
+- Type names in sketches exist in `index.ts` — verify `ReadableSignal`, `Cleanup`, `Task`,
+  `State`, `MatchHandlers`
+- Task state names (`nil`, `ok`, `err`, `stale`) match `match()` handler keys in `src/nodes/effect.ts`
+- The non-goal stance stays consistent with `REQUIREMENTS.md` non-goals
+</REACT_INTEGRATION_md>
+
 <ARCHITECTURE_md>
 **Path:** `ARCHITECTURE.md`
 **Audience:** Contributors to the library; AI agents reasoning about internals

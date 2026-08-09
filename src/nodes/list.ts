@@ -91,7 +91,7 @@ type List<T extends {}, S extends MutableSignal<T> = MutableSignal<T>> = {
 	add(value: T): string
 	remove(keyOrIndex: string | number): void
 	/**
-	 * Updates an existing item by key, propagating to all subscribers.
+	 * Updates an existing item by key and propagates to every sink.
 	 * No-op if the key does not exist or the value is reference-equal to the current value.
 	 * @param key - Stable key of the item to update
 	 * @param value - New value for the item
@@ -223,8 +223,8 @@ function diffArrays<T extends {}>(
 	for (let i = 0; i < next.length; i++) {
 		const val = next[i]
 		// Reject undefined/null elements up front, consistent with init.
-		// Previously `undefined` was silently skipped, leaving holes in keys
-		// and causing length/get() to disagree.
+		// Skipping `undefined` would leave holes in keys, so that length
+		// and get() disagree.
 		validateSignalValue(`${TYPE_LIST} item at index ${i}`, val)
 
 		const key = generateKey(val)
@@ -264,7 +264,7 @@ function diffArrays<T extends {}>(
  * @since 0.18.0
  * @param value - Initial array of items
  * @param options.keyConfig - Key generation strategy: string prefix or `(item) => string | undefined`. Defaults to auto-increment.
- * @param options.watched - Lifecycle callback invoked on first subscriber; must return a cleanup function called on last unsubscribe.
+ * @param options.watched - Lifecycle callback that runs when the list becomes watched. Must return a cleanup function.
  * @returns A `List` signal with reactive per-item `MutableSignal`s
  */
 function createList<
@@ -515,7 +515,7 @@ function createList<
 			)
 				return
 			// Batch the item-signal set and the structural node propagation so
-			// subscribers that hold both edges (e.g. byKey(k).get()) flush once
+			// sinks that hold both edges (e.g. byKey(k).get()) flush once
 			// instead of once per edge. Without the batch, signal.set() flushes
 			// immediately, then the node propagation flushes again.
 			batch(() => {

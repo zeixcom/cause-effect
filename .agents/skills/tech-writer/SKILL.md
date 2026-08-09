@@ -23,6 +23,13 @@ and the target document before making any changes. Never update from memory.
 **Tone adapts to audience.** Each document has a distinct primary reader and register.
 See references/tone-guide.md. Violating the tone is as wrong as a factual error.
 
+**STE100 and the controlled vocabulary are binding.** Every document this skill maintains
+follows references/ste100-style.md for grammar and sentence construction, and uses the terms
+defined in `CONTEXT.md` at the repo root. Before writing about a domain concept, read its
+`CONTEXT.md` entry and use exactly that term — the _Avoid_ list names disallowed synonyms, not
+discouraged ones. These apply on top of the register set by references/tone-guide.md; they do
+not replace it.
+
 **Concise over comprehensive.** Every sentence must justify its presence. Cut anything
 that does not add information the reader needs. Technical accuracy is non-negotiable;
 length is not.
@@ -53,7 +60,7 @@ What do you need to do?
 
 | Document named | Workflow |
 |---|---|
-| `README.md` or `GUIDE.md` | workflows/update-public-api.md |
+| `README.md`, `GUIDE.md`, `RECIPES.md`, or `REACT_INTEGRATION.md` | workflows/update-public-api.md |
 | `ARCHITECTURE.md` | workflows/update-architecture.md |
 | `AGENTS.md` | workflows/update-agent-docs.md |
 | `REQUIREMENTS.md` | workflows/update-requirements.md |
@@ -71,12 +78,12 @@ What do you need to do?
 </routing>
 
 <reference_index>
-All in `references/`:
-
 | File | Contents |
 |---|---|
-| document-map.md | Each document's audience, scope, update triggers, and consistency checks |
-| tone-guide.md | Writing tone, register, and conciseness rules per document type |
+| references/document-map.md | Each document's audience, scope, update triggers, and consistency checks |
+| references/tone-guide.md | Writing tone, register, and conciseness rules per document type |
+| references/ste100-style.md | Sentence construction, grammar, and vocabulary rules (ASD-STE100) |
+| `CONTEXT.md` (repo root) | Controlled domain vocabulary: approved term and disallowed synonyms per concept |
 </reference_index>
 
 <workflows_index>

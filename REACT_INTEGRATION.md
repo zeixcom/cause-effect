@@ -31,9 +31,9 @@ React 18's `useSyncExternalStore` is the correct primitive for subscribing React
 ```ts
 import { useSyncExternalStore } from 'react'
 import { createScope, createEffect, untrack } from '@zeix/cause-effect'
-import type { ReadableSignal } from '@zeix/cause-effect'
+import type { Signal } from '@zeix/cause-effect'
 
-function useSignal<T extends {}>(signal: ReadableSignal<T>): T {
+function useSignal<T extends {}>(signal: Signal<T>): T {
   return useSyncExternalStore(
     (notify) => {
       let first = true

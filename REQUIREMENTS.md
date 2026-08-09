@@ -1,52 +1,52 @@
 # Cause & Effect - Requirements
 
-This document captures the vision, audience, constraints, and boundaries of the library. It is intended to survive version bumps and guide decisions about what belongs in the library and what does not.
+This document captures the vision, audience, constraints, and boundaries of the library. It survives version bumps. It guides the decision about what belongs in the library.
 
 ## Vision
 
-Cause & Effect is a **primitives-only reactive state management library** for TypeScript. It provides the foundational building blocks that library authors and experienced developers need to manage complex, dynamic, composite, and asynchronous state — correctly and performantly — in a unified signal graph.
+Cause & Effect is a **primitives-only reactive state management library** for TypeScript. It provides the building blocks that library authors and experienced developers need. Those blocks manage complex, dynamic, composite, and asynchronous state in one signal graph, correctly and fast.
 
-The library is deliberately **not a framework**. It has no opinions about rendering, persistence, or application architecture. It is a thin, trustworthy layer over JavaScript that provides the comfort and guarantees of fine-grained reactivity while avoiding the common pitfalls of imperative code.
+The library is deliberately **not a framework**. It has no opinion about rendering, persistence, or application architecture. It is a thin, trustworthy layer over JavaScript. It gives the guarantees of fine-grained reactivity without the common pitfalls of imperative code.
 
 ## Audience
 
 ### Primary: Library Authors
 
-TypeScript library authors — frontend or backend — who need a solid reactive foundation to build on. The library is designed so that consuming libraries should not have to implement their own reactive primitives. The extensive set of signal types exists precisely so that patterns like external data feeds, async derivations, and keyed collections are handled correctly within a unified graph rather than bolted on as ad-hoc extensions.
+TypeScript library authors, frontend or backend, who need a reactive foundation to build on. A consuming library must not have to implement its own reactive primitives. The set of signal types is broad for that reason. External data feeds, derived async values, and keyed collections all belong in one graph, not in ad-hoc extensions.
 
 Cause & Effect is open source, built to power **Le Truc**, a Web Component library by Zeix AG.
 
 ### Secondary: Experienced Developers
 
-Developers who want to write framework-agnostic web applications with a thin layer over JavaScript. They value explicit dependencies, predictable updates, and type safety over the convenience of a full framework. They are comfortable composing their own rendering and application layers on top of reactive primitives.
+Developers who write framework-agnostic web applications with a thin layer over JavaScript. They value explicit dependencies, predictable updates, and type safety over the convenience of a full framework. They compose their own rendering and application layers on top of reactive primitives.
 
 ## Design Principles
 
 ### Explicit Reactivity
-Dependencies are automatically tracked through `.get()` calls, but relationships remain clear and predictable. There is no hidden magic — the graph always reflects the true dependency structure.
+A `.get()` call tracks a dependency automatically. The relationship stays clear and predictable, because the graph always reflects the true dependency structure.
 
 ### Non-Nullable Types
-All signals enforce `T extends {}`, excluding `null` and `undefined` at the type level. This is a deliberate design decision: developers should be able to trust returned types and never have to do null checks after a value enters the signal graph.
+Every signal enforces `T extends {}`, which excludes `null` and `undefined` at the type level. A developer can therefore trust the returned type. No null check is needed after a value enters the graph.
 
 ### Unified Graph
-Every signal type participates in the same dependency graph with the same propagation, batching, and cleanup semantics. Composite signals (Store, List, Collection) and async signals (Task) are first-class citizens, not afterthoughts. The goal is that all state which is derivable can be derived.
+Every signal type joins the same graph, with the same propagation, batch, and cleanup semantics. Composite signals (Store, List, Collection) and the async signal (Task) are first-class, not afterthoughts. Every state that can be derived should be derived.
 
 ### Minimal Surface, Maximum Coverage
-The library ships 9 signal types — each justified by a distinct role in the graph and a distinct data structure it manages:
+The library ships 9 signal types. Each has a distinct graph role and a distinct data structure:
 
 | Type | Role | Data Structure |
 |------|------|----------------|
 | **State** | Mutable source | Single value |
 | **Sensor** | External input source | Single value (lazy lifecycle) |
-| **Memo** | Synchronous derivation | Single value (memoized) |
-| **Task** | Asynchronous derivation | Single value (memoized, cancellable) |
+| **Memo** | Synchronous computed | Single value (memoized) |
+| **Task** | Asynchronous computed | Single value (memoized, cancellable) |
 | **Effect** | Side-effect sink | None (terminal) |
 | **Slot** | Stable delegation (integration layer) | Single value (swappable backing signal) |
 | **Store** | Reactive object | Keyed properties (proxy-based) |
 | **List** | Reactive array | Keyed items (stable identity) |
 | **Collection** | Reactive collection (external source or derived) | Keyed items (lazy lifecycle, item-level memoization) |
 
-This set is considered **complete**. The principle for inclusion is: does this type represent a fundamentally different data structure or role in the graph that cannot be correctly or performantly expressed as a composition of existing types?
+This set is **complete**. One question decides inclusion. Does the type represent a data structure or a graph role that no composition of the existing types expresses correctly or fast?
 
 ### Graph Utilities
 
@@ -57,10 +57,10 @@ Five utilities complete the public API alongside the signal types:
 | `batch(fn)` | Defer effect execution until the end of the batch |
 | `untrack(fn)` | Read signals without creating dependency edges |
 | `unown(fn)` | Detach child scopes and effects from the current owner |
-| `createScope(fn, options?)` | Create a standalone ownership scope without a computation; `ScopeOptions { root?: boolean }` — set `root: true` to opt out of parent registration (for external-lifecycle owners such as web components) |
+| `createScope(fn, options?)` | Create a standalone ownership scope without a computation. `ScopeOptions { root?: boolean }`: set `root: true` to opt out of parent registration, for an owner with an external lifecycle such as a web component |
 | `match(signal(s), handlers)` | Conditional dispatch on signal state (`nil` > `err` > `stale` > `ok`) |
 
-`match()` belongs conceptually with `createEffect`: both deal with side-effectful reactions to state changes. `match()` is the primary ergonomic API for conditional effect branching over pending or errored signals, and is designed to be used inside effects.
+`match()` belongs with `createEffect`. Both handle side effects that follow a state change. `match()` is the primary API to branch an effect over a pending or errored signal, and it runs inside an effect.
 
 ### Utility Function Exports
 
@@ -72,7 +72,7 @@ A small set of utility functions is exported for the benefit of library authors:
 | `isFunction`, `isRecord`, `valueString` | Intentionally stable — used by Le Truc. |
 | `isObjectOfType` | Deprecated. Will be removed in v2.0. (`isSignalOfType` replaces `isObjectOfType` for signal guards.) |
 
-Type guards for all 8 signal types (`isState`, `isMemo`, `isTask`, `isSensor`, `isSlot`, `isList`, `isCollection`, `isStore`) are intentionally exported and stable.
+Type guards for the 8 non-Effect signal types are exported and stable: `isState`, `isMemo`, `isTask`, `isSensor`, `isSlot`, `isList`, `isCollection`, and `isStore`.
 
 ## Runtime Environments
 
@@ -81,7 +81,7 @@ Type guards for all 8 signal types (`isState`, `isMemo`, `isTask`, `isSensor`, `
 - Modern Node.js (with ES module support)
 - Deno
 
-The library uses no browser-specific APIs in its core. Environment-specific behavior (DOM events, network connections) is the responsibility of user-provided callbacks (Sensor start functions, Collection start callbacks, watched callbacks).
+The core uses no browser-specific API. Environment-specific behavior, such as a DOM event or a network connection, belongs in a user-provided callback. Those are the Sensor callback, the Collection callback, and the `watched` option.
 
 ## Size and Performance Constraints
 
@@ -92,38 +92,38 @@ The library uses no browser-specific APIs in its core. Environment-specific beha
 | Core signals only (State, Memo, Task, Effect) | — | Below 4 kB (4096 B) |
 | Full library (all 9 signal types + utilities) | Below 24 kB (24576 B) | Below 8 kB (8192 B) |
 
-The full-library targets carry deliberate headroom above current usage (raised from 21000 B / 7000 B, ~2026-06-24) so that routine bug fixes are not blocked on bundle-size regressions — see `test/regression-bundle.test.ts` for the enforced limits.
+The full-library targets carry deliberate headroom above current usage, so that a routine bug fix is not blocked on a bundle-size regression. See `test/regression-bundle.test.ts` for the enforced limits.
 
-The library must remain tree-shakable: importing only what you use should not pull in unrelated signal types.
+The library must remain tree-shakable. An import of one signal type must not pull in the others.
 
 ### Performance
 
-The synchronous path (State, Memo, Effect propagation) must be competitive with current leaders in fine-grained reactivity (Preact Signals, Solid, Alien Signals). The library's differentiator is not being the absolute fastest on micro-benchmarks, but seamlessly integrating async (Task), external observers (Sensor, Collection), and composite signals (Store, List, Collection) without sacrificing sync-path performance.
+The synchronous path — State, Memo, and Effect propagation — must be competitive with the current leaders in fine-grained reactivity: Preact Signals, Solid, and Alien Signals. The differentiator is not the fastest micro-benchmark. It is the integration of async, external input, and composite signals at no cost to the synchronous path.
 
 ## Non-Goals
 
-The following are explicitly out of scope and will not be added to the library:
+The following are out of scope. The library does not add them:
 
-- **Rendering**: No DOM manipulation, no virtual DOM, no component model, no template system. Rendering is the responsibility of consuming libraries or application code.
-- **Persistence**: No serialization, no local storage, no database integration. State enters and leaves the graph through signals; how it is stored is not this library's concern.
-- **Framework-specific bindings**: No React hooks, no Vue composables, no Angular decorators. Consuming libraries build their own integrations.
-- **DevTools protocol**: Debugging is straightforward by design — attaching an effect to any signal reveals its current value and update behavior. A dedicated debugging protocol adds complexity without proportional value.
-- **Additional signal types**: The 9 signal types are considered complete. New types would only be considered if major Web Platform changes shift the optimal way to achieve the library's existing goals.
+- **Rendering**: No DOM manipulation, no virtual DOM, no component model, no template system. A consuming library or the application code renders.
+- **Persistence**: No serialization, no local storage, no database integration. State enters and leaves the graph through signals. Storage is out of scope.
+- **Framework-specific bindings**: No React hooks, no Vue composables, no Angular decorators. A consuming library builds its own integration.
+- **DevTools protocol**: An effect attached to any signal reveals its current value and its update behavior. A dedicated protocol adds complexity without proportional value.
+- **Additional signal types**: The 9 signal types are complete. A new type enters consideration only if a major Web Platform change shifts the best way to reach the existing goals.
 
 ## Stability
 
-The library is stable at 1.0.0. New features are added reluctantly — bundle size and conceptual simplicity are the gatekeeping criteria. The signal type set (9 types) is considered complete; new types would only be considered if major Web Platform changes shift the optimal way to achieve the library's existing goals.
+The library is stable at 1.0.0. New features enter reluctantly. Bundle size and conceptual simplicity are the two gatekeeping criteria. The set of 9 signal types is complete.
 
-- **Breaking changes** require a major version bump, and only if major new features of the Web Platform shift the optimal way to achieve the goals this library already covers.
-- **New non-breaking features** may be added when they fill a genuine gap that consuming libraries would otherwise have to implement themselves, fit within the existing mental model, and do not add conceptual weight.
+- **Breaking changes** require a major version bump. They are justified only by a major Web Platform feature that shifts the best way to reach the existing goals.
+- **New non-breaking features** must meet three conditions. They fill a genuine gap that a consuming library would otherwise implement itself. They fit the existing mental model. They add no conceptual weight.
 - **Backward compatibility** is maintained from 1.0 onward.
 
 ## Success Criteria
 
 The library succeeds when:
 
-1. Consuming libraries (Le Truc and others) do not need to implement their own reactive primitives for patterns the signal graph already covers.
-2. The mental model is understandable: developers can predict how changes propagate by understanding the graph structure.
-3. The type system catches errors at compile time that would otherwise surface as runtime null checks or stale state bugs.
-4. Performance remains competitive on standard reactivity benchmarks without special-casing for benchmarks.
-5. The library remains small enough that it does not meaningfully contribute to bundle size concerns in production applications.
+1. A consuming library, such as Le Truc, implements no reactive primitive that the graph already covers.
+2. The mental model holds. A developer predicts propagation from the graph structure alone.
+3. The type system catches at compile time what would otherwise surface as a runtime null check or a stale-value bug.
+4. Performance stays competitive on standard reactivity benchmarks, with no special case for a benchmark.
+5. The library stays small enough that it does not add a measurable bundle-size concern to a production application.
