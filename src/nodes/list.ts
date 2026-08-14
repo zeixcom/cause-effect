@@ -8,7 +8,6 @@ import {
 	batchDepth,
 	type Cleanup,
 	DEEP_EQUALITY,
-	FLAG_CLEAN,
 	FLAG_DIRTY,
 	FLAG_RELINK,
 	flush,
@@ -16,6 +15,7 @@ import {
 	makeSubscribe,
 	propagate,
 	refresh,
+	refreshComposite,
 	type SinkNode,
 	TYPE_LIST,
 	untrack,
@@ -393,35 +393,7 @@ function createList<
 
 		get() {
 			subscribe()
-			if (node.sources) {
-				// Fast path: edges already established, rebuild value directly
-				if (node.flags) {
-					if (node.flags & FLAG_RELINK) {
-						// Structural mutation added/removed child signals —
-						// tracked recompute so link() adds new edges and
-						// trimSources() removes stale ones without orphaning.
-						// Must NOT pre-write node.value here: recomputeMemo()
-						// (inside refresh()) diffs its freshly built result
-						// against the CURRENT node.value to decide whether to
-						// promote downstream FLAG_CHECK sinks to FLAG_DIRTY.
-						// Overwriting node.value first makes that comparison
-						// trivially equal, silently dropping the cascade to
-						// any sink queued earlier in the same propagate pass
-						// (e.g. an eager out-of-band read racing ahead of the
-						// effect queue).
-						node.flags = FLAG_DIRTY
-						refresh(node as unknown as SinkNode)
-						if (node.error) throw node.error
-					} else {
-						node.value = untrack(buildValue)
-						node.flags = FLAG_CLEAN
-					}
-				}
-			} else {
-				// First access: use refresh() to establish child → list edges
-				refresh(node as unknown as SinkNode)
-				if (node.error) throw node.error
-			}
+			refreshComposite(node, buildValue)
 			return node.value
 		},
 
@@ -657,6 +629,7 @@ function isList<T extends {}, S extends MutableSignal<T> = MutableSignal<T>>(
 export {
 	createList,
 	type DiffResult,
+	diffArrays,
 	getKeyGenerator,
 	isList,
 	type KeyConfig,

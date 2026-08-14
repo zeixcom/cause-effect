@@ -132,14 +132,22 @@ The core uses no browser-specific API. Environment-specific behavior, such as a 
 
 ### Bundle Size
 
-| Usage | Minified | Gzipped |
-|-------|----------|---------|
-| Core only (`createState`, `createMemo`, `createTask`, `createEffect`) | — | Below 4 kB (4096 B) |
-| Full library (all signal types + utilities) | Below 24 kB (24576 B) | Below 8 kB (8192 B) |
+Two figures, doing two different jobs.
 
-The full-library targets carry deliberate headroom above current usage, so that a routine bug fix is not blocked on a bundle-size regression. See `test/regression-bundle.test.ts` for the enforced limits.
+| Usage | Role | Minified | Gzipped |
+|-------|------|----------|---------|
+| Core only (`createState`, `createMemo`, `createTask`, `createEffect`) | **Promise** — hard, never relaxed | — | Below 4 kB (4096 B) |
+| Full library (all signal types + utilities) | **Diagnostic** — working ceiling, re-baselined per release | Below 32 kB (32768 B) | Below 10 kB (10240 B) |
 
-The library must remain tree-shakable. An import of one construction path must not pull in the others. This constraint is why the narrow single-value factories are retained alongside `createSignal` and `deriveSignal`.
+**The core figure is the promise.** Because the library is tree-shakable, an application pays only for the construction paths it imports. What a typical consumer actually ships is the core figure, not the full-library one, so that is the number that carries the commitment in Success Criterion 6. It is a hard limit and is not relaxed for refactoring. If it regresses, do not raise it — correct the claim in `REQUIREMENTS.md` and `README.md` to the real figure and raise it with the Architect.
+
+**The full-library figure is a diagnostic.** It exists to catch an accidental blowup — a dependency pulled in whole, a factory that defeats tree-shaking — not to be optimised against byte by byte. It is a working ceiling with deliberate slack, and it is re-baselined from measurement at each release rather than treated as a constant.
+
+Refactoring may move it in either direction, and a refactor must not be redesigned to defend it. Deduplicating code is the clear case: gzip compresses a second near-identical copy almost for free, so extracting a shared helper reliably reduces minified size while *increasing* gzipped size. The two limits therefore move in opposite directions under exactly the changes that improve the code. Treating the gzipped number as a hard constant would select against consolidation — a premature-optimisation trap, and one this project walked into during CE-013.
+
+Re-baselining is a release gate, not a routine edit. Lowering the ceiling toward measured usage at release time is what keeps the diagnostic meaningful; raising it mid-branch to unblock a commit is what makes it meaningless.
+
+The library must remain tree-shakable. An import of one construction path must not pull in the others. This constraint is why the narrow single-value factories are retained alongside `createSignal` and `deriveSignal`, and it is what makes the core figure the one that matters.
 
 ### Performance
 

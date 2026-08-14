@@ -9,29 +9,89 @@ import {
 	batch,
 	type Cleanup,
 	DEEP_EQUALITY,
-	FLAG_CLEAN,
 	FLAG_DIRTY,
 	FLAG_RELINK,
 	link,
 	type MemoNode,
 	makeSubscribe,
 	propagate,
-	refresh,
+	refreshComposite,
+	registerAsyncSource,
 	type Signal,
-	type SinkNode,
 	SKIP_EQUALITY,
 	TYPE_COLLECTION,
 	untrack,
 } from '../graph'
-import { isAsyncFunction, isSignalOfType, isSyncFunction } from '../util'
-import { getKeyGenerator, type KeyConfig, keysEqual, type List } from './list'
+import {
+	isAsyncFunction,
+	isFunction,
+	isSignalOfType,
+	isSyncFunction,
+} from '../util'
+import {
+	diffArrays,
+	getKeyGenerator,
+	isList,
+	type KeyConfig,
+	keysEqual,
+	type List,
+} from './list'
 import { createMemo, type Memo } from './memo'
 import { createState, isState } from './state'
 import { createTask } from './task'
 
 /* === Types === */
 
-type CollectionSource<T extends {}> = List<T> | Collection<T>
+/**
+ * A source `deriveCollection` can key and derive from.
+ *
+ * A `List` or `Collection` is already keyed, and its stable keys are used directly.
+ * Any other `Signal<T[]>` — a `Memo`, a `Task`, a `State`, a `Slot` — is keyed on read
+ * by the adapter, which is what lets an asynchronous array become a keyed collection.
+ *
+ * @template T - The type of items in the source
+ */
+type CollectionSource<T extends {}> = List<T> | Collection<T> | Signal<T[]>
+
+/**
+ * The minimal keyed interface `deriveCollection` consumes from its source.
+ * `List` and `Collection` satisfy it directly; a plain `Signal<T[]>` is adapted to it.
+ *
+ * @template T - The type of items in the source
+ */
+type KeyedSource<T extends {}> = {
+	keys(): IterableIterator<string>
+	byKey(key: string): Signal<T> | undefined
+}
+
+/**
+ * Configuration options for `deriveCollection`.
+ *
+ * Both options apply only when the source is a plain `Signal<T[]>`. A `List` or
+ * `Collection` source carries its own keys and item equality already.
+ *
+ * @template T - The type of items in the source
+ */
+type DeriveCollectionOptions<T extends {}> = {
+	/** Key generation strategy for an unkeyed source. See `KeyConfig`. Defaults to positional keys. */
+	keyConfig?: KeyConfig<T>
+	/** Equality function for adapted per-item signals. Defaults to deep equality. */
+	itemEquals?: (a: T, b: T) => boolean
+}
+
+/**
+ * Configuration options for `deriveList`.
+ *
+ * @template T - The type of items in the derived sequence
+ */
+type DeriveListOptions<T extends {}> = DeriveCollectionOptions<T> & {
+	/** Seed value for an asynchronous derivation. Keeps the sequence readable before the first resolution. */
+	initial?: T[]
+	/** Lifecycle callback for an external-push origin. Required when `input` is a seed array. */
+	watched?: CollectionCallback<T>
+	/** Factory for per-item signals in the external-push form. Defaults to `createState`. */
+	createItem?: (value: T) => Signal<T>
+}
 
 /**
  * Transformation callback for `deriveCollection`, either sync or async.
@@ -114,34 +174,250 @@ type CollectionCallback<T extends {}> = (
 /* === Functions === */
 
 /**
+ * Adapts a plain `Signal<T[]>` to the keyed interface `deriveCollection` consumes.
+ *
+ * The array is diffed against the previous read with the same `diffArrays` used by
+ * `List.set()`, so keys stay stable across recomputes: a content-based `keyConfig`
+ * regenerates the same key for the same item, and the positional default reuses keys by
+ * index. Without this, an auto-incrementing generator would mint fresh keys on every
+ * rebuild and destroy item identity.
+ *
+ * `keys()` reads the source tracked, so a caller inside a computation gains the
+ * structural edge. `byKey()` returns a per-item `Memo` that reads the source itself,
+ * which is what gives an adapted source the same per-item granularity a `List` has.
+ *
+ * An `UnsetSignalValueError` from an unresolved `Task` source reads as an empty array
+ * rather than propagating, so the collection is empty until the source first settles.
+ */
+function keyedAdapter<T extends {}>(
+	source: Signal<T[]>,
+	options?: DeriveCollectionOptions<T>,
+): KeyedSource<T> {
+	const [generateKey, contentBased] = getKeyGenerator(options?.keyConfig)
+	const itemEquals = options?.itemEquals ?? DEEP_EQUALITY
+	const signals = new Map<string, Memo<T>>()
+	const indices = new Map<string, number>()
+	let keys: string[] = []
+	let prev: T[] = []
+	let syncedFrom: T[] | undefined
+
+	// An unresolved Task source has no items yet — that is not an error here,
+	// it is an empty collection. Any other read failure is the caller's problem.
+	const readSource = (): T[] => {
+		try {
+			return source.get()
+		} catch (e) {
+			if (e instanceof UnsetSignalValueError) return []
+			throw e
+		}
+	}
+
+	// Reconciles the keys array and index map against `next`, at most once per
+	// distinct source array — every item signal in one propagation pass reads the
+	// same array, so only the first one pays for the diff and the pass stays O(n).
+	//
+	// Deliberately does NOT touch the `signals` map. This runs inside an item Memo's
+	// own recompute (see `byKey`), where deleting the map entry of the Memo currently
+	// running would be gnarly and would silently break identity for a consumer holding
+	// that signal. Signal-map reconciliation happens in `keys()` instead.
+	const ensureKeys = (next: T[]): void => {
+		if (next === syncedFrom) return
+		syncedFrom = next
+		const diff = diffArrays(
+			prev,
+			next,
+			keys,
+			generateKey,
+			contentBased,
+			itemEquals,
+		)
+		prev = next
+		if (keysEqual(keys, diff.newKeys)) return
+		keys = diff.newKeys
+		indices.clear()
+		for (let i = 0; i < keys.length; i++) indices.set(keys[i] as string, i)
+	}
+
+	return {
+		keys() {
+			ensureKeys(readSource())
+			// Drop item signals whose key is gone. Safe here, and only here: this is
+			// never reached from inside an item Memo's own recompute.
+			for (const key of Array.from(signals.keys()))
+				if (!indices.has(key)) signals.delete(key)
+			return keys.values()
+		},
+
+		byKey(key: string) {
+			if (!indices.has(key)) return undefined
+			let signal = signals.get(key)
+			if (!signal) {
+				// Reads the source rather than closing over a value, so the item
+				// signal is a real graph sink of the source and recomputes on change.
+				signal = createMemo(
+					() => {
+						// Re-resolve the index against the array this recompute
+						// actually sees. A consumer may hold this signal directly, so
+						// it can run without the collection's own rebuild having run
+						// first; an index resolved outside this closure would be stale
+						// after a reorder and would return a different element under
+						// the same key. See ADR-0018 §7.
+						const items = readSource()
+						ensureKeys(items)
+						const at = indices.get(key)
+						return (at !== undefined ? items[at] : undefined) as T
+					},
+					{ equals: itemEquals },
+				)
+				signals.set(key, signal)
+			}
+			return signal
+		},
+	}
+}
+
+/**
+ * Builds the Collection accessor object shared by `createCollection` and `deriveCollection`.
+ *
+ * The two differ only in what has to happen before an access, which is what `prepare` and
+ * `prepareValue` carry: an externally driven collection maintains its keys through
+ * `onChanges()` and only needs the watched lifecycle activated, while a derived one
+ * discovers its keys inside `buildValue()` and must refresh on every access.
+ *
+ * @param node - The structural tracking node
+ * @param getKeys - Reads the current key order; a getter because the array is reassigned
+ * @param signals - The per-key child signals
+ * @param prepare - Runs before a structural access
+ * @param prepareValue - Runs before `get()`; must leave `node.value` current
+ */
+function collectionFacade<T extends {}, S extends Signal<T>>(
+	node: MemoNode<T[]>,
+	getKeys: () => string[],
+	signals: Map<string, S>,
+	prepare: () => void,
+	prepareValue: () => void,
+): Collection<T, S> {
+	const collection: Collection<T, S> = {
+		[Symbol.toStringTag]: TYPE_COLLECTION,
+		[Symbol.isConcatSpreadable]: true as const,
+
+		*[Symbol.iterator]() {
+			prepare()
+			for (const key of getKeys()) {
+				const signal = signals.get(key)
+				if (signal) yield signal
+			}
+		},
+
+		get length() {
+			prepare()
+			return getKeys().length
+		},
+
+		keys() {
+			prepare()
+			return getKeys().values()
+		},
+
+		get() {
+			prepareValue()
+			return node.value
+		},
+
+		at(index: number) {
+			prepare()
+			const key = getKeys()[index]
+			return key !== undefined ? signals.get(key) : undefined
+		},
+
+		byKey(key: string) {
+			prepare()
+			return signals.get(key)
+		},
+
+		keyAt(index: number) {
+			prepare()
+			return getKeys()[index]
+		},
+
+		indexOfKey(key: string) {
+			prepare()
+			return getKeys().indexOf(key)
+		},
+
+		deriveCollection<R extends {}>(
+			cb: DeriveCollectionCallback<R, T>,
+		): Collection<R> {
+			return (
+				deriveCollection as <T2 extends {}, U2 extends {}>(
+					source: CollectionSource<U2>,
+					callback: DeriveCollectionCallback<T2, U2>,
+				) => Collection<T2>
+			)(collection, cb)
+		},
+	}
+
+	return collection
+}
+
+/**
  * Creates a derived Collection from a List or another Collection, with per-item memoization.
  * A sync callback creates a Memo per item. An async callback creates a Task per item.
  * The node reads the source keys, so a structural change propagates.
  *
+ * A `List` or `Collection` source is used directly, keeping its stable keys. Any other
+ * `Signal<U[]>` is keyed on read — see `keyedAdapter`. This is what lets an asynchronous
+ * array (`Task<U[]>`) become a keyed collection without an intermediate effect.
+ *
  * @since 0.18.0
- * @param source - The source List or Collection to derive from
+ * @param source - The source to derive from: a List, a Collection, or any `Signal<U[]>`
  * @param callback - Transformation function applied to each item
+ * @param options - Key generation and item equality. Applies only to an unkeyed source.
  * @returns A Collection signal
  */
 function deriveCollection<T extends {}, U extends {}>(
 	source: CollectionSource<U>,
 	callback: (sourceValue: U) => T,
+	options?: DeriveCollectionOptions<U>,
 ): Collection<T>
 function deriveCollection<T extends {}, U extends {}>(
 	source: CollectionSource<U>,
 	callback: (sourceValue: U, abort: AbortSignal) => Promise<T>,
+	options?: DeriveCollectionOptions<U>,
 ): Collection<T>
 function deriveCollection<T extends {}, U extends {}>(
-	source: CollectionSource<U>,
-	callback: DeriveCollectionCallback<T, U>,
+	sourceInput: CollectionSource<U>,
+	// Optional only for the internal pass-through form used by `deriveList(fn)`; every
+	// public overload requires it.
+	callback?: DeriveCollectionCallback<T, U>,
+	options?: DeriveCollectionOptions<U>,
 ): Collection<T> {
-	validateCallback(TYPE_COLLECTION, callback)
+	if (callback) validateCallback(TYPE_COLLECTION, callback)
+
+	// A List or Collection is already keyed; anything else is adapted. The guards
+	// must come first, because both also satisfy the structural `Signal<U[]>` type.
+	const source: KeyedSource<U> =
+		isList<U>(sourceInput) || isCollection<U>(sourceInput)
+			? (sourceInput as KeyedSource<U>)
+			: keyedAdapter(sourceInput as Signal<U[]>, options)
 
 	const isAsync = isAsyncFunction(callback)
 	const signals = new Map<string, Memo<T>>()
 	let keys: string[] = []
 
 	const addSignal = (key: string): void => {
+		// No callback: the source's own slice is the derived slice, so it is used
+		// directly instead of being wrapped in an identity Memo. Only reachable from
+		// `deriveList(fn)`, where the source is an internally built `keyedAdapter` and
+		// its slices are therefore `Memo`s. It is NOT safe for a `List` source, whose
+		// `byKey` returns a *mutable* signal — exposing that would leak `.set()`
+		// through a read-only collection.
+		if (!callback) {
+			const passthrough = untrack(() => source.byKey(key))
+			if (passthrough) signals.set(key, passthrough as unknown as Memo<T>)
+			return
+		}
+
 		const signal = isAsync
 			? createTask(async (prev: T | undefined, abort: AbortSignal) => {
 					// Look up the item signal without a structural edge (byKey now
@@ -202,13 +478,10 @@ function deriveCollection<T extends {}, U extends {}>(
 		return result
 	}
 
-	// Shallow reference equality for value arrays — prevents unnecessary
-	// downstream propagation when re-evaluation produces the same item references
-	const valuesEqual = (a: T[], b: T[]): boolean => {
-		if (a.length !== b.length) return false
-		for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
-		return true
-	}
+	// Shallow reference equality for value arrays — prevents unnecessary downstream
+	// propagation when re-evaluation produces the same item references. Same algorithm
+	// as keysEqual, which is written for strings but compares by identity either way.
+	const valuesEqual = keysEqual as unknown as (a: T[], b: T[]) => boolean
 
 	// Structural tracking node — mirrors the List/Store/createCollection pattern.
 	// fn (buildValue) syncs keys then reads child signals to produce T[].
@@ -225,49 +498,11 @@ function deriveCollection<T extends {}, U extends {}>(
 		error: undefined,
 	}
 
-	function ensureFresh(): void {
-		if (node.sources) {
-			if (node.flags) {
-				// Unlike List/Store (whose mutation methods set FLAG_RELINK
-				// explicitly before this runs), Collection's buildValue()
-				// discovers key changes itself via syncKeys() and sets
-				// FLAG_RELINK as a side effect of running — so it must run
-				// once, untracked, before we can know which branch applies.
-				const result = untrack(buildValue)
-				if (node.flags & FLAG_RELINK) {
-					// Keys changed — new child signals need graph edges.
-					// Tracked recompute so link() adds new edges and
-					// trimSources() removes stale ones without orphaning.
-					// Must NOT use `result` for node.value here: recomputeMemo()
-					// (inside refresh()) diffs its own freshly tracked-built
-					// value against the CURRENT node.value to decide whether
-					// to promote downstream FLAG_CHECK sinks to FLAG_DIRTY.
-					// Pre-writing node.value from `result` would make that
-					// comparison trivially equal, silently dropping the
-					// cascade to any sink queued earlier in the same
-					// propagate pass (e.g. an eager out-of-band read racing
-					// ahead of the effect queue).
-					node.flags = FLAG_DIRTY
-					refresh(node as unknown as SinkNode)
-					if (node.error) throw node.error
-				} else {
-					node.value = result
-					node.flags = FLAG_CLEAN
-				}
-			}
-		} else if (node.sinks) {
-			// First access with a downstream sink — use refresh()
-			// to establish edges via recomputeMemo
-			refresh(node as unknown as SinkNode)
-			if (node.error) throw node.error
-		} else {
-			// No sinks yet (e.g., chained deriveCollection init) —
-			// compute the value without establishing edges, to prevent
-			// premature watched activation on upstream sources.
-			// Keep FLAG_DIRTY so the first refresh() with a real sink
-			// establishes proper edges.
-			node.value = untrack(buildValue)
-		}
+	// Unlike List/Store (whose mutation methods set FLAG_RELINK explicitly before this
+	// runs), buildValue() discovers key changes itself via syncKeys() — the derived
+	// variant.
+	const ensureFresh = (): void => {
+		refreshComposite(node, buildValue, true)
 	}
 
 	// Initialize signals for current source keys. untrack suppresses edge
@@ -280,75 +515,20 @@ function deriveCollection<T extends {}, U extends {}>(
 	keys = initialKeys
 	// Keep FLAG_DIRTY so the first refresh() establishes edges.
 
-	const collection: Collection<T> = {
-		[Symbol.toStringTag]: TYPE_COLLECTION,
-		[Symbol.isConcatSpreadable]: true as const,
-
-		*[Symbol.iterator]() {
-			if (activeSink) link(node, activeSink)
-			ensureFresh()
-			for (const key of keys) {
-				const signal = signals.get(key)
-				if (signal) yield signal
-			}
-		},
-
-		get length() {
-			if (activeSink) link(node, activeSink)
-			ensureFresh()
-			return keys.length
-		},
-
-		keys() {
-			if (activeSink) link(node, activeSink)
-			ensureFresh()
-			return keys.values()
-		},
-
-		get() {
-			if (activeSink) link(node, activeSink)
-			ensureFresh()
-			return node.value
-		},
-
-		at(index: number) {
-			if (activeSink) link(node, activeSink)
-			ensureFresh()
-			const key = keys[index]
-			return key !== undefined ? signals.get(key) : undefined
-		},
-
-		byKey(key: string) {
-			if (activeSink) link(node, activeSink)
-			ensureFresh()
-			return signals.get(key)
-		},
-
-		keyAt(index: number) {
-			if (activeSink) link(node, activeSink)
-			ensureFresh()
-			return keys[index]
-		},
-
-		indexOfKey(key: string) {
-			if (activeSink) link(node, activeSink)
-			ensureFresh()
-			return keys.indexOf(key)
-		},
-
-		deriveCollection<R extends {}>(
-			cb: DeriveCollectionCallback<R, T>,
-		): Collection<R> {
-			return (
-				deriveCollection as <T2 extends {}, U2 extends {}>(
-					source: CollectionSource<U2>,
-					callback: DeriveCollectionCallback<T2, U2>,
-				) => Collection<T2>
-			)(collection, cb)
-		},
+	// Every access links the structural node and refreshes, because keys are
+	// discovered by buildValue() rather than maintained by mutation methods.
+	const prepare = (): void => {
+		if (activeSink) link(node, activeSink)
+		ensureFresh()
 	}
 
-	return collection
+	return collectionFacade<T, Memo<T>>(
+		node,
+		() => keys,
+		signals,
+		prepare,
+		prepare,
+	)
 }
 
 /**
@@ -490,94 +670,143 @@ function createCollection<T extends {}, S extends Signal<T> = Signal<T>>(
 
 	const subscribe = makeSubscribe(node, () => watched(onChanges))
 
-	const collection: Collection<T, S> = {
-		[Symbol.toStringTag]: TYPE_COLLECTION,
-		[Symbol.isConcatSpreadable]: true as const,
-
-		*[Symbol.iterator]() {
+	// Keys and signals are maintained by onChanges(), so a structural access only
+	// has to activate the watched lifecycle. Only get() rebuilds the value.
+	return collectionFacade<T, S>(
+		node,
+		() => keys,
+		signals,
+		subscribe,
+		() => {
 			subscribe()
-			for (const key of keys) {
-				const signal = signals.get(key)
-				if (signal) yield signal
-			}
+			refreshComposite(node, buildValue)
 		},
+	)
+}
 
-		get length() {
-			subscribe()
-			return keys.length
-		},
+/**
+ * Creates a read-only keyed sequence from any origin.
+ *
+ * The origin follows from `input`, so one factory covers every way a keyed sequence can
+ * come to exist. A derived sequence has no mutators — the returned `Collection` is the
+ * read-only shape — which is what makes an imperative write from inside an effect a
+ * compile error rather than a convention.
+ *
+ * | `input` | `options` | Origin |
+ * |---|---|---|
+ * | sync function | — | Synchronous derivation |
+ * | async function | `initial` required | Asynchronous derivation |
+ * | array | `watched` required | External push |
+ * | `Signal<U[]>`, `List`, or `Collection` + item function | — | Per-item derivation |
+ *
+ * @since 1.5.0
+ * @param input - A computation, a seed array, or a source signal to derive per item from
+ * @param itemOrOptions - The per-item callback for a source input, otherwise the options
+ * @param maybeOptions - Options, when a per-item callback is given
+ * @returns A read-only Collection signal
+ *
+ * @example
+ * ```ts
+ * // Previously impossible without an effect: an async array as a keyed sequence.
+ * const users = deriveList(async (_prev, abort) => {
+ *   const res = await fetch(`/api/users?q=${query.get()}`, { signal: abort })
+ *   return res.json()
+ * }, { initial: [], keyConfig: (u: User) => u.id })
+ *
+ * createEffect(() => {
+ *   if (isPending(users)) return showSpinner()
+ *   for (const user of users) renderRow(user)
+ * })
+ * ```
+ */
+function deriveList<T extends {}>(
+	input: () => T[],
+	options?: DeriveListOptions<T>,
+): Collection<T>
+function deriveList<T extends {}>(
+	input: (prev: T[], abort: AbortSignal) => Promise<T[]>,
+	options: DeriveListOptions<T> & { initial: T[] },
+): Collection<T>
+function deriveList<T extends {}>(
+	input: T[],
+	options: DeriveListOptions<T> & { watched: CollectionCallback<T> },
+): Collection<T>
+function deriveList<T extends {}, U extends {}>(
+	input: CollectionSource<U>,
+	itemCallback: (sourceValue: U) => T,
+	options?: DeriveCollectionOptions<U>,
+): Collection<T>
+function deriveList<T extends {}, U extends {}>(
+	input: CollectionSource<U>,
+	itemCallback: (sourceValue: U, abort: AbortSignal) => Promise<T>,
+	options?: DeriveCollectionOptions<U>,
+): Collection<T>
+function deriveList<T extends {}, U extends {}>(
+	input:
+		| (() => T[])
+		| ((prev: T[], abort: AbortSignal) => Promise<T[]>)
+		| T[]
+		| CollectionSource<U>,
+	itemOrOptions?: DeriveCollectionCallback<T, U> | DeriveListOptions<T>,
+	maybeOptions?: DeriveCollectionOptions<U>,
+): Collection<T> {
+	// Per-item derivation: the second argument is the callback, not the options.
+	if (isFunction(itemOrOptions))
+		return deriveCollection(
+			input as CollectionSource<U>,
+			itemOrOptions as (sourceValue: U) => T,
+			maybeOptions,
+		)
 
-		keys() {
-			subscribe()
-			return keys.values()
-		},
+	const options = itemOrOptions as DeriveListOptions<T> | undefined
 
-		get() {
-			subscribe()
-			if (node.sources) {
-				if (node.flags) {
-					if (node.flags & FLAG_RELINK) {
-						// Structural mutation added/removed child signals —
-						// tracked recompute so link() adds new edges and
-						// trimSources() removes stale ones without orphaning.
-						// Must NOT pre-write node.value here: recomputeMemo()
-						// (inside refresh()) diffs its freshly built result
-						// against the CURRENT node.value to decide whether to
-						// promote downstream FLAG_CHECK sinks to FLAG_DIRTY.
-						// Overwriting node.value first makes that comparison
-						// trivially equal, silently dropping the cascade to
-						// any sink queued earlier in the same propagate pass
-						// (e.g. an eager out-of-band read racing ahead of the
-						// effect queue).
-						node.flags = FLAG_DIRTY
-						refresh(node as unknown as SinkNode)
-						if (node.error) throw node.error
-					} else {
-						node.value = untrack(buildValue)
-						node.flags = FLAG_CLEAN
-					}
-				}
-			} else {
-				refresh(node as unknown as SinkNode)
-				if (node.error) throw node.error
-			}
-			return node.value
-		},
+	// Pass-through: the source is built here, so `deriveCollection` adapts it and uses
+	// the adapter's slices as the derived slices — one Memo per item, not two. The cast
+	// reaches the implementation signature; no public overload omits the callback.
+	const passthrough = deriveCollection as unknown as <V extends {}>(
+		source: CollectionSource<V>,
+		callback: undefined,
+		options?: DeriveCollectionOptions<V>,
+	) => Collection<V>
 
-		at(index: number) {
-			subscribe()
-			const key = keys[index]
-			return key !== undefined ? signals.get(key) : undefined
-		},
-
-		byKey(key: string) {
-			subscribe()
-			return signals.get(key)
-		},
-
-		keyAt(index: number) {
-			subscribe()
-			return keys[index]
-		},
-
-		indexOfKey(key: string) {
-			subscribe()
-			return keys.indexOf(key)
-		},
-
-		deriveCollection<R extends {}>(
-			cb: DeriveCollectionCallback<R, T>,
-		): Collection<R> {
-			return (
-				deriveCollection as <T2 extends {}, U2 extends {}>(
-					source: CollectionSource<U2>,
-					callback: DeriveCollectionCallback<T2, U2>,
-				) => Collection<T2>
-			)(collection, cb)
-		},
+	// External push: a seed array plus a watched lifecycle. Checked before the
+	// function branches because an array is never a computation.
+	if (!isFunction(input)) {
+		validateSignalValue(TYPE_COLLECTION, input, Array.isArray)
+		validateCallback(TYPE_COLLECTION, options?.watched, isSyncFunction)
+		// `initial` and `watched` are ignored by createCollection; the rest of the
+		// options are shared verbatim.
+		return createCollection(options?.watched as CollectionCallback<T>, {
+			...(options as CollectionOptions<T>),
+			value: input as T[],
+		}) as Collection<T>
 	}
 
-	return collection
+	// Asynchronous derivation. `initial` defaults to empty rather than throwing:
+	// the contract is that the sequence is never unset, and an empty seed satisfies
+	// it. `isPending()` carries the loading distinction instead of the value.
+	if (isAsyncFunction(input)) {
+		const task = createTask(
+			input as (prev: T[], abort: AbortSignal) => Promise<T[]>,
+			{ value: options?.initial ?? [] },
+		)
+		const derived = passthrough<T>(
+			task as Signal<T[]>,
+			undefined,
+			options as DeriveCollectionOptions<T>,
+		)
+		// The asynchrony lives in the internal Task, so `isPending(derived)` and
+		// `abort(derived)` resolve through it. See ADR-0018.
+		registerAsyncSource(derived, task)
+		return derived
+	}
+
+	// Synchronous derivation.
+	return passthrough<T>(
+		createMemo(input as () => T[]) as Signal<T[]>,
+		undefined,
+		options as DeriveCollectionOptions<T>,
+	)
 }
 
 /**
@@ -603,6 +832,9 @@ export {
 	type CollectionSource,
 	createCollection,
 	type DeriveCollectionCallback,
+	type DeriveCollectionOptions,
+	type DeriveListOptions,
 	deriveCollection,
+	deriveList,
 	isCollection,
 }

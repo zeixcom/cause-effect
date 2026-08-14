@@ -162,15 +162,43 @@ derived collection. `isPending()` distinguishes loading-empty from resolved-empt
 until first resolution, which `match()`'s `nil` branch depends on — and gains `initial` as an
 optional escape from it.
 
-### 7. Derived composites reuse the existing structural diff
+### 7. Derived composites derive their slices; they do not write them
 
-A derived composite is a memoized recompute whose result is applied through the diff already
-implemented in `list.set()` and `store.set()`. Child-signal identity is preserved by key, exactly
-as today. This is the same work the discouraged effect performs by hand, moved inside the graph so
-that the dependency edge is visible to it.
+Each key of a derived composite gets its own `Memo` that reads the source and selects its own
+slice. Children are *derived*, not written. Child-signal identity is preserved by key, which is
+what makes this the same outcome the discouraged effect produces by hand — but with the dependency
+edge visible to the graph.
+
+An earlier draft of this ADR specified the opposite: a memoized recompute whose result is applied
+through the diff in `list.set()` and `store.set()`. That is not implementable. Driving
+`inner.set(source.get())` from a recompute writes to child signals mid-recompute, which calls
+`propagate()` and then `flush()` while the graph is still running — the re-entrancy the flush guard
+exists to prevent. Wrapping it in `batch()` defers the flush but still leaves writes inside a
+tracked recompute. `deriveCollection` already used the per-slice mechanism before this ADR; the
+draft simply mis-described it.
+
+Per-slice `equals` does the work the diff was meant to do: a slice whose value did not change stops
+propagation, so an unchanged property or item does not re-run its readers.
+
+**Slices resolve by key, never by a cached index.** A derived composite over an unkeyed source must
+map source elements to keys, and it is tempting to cache a key→index map and have each slice read
+`items[index]`. That is unsound: a consumer may hold a slice signal directly, so the slice can be
+refreshed through an edge that never passes through the composite's own rebuild, leaving the cached
+index stale after a reorder and returning a different element under the same key. Any index cache
+must be revalidated against the source array inside the slice's own recompute.
+
+**Derived records do not recurse into nested values.** `createStore` converts a nested record to a
+nested `Store` and a nested array to a `List` because a *write* needs a target: without nesting,
+`store.address.city.set(…)` has nowhere to land. A derived record has no writes, so recursion has
+no target — it would be purely a read optimization, guessing at a granularity the caller did not
+ask for and paying a node per nested key whether or not that granularity is used. A caller who
+wants sub-path granularity composes `deriveStore`/`deriveList` on the property and pays only there.
+Under decision 1 the two factories produce the same `Store` type, so this is a documented behavioural
+difference between construction paths, not a type difference.
 
 The mechanisms in ADR-0010 (`FLAG_RELINK`), ADR-0014 (two-path access), ADR-0015 (structural
-lookup edges), and ADR-0017 (proxy write rejection) apply unchanged.
+lookup edges — including its asymmetry: `byKey` and proxy reads create no structural edge, or
+per-property granularity is lost), and ADR-0017 (proxy write rejection) apply unchanged.
 
 ## Alternatives Considered
 
