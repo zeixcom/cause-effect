@@ -18,7 +18,6 @@ export {
 	RequiredOwnerError,
 	UnsetSignalValueError,
 } from './src/errors'
-/** @deprecated Use `DEEP_EQUALITY` instead. */
 export {
 	abort,
 	batch,
@@ -49,9 +48,11 @@ export {
 	createCollection,
 	type DeriveCollectionCallback,
 	type DeriveCollectionOptions,
+	type DerivedList,
 	type DeriveListOptions,
 	deriveList,
 	isCollection,
+	isDerivedList,
 } from './src/nodes/collection'
 export {
 	createEffect,
@@ -63,9 +64,11 @@ export {
 export {
 	createList,
 	isList,
+	isMutableList,
 	type KeyConfig,
 	type List,
 	type ListOptions,
+	type MutableList,
 } from './src/nodes/list'
 export { createMemo, isMemo, type Memo } from './src/nodes/memo'
 export {

@@ -36,9 +36,9 @@ import {
 import {
 	createList,
 	type DiffResult,
-	isList,
+	isMutableList,
 	keysEqual,
-	type List,
+	type MutableList,
 	type UnknownRecord,
 } from './list'
 import { createMemo } from './memo'
@@ -59,13 +59,16 @@ type BaseStore<T extends UnknownRecord> = {
 	readonly [Symbol.toStringTag]: 'Store'
 	readonly [Symbol.isConcatSpreadable]: false
 	[Symbol.iterator](): IterableIterator<
-		[string, State<T[keyof T] & {}> | Store<UnknownRecord> | List<unknown & {}>]
+		[
+			string,
+			State<T[keyof T] & {}> | Store<UnknownRecord> | MutableList<unknown & {}>,
+		]
 	>
 	keys(): IterableIterator<string>
 	byKey<K extends keyof T & string>(
 		key: K,
 	): T[K] extends readonly (infer U extends {})[]
-		? List<U>
+		? MutableList<U>
 		: T[K] extends UnknownRecord
 			? Store<T[K]>
 			: T[K] extends unknown & {}
@@ -87,7 +90,7 @@ type BaseStore<T extends UnknownRecord> = {
  */
 type Store<T extends UnknownRecord> = BaseStore<T> & {
 	[K in keyof T]: T[K] extends readonly (infer U extends {})[]
-		? List<U>
+		? MutableList<U>
 		: T[K] extends UnknownRecord
 			? Store<T[K]>
 			: T[K] extends unknown & {}
@@ -257,7 +260,7 @@ function createStore<T extends UnknownRecord>(
 
 	const signals = new Map<
 		string,
-		State<unknown & {}> | Store<UnknownRecord> | List<unknown & {}>
+		State<unknown & {}> | Store<UnknownRecord> | MutableList<unknown & {}>
 	>()
 
 	// --- Internal helpers ---
@@ -279,9 +282,12 @@ function createStore<T extends UnknownRecord>(
 		return 'state'
 	}
 	const signalCategory = (
-		signal: State<unknown & {}> | Store<UnknownRecord> | List<unknown & {}>,
+		signal:
+			| State<unknown & {}>
+			| Store<UnknownRecord>
+			| MutableList<unknown & {}>,
 	): ShapeCategory => {
-		if (isList(signal)) return 'list'
+		if (isMutableList(signal)) return 'list'
 		if (isStore(signal)) return 'store'
 		return 'state'
 	}
@@ -370,7 +376,11 @@ function createStore<T extends UnknownRecord>(
 			for (const [key, signal] of signals) {
 				yield [key, signal] as [
 					string,
-					State<T[keyof T] & {}> | Store<UnknownRecord> | List<unknown & {}>,
+					(
+						| State<T[keyof T] & {}>
+						| Store<UnknownRecord>
+						| MutableList<unknown & {}>
+					),
 				]
 			}
 		},
@@ -382,7 +392,7 @@ function createStore<T extends UnknownRecord>(
 
 		byKey<K extends keyof T & string>(key: K) {
 			return signals.get(key) as T[K] extends readonly (infer U extends {})[]
-				? List<U>
+				? MutableList<U>
 				: T[K] extends UnknownRecord
 					? Store<T[K]>
 					: T[K] extends unknown & {}

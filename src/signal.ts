@@ -13,7 +13,12 @@ import {
 	TYPE_STORE,
 	TYPE_TASK,
 } from './graph'
-import { createList, isList, type List, type UnknownRecord } from './nodes/list'
+import {
+	createList,
+	isMutableList,
+	type MutableList,
+	type UnknownRecord,
+} from './nodes/list'
 import { createMemo, isMemo, type Memo } from './nodes/memo'
 import { createState, isState, type State } from './nodes/state'
 import { createStore, isStore, type Store } from './nodes/store'
@@ -79,7 +84,7 @@ function createComputed<T extends {}>(
  * @since 0.9.6
  */
 function createSignal<T extends {}>(value: Signal<T>): Signal<T>
-function createSignal<T extends {}>(value: readonly T[]): List<T>
+function createSignal<T extends {}>(value: readonly T[]): MutableList<T>
 function createSignal<T extends UnknownRecord>(value: T): Store<T>
 function createSignal<T extends {}>(value: TaskCallback<T>): Task<T>
 function createSignal<T extends {}>(value: MemoCallback<T>): Memo<T>
@@ -104,7 +109,7 @@ function createSignal(value: unknown): unknown {
 function createMutableSignal<T extends {}>(
 	value: MutableSignal<T>,
 ): MutableSignal<T>
-function createMutableSignal<T extends {}>(value: readonly T[]): List<T>
+function createMutableSignal<T extends {}>(value: readonly T[]): MutableList<T>
 function createMutableSignal<T extends UnknownRecord>(value: T): Store<T>
 function createMutableSignal<T extends {}>(value: T): State<T>
 function createMutableSignal(value: unknown): unknown {
@@ -154,7 +159,7 @@ function isSignal<T extends {}>(value: unknown): value is Signal<T> {
  * @returns True if value is a State, Store, or List, false otherwise
  */
 function isMutableSignal(value: unknown): value is MutableSignal<unknown & {}> {
-	return isState(value) || isStore(value) || isList(value)
+	return isState(value) || isStore(value) || isMutableList(value)
 }
 
 export {

@@ -31,10 +31,10 @@ import {
 import {
 	diffArrays,
 	getKeyGenerator,
-	isList,
+	isMutableList,
 	type KeyConfig,
 	keysEqual,
-	type List,
+	type MutableList,
 } from './list'
 import { createMemo, type Memo } from './memo'
 import { createState, isState } from './state'
@@ -45,17 +45,20 @@ import { createTask } from './task'
 /**
  * A source `deriveCollection` can key and derive from.
  *
- * A `List` or `Collection` is already keyed, and its stable keys are used directly.
+ * A `MutableList` or `DerivedList` is already keyed, and its stable keys are used directly.
  * Any other `Signal<T[]>` — a `Memo`, a `Task`, a `State`, a `Slot` — is keyed on read
  * by the adapter, which is what lets an asynchronous array become a keyed collection.
  *
  * @template T - The type of items in the source
  */
-type CollectionSource<T extends {}> = List<T> | Collection<T> | Signal<T[]>
+type CollectionSource<T extends {}> =
+	| MutableList<T>
+	| DerivedList<T>
+	| Signal<T[]>
 
 /**
  * The minimal keyed interface `deriveCollection` consumes from its source.
- * `List` and `Collection` satisfy it directly; a plain `Signal<T[]>` is adapted to it.
+ * `MutableList` and `DerivedList` satisfy it directly; a plain `Signal<T[]>` is adapted to it.
  *
  * @template T - The type of items in the source
  */
@@ -106,13 +109,17 @@ type DeriveCollectionCallback<T extends {}, U extends {}> =
 	| ((sourceValue: U, abort: AbortSignal) => Promise<T>)
 
 /**
- * A read-only reactive keyed collection with per-item reactivity.
- * `createCollection()` creates an externally driven one. `.deriveCollection()` on a `List`
- * or a `Collection` creates a derived one.
+ * A read-only reactive keyed sequence with per-item reactivity.
+ * `deriveList()` returns one — from a computation, a seed with a watched lifecycle, or another
+ * source derived per item. `.deriveCollection()` on a `MutableList` or a `DerivedList` creates
+ * a derived one too.
  *
- * @template T - The type of items in the collection
+ * The name this type carries toward v2.0, where it becomes the readonly base `List`.
+ * `Collection` is a deprecated alias of it.
+ *
+ * @template T - The type of items in the sequence
  */
-type Collection<T extends {}, S extends Signal<T> = Signal<T>> = {
+type DerivedList<T extends {}, S extends Signal<T> = Signal<T>> = {
 	readonly [Symbol.toStringTag]: 'Collection'
 	readonly [Symbol.isConcatSpreadable]: true
 	[Symbol.iterator](): IterableIterator<S>
@@ -122,12 +129,28 @@ type Collection<T extends {}, S extends Signal<T> = Signal<T>> = {
 	byKey(key: string): S | undefined
 	keyAt(index: number): string | undefined
 	indexOfKey(key: string): number
-	deriveCollection<R extends {}>(callback: (sourceValue: T) => R): Collection<R>
+	deriveCollection<R extends {}>(
+		callback: (sourceValue: T) => R,
+	): DerivedList<R>
 	deriveCollection<R extends {}>(
 		callback: (sourceValue: T, abort: AbortSignal) => Promise<R>,
-	): Collection<R>
+	): DerivedList<R>
 	readonly length: number
 }
+
+/**
+ * The read-only keyed-sequence type, under its v1 name.
+ *
+ * @deprecated `Collection` is removed in v2.0 — use `DerivedList` (same type, same behavior
+ * today). In v2.0, the readonly base is named `List`. See
+ * [ADR-0018](../../../adr/0018-shape-indexed-signal-types.md) and `MIGRATION-2.0.md`.
+ *
+ * @template T - The type of items in the collection
+ */
+type Collection<T extends {}, S extends Signal<T> = Signal<T>> = DerivedList<
+	T,
+	S
+>
 
 /**
  * Granular mutation descriptor passed to the `applyChanges` callback inside a `CollectionCallback`.
@@ -296,8 +319,8 @@ function collectionFacade<T extends {}, S extends Signal<T>>(
 	signals: Map<string, S>,
 	prepare: () => void,
 	prepareValue: () => void,
-): Collection<T, S> {
-	const collection: Collection<T, S> = {
+): DerivedList<T, S> {
+	const collection: DerivedList<T, S> = {
 		[Symbol.toStringTag]: TYPE_COLLECTION,
 		[Symbol.isConcatSpreadable]: true as const,
 
@@ -347,12 +370,12 @@ function collectionFacade<T extends {}, S extends Signal<T>>(
 
 		deriveCollection<R extends {}>(
 			cb: DeriveCollectionCallback<R, T>,
-		): Collection<R> {
+		): DerivedList<R> {
 			return (
 				deriveCollection as <T2 extends {}, U2 extends {}>(
 					source: CollectionSource<U2>,
 					callback: DeriveCollectionCallback<T2, U2>,
-				) => Collection<T2>
+				) => DerivedList<T2>
 			)(collection, cb)
 		},
 	}
@@ -379,25 +402,25 @@ function deriveCollection<T extends {}, U extends {}>(
 	source: CollectionSource<U>,
 	callback: (sourceValue: U) => T,
 	options?: DeriveCollectionOptions<U>,
-): Collection<T>
+): DerivedList<T>
 function deriveCollection<T extends {}, U extends {}>(
 	source: CollectionSource<U>,
 	callback: (sourceValue: U, abort: AbortSignal) => Promise<T>,
 	options?: DeriveCollectionOptions<U>,
-): Collection<T>
+): DerivedList<T>
 function deriveCollection<T extends {}, U extends {}>(
 	sourceInput: CollectionSource<U>,
 	// Optional only for the internal pass-through form used by `deriveList(fn)`; every
 	// public overload requires it.
 	callback?: DeriveCollectionCallback<T, U>,
 	options?: DeriveCollectionOptions<U>,
-): Collection<T> {
+): DerivedList<T> {
 	if (callback) validateCallback(TYPE_COLLECTION, callback)
 
 	// A List or Collection is already keyed; anything else is adapted. The guards
 	// must come first, because both also satisfy the structural `Signal<U[]>` type.
 	const source: KeyedSource<U> =
-		isList<U>(sourceInput) || isCollection<U>(sourceInput)
+		isMutableList<U>(sourceInput) || isDerivedList<U>(sourceInput)
 			? (sourceInput as KeyedSource<U>)
 			: keyedAdapter(sourceInput as Signal<U[]>, options)
 
@@ -538,6 +561,10 @@ function deriveCollection<T extends {}, U extends {}>(
  * collection activates when an effect first reads it, and deactivates when it is no longer
  * watched. A structural mutation through `applyChanges` does not restart that lifecycle.
  *
+ * @deprecated Use `deriveList(seed, { watched })` — the external-push form of `deriveList`
+ * replaces this factory in v2.0. The seed takes the place of the `value` option; every other
+ * option carries over unchanged.
+ *
  * @since 0.18.0
  * @param watched - Callback that runs when the collection becomes watched. Receives the applyChanges helper.
  * @param options - Optional configuration including initial value, key generation, and item signal creation
@@ -546,7 +573,7 @@ function deriveCollection<T extends {}, U extends {}>(
 function createCollection<T extends {}, S extends Signal<T> = Signal<T>>(
 	watched: CollectionCallback<T>,
 	options?: CollectionOptions<T, S>,
-): Collection<T, S> {
+): DerivedList<T, S> {
 	const value = options?.value ?? []
 	if (value.length) validateSignalValue(TYPE_COLLECTION, value, Array.isArray)
 	validateCallback(TYPE_COLLECTION, watched, isSyncFunction)
@@ -722,25 +749,25 @@ function createCollection<T extends {}, S extends Signal<T> = Signal<T>>(
 function deriveList<T extends {}>(
 	input: () => T[],
 	options?: DeriveListOptions<T>,
-): Collection<T>
+): DerivedList<T>
 function deriveList<T extends {}>(
 	input: (prev: T[], abort: AbortSignal) => Promise<T[]>,
 	options: DeriveListOptions<T> & { initial: T[] },
-): Collection<T>
+): DerivedList<T>
 function deriveList<T extends {}>(
 	input: T[],
 	options: DeriveListOptions<T> & { watched: CollectionCallback<T> },
-): Collection<T>
+): DerivedList<T>
 function deriveList<T extends {}, U extends {}>(
 	input: CollectionSource<U>,
 	itemCallback: (sourceValue: U) => T,
 	options?: DeriveCollectionOptions<U>,
-): Collection<T>
+): DerivedList<T>
 function deriveList<T extends {}, U extends {}>(
 	input: CollectionSource<U>,
 	itemCallback: (sourceValue: U, abort: AbortSignal) => Promise<T>,
 	options?: DeriveCollectionOptions<U>,
-): Collection<T>
+): DerivedList<T>
 function deriveList<T extends {}, U extends {}>(
 	input:
 		| (() => T[])
@@ -749,7 +776,7 @@ function deriveList<T extends {}, U extends {}>(
 		| CollectionSource<U>,
 	itemOrOptions?: DeriveCollectionCallback<T, U> | DeriveListOptions<T>,
 	maybeOptions?: DeriveCollectionOptions<U>,
-): Collection<T> {
+): DerivedList<T> {
 	// Per-item derivation: the second argument is the callback, not the options.
 	if (isFunction(itemOrOptions))
 		return deriveCollection(
@@ -767,7 +794,7 @@ function deriveList<T extends {}, U extends {}>(
 		source: CollectionSource<V>,
 		callback: undefined,
 		options?: DeriveCollectionOptions<V>,
-	) => Collection<V>
+	) => DerivedList<V>
 
 	// External push: a seed array plus a watched lifecycle. Checked before the
 	// function branches because an array is never a computation.
@@ -779,7 +806,7 @@ function deriveList<T extends {}, U extends {}>(
 		return createCollection(options?.watched as CollectionCallback<T>, {
 			...(options as CollectionOptions<T>),
 			value: input as T[],
-		}) as Collection<T>
+		}) as DerivedList<T>
 	}
 
 	// Asynchronous derivation. `initial` defaults to empty rather than throwing:
@@ -810,7 +837,26 @@ function deriveList<T extends {}, U extends {}>(
 }
 
 /**
+ * Checks if a value is a read-only derived List signal.
+ *
+ * The name this guard carries toward v2.0, where it becomes `isList`.
+ * `isCollection` is a deprecated alias of it.
+ *
+ * @since 1.5.0
+ * @param value - The value to check
+ * @returns True if the value is a read-only derived List
+ */
+function isDerivedList<T extends {}, S extends Signal<T> = Signal<T>>(
+	value: unknown,
+): value is DerivedList<T, S> {
+	return isSignalOfType(value, TYPE_COLLECTION)
+}
+
+/**
  * Checks if a value is a Collection signal.
+ *
+ * @deprecated Use `isDerivedList` — in v2.0 the readonly base is named `List`, guarded by
+ * `isList`.
  *
  * @since 0.17.2
  * @param value - The value to check
@@ -819,7 +865,7 @@ function deriveList<T extends {}, U extends {}>(
 function isCollection<T extends {}, S extends Signal<T> = Signal<T>>(
 	value: unknown,
 ): value is Collection<T, S> {
-	return isSignalOfType(value, TYPE_COLLECTION)
+	return isDerivedList<T, S>(value)
 }
 
 /* === Exports === */
@@ -833,8 +879,10 @@ export {
 	createCollection,
 	type DeriveCollectionCallback,
 	type DeriveCollectionOptions,
+	type DerivedList,
 	type DeriveListOptions,
 	deriveCollection,
 	deriveList,
 	isCollection,
+	isDerivedList,
 }

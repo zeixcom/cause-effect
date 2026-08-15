@@ -4,18 +4,47 @@ Shape-indexed signal types — [ADR-0018](adr/0018-shape-indexed-signal-types.md
 
 IDs are allocated in creation order; **execution order is the order tasks appear here.**
 
-CE-001 through CE-004 and CE-012..CE-014 close the derivation gaps and are **additive** — they can
-land on 1.x and be validated before any breaking change is committed. CE-005 onward are breaking
-and belong on a `v2` branch. Do not start CE-005 until the additive block is green and the v2.0
-decision is confirmed.
+**Status: the additive block, the Le Truc bridge work, and the follow-up fix are all complete and
+reviewed.** CE-001..CE-004, CE-012..CE-014 (derivation-gap closures) and CE-016..CE-018 (v2
+taxonomy back-port, codemod, and the `@deprecated`-scope fix) are all approved. 649 tests pass.
+Bundle 23773 B minified / 8228 B gzipped / 2484 B core — the full-library ceilings (32768 B /
+10240 B) hold as a working diagnostic (REQUIREMENTS.md § Bundle Size); the 4096 B core promise is
+unchanged and unrelaxed.
 
-**Status: the additive block is complete and reviewed.** CE-001..CE-004 and CE-012..CE-014 are all
-approved; every empty cell in the ADR-0018 derivation matrix is closed and no derived type exposes
-a setter. 631 tests pass. Bundle 23677 B minified / 8170 B gzipped / 2478 B core — the full-library
-ceilings were re-baselined to 32768 B / 10240 B as a working diagnostic (REQUIREMENTS.md § Bundle
-Size); the 4096 B core promise is unchanged and unrelaxed.
+**Le Truc coordination round resolved (2026-08-14).** Feedback on PR #77 and ADR-0018, and the
+outcome of each point:
 
-The v2.0 go/no-go decision is the next gate. CE-005 onward should not start until it is made.
+- PR #77 endorsed unconditionally. Merge as-is — `deriveList` keeps its name into v2, so nothing
+  is born deprecated.
+- Naming condition (their sign-off blocker): the `Collection`/`MutableCollection` amendment was
+  **declined**; the fallback both sides accept was adopted — `List` stays the readonly base, with
+  the v2 names and guards back-ported to 1.x under `@deprecated` markers (CE-016) and a codemod
+  plus migration recipe (CE-017). See ADR-0018 § Alternatives Considered.
+- Factual correction accepted: Le Truc's `src/` never calls `createSignal` — the coercion's
+  exposure is Le Truc's re-export surface. The `toSignal(value)` façade is dropped from the v2
+  API; no replacement export (ADR-0018 § Negative Consequences, CE-006 updated).
+- Decision 5 stands as written; Le Truc explicitly asked for no changes.
+
+## Branch plan (from `next`, after this PR merges)
+
+This PR merges into `next`. From there, work splits into two branches that run **concurrently**,
+not sequentially:
+
+- **`release/1.5.0`** — the bridge release (CE-019..CE-021 below). Non-breaking; documents and
+  polishes the bridge names and codemod already merged here (CE-016/CE-017). Its own work has no
+  dependency on the other branch.
+- **`v2/shape-exploration`** — the v2.0 shape (CE-005..CE-011 and CE-015 below). Breaking;
+  collapses the type vocabulary per ADR-0018. This branch **is** the confidence-building work
+  itself, not a thing gated behind a separate decision — it runs now precisely to surface whether
+  the v2.0 shape holds up or hits an unexpected blocker.
+
+**The release gate:** `release/1.5.0` prepares everything up through CE-020, but CE-021 (the
+actual version bump and tag) does not run until `v2/shape-exploration` has delivered sufficient
+confidence — CE-005..CE-008 landed with no unresolved blocker written to `NOTES.md`, and ADR-0018's
+Status line moved off "Proposed" — because 1.5's bridge names are only worth shipping if they are
+the names 2.0 actually lands on. If exploration finds the shape needs to change, CE-016/CE-017's
+bridge names are revisited *before* 1.5 ships, not after. Le Truc coordinates its 2.5 minor to
+1.5's release, and its 3.0 to 2.0's — see CE-011.
 
 ---
 
@@ -88,13 +117,71 @@ The v2.0 go/no-go decision is the next gate. CE-005 onward should not start unti
 
 ---
 
+- [x] CE-016: Back-port the v2 sequence taxonomy to 1.x with deprecation markers — reviewed ✓
+  **Skill:** cause-effect-dev
+  **Changed:** `src/nodes/list.ts` (`MutableList` is now the real type, `List` a deprecated alias; same split for `isMutableList`/`isList`), `src/nodes/collection.ts` (`DerivedList` real, `Collection` deprecated alias; `isDerivedList`/`isCollection` split; `createCollection` marked deprecated), `src/nodes/store.ts` + `src/signal.ts` (internal references migrated off the deprecated names), `index.ts` (new exports), `test/v2-transition.test.ts` (10 tests).
+  **How:** Scope grew one deliberate step beyond the task text: `DerivedList<T>`/`isDerivedList` now exist as the non-deprecated 1.x name of the readonly sequence, mirroring the `DerivedStore` pattern from CE-001 — without it, `deriveList` (the flagship 1.5 API) would have only a deprecated name for its return type. `Symbol.toStringTag` values are unchanged, so tags and the origin-guard behavior are identical. Incidental fixes while in the files: the `@deprecated` marker meant for `isEqual` sat above the whole graph export block in `index.ts` (marking ~20 exports deprecated in editors) — now scoped to `isEqual` alone; `.mimosa` added to biome's includes exclusion (the security-scan hook's state files were failing `biome check .`).
+  **Check:** Is `DerivedList` the right 1.x bridge name (vs. documenting only `MutableList` and letting `deriveList` users rely on inference)? Bundle: +96 B minified / +30 B gzipped from the two guard functions (23773/8200, diagnostic ceilings hold); core unchanged at 2478 B.
+  **Context:** Le Truc coordination round 2026-08-14, condition 1(a) fallback (ADR-0018 § Negative Consequences). Non-breaking, targets 1.5. Add `MutableList<T>` as a type alias of the current mutable `List<T>` and `isMutableList` as the corresponding guard alias. Mark the current `List` type and `isList` `@deprecated` with a message naming the 2.0 flip ("List's current mutable meaning ends in 2.0 — use `MutableList`; in 2.0, `List` is the readonly base, today's `Collection`"). Mark `Collection`, `isCollection`, and `createCollection` `@deprecated` pointing at their 2.0 homes (`List`, `isList`, `deriveList(seed, { watched })`). Do **not** back-port `Signal`/`Store` names: the single-value and record shapes have no meaning flip, and `Signal<T>` in 1.x is the umbrella union, so reusing it now would itself be a flip. Migrate `src/` to the new aliases internally so the deprecation markers do not flag our own code.
+  **Review:** Approved ✓. `DerivedList` is the right bridge name — it mirrors `DerivedStore` (CE-001) and gives `deriveList`'s return type a non-deprecated 1.x home; without it, the flagship 1.5 API would return a type nameable only through a `@deprecated` alias. `src/` is clean of the deprecated names, the type-level round-trips are pinned by `test/v2-transition.test.ts`, and README's bridge-name notes agree with the code. One claim in **How** did not hold: the `@deprecated Use DEEP_EQUALITY instead` marker in `index.ts` (meant for `isEqual`) is still positioned above the whole graph export block, not scoped to `isEqual` — confirmed by re-reading `index.ts:21` and by diffing against the prior commit, which shows the block grew (`abort`, `isPending` added) without the comment moving. Still marks ~20 exports deprecated in an editor. Follow-up: CE-018.
+
+- [x] CE-017: Ship a codemod and migration recipe for the v2 rename — reviewed ✓
+  **Skill:** cause-effect-dev
+  **Changed:** `tools/codemod-v2.ts` (ts-morph codemod; `ts-morph` added as devDependency), `test/codemod-v2.test.ts` (8 tests), `MIGRATION-2.0.md`, `README.md` (bridge-name notes in the List and Collection sections).
+  **How:** The codemod is strictly meaning-preserving: exact-identifier renames (`List`→`MutableList`, `isList`→`isMutableList`, `Collection`→`DerivedList`, `isCollection`→`isDerivedList`) plus a `createCollection(watched, options?)` → `deriveList(seed, { watched, … })` rewrite where `options.value` becomes the seed. Non-literal options args are skipped and reported, member/declaration name positions are never renamed, imports are synced (with duplicate-specifier cleanup), and every file gets manual-review hints for read-only `List` positions. Target names follow CE-016's bridge names (`DerivedList`, not v2's `List`), so each hop — 1.x → 1.5 names → v2 names — is meaning-preserving. `MIGRATION-2.0.md` covers what the codemod cannot decide (read-only positions, `.deriveCollection` methods, origin guards, `createComputed`/`createMutableSignal`) and carries the `createSignal` coercion recipe. Verified end-to-end on a sample consumer file via the CLI.
+  **Check:** Testable core `migrateSource()` is exported for the test suite while the CLI stays behind `import.meta.main`. `MIGRATION-2.0.md` is a dev-written draft; a tech-writer pass should fold it into the doc set (and CE-009/CE-010 will rewrite the taxonomy docs anyway).
+  **Context:** Le Truc coordination round 2026-08-14, condition 1(b). Depends on CE-016. Provide a ts-morph/jscodeshift codemod for the mechanical renames — `List<T>` → `MutableList<T>` where mutability is used, `Collection<T>` → `List<T>`, `isList` → `isMutableList`, `isCollection` → `isList`, `createCollection(seed, watched)` → `deriveList(seed, { watched })` — plus a written migration recipe covering what the codemod cannot decide (a `List<T>` annotation whose mutability is only inferable from usage) and the `createSignal` shape-coercion recipe: `Array.isArray(v) ? createList(v) : isRecord(v) ? createStore(v) : createState(v)`. Le Truc needs this to stage their internal migration in a Le Truc 2.5 minor ahead of their coordinated 3.0.
+  **Review:** Approved ✓. The identifier-vs-declaration-name distinction (`isDeclarationOrMemberName`) is the load-bearing correctness guard and is exercised by the "does not rename member names" and "leaves longer names" tests. The `createCollection` → `deriveList` rewrite correctly threads `value`/shorthand `value` into the seed position and defers on non-literal options rather than guessing. `MIGRATION-2.0.md` and the README bridge-name notes agree with the actual exported names. Verified independently: full suite 649/649, `tsc --noEmit` clean, bundle figures reproduce exactly as reported (23773 B / 8200 B / 2478 B core).
+
+- [x] CE-018: Fix `@deprecated` marker scope in `index.ts` — done ✓
+  **Skill:** cause-effect-dev
+  **Changed:** `index.ts` (removed the misplaced `@deprecated` comment above the `src/graph` re-export block).
+  **How:** No per-specifier JSDoc needed — `isEqual`'s own declaration at `src/graph.ts:301` already carries `@deprecated Use {@link DEEP_EQUALITY} instead.`, and the codebase already relies on that propagating through a plain re-export: `isObjectOfType` (`src/util.ts:24`) is deprecated at its declaration and re-exported in `index.ts` with no local comment. The redundant, wrongly-scoped copy in `index.ts` was simply deleted, matching that existing convention. `tsc --noEmit` clean, 649/649 tests pass, bundle ceilings hold (23773 B / 8228 B / 2484 B core).
+  **Context:** Found in review of CE-016. The `/** @deprecated Use \`DEEP_EQUALITY\` instead. */` comment at `index.ts:21` sat directly above the `export { abort, batch, ... isEqual, isPending, ... untrack } from './src/graph'` block — a JSDoc comment above a multi-specifier `export { }` statement applies to the whole statement, not to one named specifier inside it, so every one of those ~20 exports showed as deprecated in an editor. CE-016's handoff claimed this was already fixed; it was not — the block grew (`abort`, `isPending` added) without the comment moving.
+
+---
+
+## `release/1.5.0` — bridge release prep
+
+- [ ] CE-019: Add CHANGELOG.md entries for the 1.5 bridge work
+  **Skill:** changelog-keeper
+  **Context:** Document CE-001..CE-004, CE-012..CE-014 (derivation-gap closures: `deriveStore`,
+  the widened `deriveCollection`, `deriveList`, `isPending`/`abort`) and CE-016..CE-018 (the
+  `MutableList`/`DerivedList` bridge names and their guards, `createCollection`/`List`/
+  `Collection`/`isList`/`isCollection` marked `@deprecated`, the `codemod-v2` tool,
+  `MIGRATION-2.0.md`, and the `index.ts` `@deprecated`-scope fix) under `## [Unreleased]`. Classify
+  each entry per the skill's Added/Changed/Deprecated/Fixed categories. Do **not** rename
+  `[Unreleased]` to `1.5.0` yet — that is CE-021, gated separately.
+
+- [ ] CE-020: Tech-writer pass on `MIGRATION-2.0.md`
+  **Skill:** tech-writer
+  **Context:** Flagged in CE-017's Check note as a dev-written draft. Fold it into the existing
+  doc set's tone and structure (compare `GUIDE.md`/`README.md`), verify every named export and
+  code sample against the current `index.ts` surface, and cross-link it from `README.md` wherever
+  not already done. Do not add v2.0-taxonomy content here — CE-009/CE-010 own that, on
+  `v2/shape-exploration`, once the shape is confirmed.
+
+- [ ] CE-021: ⚠️ Prepare and tag the 1.5.0 release — gated
+  **Skill:** changelog-keeper
+  **Context:** Do **not** start until `v2/shape-exploration` has delivered sufficient confidence —
+  see the Branch plan note above; record the go decision here (or in ADR-0018's Status line)
+  before starting. Depends on CE-019. Follow the skill's `<preparing_a_release>` steps: rename
+  `## [Unreleased]` to `## 1.5.0`, bump `version` in `package.json` and the `@version` tag in
+  `index.ts`, then re-point the performance baseline at the published release — required for this
+  minor bump, per `../cause-effect-dev/workflows/update-perf-baseline.md`. Coordinate the actual
+  npm publish with Le Truc's 2.5 release per the Branch plan note above.
+
+---
+
+## `v2/shape-exploration` — v2.0 shape confidence
+
 - [ ] CE-005: Collapse the type vocabulary to shape × mutability
   **Skill:** cause-effect-dev
-  **Context:** ⚠️ Breaking — `v2` branch only. Also drop the `getAsyncSource` duck-type shim in `src/graph.ts` once `Task.isPending()`/`abort()` are gone, leaving the `asyncSources` WeakMap as the only resolution path. Per ADR-0018 §1. Define `Signal`/`MutableSignal`, `List`/`MutableList`, `Store`/`MutableStore` as the complete value-type set; delete `State`, `Memo`, `Task`, `Sensor`, and `Collection` as type names. Change `Symbol.toStringTag` to carry the shape (`'Signal' | 'List' | 'Store'`) and update `isSignalOfType` call sites accordingly. Replace the origin guards (`isState`, `isMemo`, `isTask`, `isSensor`, `isCollection`, `isComputed`) with shape guards (`isSignal`, `isList`, `isStore`, `isMutableSignal`, `isMutableList`, `isMutableStore`). `isSlot` is unchanged; `Slot` stays out of scope entirely (it abstracts over `{ get, set? }` and ignores other methods by design). Note the migration hazard called out in ADR-0018 §Consequences: `List<T>` changes meaning from mutable to readonly, so existing code typed `List<T>` and calling `.add()` breaks at the type level.
+  **Context:** ⚠️ Breaking. Also drop the `getAsyncSource` duck-type shim in `src/graph.ts` once `Task.isPending()`/`abort()` are gone, leaving the `asyncSources` WeakMap as the only resolution path. Per ADR-0018 §1. Define `Signal`/`MutableSignal`, `List`/`MutableList`, `Store`/`MutableStore` as the complete value-type set; delete `State`, `Memo`, `Task`, `Sensor`, and `Collection` as type names. Change `Symbol.toStringTag` to carry the shape (`'Signal' | 'List' | 'Store'`) and update `isSignalOfType` call sites accordingly. Replace the origin guards (`isState`, `isMemo`, `isTask`, `isSensor`, `isCollection`, `isComputed`) with shape guards (`isSignal`, `isList`, `isStore`, `isMutableSignal`, `isMutableList`, `isMutableStore`). `isSlot` is unchanged; `Slot` stays out of scope entirely (it abstracts over `{ get, set? }` and ignores other methods by design). Note the migration hazard called out in ADR-0018 §Consequences: `List<T>` changes meaning from mutable to readonly, so existing code typed `List<T>` and calling `.add()` breaks at the type level. If this surfaces a blocker the additive/bridge work did not anticipate, write it to `NOTES.md` rather than pushing ahead — that is exactly the signal this branch exists to catch before it reaches `release/1.5.0`.
 
 - [ ] CE-006: Introduce `createSignal` / `deriveSignal` and retire the composite façades
   **Skill:** cause-effect-dev
-  **Context:** ⚠️ Breaking — depends on CE-005. Per ADR-0018 §3 and §5. `createSignal(value, options?)` → `MutableSignal<T>`; `deriveSignal(input, options?)` → `Signal<T>` with the three-way dispatch. Retain `createState`, `createMemo`, `createTask`, and `createSensor` as narrow single-origin entry points returning the collapsed types — this is a tree-shaking requirement, not compatibility (see REQUIREMENTS.md §Bundle Size). Remove `createComputed` and `createMutableSignal` (subsumed). The shape-sniffing coercion currently in `createSignal` (`src/signal.ts:87`) moves to a new `toSignal(value)`; Le Truc depends on that behaviour, so it must not simply disappear.
+  **Context:** ⚠️ Breaking — depends on CE-005. Per ADR-0018 §3 and §5. `createSignal(value, options?)` → `MutableSignal<T>`; `deriveSignal(input, options?)` → `Signal<T>` with the three-way dispatch. Retain `createState`, `createMemo`, `createTask`, and `createSensor` as narrow single-origin entry points returning the collapsed types — this is a tree-shaking requirement, not compatibility (see REQUIREMENTS.md §Bundle Size). Remove `createComputed` and `createMutableSignal` (subsumed). The shape-sniffing coercion currently in `createSignal` (`src/signal.ts:87`) is removed with **no replacement export** — Le Truc's `src/` never calls it (its exposure is Le Truc's re-export surface; Le Truc ships its own helper in its 3.0). Document the recipe in the migration notes: `Array.isArray(v) ? createList(v) : isRecord(v) ? createStore(v) : createState(v)`.
 
 - [ ] CE-007: Move `watched` fully into options
   **Skill:** cause-effect-dev
@@ -108,7 +195,7 @@ The v2.0 go/no-go decision is the next gate. CE-005 onward should not start unti
 
 - [ ] CE-009: Rewrite the derivation guidance as a routing table
   **Skill:** tech-writer
-  **Context:** Depends on CE-003. Per ADR-0018 §Context and REQUIREMENTS.md §Every Shape Is Derivable. In `GUIDE.md`, replace the normative "derive everything" framing with the mechanism: an effect-write is a dependency edge the graph cannot see, and the five consequences follow from that one fact (stale reads within a flush pass, lost `equals` suppression, no abort-on-change, no lazy lifecycle, the multi-pass `flush()` + `EffectConvergenceError` that exists to contain it). State the exception plainly — writing outward to DOM, network, or storage is what an effect is for. Then add the shape × origin matrix as a lookup table in `AGENTS.md`, `.github/copilot-instructions.md`, and `CONTEXT.md`, phrased as "you have Y, you want X → call Z". The table is the point: a prohibition is not actionable by a code-generating model, a routing table is.
+  **Context:** Depends on CE-003 (done). Per ADR-0018 §Context and REQUIREMENTS.md §Every Shape Is Derivable. In `GUIDE.md`, replace the normative "derive everything" framing with the mechanism: an effect-write is a dependency edge the graph cannot see, and the five consequences follow from that one fact (stale reads within a flush pass, lost `equals` suppression, no abort-on-change, no lazy lifecycle, the multi-pass `flush()` + `EffectConvergenceError` that exists to contain it). State the exception plainly — writing outward to DOM, network, or storage is what an effect is for. Then add the shape × origin matrix as a lookup table in `AGENTS.md`, `.github/copilot-instructions.md`, and `CONTEXT.md`, phrased as "you have Y, you want X → call Z". The table is the point: a prohibition is not actionable by a code-generating model, a routing table is.
 
 - [ ] CE-010: Update the embedded skill references
   **Skill:** tech-writer
@@ -120,4 +207,4 @@ The v2.0 go/no-go decision is the next gate. CE-005 onward should not start unti
 
 - [ ] CE-011: Coordinate the Le Truc migration
   **Skill:** cause-effect-dev
-  **Context:** ⚠️ Blocking for the v2.0 release, not for the branch. Le Truc consumes `isState`/`isMemo`/`isTask`/`isCollection`, the `createSignal` shape coercion, and `Slot`. Audit its usage against CE-005..CE-007, write the migration notes, and confirm the `Slot` integration layer is genuinely unaffected — ADR-0018 assumes it is because `Slot` abstracts over `{ get, set? }` only. If that assumption fails, raise it in `NOTES.md` rather than widening `Slot`'s scope unilaterally.
+  **Context:** ⚠️ Blocking for the v2.0 release, not for the branch. Per Le Truc's own audit (2026-08-14): internally it uses `createMemo` (→ `deriveSignal`), the `isMemo`/`isState` guards, and `Memo`/`State` type annotations across ~10 files — a mechanical migration they estimate at 1–2 dev-days. It does **not** call `createSignal`, `createList`, `createCollection`, `deriveCollection`, or the origin guards in `src/`; those names are exposed only through its `index.ts` re-export surface (~40 names), which is what forces a coordinated Le Truc 3.0. Audit that surface against CE-005..CE-007, write the migration notes (including the `createSignal`-coercion recipe, which Le Truc ships as its own helper), and confirm the `Slot` integration layer is genuinely unaffected — ADR-0018 assumes it is because `Slot` abstracts over `{ get, set? }` only. If that assumption fails, raise it in `NOTES.md` rather than widening `Slot`'s scope unilaterally. Also coordinate the 2.0 npm publish with Le Truc's 3.0, mirroring how CE-021 coordinates 1.5.0 with Le Truc's 2.5.

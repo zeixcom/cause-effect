@@ -223,6 +223,24 @@ anyway.
 **`isPending`/`abort` on the base `Signal<T>`.** Rejected: a closure per node on the synchronous
 hot path, paid by every `State` in the graph, for a capability most signals do not have.
 
+**`Collection`/`MutableCollection` in place of the `List` flip** (Le Truc counter-proposal,
+coordination round 2026-08-14). `Collection` becomes the readonly base, `MutableCollection` the
+mutable extension, and `List` a deprecated alias of `MutableCollection` — both existing names
+keep compatible meanings, eliminating the flip entirely and enabling a staged,
+deprecation-driven migration. Rejected on vocabulary grounds: `CONTEXT.md` § Flagged Ambiguities
+documents that "Collection" is reconstructed by language models as a reactive `Map`, and this
+ADR's own position is that a training-set prior is not answerable by prose. Enshrining a
+flagged-weak name as the base of the sequence taxonomy for two majors trades a
+deprecation-warned, codemod-fixable break for a permanent vocabulary defect. The migration-safety
+concern is met instead by the 1.x back-port and codemod above, which Le Truc's feedback names as
+an acceptable alternative.
+
+**A fresh name: `Sequence`/`MutableSequence`.** The only structure with zero meaning flips
+anywhere — `List` (mutable today) aliases `MutableSequence`, `Collection` (readonly today) aliases
+`Sequence`, both keep their exact meanings. Rejected: the dominant training-set prior for
+`Sequence` (Kotlin, C#, F#, LINQ) is *lazy and single-pass*, contradicting the stable, repeatable
+per-item identity that defines the type — the one guarantee a misinformed prior would erode.
+
 ## Consequences
 
 **Positive**
@@ -241,10 +259,17 @@ hot path, paid by every `State` in the graph, for a capability most signals do n
 - Breaking. Every consumer that names `State`, `Memo`, `Task`, `Sensor`, or `Collection` as a type,
   or calls `task.isPending()` as a method, must migrate. Le Truc requires coordinated release.
 - `List<T>` currently means the mutable type. Under this ADR it means the readonly base, so code
-  that types a variable `List<T>` and calls `.add()` breaks silently at the type level — the most
-  error-prone part of the migration.
+  that types a variable `List<T>` and calls `.add()` breaks at the type level in unchanged code —
+  the most error-prone part of the migration. The break is staged, not silent: a 1.x release
+  back-ports `MutableList` and the shape guards with `@deprecated` markers on the old meanings
+  (CE-016), and a codemod plus migration recipe rewrites the annotations (CE-017).
 - `createSignal` currently sniffs shape (array → `List`, record → `Store`). It becomes
-  shape-specific. The coercion behaviour, which Le Truc relies on, moves to `toSignal(value)`.
+  shape-specific, and the coercion is removed with **no replacement export**. A shape-sniffing
+  façade hides the shape decision, which is the v1-ism this ADR deletes everywhere else. Le
+  Truc's `src/` never calls `createSignal` — the exposure is its re-export surface, and Le Truc
+  ships its own coercion helper for downstream users in its 3.0 (three lines over
+  `createList`/`createStore`/`createState` and the exported `isRecord`). The migration notes
+  carry the recipe.
 - `createComputed` and `createMutableSignal` are subsumed by `deriveSignal` and `createSignal`.
 - The full-library bundle budget must be re-measured. Merging `Collection` into `List` offsets some
   of the added surface, but the target is not guaranteed to hold.
