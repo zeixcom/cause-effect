@@ -18,11 +18,9 @@ import {
 	type MemoNode,
 	makeSubscribe,
 	propagate,
-	refresh,
 	refreshComposite,
 	registerAsyncSource,
 	type Signal,
-	type SinkNode,
 	TYPE_STORE,
 	untrack,
 } from '../graph'

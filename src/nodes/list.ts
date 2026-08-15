@@ -14,9 +14,7 @@ import {
 	type MemoNode,
 	makeSubscribe,
 	propagate,
-	refresh,
 	refreshComposite,
-	type SinkNode,
 	TYPE_LIST,
 	untrack,
 } from '../graph'
