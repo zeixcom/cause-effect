@@ -77,18 +77,15 @@ A chain `users.deriveCollection(f)` becomes `deriveList(users, f)` — mechanica
 but the codemod deliberately leaves methods alone so your pipelines stay diffable. Migrate
 by hand when you adopt the other v2 renames.
 
-**`CollectionSource<T>`, `CollectionCallback<T>`, `CollectionChanges<T>`,
-`DeriveCollectionCallback<T, U>`, `DeriveCollectionOptions<T>`.** All five rename or fold away
-in 2.0 — same structure, new name (`CollectionSource`→`ListSource`, `CollectionCallback`→
-`ListCallback`, `CollectionChanges`→`ListChanges`), or absorbed into `deriveList`'s own
-option/callback shape (`DeriveCollectionCallback`, `DeriveCollectionOptions`). None of the five
-get a 1.5 bridge name: unlike `List`/`Store`, they carry no meaning-flip risk — `deriveList`'s
-`source`/`options`/`watched` parameters don't change behavior, only their type's name changes,
-which your type-checker catches at the 2.0 upgrade rather than silently misbehaving under the
-old name. The codemod has no rule for any of the five (like `ListOptions`-style longer names,
-each is a distinct symbol rather than a deprecated one), so rename them by hand at the 2.0
-boundary. This is also the answer for `reconcile`-style signatures that mention
-`CollectionSource`: the 2.0 signature says `ListSource<T>` where 1.x said `CollectionSource<T>`.
+**`DeriveCollectionOptions<T>`.** Folds into `deriveList`'s own `DeriveListOptions<T>` in 2.0 —
+no separate name survives. The codemod has no rule for it, so if your code names
+`DeriveCollectionOptions` explicitly, switch it to `DeriveListOptions` by hand.
+
+> **Not yet bridged:** `CollectionSource<T>`, `CollectionCallback<T>`, `CollectionChanges<T>`,
+> and `DeriveCollectionCallback<T, U>` rename to `ListSource<T>`, `ListCallback<T>`,
+> `ListChanges<T>`, and `PerItemCallback<T, U>` in 2.0, and are getting the same 1.5.0
+> bridge-name treatment as `List`/`Store` — tracked, not yet shipped. This note updates once
+> that lands; until then, treat them the same as `DeriveCollectionOptions` above.
 
 **Origin guards.** `isState`, `isMemo`, `isTask`, `isSensor`, and `isComputed` have no
 mechanical replacement — they are removed because origin is no longer part of the consumption

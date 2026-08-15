@@ -289,18 +289,65 @@ this one. On this branch, CE-021 is now gated only on CE-025 and CE-026 landing 
   architect/user resolution rather than deciding unilaterally.
   **Review:** Approved ✓, and stopping at `CollectionOptions` instead of guessing was the right
   call — deprecating the other five would have shipped a false-positive deprecation on
-  `deriveList`'s own live parameters. Resolved the `NOTES.md` question as **(b)**: accept the
-  same "one more rename at 2.0" treatment `DerivedList`/`DerivedStore` already have, no bridge
-  names. Reasoning: CE-016/CE-025's bridge names exist specifically for a **meaning flip** —
-  `List`/`Store` kept working under the old name but silently changed behavior at 2.0. These five
-  have no such hazard; `deriveList`'s `source`/`options`/`watched` shapes don't change meaning,
-  only the type's name does, so a consumer's compiler catches the break loudly at upgrade time —
-  the exact class of break the born-deprecated policy doesn't need to guard against. Introducing
-  `ListSource`/`ListCallback`/`ListChanges` now would spend real implementation effort narrowing
-  a risk that's already at its floor. Extended `MIGRATION-2.0.md`'s existing `CollectionSource`
-  manual-rename note to name all five explicitly, with the meaning-flip-vs-name-change
-  distinction spelled out, so the accepted asymmetry is visible to a reader the same way
-  `DerivedList`/`DerivedStore`'s is. `NOTES.md` entry deleted.
+  `deriveList`'s own live parameters. Initially resolved the `NOTES.md` question as (b) — accept
+  the same "one more rename at 2.0" treatment `DerivedList`/`DerivedStore` already have — on the
+  reasoning that these five carry no meaning-flip risk, only a compile-time name change. **Revised
+  2026-08-16, same day, after user pushback:** that reasoning answered "is skipping this
+  dangerous?" (no) but not "is doing it worth it?" (yes, once actually costed). Checked
+  `v2/shape-exploration:src/nodes/list.ts` for the real target shapes: four of the five are
+  1:1 renames — `CollectionSource`→`ListSource`, `CollectionCallback`→`ListCallback`,
+  `CollectionChanges`→`ListChanges`, `DeriveCollectionCallback`→`PerItemCallback` (v2's actual
+  name) — mechanically identical to CE-016's `List`→`MutableList` pattern and type-only, so no
+  bundle cost and no new runtime mechanism, unlike `List`/`Store` which needed new guards.
+  `DeriveCollectionOptions` isn't even extra work: v2 flattens it into `DeriveListOptions`
+  entirely, and 1.5's `DeriveListOptions` already structurally is `DeriveCollectionOptions` plus
+  more fields, so retyping `deriveList`'s per-item overloads onto the wider `DeriveListOptions<U>`
+  is a pure backward-compatible widening. Superseded by **CE-033**, which does the actual bridge
+  work; this task's `MIGRATION-2.0.md` edit is rewritten there. `NOTES.md` entry deleted.
+
+- [ ] CE-033: Back-port `ListSource`/`ListCallback`/`ListChanges`/`PerItemCallback` bridge names
+  **Skill:** cause-effect-dev
+  **Context:** Reverses CE-031's initial "accept the rename at 2.0" call for the five `Collection`
+  auxiliary types that block on `CollectionOptions` alone (see CE-031's Review note above for the
+  full reasoning). Mirrors CE-016/CE-025's `List`/`Store` bridge pattern, but purely at the type
+  level — none of the four renamed names have a runtime guard, so this is strictly cheaper than
+  those tasks. Verify every shape below against `git show v2/shape-exploration:src/nodes/list.ts`
+  before implementing; do not assume this task's summary is precise enough to skip that read.
+  **Do:**
+  1. In `src/nodes/collection.ts`: introduce `ListSource<T>`, `ListCallback<T>`, `ListChanges<T>`,
+     and `PerItemCallback<T, U>` as the real, non-deprecated 1.5 names — same shape as today's
+     `CollectionSource`, `CollectionCallback`, `CollectionChanges`, `DeriveCollectionCallback`
+     respectively. Keep the old names as `@deprecated` type aliases (`type CollectionSource<T> =
+     ListSource<T>`, etc.), each pointing at its replacement and noting "same name as v2.0 — this
+     one is terminal vocabulary," matching how `MutableList`/`MutableStore`'s deprecation messages
+     are worded (they're also already-terminal names, since neither had a flip to stage around).
+  2. Retype `deriveList`'s per-item overloads' `options` parameter from `DeriveCollectionOptions<U>`
+     to `DeriveListOptions<U>` (the wider type — confirm this compiles with no call-site changes
+     required, since every field `DeriveCollectionOptions` has, `DeriveListOptions` already has).
+     Once nothing public references `DeriveCollectionOptions` any more, mark it `@deprecated`
+     too, pointing at `DeriveListOptions`. (This is not in v2's export list as a distinct name at
+     all — v2 flattens it away entirely — so the deprecation message should say "folded into
+     `DeriveListOptions`," not "renamed to.")
+  3. Migrate `deriveList`'s own overload signatures (and `keyedAdapter`'s internal types where
+     they reference the old names) onto the four new non-deprecated names, so the flagship 1.5
+     API stops referencing anything deprecated — same requirement CE-016 already applied to
+     `src/` internally.
+  4. Export the four new types from `index.ts`.
+  5. Extend `tools/codemod-v2.ts`'s `RENAMES` map with the four exact-identifier renames
+     (`CollectionSource`→`ListSource`, `CollectionCallback`→`ListCallback`,
+     `CollectionChanges`→`ListChanges`, `DeriveCollectionCallback`→`PerItemCallback`), the
+     import-sync list, and the header-table doc comment, following the existing `Store`/`isStore`
+     rules in the same file as the template. `DeriveCollectionOptions` gets no codemod rule — it's
+     a fold, not a rename, same treatment `CollectionSource`'s manual-rename note originally had.
+  6. Rewrite `MIGRATION-2.0.md`'s "`CollectionSource<T>`, `CollectionCallback<T>`, ..." paragraph
+     (added by CE-031's review) to instead list all four as ordinary bridge-table rows, and add
+     a manual-rename note for `DeriveCollectionOptions`→folded-into-`DeriveListOptions` alone.
+  7. Append `CHANGELOG.md` `[Unreleased]` entries in changelog-keeper format.
+  **Verify:** `bun run check` green; new tests mirroring `test/v2-transition.test.ts`'s existing
+  round-trip pattern (old alias assignable to new name and back) for all four; `test/codemod-v2.test.ts`
+  cases for the new rename rules. Confirm zero bundle-size delta (type-only change) — if the
+  regression test shows any movement, something unexpected happened; investigate before shipping.
+  Blocks npm publish of 1.5.0 alongside CE-030/CE-031/CE-032 (all otherwise reviewed and clear).
 
 - [x] CE-032: Back-port `deriveSignal` and deprecate `createComputed`/`createMutableSignal` — reviewed ✓
   **Skill:** cause-effect-dev
@@ -389,12 +436,14 @@ this one. On this branch, CE-021 is now gated only on CE-025 and CE-026 landing 
   plan note above); the performance-baseline re-point against the published release, required for
   this minor bump per `../cause-effect-dev/workflows/update-perf-baseline.md` step 1, which needs
   the version live on npm first.
-  **CE-030, CE-031, and CE-032 landed and reviewed (2026-08-16)** — the v1.5 ↔ v2.0 public-API
-  cross-check that opened them is closed; nothing further blocks npm publish from the API side.
-  A follow-up: `CHANGELOG.md` now has a `## [Unreleased]` section above `## 1.5.0` again (CE-032's
-  entries) — fold it into `## 1.5.0` (there is no actual 1.5.1 here, just release-prep work that
-  landed after this task's own changelog rename) before publishing, or this task's own "rename
-  `[Unreleased]` to the version" step will need re-running.
+  **CE-030 and CE-032 landed and reviewed (2026-08-16); CE-031 landed and reviewed but reopened
+  a follow-up, CE-033** — CE-031's initial "accept the rename at 2.0" call for five `Collection`
+  auxiliary types was revised same-day after pushback; CE-033 now does the actual bridge-name
+  work those five need. **Blocks npm publish on CE-033**, alongside the still-open follow-up:
+  `CHANGELOG.md` now has a `## [Unreleased]` section above `## 1.5.0` again (CE-032's entries,
+  and CE-033 will add more) — fold it into `## 1.5.0` (there is no actual 1.5.1 here, just
+  release-prep work that landed after this task's own changelog rename) before publishing, or
+  this task's own "rename `[Unreleased]` to the version" step will need re-running.
 
 ---
 
