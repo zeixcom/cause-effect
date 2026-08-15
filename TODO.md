@@ -221,14 +221,7 @@ this one. On this branch, CE-021 is now gated only on CE-025 and CE-026 landing 
   `src/nodes/sensor.ts`: `Sensor`, `isSensor`, `SensorCallback`, `SensorOptions`; `src/signal.ts`:
   `isComputed`; `src/graph.ts`: `ComputedOptions`), pointing at `isSignal`/`isMutableSignal` or a
   plain property check per MIGRATION-2.0.md's own guidance, and linking `MIGRATION-2.0.md`'s
-  "Origin guards" section. **Also decide:** MIGRATION-2.0.md says `createComputed` and
-  `createMutableSignal` need "no action until 2.0" because they're "subsumed... no action needed
-  until 2.0" — but `createSignal`/`deriveSignal` already exist in 1.x today (CE-006 landed them on
-  `v2/shape-exploration`, not yet back-ported to 1.5), so the same born-deprecated-hazard argument
-  applies once a 1.x replacement exists. If `createSignal`'s dispatch semantics are considered a
-  1.5-compatible bridge, deprecate `createComputed`/`createMutableSignal` here too; otherwise leave
-  the MIGRATION-2.0.md text as the documented decision and note why in this task's handoff. No
-  runtime behavior changes — JSDoc only. Blocks npm publish of 1.5.0.
+  "Origin guards" section. No runtime behavior changes — JSDoc only. Blocks npm publish of 1.5.0.
 
 - [ ] CE-031: Mark `Collection`'s auxiliary callback/options types `@deprecated`
   **Skill:** cause-effect-dev
@@ -246,6 +239,43 @@ this one. On this branch, CE-021 is now gated only on CE-025 and CE-026 landing 
   own options/callback shape" for the rest. No runtime behavior changes — JSDoc only. Blocks npm
   publish of 1.5.0.
 
+- [ ] CE-032: Back-port `deriveSignal` and deprecate `createComputed`/`createMutableSignal`
+  **Skill:** cause-effect-dev
+  **Context:** Decided 2026-08-16, overriding MIGRATION-2.0.md's current "no action needed until
+  2.0" call on `createComputed`/`createMutableSignal` (found in the CE-030/CE-031 cross-check).
+  The calculus changes because a 1.x-available replacement is cheap: `v2/shape-exploration`'s
+  `createSignal(value)` (`src/nodes/signal.ts` there) is exactly today's 1.x `createSignal` for
+  the plain-value arm — unchanged going into 2.0 — and `deriveSignal(input, options?)` is a thin
+  three-way dispatcher (sync function → `createMemo`, async function → `createTask`, seed +
+  `options.watched` → `createSensor`) with no new mechanism, ported near-verbatim from
+  `git show v2/shape-exploration:src/nodes/signal.ts`. Once that exists in 1.5, the same
+  born-deprecated-hazard argument CE-016/CE-025 already apply to `List`/`Store` applies here too:
+  ship the replacement and the deprecation in the same release, not two releases apart.
+  **Do:**
+  1. Add `deriveSignal(input, options?)` to `src/signal.ts`, matching v2's three-way dispatch.
+     Decide the options-type shape deliberately rather than copying v2's blind: v2's
+     `DeriveSignalOptions` makes `initial` *optional* for the async arm, which disagrees with
+     `deriveList`/`deriveStore`'s established 1.5 convention of a *required* `initial` for their
+     async forms (ADR-0018 §6) — resolve this inconsistency one way or the other before shipping,
+     don't silently carry v2's looser rule into 1.5 without deciding it's intentional. Reuse
+     `SensorCallback`'s existing shape for the watched arm rather than introducing a new
+     `SignalCallback` type, unless there's a reason v2 introduced one that also applies to 1.5.
+  2. Export `deriveSignal` (and its options type) from `index.ts`.
+  3. Mark `createComputed` `@deprecated` in `src/signal.ts`, pointing at `deriveSignal(fn, options?)`.
+  4. Mark `createMutableSignal` `@deprecated` in `src/signal.ts`, pointing at `createSignal(value)`
+     — note in the JSDoc that `createSignal` additionally accepts functions and already-signal
+     values (dispatching to `Memo`/`Task`/passthrough) where `createMutableSignal` rejected them;
+     this is a behavior *widening*, not identical semantics, so say so rather than claiming parity.
+  5. Update `MIGRATION-2.0.md`: remove the "no action needed until 2.0" line under
+     "`createComputed` and `createMutableSignal`", add a bridge-table row (or a new short table)
+     for `deriveSignal`, and cross-check the "What changes in 2.0" intro paragraph still reads
+     correctly once this lands.
+  6. Append `CHANGELOG.md` `[Unreleased]` entries in changelog-keeper format (new `## [Unreleased]`
+     section above `## 1.5.0`, since that section is already renamed — see CE-021).
+  **Verify:** `bun run check` green; new tests for `deriveSignal`'s three dispatch arms and for
+  both new `@deprecated` markers not accidentally breaking `tsc --noEmit`. Blocks npm publish of
+  1.5.0 alongside CE-030/CE-031.
+
 - [x] CE-021: Prepare and tag the 1.5.0 release — done, pending publish ⏳
   **Skill:** changelog-keeper
   **Context:** The v2-side gate is satisfied — see the Go decision note above (ADR-0018 ✅
@@ -258,11 +288,13 @@ this one. On this branch, CE-021 is now gated only on CE-025 and CE-026 landing 
   plan note above); the performance-baseline re-point against the published release, required for
   this minor bump per `../cause-effect-dev/workflows/update-perf-baseline.md` step 1, which needs
   the version live on npm first.
-  **Blocked on CE-030 and CE-031** (found 2026-08-16, after this task closed): a v1.5 ↔ v2.0
-  public-API cross-check found twelve origin-specific types/guards and six `Collection` auxiliary
-  types that v2.0 removes without any `@deprecated` marker in 1.5 today. Both are JSDoc-only,
-  non-breaking, and belong in the 1.5.0 release that ships before the removal — do not publish
-  until they land.
+  **Blocked on CE-030, CE-031, and CE-032** (found 2026-08-16, after this task closed): a v1.5 ↔
+  v2.0 public-API cross-check found twelve origin-specific types/guards and six `Collection`
+  auxiliary types that v2.0 removes without any `@deprecated` marker in 1.5 today (CE-030,
+  CE-031 — JSDoc-only, non-breaking), plus a decision to back-port `deriveSignal` so
+  `createComputed`/`createMutableSignal` can be deprecated in this release too instead of staying
+  silently doomed until 2.0 (CE-032 — adds one function, two deprecation markers). All three
+  belong in the 1.5.0 release that ships before the removal — do not publish until they land.
 
 ---
 
