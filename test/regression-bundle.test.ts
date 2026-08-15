@@ -34,10 +34,11 @@ describe('Bundle size', () => {
 	})
 
 	test('core-signals-only (tree-shaken) gzipped bundle should stay below 4 kB', async () => {
-		// Imports only State, Memo, Task, Effect from the package barrel and
-		// actually wires them together — see test/util/core-entry.ts. A
-		// bare re-export would let the bundler eliminate code a real
-		// consumer's usage would retain, overstating how well this tree-shakes.
+		// Imports only the ADR-0018 §5 trio — createState, a synchronous
+		// derivation, createEffect — from the package barrel and actually
+		// wires them together — see test/util/core-entry.ts. A bare
+		// re-export would let the bundler eliminate code a real consumer's
+		// usage would retain, overstating how well this tree-shakes.
 		const result = await Bun.build({
 			entrypoints: ['./test/util/core-entry.ts'],
 			minify: true,

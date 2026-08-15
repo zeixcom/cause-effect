@@ -42,7 +42,7 @@ See [Choosing the Right Signal](GUIDE.md#choosing-the-right-signal) for a decisi
 - **Explicit reactivity**: `.get()` calls track dependencies — the graph reflects the true dependency structure, with no hidden edges
 - **Non-nullable types**: All signals enforce `T extends {}`, excluding `null` and `undefined` at the type level — trust returned values without null checks
 - **Unified graph**: Composite signals (Store, List, Collection) and async signals (Task) are first-class — all derivable state can be derived
-- **Tree-shakable, zero dependencies**: Core signals (State, Memo, Task, Effect) are less than 3 kB gzipped; the full library is around 7 kB
+- **Tree-shakable, zero dependencies**: The synchronous core (`createState`, `createMemo`, `createEffect`) is less than 3 kB gzipped; the full library is around 8 kB
 
 ## Guarantees
 

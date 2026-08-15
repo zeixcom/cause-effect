@@ -136,7 +136,7 @@ Two figures, doing two different jobs.
 
 | Usage | Role | Minified | Gzipped |
 |-------|------|----------|---------|
-| Core only (`createState`, `createMemo`, `createTask`, `createEffect`) | **Promise** — hard, never relaxed | — | Below 4 kB (4096 B) |
+| Core only (`createState`, `createMemo`, `createEffect`) | **Promise** — hard, never relaxed | — | Below 4 kB (4096 B) |
 | Full library (all signal types + utilities) | **Diagnostic** — working ceiling, re-baselined per release | Below 32 kB (32768 B) | Below 10 kB (10240 B) |
 
 **The core figure is the promise.** Because the library is tree-shakable, an application pays only for the construction paths it imports. What a typical consumer actually ships is the core figure, not the full-library one, so that is the number that carries the commitment in Success Criterion 6. It is a hard limit and is not relaxed for refactoring. If it regresses, do not raise it — correct the claim in `REQUIREMENTS.md` and `README.md` to the real figure and raise it with the Architect.
