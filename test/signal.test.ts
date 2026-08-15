@@ -1,71 +1,41 @@
 import { describe, expect, test } from 'bun:test'
 import {
-	createComputed,
+	createEffect,
 	createList,
 	createMemo,
-	createMutableSignal,
 	createScope,
 	createSignal,
-	createSlot,
 	createState,
 	createStore,
-	createTask,
-	InvalidSignalValueError,
+	deriveSignal,
+	InvalidCallbackError,
 	isList,
 	isMutableSignal,
+	isPending,
 	isSignal,
 	isStore,
-	type List,
 	type MutableSignal,
-	type MutableStore,
+	NullishSignalValueError,
 	PromiseValueError,
 	type Signal,
+	UnsetSignalValueError,
 } from '../index.ts'
 
 /* === Tests === */
 
-describe('createComputed', () => {
-	test('creates a Signal from a sync callback', () => {
-		const count = createState(2)
-		const doubled = createComputed(() => count.get() * 2)
-		expect(isSignal(doubled)).toBe(true)
-		expect(doubled.get()).toBe(4)
-
-		const typedResult: Signal<number> = doubled
-		expect(typedResult).toBeDefined()
-	})
-
-	test('creates a Signal from an async callback', () => {
-		const cleanup = createScope(() => {
-			const result = createComputed(async () => 'hello')
-			expect(isSignal(result)).toBe(true)
-
-			const typedResult: Signal<string> = result
-			expect(typedResult).toBeDefined()
-		})
-		cleanup()
-	})
-
-	test('throws PromiseValueError when a non-async callback returns a Promise', () => {
-		const result = createComputed(
-			(): Promise<string> => Promise.resolve('hello'),
-		)
-		expect(isSignal(result)).toBe(true) // misclassified before invocation, as documented
-		expect(() => result.get()).toThrow(PromiseValueError)
-	})
-})
-
 describe('createSignal', () => {
-	test('converts a primitive to a MutableSignal', () => {
+	test('creates a MutableSignal from a value', () => {
 		const result = createSignal(42)
 		expect(isMutableSignal(result)).toBe(true)
 		expect(result.get()).toBe(42)
+		result.set(43)
+		expect(result.get()).toBe(43)
 
 		const typedResult: MutableSignal<number> = result
 		expect(typedResult).toBeDefined()
 	})
 
-	test('converts a non-plain object to a MutableSignal', () => {
+	test('creates a MutableSignal from a non-plain object', () => {
 		const date = new Date('2024-01-01')
 		const result = createSignal(date)
 		expect(isMutableSignal(result)).toBe(true)
@@ -75,48 +45,85 @@ describe('createSignal', () => {
 		expect(typedResult).toBeDefined()
 	})
 
-	test('converts a record to a MutableStore', () => {
-		const result = createSignal({ name: 'Alice', age: 30 })
-		expect(isStore(result)).toBe(true)
-		expect(result.name.get()).toBe('Alice')
-		expect(result.age.get()).toBe(30)
+	test('holds an array as a value rather than converting it to a MutableList', () => {
+		const seed = [{ id: 1, name: 'Alice' }]
+		const result = createSignal(seed)
+		expect(isList(result)).toBe(false)
+		expect(result.get()).toBe(seed)
+	})
 
-		const typedResult: MutableStore<{ name: string; age: number }> = result
+	test('holds a record as a value rather than converting it to a MutableStore', () => {
+		const seed = { name: 'Alice', age: 30 }
+		const result = createSignal(seed)
+		expect(isStore(result)).toBe(false)
+		expect(result.get()).toBe(seed)
+	})
+
+	test('holds a function as a value rather than deriving from it', () => {
+		const fn = () => 42
+		const result = createSignal(fn)
+		expect(isMutableSignal(result)).toBe(true)
+		expect(result.get()).toBe(fn)
+	})
+
+	test('wraps an existing signal as a value rather than passing it through', () => {
+		const state = createState(42)
+		const wrapped = createSignal(state)
+		expect(wrapped).not.toBe(state)
+		expect(wrapped.get()).toBe(state)
+	})
+
+	test('passes options through to the state', () => {
+		const result = createSignal(0, {
+			guard: (v): v is number => typeof v === 'number' && v >= 0,
+		})
+		expect(result.get()).toBe(0)
+		// biome-ignore lint/suspicious/noExplicitAny: testing invalid input
+		expect(() => result.set(-1 as any)).toThrow()
+	})
+
+	test('throws NullishSignalValueError for null', () => {
+		// biome-ignore lint/suspicious/noExplicitAny: testing invalid input
+		expect(() => createSignal(null as any)).toThrow(NullishSignalValueError)
+	})
+
+	test('throws NullishSignalValueError for undefined', () => {
+		// biome-ignore lint/suspicious/noExplicitAny: testing invalid input
+		expect(() => createSignal(undefined as any)).toThrow(
+			NullishSignalValueError,
+		)
+	})
+})
+
+describe('deriveSignal', () => {
+	test('creates a Signal from a sync callback', () => {
+		const count = createState(2)
+		const doubled = deriveSignal(() => count.get() * 2)
+		expect(isSignal(doubled)).toBe(true)
+		expect(doubled.get()).toBe(4)
+		count.set(3)
+		expect(doubled.get()).toBe(6)
+
+		const typedResult: Signal<number> = doubled
 		expect(typedResult).toBeDefined()
 	})
 
-	test('converts an array to a MutableList', () => {
-		const result = createSignal([
-			{ id: 1, name: 'Alice' },
-			{ id: 2, name: 'Bob' },
-		])
-		expect(isList(result)).toBe(true)
-		expect(result.at(0)?.get()).toEqual({ id: 1, name: 'Alice' })
-		expect(result.at(1)?.get()).toEqual({ id: 2, name: 'Bob' })
-
-		const typedResult: List<{ id: number; name: string }> = result
-		expect(typedResult).toBeDefined()
+	test('passes the initial value to a sync reducer callback', () => {
+		const count = createState(1)
+		const total = deriveSignal(
+			(prev: number | undefined) => (prev ?? 0) + count.get(),
+			{ initial: 0 },
+		)
+		expect(total.get()).toBe(1)
+		count.set(2)
+		expect(total.get()).toBe(3)
 	})
 
-	test('converts an empty array to a MutableList', () => {
-		const result = createSignal([])
-		expect(isList(result)).toBe(true)
-		expect(result.length).toBe(0)
-	})
-
-	test('converts a sync function to a readonly Signal', () => {
-		const result = createSignal(() => Math.random())
-		expect(isSignal(result)).toBe(true)
-		expect(typeof result.get()).toBe('number')
-
-		const typedResult: Signal<number> = result
-		expect(typedResult).toBeDefined()
-	})
-
-	test('converts an async function to a readonly Signal', () => {
+	test('creates a Signal from an async callback that is unset until resolution', () => {
 		const cleanup = createScope(() => {
-			const result = createSignal(async () => 'hello')
+			const result = deriveSignal(async () => 'hello')
 			expect(isSignal(result)).toBe(true)
+			expect(() => result.get()).toThrow(UnsetSignalValueError)
 
 			const typedResult: Signal<string> = result
 			expect(typedResult).toBeDefined()
@@ -124,81 +131,53 @@ describe('createSignal', () => {
 		cleanup()
 	})
 
-	test('passes through an existing signal without wrapping', () => {
-		const state = createState(42)
-		expect(createSignal(state)).toBe(state)
-
-		const memo = createMemo(() => 'hello')
-		expect(createSignal(memo)).toBe(memo)
-
-		const store = createStore({ a: 1 })
-		expect(createSignal(store)).toBe(store)
-
-		const list = createList([1, 2, 3])
-		expect(createSignal(list)).toBe(list)
-	})
-
-	test('throws InvalidSignalValueError for null', () => {
-		// biome-ignore lint/suspicious/noExplicitAny: testing invalid input
-		expect(() => createSignal(null as any)).toThrow(InvalidSignalValueError)
-	})
-
-	test('throws InvalidSignalValueError for undefined', () => {
-		// biome-ignore lint/suspicious/noExplicitAny: testing invalid input
-		expect(() => createSignal(undefined as any)).toThrow(
-			InvalidSignalValueError,
+	test('seeds an async derivation with initial and settles later', async () => {
+		let resolve!: (value: string) => void
+		const result = deriveSignal(
+			async () => new Promise<string>(r => (resolve = r)),
+			{ initial: 'loading' },
 		)
-	})
-})
-
-describe('createMutableSignal', () => {
-	test('converts a primitive to a MutableSignal', () => {
-		const result = createMutableSignal(42)
-		expect(isMutableSignal(result)).toBe(true)
-		expect(result.get()).toBe(42)
+		expect(result.get()).toBe('loading')
+		expect(isPending(result)).toBe(true)
+		resolve('hello')
+		await new Promise(r => setTimeout(r, 0))
+		expect(result.get()).toBe('hello')
+		expect(isPending(result)).toBe(false)
 	})
 
-	test('converts a record to a MutableStore', () => {
-		const result = createMutableSignal({ name: 'Alice' })
-		expect(isStore(result)).toBe(true)
+	test('throws PromiseValueError when a non-async callback returns a Promise', () => {
+		const result = deriveSignal((): Promise<string> => Promise.resolve('hello'))
+		expect(isSignal(result)).toBe(true) // misclassified before invocation, as documented
+		expect(() => result.get()).toThrow(PromiseValueError)
 	})
 
-	test('converts an array to a MutableList', () => {
-		const result = createMutableSignal([1, 2, 3])
-		expect(isList(result)).toBe(true)
+	test('creates an external-push Signal from a seed value and a watched lifecycle', () => {
+		const seen: string[] = []
+		let push: ((next: string) => void) | undefined
+		const dispose = createScope(() => {
+			const result = deriveSignal('first', {
+				watched: (emit: (next: string) => void) => {
+					push = emit
+					return () => {
+						push = undefined
+					}
+				},
+			})
+			createEffect(() => {
+				seen.push(result.get())
+			})
+		})
+		expect(seen).toEqual(['first'])
+		expect(push).toBeTypeOf('function')
+		push?.('second')
+		expect(seen).toEqual(['first', 'second'])
+		dispose()
+		expect(push).toBeUndefined()
 	})
 
-	test('passes through an existing mutable signal without wrapping', () => {
-		const state = createState(42)
-		expect(createMutableSignal(state)).toBe(state)
-
-		const store = createStore({ a: 1 })
-		expect(createMutableSignal(store)).toBe(store)
-
-		const list = createList([1, 2, 3])
-		expect(createMutableSignal(list)).toBe(list)
-	})
-
-	test('throws InvalidSignalValueError for null', () => {
+	test('throws InvalidCallbackError for a seed value without watched', () => {
 		// biome-ignore lint/suspicious/noExplicitAny: testing invalid input
-		expect(() => createMutableSignal(null as any)).toThrow(
-			InvalidSignalValueError,
-		)
-	})
-
-	test('throws InvalidSignalValueError for a function', () => {
-		// biome-ignore lint/suspicious/noExplicitAny: testing invalid input
-		expect(() => createMutableSignal((() => 42) as any)).toThrow(
-			InvalidSignalValueError,
-		)
-	})
-
-	test('throws InvalidSignalValueError for a read-only signal', () => {
-		const memo = createMemo(() => 42)
-		// biome-ignore lint/suspicious/noExplicitAny: testing invalid input
-		expect(() => createMutableSignal(memo as any)).toThrow(
-			InvalidSignalValueError,
-		)
+		expect(() => deriveSignal('seed', {} as any)).toThrow(InvalidCallbackError)
 	})
 })
 
@@ -207,7 +186,7 @@ describe('isSignal', () => {
 		const cleanup = createScope(() => {
 			expect(isSignal(createState(42))).toBe(true)
 			expect(isSignal(createMemo(() => 42))).toBe(true)
-			expect(isSignal(createTask(async () => 42))).toBe(true)
+			expect(isSignal(deriveSignal(() => 42))).toBe(true)
 		})
 		cleanup()
 	})
@@ -215,7 +194,6 @@ describe('isSignal', () => {
 	test('returns false for other shapes and non-signals', () => {
 		expect(isSignal(createStore({ a: 1 }))).toBe(false)
 		expect(isSignal(createList([1, 2, 3]))).toBe(false)
-		expect(isSignal(createSlot(createState(1)))).toBe(false)
 		expect(isSignal(42)).toBe(false)
 		expect(isSignal('hello')).toBe(false)
 		expect(isSignal({ get: () => 42 })).toBe(false)
@@ -227,6 +205,7 @@ describe('isSignal', () => {
 describe('isMutableSignal', () => {
 	test('returns true only for a mutable single-value signal', () => {
 		expect(isMutableSignal(createState(42))).toBe(true)
+		expect(isMutableSignal(createSignal(42))).toBe(true)
 	})
 
 	test('returns false for other shapes', () => {
@@ -237,7 +216,7 @@ describe('isMutableSignal', () => {
 	test('returns false for read-only signals', () => {
 		const cleanup = createScope(() => {
 			expect(isMutableSignal(createMemo(() => 42))).toBe(false)
-			expect(isMutableSignal(createTask(async () => 42))).toBe(false)
+			expect(isMutableSignal(deriveSignal(() => 42))).toBe(false)
 		})
 		cleanup()
 	})
@@ -255,7 +234,7 @@ describe('Signal compatibility', () => {
 				createSignal(42),
 				createSignal({ a: 1 }),
 				createSignal([1, 2, 3]),
-				createSignal(() => 'hello'),
+				deriveSignal(() => 'hello'),
 			]
 			for (const signal of signals) {
 				expect(typeof signal.get).toBe('function')

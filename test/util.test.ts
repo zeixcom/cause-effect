@@ -41,7 +41,7 @@ describe('util', () => {
 
 		test('returns false for a sync function returning a Promise (footgun, smell #8)', () => {
 			// A regular function that returns a Promise is NOT classified as
-			// async. This means createSignal/createComputed route it to createMemo,
+			// async. This means deriveSignal routes it to createMemo,
 			// caching the Promise itself. Documented behavior — locking it in.
 			const promiseReturning = (): Promise<number> => Promise.resolve(42)
 			expect(isAsyncFunction(promiseReturning)).toBe(false)

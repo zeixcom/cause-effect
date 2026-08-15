@@ -1,19 +1,4 @@
-import { type Cleanup, type SignalOptions } from '../graph';
-/**
- * A read-only signal that tracks external input and updates a state value as long as it is active.
- *
- * @template T - The type of value produced by the sensor
- */
-type Sensor<T extends {}> = {
-    readonly [Symbol.toStringTag]: 'Sensor';
-    /**
-     * Gets the current value of the sensor.
-     * When called inside another reactive context, creates a dependency.
-     * @returns The sensor value
-     * @throws UnsetSignalValueError If the sensor value is still unset when read.
-     */
-    get(): T;
-};
+import { type Cleanup, type Signal, type SignalOptions } from '../graph';
 /**
  * Configuration options for `createSensor`.
  *
@@ -27,22 +12,25 @@ type SensorOptions<T extends {}> = SignalOptions<T> & {
     value?: T;
 };
 /**
- * Setup callback for `createSensor`. Invoked when the sensor gains its first downstream
- * subscriber; receives a `set` function to push new values into the graph.
+ * Setup callback for `createSensor`. Runs when the sensor becomes watched.
+ * Receives a `set` function to push new values into the graph.
  *
  * @template T - The type of value produced by the sensor
- * @param set - Updates the sensor value and propagates the change to subscribers
- * @returns A cleanup function invoked when the sensor loses all subscribers
+ * @param set - Updates the sensor value and propagates the change to its sinks
+ * @returns A cleanup function that runs when the sensor is no longer watched
  */
 type SensorCallback<T extends {}> = (set: (next: T) => void) => Cleanup;
 /**
- * Creates a sensor that tracks external input and updates a state value as long as it is active.
- * Sensors get activated when they are first accessed by an effect and deactivated when they are
- * no longer watched. This lazy activation pattern ensures resources are only consumed when needed.
+ * Creates a sensor that tracks external input while it is watched.
+ *
+ * A sensor activates when an effect first reads it, and deactivates when it is no longer
+ * watched. It therefore holds an external resource only while something reads its value.
+ * The shape this factory returns is `Signal<T>` — the single-value, readonly member of the
+ * shape-indexed value-type set. See ADR-0018.
  *
  * @since 0.18.0
  * @template T - The type of value produced by the sensor
- * @param watched - The callback invoked when the sensor starts being watched, receives a `set` function and returns a cleanup function.
+ * @param watched - The callback that runs when the sensor becomes watched. Receives a `set` function and returns a cleanup function.
  * @param options - Optional configuration for the sensor.
  * @param options.value - Optional initial value. Avoids `UnsetSignalValueError` on first read
  *   before the watched callback fires. Essential for the mutable-object observation pattern.
@@ -77,13 +65,5 @@ type SensorCallback<T extends {}> = (set: (next: T) => void) => Cleanup;
  * }, { value: node, equals: SKIP_EQUALITY });
  * ```
  */
-declare function createSensor<T extends {}>(watched: SensorCallback<T>, options?: SensorOptions<T>): Sensor<T>;
-/**
- * Checks if a value is a Sensor signal.
- *
- * @since 0.18.0
- * @param value - The value to check
- * @returns True if the value is a Sensor
- */
-declare function isSensor<T extends {} = unknown & {}>(value: unknown): value is Sensor<T>;
-export { createSensor, isSensor, type Sensor, type SensorCallback, type SensorOptions, };
+declare function createSensor<T extends {}>(watched: SensorCallback<T>, options?: SensorOptions<T>): Signal<T>;
+export { createSensor, type SensorCallback, type SensorOptions };

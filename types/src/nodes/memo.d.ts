@@ -1,24 +1,10 @@
-import { type ComputedOptions, type MemoCallback } from '../graph';
-/**
- * A derived reactive computation that caches its result.
- * Automatically tracks dependencies and recomputes when they change.
- *
- * @template T - The type of value computed by the memo
- */
-type Memo<T extends {}> = {
-    readonly [Symbol.toStringTag]: 'Memo';
-    /**
-     * Gets the current value of the memo.
-     * Recomputes if dependencies have changed since last access.
-     * When called inside another reactive context, creates a dependency.
-     * @returns The computed value
-     */
-    get(): T;
-};
+import { type ComputedOptions, type MemoCallback, type Signal } from '../graph';
 /**
  * Creates a derived reactive computation that caches its result.
  * The computation automatically tracks dependencies and recomputes when they change.
  * Uses lazy evaluation - only computes when the value is accessed.
+ * The shape this factory returns is `Signal<T>` — the single-value, readonly member of the
+ * shape-indexed value-type set. See ADR-0018.
  *
  * @since 0.18.0
  * @template T - The type of value computed by the memo
@@ -30,7 +16,7 @@ type Memo<T extends {}> = {
  * @param options.watched - Optional callback invoked when the memo is first watched by an effect.
  *   Receives an `invalidate` function to mark the memo dirty and trigger recomputation.
  *   Must return a cleanup function called when no effects are watching.
- * @returns A Memo object with a get() method
+ * @returns A Signal object with a get() method
  *
  * @example
  * ```ts
@@ -49,14 +35,6 @@ type Memo<T extends {}> = {
  */
 declare function createMemo<T extends {}>(fn: (prev: T) => T, options: ComputedOptions<T> & {
     value: T;
-}): Memo<T>;
-declare function createMemo<T extends {}>(fn: MemoCallback<T>, options?: ComputedOptions<T>): Memo<T>;
-/**
- * Checks if a value is a Memo signal.
- *
- * @since 0.18.0
- * @param value - The value to check
- * @returns True if the value is a Memo
- */
-declare function isMemo<T extends {} = unknown & {}>(value: unknown): value is Memo<T>;
-export { createMemo, isMemo, type Memo };
+}): Signal<T>;
+declare function createMemo<T extends {}>(fn: MemoCallback<T>, options?: ComputedOptions<T>): Signal<T>;
+export { createMemo };

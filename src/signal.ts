@@ -1,112 +1,144 @@
-import { InvalidSignalValueError } from './errors'
+import { validateCallback } from './errors'
 import {
+	type Cleanup,
 	type ComputedOptions,
 	type MemoCallback,
 	type MutableSignal,
 	type Signal,
+	type SignalOptions,
 	type TaskCallback,
 	TYPE_SIGNAL,
-	TYPE_SLOT,
 } from './graph'
-import {
-	createList,
-	isList,
-	isMutableList,
-	type MutableList,
-	type UnknownRecord,
-} from './nodes/list'
 import { createMemo } from './nodes/memo'
-import { createState } from './nodes/state'
 import {
-	createStore,
-	isMutableStore,
-	isStore,
-	type MutableStore,
-} from './nodes/store'
+	createSensor,
+	type SensorCallback,
+	type SensorOptions,
+} from './nodes/sensor'
+import { createState } from './nodes/state'
 import { createTask } from './nodes/task'
-import { isAsyncFunction, isFunction, isRecord, isSignalOfType } from './util'
+import {
+	isAsyncFunction,
+	isFunction,
+	isSignalOfType,
+	isSyncFunction,
+} from './util'
 
-/** Local, non-generic Slot check — avoids `isSignalOfType`'s generic inferring `unknown`. */
-function isSlotLike(value: unknown): boolean {
-	return (
-		value != null &&
-		(value as Record<symbol, unknown>)[Symbol.toStringTag] === TYPE_SLOT
-	)
+/* === Types === */
+
+/**
+ * Options for `deriveSignal`. Which members apply depends on the input kind:
+ * `initial` seeds the async form (optional — without it the signal is unset
+ * until the first resolution), and `watched` is required when the input is a
+ * seed value (external push). See ADR-0018.
+ *
+ * @template T - The type of value the signal holds
+ */
+type DeriveSignalOptions<T extends {}> = SignalOptions<T> & {
+	/**
+	 * Initial value for the async derivation form. Optional escape from
+	 * `UnsetSignalValueError` before the first resolution.
+	 */
+	initial?: T
+
+	/**
+	 * For a function input: an invalidation callback, as on `createMemo` and
+	 * `createTask`. For a seed value: the external-push lifecycle, required.
+	 */
+	watched?: ((invalidate: () => void) => Cleanup) | SensorCallback<T>
 }
 
 /* === Factory Functions === */
 
 /**
- * Create a derived signal from existing signals
+ * Create a mutable single-value signal from a plain value.
  *
- * @since 0.9.0
- * @param callback - Computation callback function
- * @param options - Optional configuration
- */
-function createComputed<T extends {}>(
-	callback: TaskCallback<T> | MemoCallback<T>,
-	options?: ComputedOptions<T>,
-): Signal<T> {
-	return isAsyncFunction(callback)
-		? createTask(callback as TaskCallback<T>, options)
-		: createMemo(callback as MemoCallback<T>, options)
-}
-
-/**
- * Convert a value to a Signal.
+ * `create*` yields the writable shape and takes the value verbatim — no shape
+ * sniffing. An array is held as an array value, not converted to a `MutableList`;
+ * a record is held as a record value, not converted to a `MutableStore`. Use
+ * `createList` and `createStore` for those shapes, and `deriveSignal` for any
+ * derivation. See ADR-0018.
  *
  * @since 0.9.6
+ * @template T - The type of value stored in the signal
+ * @param value - The initial value
+ * @param options - Optional configuration for the signal
+ * @returns A MutableSignal object with get(), set(), and update() methods
+ *
+ * @example
+ * ```ts
+ * const count = createSignal(0)
+ * count.set(1)
+ * console.log(count.get()) // 1
+ * ```
  */
-function createSignal<T extends {}>(value: Signal<T>): Signal<T>
-function createSignal<T extends {}>(value: readonly T[]): MutableList<T>
-function createSignal<T extends UnknownRecord>(value: T): MutableStore<T>
 function createSignal<T extends {}>(
-	value: TaskCallback<T> | MemoCallback<T>,
-): Signal<T>
-function createSignal<T extends {}>(value: T): MutableSignal<T>
-function createSignal(value: unknown): unknown {
-	// Broader than the exported `isSignal` guard (which matches only the single-value
-	// shape): this idempotency check accepts any signal this module can construct, so
-	// re-wrapping an existing List, Store, or Slot is a no-op rather than a coercion error.
-	if (isSignal(value) || isList(value) || isStore(value) || isSlotLike(value))
-		return value
-	if (value == null) throw new InvalidSignalValueError('createSignal', value)
-	if (isAsyncFunction(value))
-		return createTask(value as TaskCallback<unknown & {}>)
-	if (isFunction(value)) return createMemo(value as MemoCallback<unknown & {}>)
-	if (Array.isArray(value) && value.every(item => item != null))
-		return createList(value as (unknown & {})[])
-	if (isRecord(value)) return createStore(value)
-	return createState(value as unknown & {})
+	value: T,
+	options?: SignalOptions<T>,
+): MutableSignal<T> {
+	return createState(value, options)
 }
 
 /**
- * Convert a value to a MutableSignal.
+ * Create a read-only single-value signal from any origin.
  *
- * @since 0.17.0
+ * The origin follows from `input`, so one factory covers every way a value can
+ * come to exist. A derived signal has no setter — writing to it is a compile
+ * error rather than a convention to remember.
+ *
+ * | `input` | `options` | Origin | Replaces |
+ * |---|---|---|---|
+ * | sync function | — | Synchronous derivation | `createMemo` |
+ * | async function | `initial` optional | Asynchronous derivation | `createTask` |
+ * | seed value | `watched` required | External push | `createSensor` |
+ *
+ * @since 2.0.0
+ * @template T - The type of value the signal holds
+ * @param input - A computation function or a seed value
+ * @param options - Optional configuration
+ * @returns A Signal object with a get() method
+ *
+ * @example
+ * ```ts
+ * const userId = createSignal(1)
+ * const user = deriveSignal(async (_prev, abort) => {
+ *   const response = await fetch(`/api/users/${userId.get()}`, { signal: abort })
+ *   return response.json()
+ * }, { initial: fallbackUser })
+ * ```
  */
-function createMutableSignal<T extends {}>(
-	value: MutableSignal<T>,
-): MutableSignal<T>
-function createMutableSignal<T extends {}>(value: readonly T[]): MutableList<T>
-function createMutableSignal<T extends UnknownRecord>(value: T): MutableStore<T>
-function createMutableSignal<T extends {}>(value: T): MutableSignal<T>
-function createMutableSignal(value: unknown): unknown {
-	if (isMutableSignal(value) || isMutableList(value) || isMutableStore(value))
-		return value
-	if (
-		value == null ||
-		isFunction(value) ||
-		isSignal(value) ||
-		isList(value) ||
-		isStore(value) ||
-		isSlotLike(value)
-	)
-		throw new InvalidSignalValueError('createMutableSignal', value)
-	if (Array.isArray(value) && value.every(item => item != null))
-		return createList(value as (unknown & {})[])
-	if (isRecord(value)) return createStore(value)
-	return createState(value as unknown & {})
+function deriveSignal<T extends {}>(
+	input: TaskCallback<T> | MemoCallback<T>,
+	options?: DeriveSignalOptions<T>,
+): Signal<T>
+function deriveSignal<T extends {}>(
+	input: T,
+	options: DeriveSignalOptions<T> & { watched: SensorCallback<T> },
+): Signal<T>
+function deriveSignal<T extends {}>(
+	input: MemoCallback<T> | TaskCallback<T> | T,
+	options?: DeriveSignalOptions<T>,
+): Signal<T> {
+	if (isFunction(input)) {
+		// The narrow factories name the seed `value`; the façade family says `initial`.
+		// Built conditionally so `undefined` is never assigned to an optional
+		// property (`exactOptionalPropertyTypes`).
+		const seed = options?.initial as T | undefined
+		const computed = (
+			seed === undefined ? options : { ...options, value: seed }
+		) as ComputedOptions<T>
+		return isAsyncFunction(input)
+			? createTask(input as TaskCallback<T>, computed)
+			: createMemo(input as MemoCallback<T>, computed)
+	}
+
+	// External push: a seed value plus a watched lifecycle.
+	const watched = options?.watched as SensorCallback<T> | undefined
+	validateCallback('deriveSignal', watched, isSyncFunction)
+	const sensorOptions: SensorOptions<T> = { value: input as T }
+	if (options?.equals !== undefined) sensorOptions.equals = options.equals
+	if (options?.guard !== undefined) sensorOptions.guard = options.guard
+	return createSensor(watched, sensorOptions)
 }
 
 /* === Guards === */
@@ -139,9 +171,9 @@ function isMutableSignal(value: unknown): value is MutableSignal<unknown & {}> {
 }
 
 export {
-	createComputed,
-	createMutableSignal,
 	createSignal,
+	type DeriveSignalOptions,
+	deriveSignal,
 	isMutableSignal,
 	isSignal,
 }

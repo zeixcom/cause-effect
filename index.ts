@@ -93,9 +93,9 @@ export {
 } from './src/nodes/store'
 export { createTask } from './src/nodes/task'
 export {
-	createComputed,
-	createMutableSignal,
 	createSignal,
+	type DeriveSignalOptions,
+	deriveSignal,
 	isMutableSignal,
 	isSignal,
 } from './src/signal'
