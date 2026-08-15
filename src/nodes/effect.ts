@@ -15,10 +15,10 @@ import {
 	registerCleanup,
 	runCleanup,
 	runEffect,
-	type Signal,
 	scheduleEffect,
 	trimSources,
 } from '../graph'
+import type { Signal } from './signal'
 
 /* === Types === */
 

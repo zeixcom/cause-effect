@@ -7,7 +7,6 @@ import {
 	activeSink,
 	DEFAULT_EQUALITY,
 	link,
-	type Signal,
 	type SignalCallback,
 	type SignalOptions,
 	type StateNode,
@@ -15,6 +14,7 @@ import {
 	TYPE_SIGNAL,
 } from '../graph'
 import { isSyncFunction } from '../util'
+import type { Signal } from './signal'
 
 /* === Types === */
 

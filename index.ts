@@ -30,9 +30,7 @@ export {
 	isPending,
 	type MaybeCleanup,
 	type MemoCallback,
-	type MutableSignal,
 	type ScopeOptions,
-	type Signal,
 	type SignalCallback,
 	type SignalOptions,
 	SKIP_EQUALITY,
@@ -40,13 +38,6 @@ export {
 	unown,
 	untrack,
 } from './src/graph'
-export {
-	type DeriveListOptions,
-	deriveList,
-	type ListCallback,
-	type ListChanges,
-	type ListSource,
-} from './src/nodes/collection'
 export {
 	createEffect,
 	type MatchHandlers,
@@ -56,15 +47,28 @@ export {
 } from './src/nodes/effect'
 export {
 	createList,
+	type DeriveListOptions,
+	deriveList,
 	isList,
 	isMutableList,
 	type KeyConfig,
 	type List,
+	type ListCallback,
+	type ListChanges,
 	type ListOptions,
+	type ListSource,
 	type MutableList,
 } from './src/nodes/list'
 export { createMemo } from './src/nodes/memo'
 export { createSensor } from './src/nodes/sensor'
+export {
+	createSignal,
+	deriveSignal,
+	isMutableSignal,
+	isSignal,
+	type MutableSignal,
+	type Signal,
+} from './src/nodes/signal'
 export {
 	createSlot,
 	isSlot,
@@ -84,12 +88,6 @@ export {
 	type StoreOptions,
 } from './src/nodes/store'
 export { createTask } from './src/nodes/task'
-export {
-	createSignal,
-	deriveSignal,
-	isMutableSignal,
-	isSignal,
-} from './src/signal'
 export {
 	isAsyncFunction,
 	isFunction,

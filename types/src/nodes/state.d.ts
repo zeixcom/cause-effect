@@ -1,4 +1,5 @@
-import { type MutableSignal, type SignalOptions } from '../graph';
+import { type SignalOptions } from '../graph';
+import type { MutableSignal } from './signal';
 /**
  * A callback function for states that updates a value based on the previous value.
  *

@@ -17,12 +17,10 @@ import {
 	getAsyncSource,
 	link,
 	type MemoNode,
-	type MutableSignal,
 	makeSubscribe,
 	propagate,
 	refreshComposite,
 	registerAsyncSource,
-	type Signal,
 	TYPE_STORE,
 	untrack,
 } from '../graph'
@@ -42,6 +40,7 @@ import {
 	type UnknownRecord,
 } from './list'
 import { createMemo } from './memo'
+import type { MutableSignal, Signal } from './signal'
 import { createState } from './state'
 import { createTask } from './task'
 

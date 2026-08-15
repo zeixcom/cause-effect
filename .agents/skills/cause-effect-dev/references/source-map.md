@@ -13,7 +13,7 @@ Where to find things in the @zeix/cause-effect codebase. Read this before locati
 | Public API surface (all exports, types) | `index.ts` |
 | Core graph engine (flags, propagation, flush, ownership) | `src/graph.ts` |
 | Error classes | `src/errors.ts` |
-| Signal base types and type guards | `src/signal.ts` |
+| Signal base types, façades, and type guards | `src/nodes/signal.ts` |
 | Shared utilities | `src/util.ts` |
 </authoritative_documents>
 
@@ -28,9 +28,8 @@ Each signal type lives in its own file under `src/nodes/`:
 | Task | `src/nodes/task.ts` | `createTask()` | `isTask()` |
 | Effect | `src/nodes/effect.ts` | `createEffect()` | — |
 | Slot | `src/nodes/slot.ts` | `createSlot()` | `isSlot()` |
-| Store | `src/nodes/store.ts` | `createStore()` | `isStore()` |
-| List | `src/nodes/list.ts` | `createList()` | `isList()` |
-| Collection | `src/nodes/collection.ts` | `createCollection()` / `deriveCollection()` | `isCollection()` |
+| Store | `src/nodes/store.ts` | `createStore()` / `deriveStore()` | `isStore()` / `isMutableStore()` |
+| List | `src/nodes/list.ts` | `createList()` / `deriveList()` | `isList()` / `isMutableList()` |
 
 `match()` and `MatchHandlers` live in `src/nodes/effect.ts` alongside `createEffect`.
 </signal_source_files>

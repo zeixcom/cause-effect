@@ -14,11 +14,11 @@ import {
 	makeSubscribe,
 	propagate,
 	refresh,
-	type Signal,
 	type SinkNode,
 	TYPE_SIGNAL,
 } from '../graph'
 import { isSyncFunction } from '../util'
+import type { Signal } from './signal'
 
 const WHERE = 'createMemo'
 

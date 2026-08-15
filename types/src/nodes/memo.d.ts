@@ -1,4 +1,5 @@
-import { type DeriveSignalOptions, type MemoCallback, type Signal } from '../graph';
+import { type DeriveSignalOptions, type MemoCallback } from '../graph';
+import type { Signal } from './signal';
 /**
  * Creates a derived reactive computation that caches its result.
  * The computation automatically tracks dependencies and recomputes when they change.

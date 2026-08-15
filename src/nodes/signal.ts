@@ -1,24 +1,41 @@
-import { validateCallback } from './errors'
+import { validateCallback } from '../errors'
 import {
 	type DeriveSignalOptions,
 	type MemoCallback,
-	type MutableSignal,
-	type Signal,
 	type SignalCallback,
 	type SignalOptions,
 	type TaskCallback,
 	TYPE_SIGNAL,
-} from './graph'
-import { createMemo } from './nodes/memo'
-import { createSensor } from './nodes/sensor'
-import { createState } from './nodes/state'
-import { createTask } from './nodes/task'
+} from '../graph'
 import {
 	isAsyncFunction,
 	isFunction,
 	isSignalOfType,
 	isSyncFunction,
-} from './util'
+} from '../util'
+import { createMemo } from './memo'
+import { createSensor } from './sensor'
+import { createState } from './state'
+import { createTask } from './task'
+
+/* === Types === */
+
+type Signal<T extends {}> = {
+	readonly [Symbol.toStringTag]?: string
+	get(): T
+}
+
+/**
+ * A readable and writable single-value signal.
+ * The complete value-type set is `Signal`/`MutableSignal`, `List`/`MutableList`, and
+ * `Store`/`MutableStore` — indexed by shape and mutability, not by origin. See ADR-0018.
+ *
+ * @template T - The type of value held by the signal
+ */
+type MutableSignal<T extends {}> = Signal<T> & {
+	set(value: T): void
+	update(callback: (value: T) => T): void
+}
 
 /* === Factory Functions === */
 
@@ -142,4 +159,11 @@ function isMutableSignal(value: unknown): value is MutableSignal<unknown & {}> {
 	)
 }
 
-export { createSignal, deriveSignal, isMutableSignal, isSignal }
+export {
+	createSignal,
+	deriveSignal,
+	isMutableSignal,
+	isSignal,
+	type MutableSignal,
+	type Signal,
+}

@@ -1,4 +1,5 @@
-import { type Signal, type SignalOptions } from '../graph';
+import { type SignalOptions } from '../graph';
+import { type Signal } from './signal';
 /**
  * A descriptor for a derived reactive value with an optional setter.
  *

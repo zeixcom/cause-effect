@@ -30,6 +30,13 @@ type MemoNode<T extends {}> = SourceFields<T> & OptionsFields<T> & SinkFields & 
 type TaskNode<T extends {}> = SourceFields<T> & OptionsFields<T> & SinkFields & AsyncFields & {
     fn: (prev: T, abortSignal: AbortSignal) => Promise<T>;
     pendingNode: StateNode<boolean>;
+    /**
+     * The task recompute, assigned by `createTask`. Stored on the node so
+     * `refresh()` stays shape-agnostic: the recompute (and its
+     * AbortController) is defined in `nodes/task.ts` and tree-shakes out
+     * of a bundle that never imports `createTask` (ADR-0018 §5).
+     */
+    recompute: (node: TaskNode<unknown & {}>) => void;
 };
 type EffectNode = SinkFields & OwnerFields & {
     fn: EffectCallback;
@@ -44,21 +51,6 @@ type Edge = {
     nextSource: Edge | null;
     prevSink: Edge | null;
     nextSink: Edge | null;
-};
-type Signal<T extends {}> = {
-    readonly [Symbol.toStringTag]?: string;
-    get(): T;
-};
-/**
- * A readable and writable single-value signal.
- * The complete value-type set is `Signal`/`MutableSignal`, `List`/`MutableList`, and
- * `Store`/`MutableStore` — indexed by shape and mutability, not by origin. See ADR-0018.
- *
- * @template T - The type of value held by the signal
- */
-type MutableSignal<T extends {}> = Signal<T> & {
-    set(value: T): void;
-    update(callback: (value: T) => T): void;
 };
 /**
  * A cleanup function that can be called to dispose of resources.
@@ -169,10 +161,18 @@ declare const TYPE_SLOT = "Slot";
 declare const FLAG_CLEAN = 0;
 declare const FLAG_CHECK: number;
 declare const FLAG_DIRTY: number;
+declare const FLAG_RUNNING: number;
 declare const FLAG_RELINK: number;
 declare let activeSink: SinkNode | null;
 declare let activeOwner: OwnerNode | null;
 declare let batchDepth: number;
+/**
+ * Sets the active sink and returns the previous one. `activeSink` is a live
+ * binding writable only inside this module; recomputation paths defined in the
+ * node modules (e.g. the task recompute in `nodes/task.ts`) restore the
+ * previous sink through this swap.
+ */
+declare function swapActiveSink(node: SinkNode | null): SinkNode | null;
 /**
  * Default strict equality (`===`) — identical to the implicit default for all signals.
  * Pass explicitly to make the equality strategy visible when composing or overriding signal options.
@@ -387,4 +387,4 @@ declare function isPending(signal: unknown): boolean;
  * @param signal - Any signal
  */
 declare function abort(signal: unknown): void;
-export { abort, activeOwner, activeSink, batch, batchDepth, type Cleanup, createScope, DEEP_EQUALITY, DEFAULT_EQUALITY, type DeriveSignalOptions, type EffectCallback, type EffectNode, FLAG_CHECK, FLAG_CLEAN, FLAG_DIRTY, FLAG_RELINK, flush, getAsyncSource, isPending, link, type MaybeCleanup, type MemoCallback, type MemoNode, type MutableSignal, makeSubscribe, type PendingSource, propagate, refresh, refreshComposite, registerAsyncSource, registerCleanup, runCleanup, runEffect, type Scope, type ScopeOptions, type Signal, type SignalCallback, type SignalOptions, type SinkNode, SKIP_EQUALITY, type StateNode, scheduleEffect, setState, type TaskCallback, type TaskNode, TYPE_LIST, TYPE_SIGNAL, TYPE_SLOT, TYPE_STORE, trimSources, unlink, unown, untrack, };
+export { abort, activeOwner, activeSink, batch, batchDepth, type Cleanup, createScope, DEEP_EQUALITY, DEFAULT_EQUALITY, type DeriveSignalOptions, type EffectCallback, type EffectNode, FLAG_CHECK, FLAG_CLEAN, FLAG_DIRTY, FLAG_RELINK, FLAG_RUNNING, flush, getAsyncSource, isPending, link, type MaybeCleanup, type MemoCallback, type MemoNode, makeSubscribe, type PendingSource, propagate, refresh, refreshComposite, registerAsyncSource, registerCleanup, runCleanup, runEffect, type Scope, type ScopeOptions, type SignalCallback, type SignalOptions, type SinkNode, SKIP_EQUALITY, type StateNode, scheduleEffect, setState, swapActiveSink, type TaskCallback, type TaskNode, TYPE_LIST, TYPE_SIGNAL, TYPE_SLOT, TYPE_STORE, trimSources, unlink, unown, untrack, };

@@ -1,4 +1,5 @@
-import { type DeriveSignalOptions, type Signal, type TaskCallback } from '../graph';
+import { type DeriveSignalOptions, type TaskCallback } from '../graph';
+import type { Signal } from './signal';
 /**
  * Creates an asynchronous reactive computation (colorless async).
  * The computation automatically tracks dependencies and re-executes when they change.

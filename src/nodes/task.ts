@@ -4,26 +4,106 @@ import {
 	validateSignalValue,
 } from '../errors'
 import {
+	batch,
 	batchDepth,
 	DEFAULT_EQUALITY,
 	type DeriveSignalOptions,
+	FLAG_CLEAN,
 	FLAG_DIRTY,
+	FLAG_RUNNING,
 	flush,
 	makeSubscribe,
 	propagate,
 	refresh,
 	registerAsyncSource,
-	type Signal,
 	type SinkNode,
 	type StateNode,
 	setState,
+	swapActiveSink,
 	type TaskCallback,
 	type TaskNode,
 	TYPE_SIGNAL,
+	trimSources,
 } from '../graph'
 import { isAsyncFunction } from '../util'
+import type { Signal } from './signal'
 
 const WHERE = 'createTask'
+
+/* === Internal Functions === */
+
+/**
+ * Recomputes a task node. Defined here rather than in `graph.ts` and stored on
+ * the node as `node.recompute`, so that `refresh()` holds no reference to the
+ * task recompute path — a bundle that never imports `createTask` tree-shakes
+ * this function and its `AbortController` out entirely (ADR-0018 §5).
+ */
+function recomputeTask(node: TaskNode<unknown & {}>): void {
+	node.controller?.abort()
+
+	const controller = new AbortController()
+	node.controller = controller
+	node.error = undefined
+
+	const prevWatcher = swapActiveSink(node)
+	node.sourcesTail = null
+	node.flags = FLAG_RUNNING
+
+	let promise: Promise<unknown & {}>
+	try {
+		promise = node.fn(node.value, controller.signal)
+	} catch (err) {
+		node.controller = undefined
+		node.error = err instanceof Error ? err : new Error(String(err))
+		// Keep the node recoverable: clear FLAG_RUNNING and reset pending,
+		// so subsequent reads report the SAME error instead of a spurious
+		// CircularDependencyError on the stuck RUNNING flag.
+		node.flags = FLAG_CLEAN
+		setState(node.pendingNode, false)
+		return
+	} finally {
+		swapActiveSink(prevWatcher)
+		trimSources(node)
+	}
+
+	setState(node.pendingNode, true)
+
+	promise.then(
+		next => {
+			if (controller.signal.aborted) return
+
+			node.controller = undefined
+			batch(() => {
+				if (node.error || !node.equals(next, node.value)) {
+					node.value = next
+					node.error = undefined
+					for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
+				}
+				setState(node.pendingNode, false)
+			})
+		},
+		(err: unknown) => {
+			if (controller.signal.aborted) return
+
+			node.controller = undefined
+			const error = err instanceof Error ? err : new Error(String(err))
+			batch(() => {
+				if (
+					!node.error ||
+					error.name !== node.error.name ||
+					error.message !== node.error.message
+				) {
+					// We don't clear old value on errors
+					node.error = error
+					for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
+				}
+				setState(node.pendingNode, false)
+			})
+		},
+	)
+
+	node.flags = FLAG_CLEAN
+}
 
 /* === Exported Functions === */
 
@@ -106,6 +186,7 @@ function createTask<T extends {}>(
 		error: undefined,
 		stop: undefined,
 		pendingNode,
+		recompute: recomputeTask,
 	}
 
 	const watched = options?.watched

@@ -1,5 +1,6 @@
-import { type Cleanup, type MutableSignal, type Signal, TYPE_STORE } from '../graph';
+import { type Cleanup, TYPE_STORE } from '../graph';
 import { type MutableList, type UnknownRecord } from './list';
+import type { MutableSignal, Signal } from './signal';
 /**
  * Configuration options for `createStore`.
  */

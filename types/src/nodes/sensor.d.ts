@@ -1,4 +1,5 @@
-import { type Signal, type SignalCallback, type SignalOptions } from '../graph';
+import { type SignalCallback, type SignalOptions } from '../graph';
+import type { Signal } from './signal';
 /**
  * Creates a sensor that tracks external input while it is watched.
  *

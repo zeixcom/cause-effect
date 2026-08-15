@@ -1,4 +1,5 @@
-import { type Cleanup, type MutableSignal, type Signal, TYPE_LIST } from '../graph';
+import { type Cleanup, TYPE_LIST } from '../graph';
+import type { MutableSignal, Signal } from './signal';
 type UnknownRecord = Record<string, unknown>;
 type DiffResult = {
     changed: boolean;
@@ -15,19 +16,30 @@ type DiffResult = {
  */
 type KeyConfig<T> = string | ((item: T) => string | undefined);
 /**
- * Configuration options for `createList`.
+ * The members `ListOptions` and `DeriveListOptions` share: how items are keyed,
+ * compared, and turned into item signals. Private base — the two options types
+ * differ in their `watched` (lifecycle-only on the mutable factory, external
+ * push on the derive family), so they cannot extend one another.
  *
- * @template T - The type of items in the list
+ * @template T - The type of items in the sequence
+ * @template S - The item-signal type
  */
-type ListOptions<T extends {}, S extends MutableSignal<T> = MutableSignal<T>> = {
+type ItemSignalOptions<T extends {}, S extends Signal<T>> = {
     /** Key generation strategy. A string prefix or a function `(item) => string | undefined`. Defaults to auto-increment. */
     keyConfig?: KeyConfig<T>;
-    /** Lifecycle callback invoked when the list gains its first downstream subscriber. Must return a cleanup function. Stays active through structural mutations (add/remove/sort) — only the subscriber count matters. */
-    watched?: () => Cleanup;
     /** Equality function for item state signals. Defaults to `DEEP_EQUALITY`. */
     itemEquals?: (a: T, b: T) => boolean;
     /** Factory for per-item signals. Defaults to `createState`. */
     createItem?: (value: T) => S;
+};
+/**
+ * Configuration options for `createList`.
+ *
+ * @template T - The type of items in the list
+ */
+type ListOptions<T extends {}, S extends MutableSignal<T> = MutableSignal<T>> = ItemSignalOptions<T, S> & {
+    /** Lifecycle callback invoked when the list gains its first downstream subscriber. Must return a cleanup function. Stays active through structural mutations (add/remove/sort) — only the subscriber count matters. */
+    watched?: () => Cleanup;
 };
 /**
  * A read-only reactive keyed sequence with per-item reactivity.
@@ -70,6 +82,54 @@ type MutableList<T extends {}, S extends MutableSignal<T> = MutableSignal<T>> = 
     sort(compareFn?: (a: T, b: T) => number): void;
     splice(start: number, deleteCount?: number, ...items: T[]): T[];
 };
+/**
+ * A source `deriveList` can key and derive from.
+ *
+ * A `List` (mutable or readonly) is already keyed, and its stable keys are used directly.
+ * Any other `Signal<T[]>` — a synchronous derivation, an asynchronous derivation, an external
+ * push, a `Slot` — is keyed on read by the adapter, which is what lets an asynchronous array
+ * become a keyed sequence.
+ *
+ * @template T - The type of items in the source
+ */
+type ListSource<T extends {}> = List<T> | Signal<T[]>;
+/**
+ * Configuration options for `deriveList`.
+ *
+ * `keyConfig` and `itemEquals` apply when the source is a plain `Signal<T[]>` or the input
+ * is a seed array; a `List` source carries its own keys and item equality already.
+ *
+ * @template T - The type of items in the derived sequence
+ * @template S - The item-signal type of the external-push form; inferred from `createItem`
+ */
+type DeriveListOptions<T extends {}, S extends Signal<T> = Signal<T>> = ItemSignalOptions<T, S> & {
+    /** Initial items for an asynchronous derivation. Keeps the sequence readable before the first resolution. */
+    initial?: T[];
+    /** Lifecycle callback for an external-push origin. Required when `input` is a seed array. */
+    watched?: ListCallback<T>;
+};
+/**
+ * Granular mutation descriptor passed to the `emit` callback inside a `ListCallback`.
+ *
+ * @template T - The type of items in the sequence
+ */
+type ListChanges<T> = {
+    /** Items to add. Each item is assigned a new key via the configured `keyConfig`. */
+    add?: T[];
+    /** Items whose values have changed. Matched to existing entries by key. */
+    change?: T[];
+    /** Items to remove. Matched to existing entries by key. */
+    remove?: T[];
+};
+/**
+ * Setup callback for the external-push form of `deriveList`. Runs when the sequence
+ * becomes watched. Receives an `emit` function to push granular mutations into the graph.
+ *
+ * @template T - The type of items in the sequence
+ * @param emit - Call with a `ListChanges` object to add, update, or remove items
+ * @returns A cleanup function that runs when the sequence is no longer watched
+ */
+type ListCallback<T extends {}> = (emit: (changes: ListChanges<T>) => void) => Cleanup;
 /** Shallow equality check for string arrays */
 declare function keysEqual(a: string[], b: string[]): boolean;
 declare function getKeyGenerator<T extends {}>(keyConfig?: KeyConfig<T>): [(item: T) => string, boolean];
@@ -89,6 +149,50 @@ declare function getKeyGenerator<T extends {}>(keyConfig?: KeyConfig<T>): [(item
 declare function diffArrays<T extends {}>(prev: T[], next: T[], prevKeys: string[], generateKey: (item: T) => string, contentBased: boolean, itemEquals: (a: T, b: T) => boolean): DiffResult & {
     newKeys: string[];
 };
+/**
+ * Creates a read-only keyed sequence from any origin.
+ *
+ * The origin follows from `input`, so one factory covers every way a keyed sequence can
+ * come to exist. A derived sequence has no mutators — the returned `List` is the
+ * read-only shape — which is what makes an imperative write from inside an effect a
+ * compile error rather than a convention.
+ *
+ * | `input` | `options` | Origin |
+ * |---|---|---|
+ * | sync function | — | Synchronous derivation |
+ * | async function | `initial` required | Asynchronous derivation |
+ * | array | `watched` required | External push |
+ * | `Signal<U[]>` or `List` + item function | — | Per-item derivation |
+ *
+ * @since 1.5.0
+ * @param input - A computation, a seed array, or a source signal to derive per item from
+ * @param itemOrOptions - The per-item callback for a source input, otherwise the options
+ * @param maybeOptions - Options, when a per-item callback is given
+ * @returns A read-only List signal
+ *
+ * @example
+ * ```ts
+ * // Previously impossible without an effect: an async array as a keyed sequence.
+ * const users = deriveList(async (_prev, abortSignal) => {
+ *   const res = await fetch(`/api/users?q=${query.get()}`, { signal: abortSignal })
+ *   return res.json()
+ * }, { initial: [], keyConfig: (u: User) => u.id })
+ *
+ * createEffect(() => {
+ *   if (isPending(users)) return showSpinner()
+ *   for (const user of users) renderRow(user)
+ * })
+ * ```
+ */
+declare function deriveList<T extends {}>(input: () => T[], options?: DeriveListOptions<T>): List<T>;
+declare function deriveList<T extends {}>(input: (prev: T[], abortSignal: AbortSignal) => Promise<T[]>, options: DeriveListOptions<T> & {
+    initial: T[];
+}): List<T>;
+declare function deriveList<T extends {}, S extends Signal<T> = Signal<T>>(input: T[], options: DeriveListOptions<T, S> & {
+    watched: ListCallback<T>;
+}): List<T, S>;
+declare function deriveList<T extends {}, U extends {}>(input: ListSource<U>, itemCallback: (sourceValue: U) => T, options?: DeriveListOptions<U>): List<T>;
+declare function deriveList<T extends {}, U extends {}>(input: ListSource<U>, itemCallback: (sourceValue: U, abortSignal: AbortSignal) => Promise<T>, options?: DeriveListOptions<U>): List<T>;
 /**
  * Creates a reactive list with stable keys and per-item reactivity.
  *
@@ -116,4 +220,4 @@ declare function isList<T extends {}, S extends Signal<T> = Signal<T>>(value: un
  * @returns True if the value is a mutable List
  */
 declare function isMutableList<T extends {}, S extends MutableSignal<T> = MutableSignal<T>>(value: unknown): value is MutableList<T, S>;
-export { createList, type DiffResult, diffArrays, getKeyGenerator, isList, isMutableList, type KeyConfig, keysEqual, type List, type ListOptions, type MutableList, TYPE_LIST, type UnknownRecord, };
+export { createList, type DeriveListOptions, type DiffResult, deriveList, diffArrays, getKeyGenerator, isList, isMutableList, type KeyConfig, keysEqual, type List, type ListCallback, type ListChanges, type ListOptions, type ListSource, type MutableList, TYPE_LIST, type UnknownRecord, };

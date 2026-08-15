@@ -1,4 +1,5 @@
-import { type Cleanup, type EffectCallback, type MaybeCleanup, type Signal } from '../graph';
+import { type Cleanup, type EffectCallback, type MaybeCleanup } from '../graph';
+import type { Signal } from './signal';
 /** A value that is either synchronous or a `Promise` — used for handler return types in `match()`. */
 type MaybePromise<T> = T | Promise<T>;
 /**

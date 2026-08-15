@@ -3,12 +3,12 @@ import {
 	activeSink,
 	DEFAULT_EQUALITY,
 	link,
-	type MutableSignal,
 	type SignalOptions,
 	type StateNode,
 	setState,
 	TYPE_SIGNAL,
 } from '../graph'
+import type { MutableSignal } from './signal'
 
 /* === Types === */
 

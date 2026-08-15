@@ -9,13 +9,12 @@ import {
 	type MemoNode,
 	propagate,
 	refresh,
-	type Signal,
 	type SignalOptions,
 	type SinkNode,
 	TYPE_SLOT,
 } from '../graph'
-import { isSignal } from '../signal'
 import { isSignalOfType } from '../util'
+import { isSignal, type Signal } from './signal'
 
 /* === Types === */
 
