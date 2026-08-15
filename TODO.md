@@ -205,7 +205,7 @@ this one. On this branch, CE-021 is now gated only on CE-025 and CE-026 landing 
   **Reviewed by architect ✓** — consistency review confirmed against `index.ts`; no code changes,
   docs only. Unblocks CE-021.
 
-- [x] CE-030: Mark the origin-specific types and guards `@deprecated` ahead of their v2.0 removal — done, pending review ⏳
+- [x] CE-030: Mark the origin-specific types and guards `@deprecated` ahead of their v2.0 removal — reviewed ✓
   **Skill:** cause-effect-dev
   **Context:** Found in a v1.5 ↔ v2.0 public-API cross-check (2026-08-16), run before the 1.5.0
   publish. `v2/shape-exploration`'s `index.ts` exports none of `State`, `isState`, `Memo`, `isMemo`,
@@ -238,8 +238,16 @@ this one. On this branch, CE-021 is now gated only on CE-025 and CE-026 landing 
   **Check:** Was excluding `ComputedOptions` the right call, or should it get a narrower note
   instead (e.g. "deprecated only when reached through `createComputed`")? JSDoc has no way to
   scope a deprecation to one caller, so I left it fully non-deprecated rather than mis-flag it.
+  **Review:** Approved ✓. Excluding `ComputedOptions` was the right call — confirmed by grep that
+  `src/graph.ts` carries no diff in this commit, and `createMemo`/`createTask` still reference it
+  unchanged. A per-caller-scoped deprecation isn't expressible in JSDoc, and mis-flagging two live
+  functions would have been strictly worse than the gap it closed. All twelve markers checked
+  against `REQUIREMENTS.md`, which independently names exactly this set — `isState`, `isMemo`,
+  `isTask`, `isSensor`, `isCollection` (already deprecated), and `isComputed` — as "removed in
+  v2.0" with "no referent once types are shape-indexed" (§ Utility Function Exports). Re-ran
+  `bun run check` independently: 651/651 tests, `tsc --noEmit` clean, bundle reproduces exactly.
 
-- [x] CE-031: Mark `Collection`'s auxiliary callback/options types `@deprecated` — done, pending review ⏳
+- [x] CE-031: Mark `Collection`'s auxiliary callback/options types `@deprecated` — reviewed ✓
   **Skill:** cause-effect-dev
   **Context:** Found in the same cross-check as CE-030 (2026-08-16). `Collection`, `isCollection`,
   `createCollection`, and `.deriveCollection()` are already `@deprecated` (CE-016/CE-026), but six
@@ -279,8 +287,22 @@ this one. On this branch, CE-021 is now gated only on CE-025 and CE-026 landing 
   option (b) myself and shipped it? I judged this as a scope decision (how far the
   born-deprecated policy reaches) rather than a mechanical follow-through, so left it for
   architect/user resolution rather than deciding unilaterally.
+  **Review:** Approved ✓, and stopping at `CollectionOptions` instead of guessing was the right
+  call — deprecating the other five would have shipped a false-positive deprecation on
+  `deriveList`'s own live parameters. Resolved the `NOTES.md` question as **(b)**: accept the
+  same "one more rename at 2.0" treatment `DerivedList`/`DerivedStore` already have, no bridge
+  names. Reasoning: CE-016/CE-025's bridge names exist specifically for a **meaning flip** —
+  `List`/`Store` kept working under the old name but silently changed behavior at 2.0. These five
+  have no such hazard; `deriveList`'s `source`/`options`/`watched` shapes don't change meaning,
+  only the type's name does, so a consumer's compiler catches the break loudly at upgrade time —
+  the exact class of break the born-deprecated policy doesn't need to guard against. Introducing
+  `ListSource`/`ListCallback`/`ListChanges` now would spend real implementation effort narrowing
+  a risk that's already at its floor. Extended `MIGRATION-2.0.md`'s existing `CollectionSource`
+  manual-rename note to name all five explicitly, with the meaning-flip-vs-name-change
+  distinction spelled out, so the accepted asymmetry is visible to a reader the same way
+  `DerivedList`/`DerivedStore`'s is. `NOTES.md` entry deleted.
 
-- [x] CE-032: Back-port `deriveSignal` and deprecate `createComputed`/`createMutableSignal` — done, pending review ⏳
+- [x] CE-032: Back-port `deriveSignal` and deprecate `createComputed`/`createMutableSignal` — reviewed ✓
   **Skill:** cause-effect-dev
   **Context:** Decided 2026-08-16, overriding MIGRATION-2.0.md's current "no action needed until
   2.0" call on `createComputed`/`createMutableSignal` (found in the CE-030/CE-031 cross-check).
@@ -340,6 +362,20 @@ this one. On this branch, CE-021 is now gated only on CE-025 and CE-026 landing 
   **Verified:** `bun run check` green — 651/651 tests (7 new), `tsc --noEmit` clean, bundle 24060 B
   min / 8299 B gz / 2481 B core (all under ceiling; +209 B / +54 B / -3 B over the CE-025 baseline
   for one new function). `types/` regenerated from a clean `tsc --project tsconfig.build.json`.
+  **Review:** Approved ✓. The optional-`initial` decision is correct and, independently verified:
+  `REQUIREMENTS.md`'s construction matrix (§ Construction Covers Every Cell) already shows
+  `deriveSignal(asyncFn)` with no `{ initial }` annotation, against `deriveList(asyncFn, {
+  initial })` and `deriveStore(asyncFn, { initial })` right next to it — this task's call matches
+  what the target-state requirements doc already specified, not a judgment made in a vacuum.
+  Inlining the seed-form's `watched` shape instead of reusing the now-deprecated `SensorCallback`
+  was the right instinct — a fresh, non-deprecated function's signature shouldn't reference a
+  deprecated type. `createMutableSignal`'s "wider, not identical" framing is accurate and
+  necessary: confirmed `createSignal` accepts a function/existing-signal that
+  `createMutableSignal` rejects, by reading both implementations side by side. Test coverage
+  (7 tests) exercises all three dispatch arms, the optional-`initial` throw path, `watched`
+  validation, `watched(invalidate)` parity with `createMemo`/`createTask`, and `isPending`/`abort`
+  interop — appropriately targeted, no gaps. Re-ran `bun run check` independently: 651/651, tsc
+  clean, bundle reproduces exactly (24060 B / 8299 B / 2481 B core).
 
 - [x] CE-021: Prepare and tag the 1.5.0 release — done, pending publish ⏳
   **Skill:** changelog-keeper
@@ -353,13 +389,12 @@ this one. On this branch, CE-021 is now gated only on CE-025 and CE-026 landing 
   plan note above); the performance-baseline re-point against the published release, required for
   this minor bump per `../cause-effect-dev/workflows/update-perf-baseline.md` step 1, which needs
   the version live on npm first.
-  **Blocked on CE-030, CE-031, and CE-032** (found 2026-08-16, after this task closed): a v1.5 ↔
-  v2.0 public-API cross-check found twelve origin-specific types/guards and six `Collection`
-  auxiliary types that v2.0 removes without any `@deprecated` marker in 1.5 today (CE-030,
-  CE-031 — JSDoc-only, non-breaking), plus a decision to back-port `deriveSignal` so
-  `createComputed`/`createMutableSignal` can be deprecated in this release too instead of staying
-  silently doomed until 2.0 (CE-032 — adds one function, two deprecation markers). All three
-  belong in the 1.5.0 release that ships before the removal — do not publish until they land.
+  **CE-030, CE-031, and CE-032 landed and reviewed (2026-08-16)** — the v1.5 ↔ v2.0 public-API
+  cross-check that opened them is closed; nothing further blocks npm publish from the API side.
+  A follow-up: `CHANGELOG.md` now has a `## [Unreleased]` section above `## 1.5.0` again (CE-032's
+  entries) — fold it into `## 1.5.0` (there is no actual 1.5.1 here, just release-prep work that
+  landed after this task's own changelog rename) before publishing, or this task's own "rename
+  `[Unreleased]` to the version" step will need re-running.
 
 ---
 
