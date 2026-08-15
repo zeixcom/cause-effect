@@ -789,7 +789,133 @@ function makeSubscribe(node: SourceNode, onWatch?: () => Cleanup): () => void {
 			}
 }
 
+/* === Composite Access === */
+
+/**
+ * The two-path access pattern shared by every composite signal. See ADR-0014.
+ *
+ * Fast path — edges are established, so a rebuild runs untracked and does not relink.
+ * Tracked path — a structural change (`FLAG_RELINK`) needs `link()` to add edges for new
+ * child signals and `trimSources()` to drop stale ones without orphaning them.
+ *
+ * `node.value` must NOT be pre-written before the tracked path: `recomputeMemo()` diffs
+ * its own freshly built value against the CURRENT `node.value` to decide whether to
+ * promote downstream `FLAG_CHECK` sinks to `FLAG_DIRTY`. Pre-writing makes that
+ * comparison trivially equal and silently drops the cascade to any sink queued earlier in
+ * the same propagate pass — for instance an eager out-of-band read racing ahead of the
+ * effect queue.
+ *
+ * @param node - The composite's structural tracking node
+ * @param buildValue - Composes the node value from the child signals
+ * @param discoversKeys - True for a derived composite, whose `buildValue` learns about key
+ *   changes by running and sets `FLAG_RELINK` as a side effect. Such a node must run once,
+ *   untracked, before we can know which path applies, and must not establish edges before
+ *   it has a sink — that would activate an upstream `watched` lifecycle prematurely.
+ */
+function refreshComposite<T extends {}>(
+	node: MemoNode<T>,
+	buildValue: () => T,
+	discoversKeys = false,
+): void {
+	if (node.sources) {
+		if (!node.flags) return
+		const result = discoversKeys ? untrack(buildValue) : undefined
+		if (node.flags & FLAG_RELINK) {
+			node.flags = FLAG_DIRTY
+			refresh(node as unknown as SinkNode)
+			if (node.error) throw node.error
+		} else {
+			node.value = discoversKeys ? (result as T) : untrack(buildValue)
+			node.flags = FLAG_CLEAN
+		}
+	} else if (!discoversKeys || node.sinks) {
+		refresh(node as unknown as SinkNode)
+		if (node.error) throw node.error
+	} else {
+		// No sinks yet — compute without establishing edges. Stays FLAG_DIRTY so the
+		// first refresh() with a real sink establishes proper edges.
+		node.value = untrack(buildValue)
+	}
+}
+
+/* === Async State Utilities === */
+
+/**
+ * The async capabilities a signal may carry. A `Task` implements this directly.
+ * A composite derived from an async source registers its source instead.
+ */
+type PendingSource = {
+	isPending(): boolean
+	abort(): void
+}
+
+/**
+ * Maps a derived composite to the async source behind it.
+ *
+ * A `List` or `Store` derived from an async computation has no async surface of its own —
+ * its asynchrony lives in an internal `Task`. Registering it here keeps `isPending()` and
+ * `abort()` shape-agnostic without widening the composite's consumption type or adding a
+ * closure to every node. See ADR-0018.
+ */
+const asyncSources = new WeakMap<object, PendingSource>()
+
+/** Associates a derived composite with the async source that drives it. */
+function registerAsyncSource(signal: object, source: PendingSource): void {
+	asyncSources.set(signal, source)
+}
+
+/** Resolves the async capabilities of a signal, if it has any. */
+function getAsyncSource(signal: unknown): PendingSource | undefined {
+	if (signal == null || typeof signal !== 'object') return undefined
+	const candidate = signal as Partial<PendingSource>
+	if (
+		typeof candidate.isPending === 'function' &&
+		typeof candidate.abort === 'function'
+	)
+		return candidate as PendingSource
+	return asyncSources.get(signal)
+}
+
+/**
+ * Reports whether an asynchronously derived signal has settled.
+ *
+ * Reactive: reading this inside a computation re-runs it when the pending state changes.
+ * Returns `false`, without tracking, for a signal that has no asynchronous origin — so it
+ * is safe to call on any signal regardless of how it was constructed.
+ *
+ * This is a utility rather than a method because asynchrony is an origin, not a shape:
+ * a single value, a keyed sequence, and a keyed record can all be derived asynchronously.
+ *
+ * @since 1.5.0
+ * @param signal - Any signal
+ * @returns True if an asynchronous computation is in progress
+ *
+ * @example
+ * ```ts
+ * const users = deriveList(fetchUsers, { initial: [] })
+ * createEffect(() => {
+ *   if (isPending(users)) return showSpinner()
+ *   renderRows(users.get())
+ * })
+ * ```
+ */
+function isPending(signal: unknown): boolean {
+	return getAsyncSource(signal)?.isPending() ?? false
+}
+
+/**
+ * Cancels the in-flight asynchronous computation behind a signal.
+ * No-op for a signal that has no asynchronous origin.
+ *
+ * @since 1.5.0
+ * @param signal - Any signal
+ */
+function abort(signal: unknown): void {
+	getAsyncSource(signal)?.abort()
+}
+
 export {
+	abort,
 	activeOwner,
 	activeSink,
 	batch,
@@ -807,13 +933,17 @@ export {
 	FLAG_RELINK,
 	flush,
 	isEqual,
+	isPending,
 	link,
 	type MaybeCleanup,
 	type MemoCallback,
 	type MemoNode,
 	makeSubscribe,
+	type PendingSource,
 	propagate,
 	refresh,
+	refreshComposite,
+	registerAsyncSource,
 	registerCleanup,
 	runCleanup,
 	runEffect,

@@ -243,6 +243,8 @@ const users = createList(
 
 To rebuild a list from inside a reactive handler, use `.set()` or `.update()` rather than a remove-then-add loop, which throws `EffectConvergenceError`. See [Rebuilding a List from a reactive handler](RECIPES.md#3-rebuilding-a-list-from-a-reactive-handler).
 
+> **Naming ahead of 2.0:** the mutable list type is also exported as `MutableList` — the name it keeps in 2.0, where `List` becomes the readonly base (today's `Collection`). `isMutableList()` is the matching guard. See [MIGRATION-2.0.md](MIGRATION-2.0.md).
+
 ### Collection
 
 A Collection is a set of keyed items with per-item memoization, so a change to one item does not invalidate the others. A Collection is externally-driven through a watched callback, or derived from a List or another Collection.
@@ -293,6 +295,8 @@ const processed = users
   .deriveCollection(user => ({ ...user, active: user.lastLogin > threshold }))
   .deriveCollection(user => user.active ? `Active: ${user.name}` : `Inactive: ${user.name}`)
 ```
+
+> **Naming ahead of 2.0:** the `Collection` type is deprecated as of 1.5.0 — use `DerivedList`, the type `deriveList()` returns, and the `isDerivedList()` guard. `createCollection(watched, options)` is deprecated in favor of `deriveList(seed, { watched, … })`. In 2.0, the readonly base is named `List`. See [MIGRATION-2.0.md](MIGRATION-2.0.md).
 
 ### Slot
 

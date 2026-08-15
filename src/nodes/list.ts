@@ -8,7 +8,6 @@ import {
 	batchDepth,
 	type Cleanup,
 	DEEP_EQUALITY,
-	FLAG_CLEAN,
 	FLAG_DIRTY,
 	FLAG_RELINK,
 	flush,
@@ -16,6 +15,7 @@ import {
 	makeSubscribe,
 	propagate,
 	refresh,
+	refreshComposite,
 	type SinkNode,
 	TYPE_LIST,
 	untrack,
@@ -23,9 +23,9 @@ import {
 import type { MutableSignal } from '../signal'
 import { isFunction, isSignalOfType } from '../util'
 import {
-	type Collection,
 	type CollectionSource,
 	type DeriveCollectionCallback,
+	type DerivedList,
 	deriveCollection,
 } from './collection'
 import { createState } from './state'
@@ -73,9 +73,14 @@ type ListOptions<
  * A reactive ordered array with stable keys and per-item reactivity.
  * Each item is a `MutableSignal<T>`; structural changes (add/remove/sort) propagate reactively.
  *
+ * The name this type carries in v2.0. `List` is a deprecated alias of it.
+ *
  * @template T - The type of items in the list
  */
-type List<T extends {}, S extends MutableSignal<T> = MutableSignal<T>> = {
+type MutableList<
+	T extends {},
+	S extends MutableSignal<T> = MutableSignal<T>,
+> = {
 	readonly [Symbol.toStringTag]: 'List'
 	readonly [Symbol.isConcatSpreadable]: true
 	[Symbol.iterator](): IterableIterator<S>
@@ -99,11 +104,27 @@ type List<T extends {}, S extends MutableSignal<T> = MutableSignal<T>> = {
 	replace(key: string, value: T): void
 	sort(compareFn?: (a: T, b: T) => number): void
 	splice(start: number, deleteCount?: number, ...items: T[]): T[]
-	deriveCollection<R extends {}>(callback: (sourceValue: T) => R): Collection<R>
+	deriveCollection<R extends {}>(
+		callback: (sourceValue: T) => R,
+	): DerivedList<R>
 	deriveCollection<R extends {}>(
 		callback: (sourceValue: T, abort: AbortSignal) => Promise<R>,
-	): Collection<R>
+	): DerivedList<R>
 }
+
+/**
+ * The mutable keyed-sequence type, under its v1 name.
+ *
+ * @deprecated `List`'s current mutable meaning ends in v2.0 — use `MutableList` (same type,
+ * same behavior today). In v2.0, `List` is the readonly base, which is today's `Collection`.
+ * See [ADR-0018](../../../adr/0018-shape-indexed-signal-types.md) and `MIGRATION-2.0.md`.
+ *
+ * @template T - The type of items in the list
+ */
+type List<
+	T extends {},
+	S extends MutableSignal<T> = MutableSignal<T>,
+> = MutableList<T, S>
 
 /* === Functions === */
 
@@ -265,12 +286,12 @@ function diffArrays<T extends {}>(
  * @param value - Initial array of items
  * @param options.keyConfig - Key generation strategy: string prefix or `(item) => string | undefined`. Defaults to auto-increment.
  * @param options.watched - Lifecycle callback that runs when the list becomes watched. Must return a cleanup function.
- * @returns A `List` signal with reactive per-item `MutableSignal`s
+ * @returns A `MutableList` signal with reactive per-item `MutableSignal`s
  */
 function createList<
 	T extends {},
 	S extends MutableSignal<T> = MutableSignal<T>,
->(value: T[], options?: ListOptions<T, S>): List<T, S> {
+>(value: T[], options?: ListOptions<T, S>): MutableList<T, S> {
 	validateSignalValue(TYPE_LIST, value, Array.isArray)
 
 	const signals = new Map<string, S>()
@@ -374,7 +395,7 @@ function createList<
 	node.value = value
 
 	// --- List object ---
-	const list: List<T, S> = {
+	const list: MutableList<T, S> = {
 		[Symbol.toStringTag]: TYPE_LIST,
 		[Symbol.isConcatSpreadable]: true as const,
 
@@ -393,35 +414,7 @@ function createList<
 
 		get() {
 			subscribe()
-			if (node.sources) {
-				// Fast path: edges already established, rebuild value directly
-				if (node.flags) {
-					if (node.flags & FLAG_RELINK) {
-						// Structural mutation added/removed child signals —
-						// tracked recompute so link() adds new edges and
-						// trimSources() removes stale ones without orphaning.
-						// Must NOT pre-write node.value here: recomputeMemo()
-						// (inside refresh()) diffs its freshly built result
-						// against the CURRENT node.value to decide whether to
-						// promote downstream FLAG_CHECK sinks to FLAG_DIRTY.
-						// Overwriting node.value first makes that comparison
-						// trivially equal, silently dropping the cascade to
-						// any sink queued earlier in the same propagate pass
-						// (e.g. an eager out-of-band read racing ahead of the
-						// effect queue).
-						node.flags = FLAG_DIRTY
-						refresh(node as unknown as SinkNode)
-						if (node.error) throw node.error
-					} else {
-						node.value = untrack(buildValue)
-						node.flags = FLAG_CLEAN
-					}
-				}
-			} else {
-				// First access: use refresh() to establish child → list edges
-				refresh(node as unknown as SinkNode)
-				if (node.error) throw node.error
-			}
+			refreshComposite(node, buildValue)
 			return node.value
 		},
 
@@ -626,12 +619,12 @@ function createList<
 
 		deriveCollection<R extends {}>(
 			cb: DeriveCollectionCallback<R, T>,
-		): Collection<R> {
+		): DerivedList<R> {
 			return (
 				deriveCollection as <T2 extends {}, U2 extends {}>(
 					source: CollectionSource<U2>,
 					callback: DeriveCollectionCallback<T2, U2>,
-				) => Collection<T2>
+				) => DerivedList<T2>
 			)(list, cb)
 		},
 	}
@@ -640,7 +633,26 @@ function createList<
 }
 
 /**
+ * Checks if a value is a mutable List signal.
+ *
+ * The name this guard carries in v2.0. `isList` is a deprecated alias of it.
+ *
+ * @since 1.5.0
+ * @param value - The value to check
+ * @returns True if the value is a mutable List
+ */
+function isMutableList<
+	T extends {},
+	S extends MutableSignal<T> = MutableSignal<T>,
+>(value: unknown): value is MutableList<T, S> {
+	return isSignalOfType(value, TYPE_LIST)
+}
+
+/**
  * Checks if a value is a List signal.
+ *
+ * @deprecated Use `isMutableList` — this guard matches only the mutable list today and
+ * widens to the readonly base in v2.0.
  *
  * @since 0.15.0
  * @param value - The value to check
@@ -649,7 +661,7 @@ function createList<
 function isList<T extends {}, S extends MutableSignal<T> = MutableSignal<T>>(
 	value: unknown,
 ): value is List<T, S> {
-	return isSignalOfType(value, TYPE_LIST)
+	return isMutableList<T, S>(value)
 }
 
 /* === Exports === */
@@ -657,12 +669,15 @@ function isList<T extends {}, S extends MutableSignal<T> = MutableSignal<T>>(
 export {
 	createList,
 	type DiffResult,
+	diffArrays,
 	getKeyGenerator,
 	isList,
+	isMutableList,
 	type KeyConfig,
 	keysEqual,
 	type List,
 	type ListOptions,
+	type MutableList,
 	TYPE_LIST,
 	type UnknownRecord,
 }

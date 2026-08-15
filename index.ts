@@ -18,8 +18,8 @@ export {
 	RequiredOwnerError,
 	UnsetSignalValueError,
 } from './src/errors'
-/** @deprecated Use `DEEP_EQUALITY` instead. */
 export {
+	abort,
 	batch,
 	type Cleanup,
 	type ComputedOptions,
@@ -28,6 +28,7 @@ export {
 	DEFAULT_EQUALITY,
 	type EffectCallback,
 	isEqual,
+	isPending,
 	type MaybeCleanup,
 	type MemoCallback,
 	type ScopeOptions,
@@ -43,9 +44,15 @@ export {
 	type CollectionCallback,
 	type CollectionChanges,
 	type CollectionOptions,
+	type CollectionSource,
 	createCollection,
 	type DeriveCollectionCallback,
+	type DeriveCollectionOptions,
+	type DerivedList,
+	type DeriveListOptions,
+	deriveList,
 	isCollection,
+	isDerivedList,
 } from './src/nodes/collection'
 export {
 	createEffect,
@@ -57,9 +64,11 @@ export {
 export {
 	createList,
 	isList,
+	isMutableList,
 	type KeyConfig,
 	type List,
 	type ListOptions,
+	type MutableList,
 } from './src/nodes/list'
 export { createMemo, isMemo, type Memo } from './src/nodes/memo'
 export {
@@ -83,8 +92,12 @@ export {
 } from './src/nodes/state'
 export {
 	createStore,
+	type DerivedStore,
+	type DeriveStoreOptions,
+	deriveStore,
 	isStore,
 	type Store,
+	type StoreCallback,
 	type StoreOptions,
 } from './src/nodes/store'
 export { createTask, isTask, type Task } from './src/nodes/task'
