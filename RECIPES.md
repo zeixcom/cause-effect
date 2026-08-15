@@ -101,7 +101,8 @@ const workspaces = createList([
   { id: 'w2', name: 'Design', members: ['Charlie'], active: false }
 ], { keyConfig: w => w.id });
 
-// 2. Item-level memoization via deriveCollection
+// 2. Item-level memoization via deriveCollection (deprecated since 1.5.0 —
+// prefer deriveList(workspaces, itemFn), same behavior, current name)
 // This function only re-evaluates for the specific workspace that has been updated
 const activeMemberCount = workspaces.deriveCollection(workspace => {
   return workspace.active ? workspace.members.length : 0;
@@ -266,7 +267,8 @@ const windowSize = createSensor((set) => {
   return () => window.removeEventListener('resize', update)
 })
 
-// Collection: receive external data
+// Collection: receive external data (createCollection is deprecated since 1.5.0 —
+// prefer deriveList(seed, { watched, keyConfig }), same behavior, current name)
 const feed = createCollection((applyChanges) => {
   const es = new EventSource('/feed')
   es.onmessage = (e) => applyChanges(JSON.parse(e.data))
@@ -283,7 +285,7 @@ const cleanup = createEffect(() => {
 cleanup()
 ```
 
-### Propagation through `deriveCollection()`
+### Propagation through `deriveCollection()` (deprecated — `deriveList()` propagates the same way)
 
 When an effect reads a derived collection, the `watched` callback on the source List, Store, or Collection activates automatically, through any number of chained levels. Mutating the source does not tear the resource down. When the last effect disposes, cleanup cascades upstream through every intermediate node.
 

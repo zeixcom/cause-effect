@@ -29,7 +29,8 @@ Each signal type lives in its own file under `src/nodes/`:
 | Task | `src/nodes/task.ts` | `createTask()` | `isTask()` |
 | Effect | `src/nodes/effect.ts` | `createEffect()` | — |
 | Slot | `src/nodes/slot.ts` | `createSlot()` | `isSlot()` |
-| Store | `src/nodes/store.ts` | `createStore()` | `isStore()` |
+| Store | `src/nodes/store.ts` | `createStore()` | `isMutableStore()` |
+| DerivedStore | `src/nodes/store.ts` | `deriveStore()` | `isStore()` (tag-based, matches both) |
 | List | `src/nodes/list.ts` | `createList()` | `isMutableList()` |
 | DerivedList | `src/nodes/collection.ts` | `deriveList()` | `isDerivedList()` |
 

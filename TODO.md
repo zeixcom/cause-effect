@@ -186,11 +186,30 @@ this one. On this branch, CE-021 is now gated only on CE-025 and CE-026 landing 
   **Verified:** `bun run check` green end to end — 644/644 tests, perf 9/9, bundle 3/3 (figures under CE-025; this task is markers and docs only, no runtime change).
   **Review:** Approved ✓. Extending the `@deprecated` marker to `DerivedList.deriveCollection()` alongside `MutableList`'s was the right call, not scope creep — `deriveList` is the flagship 1.5 API and its return type is exactly `DerivedList`, so leaving that copy unmarked would have kept the born-deprecated hazard alive on the one type consumers actually get back. `MIGRATION-2.0.md`'s new `CollectionSource<T>` → `ListSource<T>` entry correctly identifies why the codemod can't help (distinct symbol, not a deprecated alias) and lines up with CE-022's landed rename on `v2/shape-exploration`. No runtime change, both markers confirmed present in the diff, docs consistent with CE-025.
 
+- [x] CE-029: Tech-writer sweep for the Store-flip and `.deriveCollection()` deprecation — done ✓
+  **Skill:** tech-writer
+  **Context:** Found in review of CE-025/CE-026 (2026-08-15). Those tasks updated `MIGRATION-2.0.md`
+  and `README.md` only, per their own task text — the wider doc set still showed the pre-deprecation
+  names with no bridge-name or `@deprecated` mention. Same pattern as CE-020 (tech-writer pass
+  following CE-016/CE-017's bridge-name landing).
+  **Changed:** `GUIDE.md` (Store/List/Collection sections gained "Naming ahead of 2.0" callouts
+  matching README's convention; `createSignal`/`createMutableSignal`/`isMutableSignal` examples
+  corrected to the actual `MutableStore`/`MutableList` return types), `.github/copilot-instructions.md`
+  (Signal Types, Key Files, Naming Conventions, and code-pattern sections updated with bridge
+  names and `@deprecated` notes), `RECIPES.md` (`.deriveCollection()`/`createCollection()` examples
+  annotated as deprecated), `REACT_INTEGRATION.md` (`<Each>`'s `list: List<T>` changed to
+  `MutableList<T>` with a note — a read-only-position case per `MIGRATION-2.0.md`),
+  `.agents/skills/cause-effect-dev/references/source-map.md` and
+  `.agents/skills/shared/references/api-facts.md` (Store row split to match the List row's
+  bridge-name pattern; `deriveStore` rows added, which were missing entirely).
+  **Reviewed by architect ✓** — consistency review confirmed against `index.ts`; no code changes,
+  docs only. Unblocks CE-021.
+
 - [ ] CE-021: ⚠️ Prepare and tag the 1.5.0 release — gated
   **Skill:** changelog-keeper
   **Context:** The v2-side gate is satisfied — see the Go decision note above (ADR-0018 ✅
-  Accepted 2026-08-15). Depends on CE-025 and CE-026 — Le Truc round 2 endorses PR #78 for merge
-  *with* those two additions while the release is still in draft. Follow the
+  Accepted 2026-08-15). Depends on CE-025, CE-026, and CE-029 — Le Truc round 2 endorses PR #78 for
+  merge *with* the CE-025/CE-026 additions while the release is still in draft. Follow the
   skill's `<preparing_a_release>` steps: rename
   `## [Unreleased]` to `## 1.5.0`, bump `version` in `package.json` and the `@version` tag in
   `index.ts`, then re-point the performance baseline at the published release — required for this
