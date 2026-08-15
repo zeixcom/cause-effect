@@ -398,6 +398,8 @@ An `ok` or `err` handler may return a `Promise`, but must not write signal state
 
 Polymorphic factories (`createSignal`, `createMutableSignal`, `createComputed`) and type predicates (`isSignal`, `isMutableSignal`, `isComputed`) serve generic and library-author code. See [Utilities for generic code](GUIDE.md#utilities-for-generic-code).
 
+> **Naming ahead of 2.0:** `createSignal`'s shape sniffing (array → `List`, record → `Store`, function → `Memo`/`Task`) is removed with no replacement export, and `createComputed`/`createMutableSignal` are subsumed by `deriveSignal`/`createSignal`. See [MIGRATION-2.0.md](MIGRATION-2.0.md).
+
 ## Advanced Usage
 
 ### Batching

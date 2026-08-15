@@ -23,11 +23,12 @@ Skim ../shared/references/non-obvious-behaviors.md for anything that applies to 
 
 | If the task involves… | Check… |
 |---|---|
-| List or Collection | direct-lookups-do-not-track |
+| List or DerivedList | direct-lookups-do-not-track |
 | Conditional rendering or `match` | conditional-reads-delay-watched |
 | Async data fetching | task-abort-on-dependency-change |
 | Sensor or Task before first value | sensor-unset-before-first-value |
 | Multiple state updates at once | ../shared/references/api-facts.md → `batch` |
+| Filling one signal from another | references/signal-types.md → `deriving_vs_writing` |
 
 ## Step 4: Import what you need
 
@@ -37,7 +38,7 @@ All public API is imported from the package root:
 import {
   createState, createSensor, createMemo, createTask,
   createEffect, createScope, createSlot, createStore,
-  createList, createCollection, deriveCollection,
+  createList, deriveList, deriveStore,
   batch, untrack, unown, match,
   SKIP_EQUALITY,
 } from '@zeix/cause-effect'

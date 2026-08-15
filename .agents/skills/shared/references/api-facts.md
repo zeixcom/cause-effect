@@ -195,7 +195,7 @@ non-obvious-behaviors.md for details on conditional reads.
 | `createSensor(setup)` | No | `Sensor<T>` | Source — set by external callback |
 | `createSlot(signal)` | No | `Slot<T>` | Forwarding — delegates to backing signal |
 | `createStore(value)` | No | `Store<T>` | Source — proxy-based |
-| `createList(items, options?)` | No | `List<T>` | Source — keyed array |
-| `createCollection(entries, options?)` | No | `Collection<K, V>` | Source — keyed map |
-| `deriveCollection(source, callback)` | No | `Collection<K, V>` | Derived — from another reactive source |
+| `createList(items, options?)` | No | `MutableList<T>` | Source — keyed sequence |
+| `deriveList(seed, { watched })` | No | `DerivedList<T>` | Source — external push, read-only |
+| `deriveList(source, itemCallback)` | No | `DerivedList<T>` | Derived — per-item from another signal |
 </lifecycle_summary>

@@ -495,6 +495,8 @@ createSignal(async (_, s) =>
 
 A value that is already a signal is returned unchanged, which makes the function safe to call on caller-supplied input.
 
+> **Naming ahead of 2.0:** this shape sniffing is removed with no replacement export — `createSignal` becomes single-value only. See [MIGRATION-2.0.md](MIGRATION-2.0.md).
+
 **`createMutableSignal(value)`** is the same, restricted to `State`, `Store`, and `List`. It throws `InvalidSignalValueError` for a function or a read-only signal.
 
 **`createComputed(callback, options?)`** creates a `Memo` or a `Task`, by detecting whether the callback is async:

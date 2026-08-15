@@ -10,6 +10,7 @@ Where to find things in the @zeix/cause-effect codebase. Read this before locati
 | Full API reference with examples | `README.md` |
 | Mapping from React/Vue/Angular patterns; when to use each signal type | `GUIDE.md` |
 | Graph engine architecture, node shapes, propagation | `ARCHITECTURE.md` |
+| Rationale for shape-vs-origin taxonomy, derive-over-write intent, v2.0 direction | `adr/0018-shape-indexed-signal-types.md` |
 | Public API surface (all exports, types) | `index.ts` |
 | Core graph engine (flags, propagation, flush, ownership) | `src/graph.ts` |
 | Error classes | `src/errors.ts` |
@@ -29,8 +30,8 @@ Each signal type lives in its own file under `src/nodes/`:
 | Effect | `src/nodes/effect.ts` | `createEffect()` | — |
 | Slot | `src/nodes/slot.ts` | `createSlot()` | `isSlot()` |
 | Store | `src/nodes/store.ts` | `createStore()` | `isStore()` |
-| List | `src/nodes/list.ts` | `createList()` | `isList()` |
-| Collection | `src/nodes/collection.ts` | `createCollection()` / `deriveCollection()` | `isCollection()` |
+| List | `src/nodes/list.ts` | `createList()` | `isMutableList()` |
+| DerivedList | `src/nodes/collection.ts` | `deriveList()` | `isDerivedList()` |
 
 `match()` and `MatchHandlers` live in `src/nodes/effect.ts` alongside `createEffect`.
 </signal_source_files>

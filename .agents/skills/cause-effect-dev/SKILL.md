@@ -21,6 +21,8 @@ For consumer projects that use `@zeix/cause-effect` as a dependency, use the `ca
 **`T extends {}`** — all signal generics exclude `null` and `undefined`. Use wrapper types or sentinel values to represent absence.
 
 **Run `bun test`** after every change.
+
+**Composite derivation over effect-driven writes.** `adr/0018-shape-indexed-signal-types.md` documents the anti-pattern the library actively closes: an effect that reads a `Task`/`Memo` and writes the result into a `Store`/`List` with `.set()`. When implementing or reviewing a feature that fills one signal from another, prefer extending `deriveStore`/`deriveList`'s async and per-item derivation paths over adding a write path — a discouraged pattern surviving only because no derivation covers the case is itself a signal the derivation surface has a gap.
 </essential_principles>
 
 <intake>

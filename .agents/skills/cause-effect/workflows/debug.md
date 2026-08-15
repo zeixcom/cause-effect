@@ -14,7 +14,7 @@ Match the symptom to the most likely cause before reading any code:
 | Effect doesn't re-run when a signal changes | No graph edge established (conditional read or direct lookup) | ../shared/references/non-obvious-behaviors.md: `conditional-reads-delay-watched`, `direct-lookups-do-not-track` |
 | Effect re-runs too often | Missing `equals` option, or mutable reference without `SKIP_EQUALITY` | ../shared/references/api-facts.md: `options.equals`, `SKIP_EQUALITY` |
 | `watched` never fires | Signal only read inside a conditional branch | ../shared/references/non-obvious-behaviors.md: `conditional-reads-delay-watched` |
-| Collection/List update not reflected in effect | Using `byKey()`, `at()`, `keyAt()`, or `indexOfKey()` | ../shared/references/non-obvious-behaviors.md: `direct-lookups-do-not-track` |
+| DerivedList/List update not reflected in effect | Using `byKey()`, `at()`, `keyAt()`, or `indexOfKey()` | ../shared/references/non-obvious-behaviors.md: `direct-lookups-do-not-track` |
 | Stale async result overwrites fresh one | `AbortSignal` not forwarded to `fetch` or async operation | ../shared/references/non-obvious-behaviors.md: `task-abort-on-dependency-change` |
 | `UnsetSignalValueError` thrown | Reading Sensor or Task before first value | ../shared/references/non-obvious-behaviors.md: `sensor-unset-before-first-value` |
 | `RequiredOwnerError` thrown | `createEffect` called outside a `createScope` or parent effect | ../shared/references/api-facts.md: `createEffect`, `createScope` |

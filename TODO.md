@@ -143,8 +143,8 @@ bridge names are revisited *before* 1.5 ships, not after. Le Truc coordinates it
 
 ## `release/1.5.0` — bridge release prep
 
-- [ ] CE-019: Add CHANGELOG.md entries for the 1.5 bridge work
-  **Skill:** changelog-keeper
+- [x] CE-019: Add CHANGELOG.md entries for the 1.5 bridge work
+  **Skill:** changelog-keeper – done
   **Context:** Document CE-001..CE-004, CE-012..CE-014 (derivation-gap closures: `deriveStore`,
   the widened `deriveCollection`, `deriveList`, `isPending`/`abort`) and CE-016..CE-018 (the
   `MutableList`/`DerivedList` bridge names and their guards, `createCollection`/`List`/
@@ -153,8 +153,8 @@ bridge names are revisited *before* 1.5 ships, not after. Le Truc coordinates it
   each entry per the skill's Added/Changed/Deprecated/Fixed categories. Do **not** rename
   `[Unreleased]` to `1.5.0` yet — that is CE-021, gated separately.
 
-- [ ] CE-020: Tech-writer pass on `MIGRATION-2.0.md`
-  **Skill:** tech-writer
+- [x] CE-020: Tech-writer pass on `MIGRATION-2.0.md`
+  **Skill:** tech-writer – done
   **Context:** Flagged in CE-017's Check note as a dev-written draft. Fold it into the existing
   doc set's tone and structure (compare `GUIDE.md`/`README.md`), verify every named export and
   code sample against the current `index.ts` surface, and cross-link it from `README.md` wherever

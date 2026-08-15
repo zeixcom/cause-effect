@@ -13,7 +13,7 @@ Five node shapes are used internally. Source files are authoritative — these a
 | `EffectNode` | Sink + owner — runs side effects, owns child effects/scopes | `src/nodes/effect.ts` |
 | `Scope` | Owner only — groups cleanup registrations, no reactive tracking | `src/graph.ts` |
 
-`Slot`, `Store`, `List`, and `Collection` are built on top of `MemoNode<T>` internally.
+`Slot`, `Store`, `List`, and `DerivedList` (deprecated alias `Collection`) are built on top of `MemoNode<T>` internally.
 </node_shapes>
 
 <global_pointers>
