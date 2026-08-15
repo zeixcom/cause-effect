@@ -135,10 +135,13 @@ function deriveSignal<T extends {}>(
 	// External push: a seed value plus a watched lifecycle.
 	const watched = options?.watched as SensorCallback<T> | undefined
 	validateCallback('deriveSignal', watched, isSyncFunction)
-	const sensorOptions: SensorOptions<T> = { value: input as T }
+	const sensorOptions = {
+		watched,
+		value: input as T,
+	} as SensorOptions<T> & { watched: SensorCallback<T> }
 	if (options?.equals !== undefined) sensorOptions.equals = options.equals
 	if (options?.guard !== undefined) sensorOptions.guard = options.guard
-	return createSensor(watched, sensorOptions)
+	return createSensor(sensorOptions)
 }
 
 /* === Guards === */

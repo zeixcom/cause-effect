@@ -258,15 +258,28 @@ describe('Performance — composite nodes', () => {
 
 	test('collection structural mutations (add+remove via applyChanges, 5000 iterations)', () => {
 		type Item = { id: string }
-		const setup = (f: Api) => () => {
+		// The stable baseline still ships the 1.x `createCollection(watched, options)`
+		// signature, so this benchmark passes each side the call shape it expects.
+		type LegacyCreateCollection = (
+			watched: (
+				apply: (changes: CollectionChanges<Item>) => void,
+			) => () => void,
+			options?: { keyConfig: (item: Item) => string },
+		) => { get(): Item[] }
+		const setup = (f: Api, legacyWatchedPosition: boolean) => () => {
 			let apply!: (changes: CollectionChanges<Item>) => void
-			const col = f.createCollection<Item>(
-				applyChanges => {
-					apply = applyChanges
-					return () => {}
-				},
-				{ keyConfig: (item: Item) => item.id },
-			)
+			const watched = (
+				applyChanges: (changes: CollectionChanges<Item>) => void,
+			) => {
+				apply = applyChanges
+				return () => {}
+			}
+			const keyConfig = (item: Item): string => item.id
+			const col = legacyWatchedPosition
+				? (f.createCollection as unknown as LegacyCreateCollection)(watched, {
+						keyConfig,
+					})
+				: f.createCollection<Item>({ watched, keyConfig })
 			f.createEffect(() => {
 				col.get()
 			})
@@ -276,7 +289,7 @@ describe('Performance — composite nodes', () => {
 					apply({ remove: [{ id: 'k' }] })
 				})
 		}
-		const m = measurePair(setup(current), setup(stable), 5000)
+		const m = measurePair(setup(current, false), setup(stable, true), 5000)
 		check('collectionMutate', m)
 	})
 

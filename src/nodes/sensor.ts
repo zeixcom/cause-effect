@@ -55,8 +55,8 @@ const WHERE = 'createSensor'
  *
  * @since 0.18.0
  * @template T - The type of value produced by the sensor
- * @param watched - The callback that runs when the sensor becomes watched. Receives a `set` function and returns a cleanup function.
- * @param options - Optional configuration for the sensor.
+ * @param options - Configuration for the sensor.
+ * @param options.watched - The callback that runs when the sensor becomes watched. Receives a `set` function and returns a cleanup function.
  * @param options.value - Optional initial value. Avoids `UnsetSignalValueError` on first read
  *   before the watched callback fires. Essential for the mutable-object observation pattern.
  * @param options.equals - Optional equality function. Defaults to strict equality (`===`). Use `SKIP_EQUALITY`
@@ -68,42 +68,49 @@ const WHERE = 'createSensor'
  * ```ts
  * // An initial `value` avoids UnsetSignalValueError on the first read,
  * // before any mousemove event has fired.
- * const mousePos = createSensor<{ x: number; y: number }>((set) => {
- *   const handler = (e: MouseEvent) => {
- *     set({ x: e.clientX, y: e.clientY });
- *   };
- *   window.addEventListener('mousemove', handler);
- *   return () => window.removeEventListener('mousemove', handler);
- * }, { value: { x: 0, y: 0 } });
+ * const mousePos = createSensor<{ x: number; y: number }>({
+ *   watched: (set) => {
+ *     const handler = (e: MouseEvent) => {
+ *       set({ x: e.clientX, y: e.clientY });
+ *     };
+ *     window.addEventListener('mousemove', handler);
+ *     return () => window.removeEventListener('mousemove', handler);
+ *   },
+ *   value: { x: 0, y: 0 },
+ * });
  * ```
  *
  * @example Observing a mutable object
  * ```ts
  * import { createSensor, SKIP_EQUALITY } from 'cause-effect';
  *
- * const el = createSensor<HTMLElement>((set) => {
- *   const node = document.getElementById('box')!;
- *   set(node);
- *   const obs = new MutationObserver(() => set(node));
- *   obs.observe(node, { attributes: true });
- *   return () => obs.disconnect();
- * }, { value: node, equals: SKIP_EQUALITY });
+ * const el = createSensor<HTMLElement>({
+ *   watched: (set) => {
+ *     const node = document.getElementById('box')!;
+ *     set(node);
+ *     const obs = new MutationObserver(() => set(node));
+ *     obs.observe(node, { attributes: true });
+ *     return () => obs.disconnect();
+ *   },
+ *   value: node,
+ *   equals: SKIP_EQUALITY,
+ * });
  * ```
  */
 function createSensor<T extends {}>(
-	watched: SensorCallback<T>,
-	options?: SensorOptions<T>,
+	options: SensorOptions<T> & { watched: SensorCallback<T> },
 ): Signal<T> {
+	const watched = options.watched
 	validateCallback(WHERE, watched, isSyncFunction)
-	if (options?.value !== undefined)
-		validateSignalValue(WHERE, options.value, options?.guard)
+	if (options.value !== undefined)
+		validateSignalValue(WHERE, options.value, options.guard)
 
 	const node: StateNode<T> = {
-		value: options?.value as T,
+		value: options.value as T,
 		sinks: null,
 		sinksTail: null,
-		equals: options?.equals ?? DEFAULT_EQUALITY,
-		guard: options?.guard,
+		equals: options.equals ?? DEFAULT_EQUALITY,
+		guard: options.guard,
 		stop: undefined,
 	}
 

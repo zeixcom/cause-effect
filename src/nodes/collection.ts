@@ -522,15 +522,15 @@ function isMutableItem<T extends {}>(
  * option carries over unchanged.
  *
  * @since 0.18.0
- * @param watched - Callback that runs when the collection becomes watched. Receives the applyChanges helper.
- * @param options - Optional configuration including initial value, key generation, and item signal creation
+ * @param options - Configuration including the watched lifecycle, initial value, key generation, and item signal creation
+ * @param options.watched - Callback that runs when the collection becomes watched. Receives the applyChanges helper.
  * @returns A read-only List signal
  */
 function createCollection<T extends {}, S extends Signal<T> = Signal<T>>(
-	watched: CollectionCallback<T>,
-	options?: CollectionOptions<T, S>,
+	options: CollectionOptions<T, S> & { watched: CollectionCallback<T> },
 ): List<T, S> {
-	const value = options?.value ?? []
+	const watched = options.watched
+	const value = options.value ?? []
 	if (value.length)
 		validateSignalValue('createCollection', value, Array.isArray)
 	validateCallback('createCollection', watched, isSyncFunction)
@@ -539,15 +539,15 @@ function createCollection<T extends {}, S extends Signal<T> = Signal<T>>(
 	const keys: string[] = []
 	const itemToKey = new Map<T, string>()
 
-	const [generateKey, contentBased] = getKeyGenerator(options?.keyConfig)
+	const [generateKey, contentBased] = getKeyGenerator(options.keyConfig)
 
 	const resolveKey = (item: T): string | undefined =>
 		itemToKey.get(item) ?? (contentBased ? generateKey(item) : undefined)
 
-	const itemFactory = (options?.createItem ??
+	const itemFactory = (options.createItem ??
 		((item: T) =>
 			createState(item, {
-				equals: options?.itemEquals ?? DEEP_EQUALITY,
+				equals: options.itemEquals ?? DEEP_EQUALITY,
 			}))) as (value: T) => S
 
 	// Build current value from child signals
@@ -758,10 +758,11 @@ function deriveList<T extends {}, U extends {}>(
 	if (!isFunction(input)) {
 		validateSignalValue('deriveList', input, Array.isArray)
 		validateCallback('deriveList', options?.watched, isSyncFunction)
-		// `initial` and `watched` are ignored by createCollection; the rest of the
-		// options are shared verbatim.
-		return createCollection(options?.watched as CollectionCallback<T>, {
+		// `initial` is ignored by createCollection; the rest of the options are
+		// shared verbatim, and the seed takes the place of `value`.
+		return createCollection({
 			...(options as CollectionOptions<T>),
+			watched: options?.watched as CollectionCallback<T>,
 			value: input as T[],
 		}) as List<T>
 	}

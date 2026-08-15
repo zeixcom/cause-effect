@@ -28,7 +28,11 @@ names and the codemod below convert that silent flip into a staged, deprecation-
 | `createCollection(watched, options?)` | `deriveList(seed, { watched, … })` | `deriveList(seed, { watched, … })` | The `value` option becomes the seed argument; every other option carries over verbatim. Available since 1.5.0. |
 
 `createList`, `deriveList`, `deriveStore`, `createState`, `createMemo`, `createTask`,
-`createSensor`, `Slot`, `Effect`, and `match` keep their names and behavior.
+`Slot`, `Effect`, and `match` keep their names and behavior. `createSensor` keeps its
+name; in 2.0 its `watched` callback moves from the first argument into the options —
+`createSensor({ watched, value?, equals?, guard? })` (ADR-0018 §4: `watched` is an
+option, never a callback position, because a derivation callback and an external-push
+callback are indistinguishable at runtime).
 
 ## Running the codemod
 

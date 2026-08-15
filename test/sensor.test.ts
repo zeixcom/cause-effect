@@ -18,24 +18,28 @@ const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 describe('Sensor', () => {
 	describe('createSensor', () => {
 		test('should have Symbol.toStringTag of "Signal"', () => {
-			const sensor = createSensor<number>(() => () => {})
+			const sensor = createSensor<number>({ watched: () => () => {} })
 			expect(sensor[Symbol.toStringTag]).toBe('Signal')
 		})
 
 		test('should throw UnsetSignalValueError when read outside an effect', () => {
-			const sensor = createSensor<number>(set => {
-				set(42)
-				return () => {}
+			const sensor = createSensor<number>({
+				watched: set => {
+					set(42)
+					return () => {}
+				},
 			})
 			expect(() => sensor.get()).toThrow(UnsetSignalValueError)
 		})
 
 		test('should activate and return value when read inside an effect', () => {
 			let started = false
-			const sensor = createSensor<number>(set => {
-				started = true
-				set(42)
-				return () => {}
+			const sensor = createSensor<number>({
+				watched: set => {
+					started = true
+					set(42)
+					return () => {}
+				},
 			})
 
 			expect(started).toBe(false)
@@ -52,14 +56,18 @@ describe('Sensor', () => {
 
 	describe('isSignal', () => {
 		test('should identify sensor signals', () => {
-			expect(isSignal(createSensor<number>(() => () => {}))).toBe(true)
+			expect(isSignal(createSensor<number>({ watched: () => () => {} }))).toBe(
+				true,
+			)
 		})
 
 		test('should return false for non-signal values', () => {
 			expect(isSignal(42)).toBe(false)
 			expect(isSignal(null)).toBe(false)
 			expect(isSignal({})).toBe(false)
-			expect(isMutableSignal(createSensor<number>(() => () => {}))).toBe(false)
+			expect(
+				isMutableSignal(createSensor<number>({ watched: () => () => {} })),
+			).toBe(false)
 		})
 	})
 
@@ -68,13 +76,13 @@ describe('Sensor', () => {
 			// Start fires before link: synchronous set() updates node.value
 			// without propagation (no sinks yet). The activating effect reads
 			// the updated value directly after link completes.
-			const sensor = createSensor<number>(
-				set => {
+			const sensor = createSensor<number>({
+				watched: set => {
 					set(10)
 					return () => {}
 				},
-				{ value: 0 },
-			)
+				value: 0,
+			})
 
 			const doubled = createMemo(() => sensor.get() * 2)
 
@@ -91,10 +99,12 @@ describe('Sensor', () => {
 	describe('set callback', () => {
 		test('should update value and trigger effects', () => {
 			let setFn!: (v: number) => void
-			const sensor = createSensor<number>(set => {
-				setFn = set
-				set(0)
-				return () => {}
+			const sensor = createSensor<number>({
+				watched: set => {
+					setFn = set
+					set(0)
+					return () => {}
+				},
 			})
 
 			let effectCount = 0
@@ -114,10 +124,12 @@ describe('Sensor', () => {
 
 		test('should notify multiple effects', () => {
 			let setFn!: (v: string) => void
-			const sensor = createSensor<string>(set => {
-				setFn = set
-				set('initial')
-				return () => {}
+			const sensor = createSensor<string>({
+				watched: set => {
+					setFn = set
+					set('initial')
+					return () => {}
+				},
 			})
 
 			const mock1 = mock(() => {})
@@ -146,16 +158,18 @@ describe('Sensor', () => {
 			let counter = 0
 			let intervalId: Timer | undefined
 
-			const sensor = createSensor<number>(set => {
-				set(0)
-				intervalId = setInterval(() => {
-					counter++
-					set(counter)
-				}, 10)
-				return () => {
-					clearInterval(intervalId)
-					intervalId = undefined
-				}
+			const sensor = createSensor<number>({
+				watched: set => {
+					set(0)
+					intervalId = setInterval(() => {
+						counter++
+						set(counter)
+					}, 10)
+					return () => {
+						clearInterval(intervalId)
+						intervalId = undefined
+					}
+				},
 			})
 
 			expect(counter).toBe(0)
@@ -183,12 +197,14 @@ describe('Sensor', () => {
 			let startCount = 0
 			let cleanupCount = 0
 
-			const sensor = createSensor<number>(set => {
-				startCount++
-				set(1)
-				return () => {
-					cleanupCount++
-				}
+			const sensor = createSensor<number>({
+				watched: set => {
+					startCount++
+					set(1)
+					return () => {
+						cleanupCount++
+					}
+				},
 			})
 
 			const dispose1 = createEffect(() => {
@@ -212,12 +228,14 @@ describe('Sensor', () => {
 			let startCount = 0
 			let cleanupCount = 0
 
-			const sensor = createSensor<number>(set => {
-				startCount++
-				set(startCount)
-				return () => {
-					cleanupCount++
-				}
+			const sensor = createSensor<number>({
+				watched: set => {
+					startCount++
+					set(startCount)
+					return () => {
+						cleanupCount++
+					}
+				},
 			})
 
 			const dispose1 = createEffect(() => {
@@ -243,10 +261,12 @@ describe('Sensor', () => {
 	describe('options.equals', () => {
 		test('should skip update when value is equal by default', () => {
 			let setFn!: (v: number) => void
-			const sensor = createSensor<number>(set => {
-				setFn = set
-				set(5)
-				return () => {}
+			const sensor = createSensor<number>({
+				watched: set => {
+					setFn = set
+					set(5)
+					return () => {}
+				},
 			})
 
 			let effectCount = 0
@@ -265,14 +285,14 @@ describe('Sensor', () => {
 
 		test('should use custom equality function', () => {
 			let setFn!: (v: { x: number }) => void
-			const sensor = createSensor<{ x: number }>(
-				set => {
+			const sensor = createSensor<{ x: number }>({
+				watched: set => {
 					setFn = set
 					set({ x: 1 })
 					return () => {}
 				},
-				{ equals: (a, b) => a?.x === b?.x },
-			)
+				equals: (a, b) => a?.x === b?.x,
+			})
 
 			let effectCount = 0
 			createEffect(() => {
@@ -292,14 +312,14 @@ describe('Sensor', () => {
 	describe('options.guard', () => {
 		test('should validate values from set callback', () => {
 			let setFn!: (v: number) => void
-			const sensor = createSensor<number>(
-				set => {
+			const sensor = createSensor<number>({
+				watched: set => {
 					setFn = set
 					set(1)
 					return () => {}
 				},
-				{ guard: (v): v is number => typeof v === 'number' && v > 0 },
-			)
+				guard: (v): v is number => typeof v === 'number' && v > 0,
+			})
 
 			createEffect(() => {
 				sensor.get()
@@ -313,7 +333,10 @@ describe('Sensor', () => {
 
 	describe('options.value', () => {
 		test('should use initial value before activation', () => {
-			const sensor = createSensor<number>(() => () => {}, { value: 99 })
+			const sensor = createSensor<number>({
+				watched: () => () => {},
+				value: 99,
+			})
 
 			let received: number | undefined
 			createEffect(() => {
@@ -331,13 +354,14 @@ describe('Sensor', () => {
 
 		test('should return the reference value from get()', () => {
 			const obj = { name: 'test' }
-			const sensor = createSensor<typeof obj>(
-				set => {
+			const sensor = createSensor<typeof obj>({
+				watched: set => {
 					set(obj)
 					return () => {}
 				},
-				{ value: obj, equals: SKIP_EQUALITY },
-			)
+				value: obj,
+				equals: SKIP_EQUALITY,
+			})
 
 			let received: typeof obj | undefined
 			const dispose = createEffect(() => {
@@ -351,14 +375,14 @@ describe('Sensor', () => {
 			const obj = { status: 'offline' }
 			let setFn!: (next: typeof obj) => void
 
-			const sensor = createSensor<typeof obj>(
-				set => {
+			const sensor = createSensor<typeof obj>({
+				watched: set => {
 					setFn = set
 					set(obj)
 					return () => {}
 				},
-				{ equals: SKIP_EQUALITY },
-			)
+				equals: SKIP_EQUALITY,
+			})
 
 			let effectCount = 0
 			let lastStatus = ''
@@ -382,14 +406,14 @@ describe('Sensor', () => {
 			const obj = { size: 100 }
 			let setFn!: (next: typeof obj) => void
 
-			const sensor = createSensor<typeof obj>(
-				set => {
+			const sensor = createSensor<typeof obj>({
+				watched: set => {
 					setFn = set
 					set(obj)
 					return () => {}
 				},
-				{ equals: SKIP_EQUALITY },
-			)
+				equals: SKIP_EQUALITY,
+			})
 
 			const callback = mock(() => {})
 			createEffect(() => {
@@ -409,14 +433,14 @@ describe('Sensor', () => {
 		test('should validate values passed through set()', () => {
 			let setFn!: (next: unknown) => void
 
-			const sensor = createSensor<{ x: number }>(
-				set => {
+			const sensor = createSensor<{ x: number }>({
+				watched: set => {
 					setFn = set as (next: unknown) => void
 					set({ x: 1 })
 					return () => {}
 				},
-				{ equals: SKIP_EQUALITY },
-			)
+				equals: SKIP_EQUALITY,
+			})
 
 			createEffect(() => {
 				sensor.get()
@@ -433,21 +457,21 @@ describe('Sensor', () => {
 		test('should throw InvalidCallbackError for non-function start', () => {
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
-				createSensor(null)
+				createSensor({ watched: null })
 			}).toThrow('[createSensor] Callback null is invalid')
 		})
 
 		test('should throw InvalidCallbackError for async start callback', () => {
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
-				createSensor(async () => () => {})
+				createSensor({ watched: async () => () => {} })
 			}).toThrow()
 		})
 
 		test('should throw NullishSignalValueError for null initial value', () => {
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
-				createSensor<number>(() => () => {}, { value: null })
+				createSensor<number>({ watched: () => () => {}, value: null })
 			}).toThrow('[createSensor] Signal value cannot be null or undefined')
 		})
 	})

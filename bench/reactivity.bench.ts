@@ -419,10 +419,12 @@ group('Task: resolve propagation', () => {
 group('Sensor: create + update (with equality)', () => {
 	bench('cause-effect', () => {
 		let setFn: (v: number) => void
-		const sensor = createSensor<number>(set => {
-			setFn = set
-			set(0)
-			return () => {}
+		const sensor = createSensor<number>({
+			watched: set => {
+				setFn = set
+				set(0)
+				return () => {}
+			},
 		})
 		createEffect(() => {
 			sensor.get()
@@ -438,14 +440,15 @@ group('Sensor: create + update (SKIP_EQUALITY)', () => {
 	bench('cause-effect', () => {
 		const obj = { x: 0 }
 		let setFn: (v: typeof obj) => void
-		const sensor = createSensor<typeof obj>(
-			set => {
+		const sensor = createSensor<typeof obj>({
+			watched: set => {
 				setFn = set
 				set(obj)
 				return () => {}
 			},
-			{ value: obj, equals: SKIP_EQUALITY },
-		)
+			value: obj,
+			equals: SKIP_EQUALITY,
+		})
 		createEffect(() => {
 			sensor.get()
 		})
@@ -673,13 +676,13 @@ group(
 	() => {
 		type Item = { id: string }
 		let apply!: (changes: { add?: Item[]; remove?: Item[] }) => void
-		const col = createCollection<Item>(
-			applyChanges => {
+		const col = createCollection<Item>({
+			watched: applyChanges => {
 				apply = applyChanges
 				return () => {}
 			},
-			{ keyConfig: (item: Item) => item.id },
-		)
+			keyConfig: (item: Item) => item.id,
+		})
 		createEffect(() => {
 			col.get()
 		})
@@ -770,10 +773,12 @@ group('Sensor: 10-sensor fan-in (1 effect)', () => {
 	for (let i = 0; i < 10; i++) {
 		const idx = i
 		sensors.push(
-			createSensor<number>(set => {
-				setterMap.set(idx, set)
-				set(idx)
-				return () => {}
+			createSensor<number>({
+				watched: set => {
+					setterMap.set(idx, set)
+					set(idx)
+					return () => {}
+				},
 			}),
 		)
 	}
@@ -792,10 +797,12 @@ group('Sensor: 10-sensor fan-in (1 effect)', () => {
 
 group('Sensor: 1 sensor → 10 effects fanout', () => {
 	let setter!: (v: number) => void
-	const sensor = createSensor<number>(set => {
-		setter = set
-		set(0)
-		return () => {}
+	const sensor = createSensor<number>({
+		watched: set => {
+			setter = set
+			set(0)
+			return () => {}
+		},
 	})
 	for (let i = 0; i < 10; i++) {
 		createEffect(() => {

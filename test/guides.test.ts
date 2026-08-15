@@ -328,13 +328,15 @@ describe('Guide: Custom Elements and External Lifecycles', () => {
 		let started = false
 		let stopped = false
 		let push!: (v: boolean) => void
-		const sensor = createSensor<boolean>(set => {
-			started = true
-			push = set
-			push(true)
-			return () => {
-				stopped = true
-			}
+		const sensor = createSensor<boolean>({
+			watched: set => {
+				started = true
+				push = set
+				push(true)
+				return () => {
+					stopped = true
+				}
+			},
 		})
 		expect(started).toBe(false) // lazy — not started until first subscriber
 		const log: boolean[] = []

@@ -113,11 +113,13 @@ declare function deriveCollection<T extends {}, U extends {}>(source: Collection
  * option carries over unchanged.
  *
  * @since 0.18.0
- * @param watched - Callback that runs when the collection becomes watched. Receives the applyChanges helper.
- * @param options - Optional configuration including initial value, key generation, and item signal creation
+ * @param options - Configuration including the watched lifecycle, initial value, key generation, and item signal creation
+ * @param options.watched - Callback that runs when the collection becomes watched. Receives the applyChanges helper.
  * @returns A read-only List signal
  */
-declare function createCollection<T extends {}, S extends Signal<T> = Signal<T>>(watched: CollectionCallback<T>, options?: CollectionOptions<T, S>): List<T, S>;
+declare function createCollection<T extends {}, S extends Signal<T> = Signal<T>>(options: CollectionOptions<T, S> & {
+    watched: CollectionCallback<T>;
+}): List<T, S>;
 /**
  * Creates a read-only keyed sequence from any origin.
  *

@@ -21,7 +21,10 @@ const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 describe('Collection', () => {
 	describe('createCollection', () => {
 		test('should create a collection with initial values', () => {
-			const col = createCollection(() => () => {}, { value: [1, 2, 3] })
+			const col = createCollection({
+				watched: () => () => {},
+				value: [1, 2, 3],
+			})
 
 			expect(col.get()).toEqual([1, 2, 3])
 			expect(col.length).toBe(3)
@@ -29,24 +32,25 @@ describe('Collection', () => {
 		})
 
 		test('should create an empty collection', () => {
-			const col = createCollection<number>(() => () => {})
+			const col = createCollection<number>({ watched: () => () => {} })
 
 			expect(col.get()).toEqual([])
 			expect(col.length).toBe(0)
 		})
 
 		test('should have Symbol.toStringTag of "List"', () => {
-			const col = createCollection(() => () => {}, { value: [1] })
+			const col = createCollection({ watched: () => () => {}, value: [1] })
 			expect(col[Symbol.toStringTag]).toBe('List')
 		})
 
 		test('should have Symbol.isConcatSpreadable set to true', () => {
-			const col = createCollection(() => () => {}, { value: [1] })
+			const col = createCollection({ watched: () => () => {}, value: [1] })
 			expect(col[Symbol.isConcatSpreadable]).toBe(true)
 		})
 
 		test('should support at(), byKey(), keyAt(), indexOfKey()', () => {
-			const col = createCollection(() => () => {}, {
+			const col = createCollection({
+				watched: () => () => {},
 				value: [
 					{ id: 'a', name: 'Alice' },
 					{ id: 'b', name: 'Bob' },
@@ -64,7 +68,8 @@ describe('Collection', () => {
 		})
 
 		test('should support iteration', () => {
-			const col = createCollection(() => () => {}, {
+			const col = createCollection({
+				watched: () => () => {},
 				value: [10, 20, 30],
 			})
 
@@ -74,7 +79,8 @@ describe('Collection', () => {
 		})
 
 		test('should support custom key config with string prefix', () => {
-			const col = createCollection(() => () => {}, {
+			const col = createCollection({
+				watched: () => () => {},
 				value: [10, 20],
 				keyConfig: 'item-',
 			})
@@ -87,7 +93,8 @@ describe('Collection', () => {
 
 		test('should support custom createItem factory', () => {
 			let guardCalled = false
-			const col = createCollection(() => () => {}, {
+			const col = createCollection({
+				watched: () => () => {},
 				value: [5, 10],
 				createItem: value =>
 					createState(value, {
@@ -105,7 +112,7 @@ describe('Collection', () => {
 
 	describe('isList', () => {
 		test('should identify collection signals', () => {
-			const col = createCollection(() => () => {}, { value: [1] })
+			const col = createCollection({ watched: () => () => {}, value: [1] })
 			expect(isList(col)).toBe(true)
 		})
 
@@ -121,15 +128,15 @@ describe('Collection', () => {
 			let started = false
 			let cleaned = false
 
-			const col = createCollection(
-				() => {
+			const col = createCollection({
+				watched: () => {
 					started = true
 					return () => {
 						cleaned = true
 					}
 				},
-				{ value: [1] },
-			)
+				value: [1],
+			})
 
 			expect(started).toBe(false)
 
@@ -148,13 +155,13 @@ describe('Collection', () => {
 
 		test('should activate via keys() access in effect', () => {
 			let started = false
-			const col = createCollection(
-				() => {
+			const col = createCollection({
+				watched: () => {
 					started = true
 					return () => {}
 				},
-				{ value: [1] },
-			)
+				value: [1],
+			})
 
 			expect(started).toBe(false)
 
@@ -173,9 +180,11 @@ describe('Collection', () => {
 	describe('applyChanges', () => {
 		test('should add items', () => {
 			let apply: ((changes: CollectionChanges<number>) => void) | undefined
-			const col = createCollection<number>(applyChanges => {
-				apply = applyChanges
-				return () => {}
+			const col = createCollection<number>({
+				watched: applyChanges => {
+					apply = applyChanges
+					return () => {}
+				},
 			})
 
 			const values: number[][] = []
@@ -201,16 +210,14 @@ describe('Collection', () => {
 			let apply:
 				| ((changes: CollectionChanges<{ id: string; val: number }>) => void)
 				| undefined
-			const col = createCollection(
-				applyChanges => {
+			const col = createCollection({
+				watched: applyChanges => {
 					apply = applyChanges
 					return () => {}
 				},
-				{
-					value: [{ id: 'x', val: 1 }],
-					keyConfig: item => item.id,
-				},
-			)
+				value: [{ id: 'x', val: 1 }],
+				keyConfig: item => item.id,
+			})
 
 			const values: { id: string; val: number }[][] = []
 			const dispose = createScope(() => {
@@ -234,20 +241,18 @@ describe('Collection', () => {
 			let apply:
 				| ((changes: CollectionChanges<{ id: string; v: number }>) => void)
 				| undefined
-			const col = createCollection(
-				applyChanges => {
+			const col = createCollection({
+				watched: applyChanges => {
 					apply = applyChanges
 					return () => {}
 				},
-				{
-					value: [
-						{ id: 'a', v: 1 },
-						{ id: 'b', v: 2 },
-						{ id: 'c', v: 3 },
-					],
-					keyConfig: item => item.id,
-				},
-			)
+				value: [
+					{ id: 'a', v: 1 },
+					{ id: 'b', v: 2 },
+					{ id: 'c', v: 3 },
+				],
+				keyConfig: item => item.id,
+			})
 
 			const values: { id: string; v: number }[][] = []
 			const dispose = createScope(() => {
@@ -279,19 +284,17 @@ describe('Collection', () => {
 			let apply:
 				| ((changes: CollectionChanges<{ id: string; v: number }>) => void)
 				| undefined
-			const col = createCollection(
-				applyChanges => {
+			const col = createCollection({
+				watched: applyChanges => {
 					apply = applyChanges
 					return () => {}
 				},
-				{
-					value: [
-						{ id: 'a', v: 1 },
-						{ id: 'b', v: 2 },
-					],
-					keyConfig: item => item.id,
-				},
-			)
+				value: [
+					{ id: 'a', v: 1 },
+					{ id: 'b', v: 2 },
+				],
+				keyConfig: item => item.id,
+			})
 
 			const values: { id: string; v: number }[][] = []
 			const dispose = createScope(() => {
@@ -318,13 +321,13 @@ describe('Collection', () => {
 
 		test('should skip when no changes provided', () => {
 			let apply: ((changes: CollectionChanges<number>) => void) | undefined
-			const col = createCollection(
-				applyChanges => {
+			const col = createCollection({
+				watched: applyChanges => {
 					apply = applyChanges
 					return () => {}
 				},
-				{ value: [1] },
-			)
+				value: [1],
+			})
 
 			let callCount = 0
 			const dispose = createScope(() => {
@@ -346,9 +349,11 @@ describe('Collection', () => {
 
 		test('should trigger effects on structural changes', () => {
 			let apply: ((changes: CollectionChanges<string>) => void) | undefined
-			const col = createCollection<string>(applyChanges => {
-				apply = applyChanges
-				return () => {}
+			const col = createCollection<string>({
+				watched: applyChanges => {
+					apply = applyChanges
+					return () => {}
+				},
 			})
 
 			let effectCount = 0
@@ -372,9 +377,11 @@ describe('Collection', () => {
 
 		test('should batch multiple calls', () => {
 			let apply: ((changes: CollectionChanges<number>) => void) | undefined
-			const col = createCollection<number>(applyChanges => {
-				apply = applyChanges
-				return () => {}
+			const col = createCollection<number>({
+				watched: applyChanges => {
+					apply = applyChanges
+					return () => {}
+				},
 			})
 
 			let effectCount = 0
@@ -403,13 +410,13 @@ describe('Collection', () => {
 		test('should throw DuplicateKeyError when add produces a duplicate key', () => {
 			type Item = { id: string; v: number }
 			let apply: ((changes: CollectionChanges<Item>) => void) | undefined
-			const col = createCollection<Item>(
-				applyChanges => {
+			const col = createCollection<Item>({
+				watched: applyChanges => {
 					apply = applyChanges
 					return () => {}
 				},
-				{ keyConfig: item => item.id },
-			)
+				keyConfig: item => item.id,
+			})
 
 			const dispose = createScope(() => {
 				createEffect(() => {
@@ -435,13 +442,14 @@ describe('Collection', () => {
 		test('should throw DuplicateKeyError when adding a key that already exists', () => {
 			type Item = { id: string; v: number }
 			let apply: ((changes: CollectionChanges<Item>) => void) | undefined
-			const col = createCollection<Item>(
-				applyChanges => {
+			const col = createCollection<Item>({
+				watched: applyChanges => {
 					apply = applyChanges
 					return () => {}
 				},
-				{ value: [{ id: 'a', v: 1 }], keyConfig: item => item.id },
-			)
+				value: [{ id: 'a', v: 1 }],
+				keyConfig: item => item.id,
+			})
 
 			const dispose = createScope(() => {
 				createEffect(() => {
@@ -465,13 +473,13 @@ describe('Collection', () => {
 			// mutation happens.
 			type Item = { id: string; v: number }
 			let apply: ((changes: CollectionChanges<Item>) => void) | undefined
-			const col = createCollection<Item>(
-				applyChanges => {
+			const col = createCollection<Item>({
+				watched: applyChanges => {
 					apply = applyChanges
 					return () => {}
 				},
-				{ keyConfig: item => item.id },
-			)
+				keyConfig: item => item.id,
+			})
 
 			const dispose = createScope(() => {
 				createEffect(() => {
@@ -502,13 +510,14 @@ describe('Collection', () => {
 		test('byKey() tracks structural changes (add/remove)', () => {
 			type Item = { id: string; v: number }
 			let apply: ((changes: CollectionChanges<Item>) => void) | undefined
-			const col = createCollection<Item>(
-				applyChanges => {
+			const col = createCollection<Item>({
+				watched: applyChanges => {
 					apply = applyChanges
 					return () => {}
 				},
-				{ keyConfig: item => item.id, value: [{ id: 'a', v: 1 }] },
-			)
+				keyConfig: item => item.id,
+				value: [{ id: 'a', v: 1 }],
+			})
 			let effectCount = 0
 			const dispose = createScope(() => {
 				createEffect(() => {
@@ -530,13 +539,14 @@ describe('Collection', () => {
 		test('at(), keyAt(), indexOfKey() track structural changes', () => {
 			type Item = { id: string; v: number }
 			let apply: ((changes: CollectionChanges<Item>) => void) | undefined
-			const col = createCollection<Item>(
-				applyChanges => {
+			const col = createCollection<Item>({
+				watched: applyChanges => {
 					apply = applyChanges
 					return () => {}
 				},
-				{ keyConfig: item => item.id, value: [{ id: 'a', v: 1 }] },
-			)
+				keyConfig: item => item.id,
+				value: [{ id: 'a', v: 1 }],
+			})
 			let byAt = 0
 			let byKeyAt = 0
 			let byIndexOfKey = 0
@@ -569,13 +579,14 @@ describe('Collection', () => {
 		test('Symbol.iterator tracks structural changes', () => {
 			type Item = { id: string; v: number }
 			let apply: ((changes: CollectionChanges<Item>) => void) | undefined
-			const col = createCollection<Item>(
-				applyChanges => {
+			const col = createCollection<Item>({
+				watched: applyChanges => {
 					apply = applyChanges
 					return () => {}
 				},
-				{ keyConfig: item => item.id, value: [{ id: 'a', v: 1 }] },
-			)
+				keyConfig: item => item.id,
+				value: [{ id: 'a', v: 1 }],
+			})
 			let runs = 0
 			const dispose = createScope(() => {
 				createEffect(() => {
@@ -606,13 +617,14 @@ describe('Collection', () => {
 		test('applyChanges({ change }) inside an effect does not transiently re-run', () => {
 			type Item = { id: string; v: number }
 			let apply: ((changes: CollectionChanges<Item>) => void) | undefined
-			const col = createCollection<Item>(
-				applyChanges => {
+			const col = createCollection<Item>({
+				watched: applyChanges => {
 					apply = applyChanges
 					return () => {}
 				},
-				{ keyConfig: item => item.id, value: [{ id: 'a', v: 1 }] },
-			)
+				keyConfig: item => item.id,
+				value: [{ id: 'a', v: 1 }],
+			})
 
 			// Subscribe to activate the collection (triggers watched -> sets apply)
 			const dispose = createScope(() => {
@@ -643,27 +655,27 @@ describe('Collection', () => {
 		test('should throw InvalidCallbackError for non-function watched', () => {
 			expect(() => {
 				// @ts-expect-error - testing non-function
-				createCollection(42)
+				createCollection({ watched: 42 })
 			}).toThrow('Callback 42 is invalid')
 		})
 
 		test('should throw InvalidCallbackError for async watched', () => {
 			expect(() => {
 				// @ts-expect-error - testing async function
-				createCollection(async () => () => {})
+				createCollection({ watched: async () => () => {} })
 			}).toThrow('invalid')
 		})
 
 		test('applyChanges change for nonexistent key is silently skipped', () => {
 			type Item = { id: string; v: number }
 			let apply: ((changes: CollectionChanges<Item>) => void) | undefined
-			const col = createCollection<Item>(
-				applyChanges => {
+			const col = createCollection<Item>({
+				watched: applyChanges => {
 					apply = applyChanges
 					return () => {}
 				},
-				{ keyConfig: item => item.id },
-			)
+				keyConfig: item => item.id,
+			})
 			const dispose = createScope(() => {
 				createEffect(() => {
 					void col.get()
@@ -683,13 +695,14 @@ describe('Collection', () => {
 		test('applyChanges remove for nonexistent key is silently skipped', () => {
 			type Item = { id: string; v: number }
 			let apply: ((changes: CollectionChanges<Item>) => void) | undefined
-			const col = createCollection<Item>(
-				applyChanges => {
+			const col = createCollection<Item>({
+				watched: applyChanges => {
 					apply = applyChanges
 					return () => {}
 				},
-				{ value: [{ id: 'a', v: 1 }], keyConfig: item => item.id },
-			)
+				value: [{ id: 'a', v: 1 }],
+				keyConfig: item => item.id,
+			})
 			const dispose = createScope(() => {
 				createEffect(() => {
 					void col.get()
@@ -874,7 +887,10 @@ describe('Collection', () => {
 		})
 
 		test('should chain from createCollection source', () => {
-			const col = createCollection(() => () => {}, { value: [1, 2, 3] })
+			const col = createCollection({
+				watched: () => () => {},
+				value: [1, 2, 3],
+			})
 			const doubled = col.deriveCollection((v: number) => v * 2)
 
 			expect(doubled.get()).toEqual([2, 4, 6])
@@ -1038,7 +1054,8 @@ describe('Collection', () => {
 test('Type Inference for custom createItem', () => {
 	// This test primarily checks compilation types but also runtime presence
 	type TodoItem = { id: string; text: string; done: boolean }
-	const col = createCollection(() => () => {}, {
+	const col = createCollection({
+		watched: () => () => {},
 		keyConfig: 'todo',
 		createItem: createStore<TodoItem>,
 	})
