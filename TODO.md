@@ -305,7 +305,7 @@ this one. On this branch, CE-021 is now gated only on CE-025 and CE-026 landing 
   is a pure backward-compatible widening. Superseded by **CE-033**, which does the actual bridge
   work; this task's `MIGRATION-2.0.md` edit is rewritten there. `NOTES.md` entry deleted.
 
-- [ ] CE-033: Back-port `ListSource`/`ListCallback`/`ListChanges`/`PerItemCallback` bridge names
+- [x] CE-033: Back-port `ListSource`/`ListCallback`/`ListChanges`/`PerItemCallback` bridge names — done, pending review ⏳
   **Skill:** cause-effect-dev
   **Context:** Reverses CE-031's initial "accept the rename at 2.0" call for the five `Collection`
   auxiliary types that block on `CollectionOptions` alone (see CE-031's Review note above for the
@@ -348,6 +348,39 @@ this one. On this branch, CE-021 is now gated only on CE-025 and CE-026 landing 
   cases for the new rename rules. Confirm zero bundle-size delta (type-only change) — if the
   regression test shows any movement, something unexpected happened; investigate before shipping.
   Blocks npm publish of 1.5.0 alongside CE-030/CE-031/CE-032 (all otherwise reviewed and clear).
+  **Changed:** `src/nodes/collection.ts` (`ListSource`/`ListCallback`/`ListChanges`/
+  `PerItemCallback` introduced as the real names; `CollectionSource`/`CollectionCallback`/
+  `CollectionChanges`/`DeriveCollectionCallback` now `@deprecated` aliases of them;
+  `DeriveCollectionOptions` folded into `DeriveListOptions` and marked `@deprecated`;
+  `deriveCollection`, `collectionFacade`, `keyedAdapter`, and `deriveList`'s own overloads all
+  migrated onto the four new names internally), `src/nodes/list.ts` (`MutableList`'s
+  `.deriveCollection()` method migrated onto `ListSource`/`PerItemCallback`), `index.ts` (+4
+  exports), `tools/codemod-v2.ts` (4 new `RENAMES` entries, import-sync list, header table;
+  `DeriveCollectionOptions` deliberately gets no rule — a fold, not a rename), `test/codemod-v2.test.ts`
+  (3 new tests; fixed the pre-existing "leaves longer names alone" test, which used
+  `CollectionCallback` as its own example of an untouched name — no longer true after this task,
+  swapped to `DeriveCollectionOptions`), `test/v2-transition.test.ts` (4 new round-trip tests),
+  `MIGRATION-2.0.md` (4 bridge-table rows added; the placeholder "not yet bridged" note from
+  CE-031's review replaced; `DeriveCollectionOptions`'s manual-rename note kept, now alone),
+  `CHANGELOG.md` (`## [Unreleased]` entries appended), `types/` regenerated.
+  **How:** Confirmed every shape against `v2/shape-exploration:src/nodes/list.ts` before touching
+  code, per the task's own instruction not to trust its summary. One correction the read
+  surfaced: `DeriveCollectionOptions`'s fold isn't a `Pick<DeriveListOptions, ...>` indirection —
+  simpler to keep its 2-field literal shape duplicated (as it already was) and inline
+  `keyConfig`/`itemEquals` directly into the now-unified `DeriveListOptions`, matching v2's own
+  flattening rather than modeling it through a type-level derivation. `deriveList`'s per-item
+  overloads now type their `options` param as `DeriveListOptions<U>` (widened from
+  `DeriveCollectionOptions<U>`) — confirmed this required no call-site changes, since every field
+  the narrower type had, the wider one already has. Also migrated `MutableList`'s
+  `.deriveCollection()` method (in `list.ts`) onto the new names even though the method itself
+  stays deprecated (CE-026) — a deprecated method referencing a deprecated type wasn't a
+  correctness problem, but using the current names throughout `src/` matches CE-016's own stated
+  convention and cost nothing.
+  **Verified:** `bun run check` green — 658/658 tests (7 new: 4 round-trip + 3 codemod), `tsc
+  --noEmit` clean, bundle 24060 B min / 8299 B gz / 2481 B core — byte-for-byte identical to
+  CE-032's figures, confirming the predicted zero bundle-size delta. `types/` regenerated from a
+  clean `tsc --project tsconfig.build.json`; diff matches the four new exports exactly, nothing
+  unexpected.
 
 - [x] CE-032: Back-port `deriveSignal` and deprecate `createComputed`/`createMutableSignal` — reviewed ✓
   **Skill:** cause-effect-dev

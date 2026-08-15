@@ -3,21 +3,26 @@
  *
  * Every rewrite is meaning-preserving: the new names denote exactly what the old
  * names denote in 1.x. What the codemod cannot decide — read-only `List<T>`
- * positions, origin guards, the `createSignal` shape coercion — stays untouched
- * and is covered by `MIGRATION-2.0.md`.
+ * positions, origin guards, the `createSignal` shape coercion, `DeriveCollectionOptions`
+ * (folded into `DeriveListOptions`, not renamed) — stays untouched and is covered by
+ * `MIGRATION-2.0.md`.
  *
- * Renames (exact identifier match only — `ListOptions`, `CollectionCallback` etc.
+ * Renames (exact identifier match only — `ListOptions`, `DeriveListOptions` etc.
  * are distinct symbols and are left alone):
  *
- * | Before                     | After                        |
- * |----------------------------|------------------------------|
- * | `List<T>`                  | `MutableList<T>`             |
- * | `isList(x)`                | `isMutableList(x)`           |
- * | `Collection<T>`            | `DerivedList<T>`             |
- * | `isCollection(x)`          | `isDerivedList(x)`           |
- * | `createCollection(cb, o?)` | `deriveList(seed, { ... })`  |
- * | `Store<T>`                 | `MutableStore<T>`            |
- * | `isStore(x)`               | `isMutableStore(x)`          |
+ * | Before                        | After                        |
+ * |-------------------------------|------------------------------|
+ * | `List<T>`                     | `MutableList<T>`             |
+ * | `isList(x)`                   | `isMutableList(x)`           |
+ * | `Collection<T>`               | `DerivedList<T>`             |
+ * | `isCollection(x)`             | `isDerivedList(x)`           |
+ * | `createCollection(cb, o?)`    | `deriveList(seed, { ... })`  |
+ * | `Store<T>`                    | `MutableStore<T>`            |
+ * | `isStore(x)`                  | `isMutableStore(x)`          |
+ * | `CollectionSource<T>`         | `ListSource<T>`              |
+ * | `CollectionCallback<T>`       | `ListCallback<T>`            |
+ * | `CollectionChanges<T>`        | `ListChanges<T>`             |
+ * | `DeriveCollectionCallback<T>` | `PerItemCallback<T>`         |
  *
  * `--module` limits which import declarations are updated (a substring match on
  * the module specifier). It defaults to `cause-effect`.
@@ -57,6 +62,10 @@ const RENAMES = new Map([
 	['isCollection', 'isDerivedList'],
 	['Store', 'MutableStore'],
 	['isStore', 'isMutableStore'],
+	['CollectionSource', 'ListSource'],
+	['CollectionCallback', 'ListCallback'],
+	['CollectionChanges', 'ListChanges'],
+	['DeriveCollectionCallback', 'PerItemCallback'],
 ])
 
 // Positions where an identifier names something (a member, a declaration)
@@ -177,6 +186,10 @@ function syncImports(file: SourceFile, module: string): void {
 		'deriveList',
 		'MutableStore',
 		'isMutableStore',
+		'ListSource',
+		'ListCallback',
+		'ListChanges',
+		'PerItemCallback',
 	]) {
 		if (!used.has(named)) continue
 		const existing = declaration
@@ -243,7 +256,7 @@ function migrateSource(
 	}
 	if (skippedOwnNames)
 		report.needsManualReview.push(
-			`${skippedOwnNames} occurrence(s) of List/Collection/Store name the file's own member or declaration and were not renamed — verify no reference to them was renamed by mistake`,
+			`${skippedOwnNames} occurrence(s) of a renamed identifier (List/Collection/Store/CollectionSource/CollectionCallback/CollectionChanges/DeriveCollectionCallback) name the file's own member or declaration and were not renamed — verify no reference to them was renamed by mistake`,
 		)
 
 	// A blanket `List → MutableList` rewrite preserves the 1.x meaning but also

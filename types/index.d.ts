@@ -5,7 +5,7 @@
  */
 export { CircularDependencyError, DuplicateKeyError, EffectConvergenceError, type Guard, InvalidCallbackError, InvalidSignalValueError, InvalidStoreMutationError, NullishSignalValueError, PromiseValueError, ReadonlySignalError, RequiredOwnerError, UnsetSignalValueError, } from './src/errors';
 export { abort, batch, type Cleanup, type ComputedOptions, createScope, DEEP_EQUALITY, DEFAULT_EQUALITY, type EffectCallback, isEqual, isPending, type MaybeCleanup, type MemoCallback, type ScopeOptions, type Signal, type SignalOptions, SKIP_EQUALITY, type TaskCallback, unown, untrack, } from './src/graph';
-export { type Collection, type CollectionCallback, type CollectionChanges, type CollectionOptions, type CollectionSource, createCollection, type DeriveCollectionCallback, type DeriveCollectionOptions, type DerivedList, type DeriveListOptions, deriveList, isCollection, isDerivedList, } from './src/nodes/collection';
+export { type Collection, type CollectionCallback, type CollectionChanges, type CollectionOptions, type CollectionSource, createCollection, type DeriveCollectionCallback, type DeriveCollectionOptions, type DerivedList, type DeriveListOptions, deriveList, isCollection, isDerivedList, type ListCallback, type ListChanges, type ListSource, type PerItemCallback, } from './src/nodes/collection';
 export { createEffect, type MatchHandlers, type MaybePromise, match, type SingleMatchHandlers, } from './src/nodes/effect';
 export { createList, isList, isMutableList, type KeyConfig, type List, type ListOptions, type MutableList, } from './src/nodes/list';
 export { createMemo, isMemo, type Memo } from './src/nodes/memo';

@@ -43,18 +43,29 @@ import { createTask } from './task'
 /* === Types === */
 
 /**
- * A source `deriveCollection` can key and derive from.
+ * A source `deriveList`/`deriveCollection` can key and derive from.
  *
  * A `MutableList` or `DerivedList` is already keyed, and its stable keys are used directly.
  * Any other `Signal<T[]>` — a `Memo`, a `Task`, a `State`, a `Slot` — is keyed on read
  * by the adapter, which is what lets an asynchronous array become a keyed collection.
  *
+ * The name this type carries toward v2.0 — terminal vocabulary, unlike `DerivedList`, which
+ * renames again at that boundary. `CollectionSource` is a deprecated alias of it.
+ *
  * @template T - The type of items in the source
  */
-type CollectionSource<T extends {}> =
-	| MutableList<T>
-	| DerivedList<T>
-	| Signal<T[]>
+type ListSource<T extends {}> = MutableList<T> | DerivedList<T> | Signal<T[]>
+
+/**
+ * A source `deriveCollection` can key and derive from, under its v1 name.
+ *
+ * @deprecated `CollectionSource` is removed in v2.0 — use `ListSource` instead (same type, same
+ * behavior; this is the terminal 2.0 name). See
+ * [ADR-0018](../../adr/0018-shape-indexed-signal-types.md) and `MIGRATION-2.0.md`.
+ *
+ * @template T - The type of items in the source
+ */
+type CollectionSource<T extends {}> = ListSource<T>
 
 /**
  * The minimal keyed interface `deriveCollection` consumes from its source.
@@ -68,10 +79,34 @@ type KeyedSource<T extends {}> = {
 }
 
 /**
- * Configuration options for `deriveCollection`.
+ * Configuration options for `deriveList`.
  *
- * Both options apply only when the source is a plain `Signal<T[]>`. A `List` or
- * `Collection` source carries its own keys and item equality already.
+ * `keyConfig` and `itemEquals` apply only when the source is a plain `Signal<T[]>` — a `List`
+ * or `Collection` source carries its own keys and item equality already. Folds what 1.x split
+ * across `DeriveCollectionOptions` and `DeriveListOptions` into one shape, matching v2.0.
+ *
+ * @template T - The type of items in the derived sequence
+ */
+type DeriveListOptions<T extends {}> = {
+	/** Key generation strategy for an unkeyed source. See `KeyConfig`. Defaults to positional keys. */
+	keyConfig?: KeyConfig<T>
+	/** Equality function for adapted per-item signals. Defaults to deep equality. */
+	itemEquals?: (a: T, b: T) => boolean
+	/** Seed value for an asynchronous derivation. Keeps the sequence readable before the first resolution. */
+	initial?: T[]
+	/** Lifecycle callback for an external-push origin. Required when `input` is a seed array. */
+	watched?: ListCallback<T>
+	/** Factory for per-item signals in the external-push form. Defaults to `createState`. */
+	createItem?: (value: T) => Signal<T>
+}
+
+/**
+ * Configuration options for `deriveCollection`'s unkeyed-source case, under their v1 name.
+ *
+ * @deprecated Folded into `DeriveListOptions` in v2.0 — no separate name survives. Use
+ * `DeriveListOptions` instead (same fields, plus `initial`/`watched`/`createItem`, all
+ * optional). See [ADR-0018](../../adr/0018-shape-indexed-signal-types.md) and
+ * `MIGRATION-2.0.md`.
  *
  * @template T - The type of items in the source
  */
@@ -83,30 +118,34 @@ type DeriveCollectionOptions<T extends {}> = {
 }
 
 /**
- * Configuration options for `deriveList`.
- *
- * @template T - The type of items in the derived sequence
- */
-type DeriveListOptions<T extends {}> = DeriveCollectionOptions<T> & {
-	/** Seed value for an asynchronous derivation. Keeps the sequence readable before the first resolution. */
-	initial?: T[]
-	/** Lifecycle callback for an external-push origin. Required when `input` is a seed array. */
-	watched?: CollectionCallback<T>
-	/** Factory for per-item signals in the external-push form. Defaults to `createState`. */
-	createItem?: (value: T) => Signal<T>
-}
-
-/**
- * Transformation callback for `deriveCollection`, either sync or async.
+ * Transformation callback for the per-item derivation, either sync or async.
  * A sync callback produces a `Memo<T>` per item. An async callback produces a `Task<T>`
  * per item, which cancels when the source item changes.
+ *
+ * The name this type carries toward v2.0 — terminal vocabulary. `DeriveCollectionCallback`
+ * is a deprecated alias of it.
  *
  * @template T - The type of derived items
  * @template U - The type of source items
  */
-type DeriveCollectionCallback<T extends {}, U extends {}> =
+type PerItemCallback<T extends {}, U extends {}> =
 	| ((sourceValue: U) => T)
 	| ((sourceValue: U, abort: AbortSignal) => Promise<T>)
+
+/**
+ * Transformation callback for `deriveCollection`, under its v1 name.
+ *
+ * @deprecated `DeriveCollectionCallback` is removed in v2.0 — use `PerItemCallback` instead
+ * (same type, same behavior; this is the terminal 2.0 name). See
+ * [ADR-0018](../../adr/0018-shape-indexed-signal-types.md) and `MIGRATION-2.0.md`.
+ *
+ * @template T - The type of derived items
+ * @template U - The type of source items
+ */
+type DeriveCollectionCallback<T extends {}, U extends {}> = PerItemCallback<
+	T,
+	U
+>
 
 /**
  * A read-only reactive keyed sequence with per-item reactivity.
@@ -158,11 +197,14 @@ type Collection<T extends {}, S extends Signal<T> = Signal<T>> = DerivedList<
 >
 
 /**
- * Granular mutation descriptor passed to the `applyChanges` callback inside a `CollectionCallback`.
+ * Granular mutation descriptor passed to the `applyChanges` callback inside a `ListCallback`.
+ *
+ * The name this type carries toward v2.0 — terminal vocabulary. `CollectionChanges` is a
+ * deprecated alias of it.
  *
  * @template T - The type of items in the collection
  */
-type CollectionChanges<T> = {
+type ListChanges<T> = {
 	/** Items to add. Each item is assigned a new key via the configured `keyConfig`. */
 	add?: T[]
 	/** Items whose values have changed. Matched to existing entries by key. */
@@ -170,6 +212,17 @@ type CollectionChanges<T> = {
 	/** Items to remove. Matched to existing entries by key. */
 	remove?: T[]
 }
+
+/**
+ * Granular mutation descriptor, under its v1 name.
+ *
+ * @deprecated `CollectionChanges` is removed in v2.0 — use `ListChanges` instead (same type,
+ * same behavior; this is the terminal 2.0 name). See
+ * [ADR-0018](../../adr/0018-shape-indexed-signal-types.md) and `MIGRATION-2.0.md`.
+ *
+ * @template T - The type of items in the collection
+ */
+type CollectionChanges<T> = ListChanges<T>
 
 /**
  * Configuration options for `createCollection`.
@@ -192,16 +245,31 @@ type CollectionOptions<T extends {}, S extends Signal<T> = Signal<T>> = {
 }
 
 /**
- * Setup callback for `createCollection`. Runs when the collection becomes watched.
- * Receives an `applyChanges` function to push granular mutations into the graph.
+ * Setup callback for the external-push origin: `createCollection` and the seed-array form
+ * of `deriveList`. Runs when the sequence becomes watched. Receives an `applyChanges`
+ * function to push granular mutations into the graph.
+ *
+ * The name this type carries toward v2.0 — terminal vocabulary. `CollectionCallback` is a
+ * deprecated alias of it.
  *
  * @template T - The type of items in the collection
- * @param apply - Call with a `CollectionChanges` object to add, update, or remove items
- * @returns A cleanup function that runs when the collection is no longer watched
+ * @param apply - Call with a `ListChanges` object to add, update, or remove items
+ * @returns A cleanup function that runs when the sequence is no longer watched
  */
-type CollectionCallback<T extends {}> = (
-	apply: (changes: CollectionChanges<T>) => void,
+type ListCallback<T extends {}> = (
+	apply: (changes: ListChanges<T>) => void,
 ) => Cleanup
+
+/**
+ * Setup callback for `createCollection`, under its v1 name.
+ *
+ * @deprecated `CollectionCallback` is removed in v2.0 — use `ListCallback` instead (same type,
+ * same behavior; this is the terminal 2.0 name). See
+ * [ADR-0018](../../adr/0018-shape-indexed-signal-types.md) and `MIGRATION-2.0.md`.
+ *
+ * @template T - The type of items in the collection
+ */
+type CollectionCallback<T extends {}> = ListCallback<T>
 
 /* === Functions === */
 
@@ -223,7 +291,7 @@ type CollectionCallback<T extends {}> = (
  */
 function keyedAdapter<T extends {}>(
 	source: Signal<T[]>,
-	options?: DeriveCollectionOptions<T>,
+	options?: DeriveListOptions<T>,
 ): KeyedSource<T> {
 	const [generateKey, contentBased] = getKeyGenerator(options?.keyConfig)
 	const itemEquals = options?.itemEquals ?? DEEP_EQUALITY
@@ -377,13 +445,11 @@ function collectionFacade<T extends {}, S extends Signal<T>>(
 			return getKeys().indexOf(key)
 		},
 
-		deriveCollection<R extends {}>(
-			cb: DeriveCollectionCallback<R, T>,
-		): DerivedList<R> {
+		deriveCollection<R extends {}>(cb: PerItemCallback<R, T>): DerivedList<R> {
 			return (
 				deriveCollection as <T2 extends {}, U2 extends {}>(
-					source: CollectionSource<U2>,
-					callback: DeriveCollectionCallback<T2, U2>,
+					source: ListSource<U2>,
+					callback: PerItemCallback<T2, U2>,
 				) => DerivedList<T2>
 			)(collection, cb)
 		},
@@ -408,21 +474,21 @@ function collectionFacade<T extends {}, S extends Signal<T>>(
  * @returns A Collection signal
  */
 function deriveCollection<T extends {}, U extends {}>(
-	source: CollectionSource<U>,
+	source: ListSource<U>,
 	callback: (sourceValue: U) => T,
-	options?: DeriveCollectionOptions<U>,
+	options?: DeriveListOptions<U>,
 ): DerivedList<T>
 function deriveCollection<T extends {}, U extends {}>(
-	source: CollectionSource<U>,
+	source: ListSource<U>,
 	callback: (sourceValue: U, abort: AbortSignal) => Promise<T>,
-	options?: DeriveCollectionOptions<U>,
+	options?: DeriveListOptions<U>,
 ): DerivedList<T>
 function deriveCollection<T extends {}, U extends {}>(
-	sourceInput: CollectionSource<U>,
+	sourceInput: ListSource<U>,
 	// Optional only for the internal pass-through form used by `deriveList(fn)`; every
 	// public overload requires it.
-	callback?: DeriveCollectionCallback<T, U>,
-	options?: DeriveCollectionOptions<U>,
+	callback?: PerItemCallback<T, U>,
+	options?: DeriveListOptions<U>,
 ): DerivedList<T> {
 	if (callback) validateCallback(TYPE_COLLECTION, callback)
 
@@ -580,7 +646,7 @@ function deriveCollection<T extends {}, U extends {}>(
  * @returns A read-only Collection signal
  */
 function createCollection<T extends {}, S extends Signal<T> = Signal<T>>(
-	watched: CollectionCallback<T>,
+	watched: ListCallback<T>,
 	options?: CollectionOptions<T, S>,
 ): DerivedList<T, S> {
 	const value = options?.value ?? []
@@ -639,7 +705,7 @@ function createCollection<T extends {}, S extends Signal<T> = Signal<T>>(
 	node.value = value
 	node.flags = FLAG_DIRTY // First refresh() will establish child edges
 
-	const onChanges = (changes: CollectionChanges<T>): void => {
+	const onChanges = (changes: ListChanges<T>): void => {
 		const { add, change, remove } = changes
 		if (!add?.length && !change?.length && !remove?.length) return
 		let structural = false
@@ -765,31 +831,31 @@ function deriveList<T extends {}>(
 ): DerivedList<T>
 function deriveList<T extends {}>(
 	input: T[],
-	options: DeriveListOptions<T> & { watched: CollectionCallback<T> },
+	options: DeriveListOptions<T> & { watched: ListCallback<T> },
 ): DerivedList<T>
 function deriveList<T extends {}, U extends {}>(
-	input: CollectionSource<U>,
+	input: ListSource<U>,
 	itemCallback: (sourceValue: U) => T,
-	options?: DeriveCollectionOptions<U>,
+	options?: DeriveListOptions<U>,
 ): DerivedList<T>
 function deriveList<T extends {}, U extends {}>(
-	input: CollectionSource<U>,
+	input: ListSource<U>,
 	itemCallback: (sourceValue: U, abort: AbortSignal) => Promise<T>,
-	options?: DeriveCollectionOptions<U>,
+	options?: DeriveListOptions<U>,
 ): DerivedList<T>
 function deriveList<T extends {}, U extends {}>(
 	input:
 		| (() => T[])
 		| ((prev: T[], abort: AbortSignal) => Promise<T[]>)
 		| T[]
-		| CollectionSource<U>,
-	itemOrOptions?: DeriveCollectionCallback<T, U> | DeriveListOptions<T>,
-	maybeOptions?: DeriveCollectionOptions<U>,
+		| ListSource<U>,
+	itemOrOptions?: PerItemCallback<T, U> | DeriveListOptions<T>,
+	maybeOptions?: DeriveListOptions<U>,
 ): DerivedList<T> {
 	// Per-item derivation: the second argument is the callback, not the options.
 	if (isFunction(itemOrOptions))
 		return deriveCollection(
-			input as CollectionSource<U>,
+			input as ListSource<U>,
 			itemOrOptions as (sourceValue: U) => T,
 			maybeOptions,
 		)
@@ -800,9 +866,9 @@ function deriveList<T extends {}, U extends {}>(
 	// the adapter's slices as the derived slices — one Memo per item, not two. The cast
 	// reaches the implementation signature; no public overload omits the callback.
 	const passthrough = deriveCollection as unknown as <V extends {}>(
-		source: CollectionSource<V>,
+		source: ListSource<V>,
 		callback: undefined,
-		options?: DeriveCollectionOptions<V>,
+		options?: DeriveListOptions<V>,
 	) => DerivedList<V>
 
 	// External push: a seed array plus a watched lifecycle. Checked before the
@@ -812,7 +878,7 @@ function deriveList<T extends {}, U extends {}>(
 		validateCallback(TYPE_COLLECTION, options?.watched, isSyncFunction)
 		// `initial` and `watched` are ignored by createCollection; the rest of the
 		// options are shared verbatim.
-		return createCollection(options?.watched as CollectionCallback<T>, {
+		return createCollection(options?.watched as ListCallback<T>, {
 			...(options as CollectionOptions<T>),
 			value: input as T[],
 		}) as DerivedList<T>
@@ -829,7 +895,7 @@ function deriveList<T extends {}, U extends {}>(
 		const derived = passthrough<T>(
 			task as Signal<T[]>,
 			undefined,
-			options as DeriveCollectionOptions<T>,
+			options as DeriveListOptions<T>,
 		)
 		// The asynchrony lives in the internal Task, so `isPending(derived)` and
 		// `abort(derived)` resolve through it. See ADR-0018.
@@ -841,7 +907,7 @@ function deriveList<T extends {}, U extends {}>(
 	return passthrough<T>(
 		createMemo(input as () => T[]) as Signal<T[]>,
 		undefined,
-		options as DeriveCollectionOptions<T>,
+		options as DeriveListOptions<T>,
 	)
 }
 
@@ -894,4 +960,8 @@ export {
 	deriveList,
 	isCollection,
 	isDerivedList,
+	type ListCallback,
+	type ListChanges,
+	type ListSource,
+	type PerItemCallback,
 }

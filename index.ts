@@ -53,6 +53,10 @@ export {
 	deriveList,
 	isCollection,
 	isDerivedList,
+	type ListCallback,
+	type ListChanges,
+	type ListSource,
+	type PerItemCallback,
 } from './src/nodes/collection'
 export {
 	createEffect,

@@ -21,10 +21,10 @@ import {
 import type { MutableSignal } from '../signal'
 import { isFunction, isSignalOfType } from '../util'
 import {
-	type CollectionSource,
-	type DeriveCollectionCallback,
 	type DerivedList,
 	deriveCollection,
+	type ListSource,
+	type PerItemCallback,
 } from './collection'
 import { createState } from './state'
 
@@ -620,13 +620,11 @@ function createList<
 			return Object.values(remove)
 		},
 
-		deriveCollection<R extends {}>(
-			cb: DeriveCollectionCallback<R, T>,
-		): DerivedList<R> {
+		deriveCollection<R extends {}>(cb: PerItemCallback<R, T>): DerivedList<R> {
 			return (
 				deriveCollection as <T2 extends {}, U2 extends {}>(
-					source: CollectionSource<U2>,
-					callback: DeriveCollectionCallback<T2, U2>,
+					source: ListSource<U2>,
+					callback: PerItemCallback<T2, U2>,
 				) => DerivedList<T2>
 			)(list, cb)
 		},

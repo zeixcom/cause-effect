@@ -1,10 +1,16 @@
 import { describe, expect, test } from 'bun:test'
 import {
 	type Collection,
+	type CollectionCallback,
+	type CollectionChanges,
+	type CollectionSource,
 	createCollection,
+	createEffect,
 	createList,
+	createScope,
 	createState,
 	createStore,
+	type DeriveCollectionCallback,
 	type DerivedList,
 	deriveList,
 	deriveStore,
@@ -15,8 +21,12 @@ import {
 	isMutableStore,
 	isStore,
 	type List,
+	type ListCallback,
+	type ListChanges,
+	type ListSource,
 	type MutableList,
 	type MutableStore,
+	type PerItemCallback,
 	type Store,
 } from '../index.ts'
 
@@ -94,6 +104,49 @@ describe('guards preserve the tag-based taxonomy', () => {
 		const derived = deriveList(() => [1])
 		expect(isMutableList(list) && !isMutableList(derived)).toBe(true)
 		expect(isDerivedList(derived) && !isDerivedList(list)).toBe(true)
+	})
+})
+
+describe('ListSource/ListCallback/ListChanges/PerItemCallback — terminal 2.0 names, bridged early', () => {
+	test('ListSource round-trips through the deprecated CollectionSource alias', () => {
+		const source: ListSource<number> = createList([1, 2])
+		const asDeprecated: CollectionSource<number> = source
+		const roundTrip: ListSource<number> = asDeprecated
+		expect(deriveList(roundTrip, n => n * 2).get()).toEqual([2, 4])
+	})
+
+	test('ListChanges round-trips through the deprecated CollectionChanges alias', () => {
+		const changes: ListChanges<number> = { add: [1, 2] }
+		const asDeprecated: CollectionChanges<number> = changes
+		const roundTrip: ListChanges<number> = asDeprecated
+		expect(roundTrip.add).toEqual([1, 2])
+	})
+
+	test('ListCallback round-trips through the deprecated CollectionCallback alias and drives deriveList', () => {
+		let push: ((changes: ListChanges<number>) => void) | undefined
+		const watched: ListCallback<number> = apply => {
+			push = apply
+			return () => {}
+		}
+		const asDeprecated: CollectionCallback<number> = watched
+		const roundTrip: ListCallback<number> = asDeprecated
+		const list = deriveList<number>([], { watched: roundTrip })
+		const dispose = createScope(() => {
+			createEffect(() => {
+				list.get()
+			})
+		})
+		push?.({ add: [1, 2, 3] })
+		expect(list.get()).toEqual([1, 2, 3])
+		dispose()
+	})
+
+	test('PerItemCallback round-trips through the deprecated DeriveCollectionCallback alias and drives deriveList', () => {
+		const source = createList([1, 2, 3])
+		const doubler: PerItemCallback<number, number> = (n: number) => n * 2
+		const asDeprecated: DeriveCollectionCallback<number, number> = doubler
+		const roundTrip: PerItemCallback<number, number> = asDeprecated
+		expect(deriveList(source, roundTrip).get()).toEqual([2, 4, 6])
 	})
 })
 

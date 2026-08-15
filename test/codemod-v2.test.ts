@@ -21,14 +21,14 @@ describe('codemod-v2: exact-identifier renames', () => {
 
 	test('leaves longer names that merely contain the old ones', () => {
 		const { output } = migrateSource(
-			"import { type CollectionCallback, type ListOptions } from '@zeix/cause-effect'\n" +
+			"import { type DeriveCollectionOptions, type ListOptions } from '@zeix/cause-effect'\n" +
 				'const options: ListOptions<string> = {}\n' +
-				'const watched: CollectionCallback<string> = () => () => {}\n',
+				'const deriveOptions: DeriveCollectionOptions<string> = {}\n',
 		)
 		expect(output).not.toContain('MutableListOptions')
-		expect(output).not.toContain('DerivedListCallback')
+		expect(output).not.toContain('DeriveListSourceOptions')
 		expect(output).toContain('ListOptions<string>')
-		expect(output).toContain('CollectionCallback<string>')
+		expect(output).toContain('DeriveCollectionOptions<string>')
 	})
 
 	test('does not rename member names', () => {
@@ -76,6 +76,53 @@ describe('codemod-v2: Store renames', () => {
 		expect(report.needsManualReview.join('\n')).toContain(
 			'isMutableStore rejects a DerivedStore',
 		)
+	})
+})
+
+describe('codemod-v2: Collection auxiliary type renames', () => {
+	test('renames CollectionSource, CollectionCallback, CollectionChanges, and DeriveCollectionCallback, including their imports', () => {
+		const { output } = migrateSource(
+			'import {\n' +
+				'  type CollectionSource,\n' +
+				'  type CollectionCallback,\n' +
+				'  type CollectionChanges,\n' +
+				"  type DeriveCollectionCallback,\n} from '@zeix/cause-effect'\n" +
+				'const source: CollectionSource<number> = createList([1])\n' +
+				'const changes: CollectionChanges<number> = { add: [1] }\n' +
+				'const watched: CollectionCallback<number> = apply => () => {}\n' +
+				'const doubler: DeriveCollectionCallback<number, number> = n => n * 2\n',
+		)
+		expect(output).toContain('type ListSource')
+		expect(output).toContain('type ListCallback')
+		expect(output).toContain('type ListChanges')
+		expect(output).toContain('type PerItemCallback')
+		expect(output).toContain('const source: ListSource<number>')
+		expect(output).toContain('const changes: ListChanges<number>')
+		expect(output).toContain('const watched: ListCallback<number>')
+		expect(output).toContain('const doubler: PerItemCallback<number, number>')
+		expect(output).not.toContain('CollectionSource')
+		expect(output).not.toContain('CollectionCallback')
+		expect(output).not.toContain('CollectionChanges')
+		expect(output).not.toContain('DeriveCollectionCallback')
+	})
+
+	test('these four renames are not flagged for manual review — no meaning-flip risk', () => {
+		const { report } = migrateSource(
+			"import { type CollectionSource } from '@zeix/cause-effect'\n" +
+				'const source: CollectionSource<number> = createList([1])\n',
+		)
+		expect(
+			report.needsManualReview.some(hint => hint.includes('ListSource')),
+		).toBe(false)
+	})
+
+	test('leaves DeriveCollectionOptions alone — folded, not renamed', () => {
+		const { output, report } = migrateSource(
+			"import { type DeriveCollectionOptions } from '@zeix/cause-effect'\n" +
+				'const options: DeriveCollectionOptions<number> = {}\n',
+		)
+		expect(output).toContain('DeriveCollectionOptions<number>')
+		expect(report.renamed.DeriveCollectionOptions).toBeUndefined()
 	})
 })
 

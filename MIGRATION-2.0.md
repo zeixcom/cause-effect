@@ -32,6 +32,10 @@ names and the codemod below convert that silent flip into a staged, deprecation-
 | `isStore(x)` | `isMutableStore(x)` | `isMutableStore(x)` | 1.x `isStore` checks the shape tag only, so it matches a `DerivedStore` too; `isMutableStore` also requires the write capability. In 2.0, `isStore` narrows to the readonly base. |
 | `createComputed(fn, options?)` | `deriveSignal(fn, options?)` | `deriveSignal(fn, options?)` | Same dispatch (sync → `Memo`, async → `Task`), returned as `Signal<T>` instead of the deprecated `Memo`/`Task` union. `options.value` becomes `options.initial`. Available since 1.5.0. |
 | `createMutableSignal(value)` | `createSignal(value)` | — (no replacement) | Not a like-for-like swap: `createSignal` additionally accepts a function or an already-existing signal, which `createMutableSignal` rejects. For a plain value, array, or record, both behave identically. `createMutableSignal` has no 2.0 replacement — call `createState`/`createList`/`createStore` directly. |
+| `CollectionSource<T>` | `ListSource<T>` | `ListSource<T>` | Same type, same behavior — the source `deriveList` keys and derives from. Terminal 2.0 name. |
+| `CollectionCallback<T>` | `ListCallback<T>` | `ListCallback<T>` | Same type, same behavior — the external-push watched callback. Terminal 2.0 name. |
+| `CollectionChanges<T>` | `ListChanges<T>` | `ListChanges<T>` | Same type, same behavior — the `applyChanges` mutation descriptor. Terminal 2.0 name. |
+| `DeriveCollectionCallback<T, U>` | `PerItemCallback<T, U>` | `PerItemCallback<T, U>` | Same type, same behavior — the per-item transformation callback. Terminal 2.0 name. |
 
 `createList`, `deriveList`, `deriveStore`, `createState`, `createMemo`, `createTask`,
 `createSensor`, `createSlot`, `createEffect`, and `match` keep their names and behavior.
@@ -78,14 +82,9 @@ but the codemod deliberately leaves methods alone so your pipelines stay diffabl
 by hand when you adopt the other v2 renames.
 
 **`DeriveCollectionOptions<T>`.** Folds into `deriveList`'s own `DeriveListOptions<T>` in 2.0 —
-no separate name survives. The codemod has no rule for it, so if your code names
-`DeriveCollectionOptions` explicitly, switch it to `DeriveListOptions` by hand.
-
-> **Not yet bridged:** `CollectionSource<T>`, `CollectionCallback<T>`, `CollectionChanges<T>`,
-> and `DeriveCollectionCallback<T, U>` rename to `ListSource<T>`, `ListCallback<T>`,
-> `ListChanges<T>`, and `PerItemCallback<T, U>` in 2.0, and are getting the same 1.5.0
-> bridge-name treatment as `List`/`Store` — tracked, not yet shipped. This note updates once
-> that lands; until then, treat them the same as `DeriveCollectionOptions` above.
+no separate name survives, so it is the one 1.5 auxiliary type in this area with no bridge name.
+The codemod has no rule for it, so if your code names `DeriveCollectionOptions` explicitly,
+switch it to `DeriveListOptions` by hand — every field it has, `DeriveListOptions` already has.
 
 **Origin guards.** `isState`, `isMemo`, `isTask`, `isSensor`, and `isComputed` have no
 mechanical replacement — they are removed because origin is no longer part of the consumption
