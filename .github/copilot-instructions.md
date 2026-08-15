@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Cause & Effect is a reactive state management library for JavaScript and TypeScript. It is built on a linked graph of source and sink nodes (`src/graph.ts`). Every signal type has a factory function.
+Cause & Effect is a reactive state management library for JavaScript and TypeScript. It is built on a linked graph of source and sink nodes (`src/graph.ts`). Value types are indexed by shape and mutability; construction is indexed by origin (`create*` → mutable, `derive*` → readonly).
 
 `CONTEXT.md` at the repo root defines the domain vocabulary. Use the approved term for each concept and avoid the listed synonyms.
 
@@ -15,31 +15,41 @@ Cause & Effect is a reactive state management library for JavaScript and TypeScr
 - **Flags**: FLAG_CLEAN, FLAG_CHECK, FLAG_DIRTY, FLAG_RUNNING, FLAG_RELINK — the two-level flag state machine
 - **Convergence**: `flush()` drains in passes, bounded by `MAX_FLUSH_PASSES`; exceeding it throws `EffectConvergenceError`
 
-### Signal Types (all in `src/nodes/`)
-- **State** (`createState`): Mutable signals for values (`get`, `set`, `update`)
-- **Sensor** (`createSensor`): Read-only source for external input. Activates when watched. Use `SKIP_EQUALITY` when the reference stays the same and internal state changes.
-- **Memo** (`createMemo`): Synchronous computed with memoization. Supports a reducer form and an optional `watched(invalidate)` callback
-- **Task** (`createTask`): Asynchronous computed. Cancels through an AbortController. Supports an optional `watched(invalidate)` callback
-- **Store** (`createStore`): Proxy-based reactive object with a per-property State, Store, or List signal
-- **List** (`createList`): Reactive array with stable keys and a per-item State signal
-- **Collection** (`createCollection`): Keyed items with per-item memoization. Either externally driven with a watched lifecycle, or derived from a List or a Collection. Not a reactive `Map`
+### Value Types (six, indexed by shape × mutability)
+- **Signal** (`deriveSignal`): Readonly single value — sync derivation, async derivation, or external push (`createSignal` returns the mutable extension)
+- **MutableSignal** (`createSignal`, `createState`): Writable single value (`get`, `set`, `update`)
+- **List** (`deriveList`): Readonly keyed sequence with per-item memoization. Stable keys survive sorting; `byKey()`/`at()` create no graph edge
+- **MutableList** (`createList`): Writable keyed sequence (`set`, `update`, `add`, `remove`, `replace`, `sort`, `splice`)
+- **Store** (`deriveStore`): Readonly keyed record, proxy-based, per-property reactivity
+- **MutableStore** (`createStore`): Writable keyed record (`set`, `update`, `add`, `remove`); nested records become nested stores, nested arrays become lists
+
+### Orthogonal Primitives
+- **Effect** (`createEffect`): Terminal sink that runs side effects. Runs synchronously. Write outward (DOM, network, storage) — never write a derived value from inside an effect
 - **Slot** (`createSlot`): Forwarding layer to a swappable backing signal, for integration layers such as property descriptors and custom elements. Not an event bus, and has no `update()`
-- **Effect** (`createEffect`): Terminal sink that runs side effects. Runs synchronously
+
+### Construction Routing ("you have Y, you want X → call Z")
+
+| You have | Single value | Keyed sequence | Keyed record |
+|---|---|---|---|
+| Value you own | `createSignal(value)` | `createList(array)` | `createStore(record)` |
+| Other signals, sync | `deriveSignal(fn)` | `deriveList(fn)` | `deriveStore(fn)` |
+| Other signals, async | `deriveSignal(asyncFn)` | `deriveList(asyncFn, { initial })` | `deriveStore(asyncFn, { initial })` |
+| External source | `deriveSignal(seed, { watched })` | `deriveList(seed, { watched })` | `deriveStore(seed, { watched })` |
+| Source array + item transform | — | `deriveList(source, itemFn)` | — |
 
 ## Key Files Structure
 
-- `src/graph.ts` - Core reactive engine (nodes, edges, link, propagate, flush, batch)
+- `src/graph.ts` - Core reactive engine (nodes, edges, link, propagate, refresh, flush, batch)
 - `src/errors.ts` - Error classes and validation functions
-- `src/nodes/state.ts` - createState, isState, State type
-- `src/nodes/sensor.ts` - createSensor, isSensor, SensorCallback type
-- `src/nodes/memo.ts` - createMemo, isMemo, Memo type
-- `src/nodes/task.ts` - createTask, isTask, Task type
+- `src/nodes/state.ts` - createState (narrow mutable-source factory)
+- `src/nodes/sensor.ts` - createSensor (narrow external-push factory)
+- `src/nodes/memo.ts` - createMemo (narrow sync-derivation factory)
+- `src/nodes/task.ts` - createTask (narrow async-derivation factory)
 - `src/nodes/effect.ts` - createEffect, match, MatchHandlers type
-- `src/nodes/store.ts` - createStore, isStore, Store type, diff, isEqual
-- `src/nodes/list.ts` - createList, isList, List type
-- `src/nodes/collection.ts` - createCollection, isCollection, Collection type, deriveCollection (internal)
+- `src/nodes/store.ts` - createStore, deriveStore, isStore, isMutableStore
+- `src/nodes/list.ts` - createList, deriveList, isList, isMutableList
 - `src/nodes/slot.ts` - createSlot, isSlot, Slot type
-- `src/signal.ts` - Polymorphic factories (createSignal, createMutableSignal, createComputed) and type predicates (isSignal, isMutableSignal, isComputed)
+- `src/nodes/signal.ts` - Signal/MutableSignal types, createSignal, deriveSignal, isSignal, isMutableSignal
 - `src/util.ts` - Utility functions and type checks
 - `index.ts` - Entry point / main export file
 
@@ -48,44 +58,45 @@ Cause & Effect is a reactive state management library for JavaScript and TypeScr
 ### TypeScript Style
 - Use `const` for immutable values, prefer immutability
 - Generic constraints: `T extends {}` to exclude nullish values
-- Function overloads for complex type inference (e.g., `createCollection`, `deriveCollection`)
+- Function overloads for complex type inference (e.g., `deriveList`, `deriveSignal`)
 - Pure functions marked with `/*#__PURE__*/` for tree-shaking
 - JSDoc comments for all public APIs
 
 ### Naming Conventions
-- Factory functions: `create*` (e.g., `createState`, `createMemo`, `createEffect`, `createStore`, `createList`, `createCollection`, `createSensor`, `createSlot`)
-- Type predicates: `is*` (e.g., `isState`, `isMemo`, `isStore`, `isList`, `isCollection`, `isSensor`, `isSlot`)
-- Type constants: `TYPE_*` for internal type tags
-- Callback types: `*Callback` suffix (MemoCallback, TaskCallback, EffectCallback, SensorCallback, CollectionCallback, DeriveCollectionCallback)
+- Factory functions: `create*` (mutable source) and `derive*` (everything else), e.g., `createSignal`, `deriveList`
+- Narrow single-origin factories keep their origin names: `createState`, `createMemo`, `createTask`, `createSensor`
+- Type predicates: `is*`, indexed by shape and mutability (`isSignal`, `isList`, `isStore`, `isMutableSignal`, `isMutableList`, `isMutableStore`, `isSlot`)
+- Type constants: `TYPE_*` for internal shape tags
+- Callback types: `*Callback` suffix (`TaskCallback`, `EffectCallback`, `SignalCallback`, `ListCallback`, `StoreCallback`)
+- Push-callback argument is always named `emit`; the seed option is always `initial`; an `AbortSignal` callback parameter is always named `abortSignal`
 - Private variables: use descriptive names, no underscore prefix
 
 ### Error Handling
 - Error classes defined in `src/errors.ts`: CircularDependencyError, NullishSignalValueError, InvalidSignalValueError, InvalidCallbackError, RequiredOwnerError, UnsetSignalValueError
 - `validateSignalValue()` and `validateCallback()` for input validation at public API boundaries
 - Optional `guard` function in SignalOptions for runtime type checking
-- AbortSignal for cancellation in async Tasks
+- AbortSignal for cancellation in async derivations
 
 ### Performance Patterns
 - Linked-list edges for O(1) link/unlink
 - Flag-based dirty checking avoids unnecessary recomputation
 - `batch()` defers `flush()` to minimize effect re-runs
-- Lazy evaluation: Memos only recompute when accessed and dirty
+- Lazy evaluation: memos only recompute when accessed and dirty
 - `trimSources()` removes stale edges after recomputation
 - `unlink()` calls `source.stop()` when the last sink disconnects (auto-cleanup)
+- Tree-shaking is a hard constraint: the sync-only core (`createState`, `createMemo`, `createEffect`) must stay under 4096 B gzipped. An import of one construction path must not pull in the others.
 
 ### API Design Principles
-- All signals created via `create*()` factory functions (no class constructors)
+- All signals created via factory functions (no class constructors)
 - All signals have `.get()` for value access
-- Mutable signals (State) have `.set(value)` and `.update(fn)`
+- Mutable signals have `.set(value)` and `.update(fn)`; derived signals have neither
 - Store properties are automatically reactive signals via Proxy
-- Sensor and Collection take a watched callback that returns a Cleanup (lazy activation)
-- Memo and Task take an optional `watched(invalidate)` callback in options
-- Store and List take an optional `watched` callback in options that returns a Cleanup
+- `watched` is an option, never a callback position: `(emit) => Cleanup` for a seed input, `(invalidate) => Cleanup` for a function input
 - Effects return a dispose function (Cleanup)
 
 ### Testing Patterns
 - Use Bun test runner (`bun test`)
-- Test files: `test/*.next.test.ts`
+- Test files: `test/*.test.ts`
 - Test reactivity chains and dependency tracking
 - Test async cancellation behavior
 - Test error conditions and edge cases
@@ -94,27 +105,38 @@ Cause & Effect is a reactive state management library for JavaScript and TypeScr
 
 ### Creating Signals
 ```typescript
-// State for values
-const count = createState(42)
-const name = createState('Alice')
+// Mutable single value
+const count = createSignal(42)
+const name = createState('Alice') // narrow factory, same shape
 
-// Sensor for external input
-const mouse = createSensor<{ x: number; y: number }>((set) => {
-  const h = (e: MouseEvent) => set({ x: e.clientX, y: e.clientY })
-  window.addEventListener('mousemove', h)
-  return () => window.removeEventListener('mousemove', h)
+// Derived single value — sync, async, or external push
+const doubled = deriveSignal(() => count.get() * 2)
+const user = deriveSignal(async (_prev, abortSignal) => {
+  const response = await fetch(`/users/${userId.get()}`, { signal: abortSignal })
+  return response.json()
+}, { initial: fallbackUser })
+const mouse = deriveSignal({ x: 0, y: 0 }, {
+  watched: emit => {
+    const h = (e: MouseEvent) => emit({ x: e.clientX, y: e.clientY })
+    window.addEventListener('mousemove', h)
+    return () => window.removeEventListener('mousemove', h)
+  },
 })
 
-// Sensor for a mutable object (SKIP_EQUALITY)
+// Sensor for a mutable object (SKIP_EQUALITY, option-form watched)
 const box = document.getElementById('box')!
-const element = createSensor<HTMLElement>((set) => {
-  const obs = new MutationObserver(() => set(box))
-  obs.observe(box, { attributes: true })
-  return () => obs.disconnect()
-}, { value: box, equals: SKIP_EQUALITY })
+const element = createSensor<HTMLElement>({
+  watched: emit => {
+    const obs = new MutationObserver(() => emit(box))
+    obs.observe(box, { attributes: true })
+    return () => obs.disconnect()
+  },
+  initial: box,
+  equals: SKIP_EQUALITY,
+})
 
 // Store for reactive objects
-const user = createStore({ name: 'Alice', age: 30 })
+const userStore = createStore({ name: 'Alice', age: 30 })
 
 // List with stable keys
 const items = createList(['apple', 'banana'], { keyConfig: 'fruit' })
@@ -126,40 +148,49 @@ const key = users.add({ id: 'bob', name: 'Bob' })
 users.replace(key, { id: 'bob', name: 'Bobby' }) // update item, propagates to every sink
 users.remove(key)
 
-// Memo for synchronous derived values
-const doubled = createMemo(() => count.get() * 2)
+// Memo for synchronous derived values (narrow factory)
+const doubledMemo = createMemo(() => count.get() * 2)
 
 // Memo with reducer capabilities
 const counter = createMemo(prev => {
   const action = actions.get()
   return action === 'increment' ? prev + 1 : prev - 1
-}, { value: 0 })
+}, { initial: 0 })
 
-// Task for async derived values
-const userData = createTask(async (prev, abort) => {
+// Task for async derived values (narrow factory)
+const userData = createTask(async (prev, abortSignal) => {
   const id = userId.get()
   if (!id) return prev
-  const response = await fetch(`/users/${id}`, { signal: abort })
+  const response = await fetch(`/users/${id}`, { signal: abortSignal })
   return response.json()
 })
 
-// Collection derived from a List
-const numbers = createList([1, 2, 3])
-const doubledItems = numbers.deriveCollection((n: number) => n * 2)
-// Async form: annotate both parameters — overload resolution picks the sync
-// signature first, so unannotated params fall back to implicit `any`.
+// Derived list, per item — sync or async item function
+const doubledItems = deriveList(numbers, (n: number) => n * 2)
 type User = { id: string; name: string }
-const enriched = users.deriveCollection(async (user: User, abort: AbortSignal) => {
-  const res = await fetch(`/api/${user.id}`, { signal: abort })
+const enriched = deriveList(users, async (user: User, abortSignal: AbortSignal) => {
+  const res = await fetch(`/api/${user.id}`, { signal: abortSignal })
   return { ...user, details: await res.json() }
 })
 
-// Collection for externally-driven data
-const feed = createCollection<{ id: string; text: string }>((applyChanges) => {
-  const ws = new WebSocket('/feed')
-  ws.onmessage = (e) => applyChanges(JSON.parse(e.data))
-  return () => ws.close()
-}, { keyConfig: item => item.id })
+// Derived list, async computation over the whole array
+const results = deriveList(
+  async (_prev, abortSignal) => {
+    const res = await fetch(`/api/search?q=${query.get()}`, { signal: abortSignal })
+    return res.json() as Promise<Item[]>
+  },
+  { initial: [], keyConfig: item => item.id },
+)
+
+// Derived list, external push
+const feed = deriveList<Item[]>([], {
+  watched: emit => {
+    const ws = new WebSocket('/feed')
+    ws.onmessage = e => emit(JSON.parse(e.data))
+    return () => ws.close()
+  },
+  keyConfig: item => item.id,
+})
 
 // Slot for stable property delegation
 const local = createState('default')
@@ -194,12 +225,15 @@ createEffect(() => {
 ### Type Safety
 ```typescript
 // Generic constraints exclude nullish
-function createSignal<T extends {}>(value: T): Signal<T>
+function createSignal<T extends {}>(value: T): MutableSignal<T>
 
-// Type predicates for runtime checks
-if (isState(value)) value.set(newValue)
-if (isMemo(value)) console.log(value.get())
-if (isStore(value)) value.name.set('Bob')
+// Shape guards for runtime checks — isSignal matches the single-value shape only
+if (isSignal(value)) console.log(value.get())
+if (isMutableSignal(value)) value.set(newValue)
+if (isStore(value)) value.get()
+
+// "Anything reactive" — structural check, not a guard
+const toValue = (x: unknown) => typeof x?.get === 'function' ? x.get() : x
 
 // Guards for runtime type validation
 const count = createState(0, {
@@ -210,21 +244,26 @@ const count = createState(0, {
 ## Resource Management
 
 ```typescript
-// Sensor: lazy external input tracking (watched callback with set)
-const sensor = createSensor<T>((set) => {
-  // setup — call set(value) to update
-  return () => { /* cleanup — called when last effect stops watching */ }
+// Sensor: lazy external input (option-form watched, emit callback)
+const sensor = createSensor<T>({
+  watched: emit => {
+    // setup — call emit(value) to update
+    return () => { /* cleanup — called when last effect stops watching */ }
+  },
 })
 
-// Collection: lazy external data source (watched callback with applyChanges)
-const feed = createCollection<T>((applyChanges) => {
-  // setup — call applyChanges(diffResult) on changes
-  return () => { /* cleanup */ }
-}, { keyConfig: item => item.id })
+// Derived list, external push (seed + watched with emit)
+const feed = deriveList<T[]>(seed, {
+  watched: emit => {
+    // setup — call emit({ add, change, remove }) with granular changes
+    return () => { /* cleanup */ }
+  },
+  keyConfig: item => item.id,
+})
 
-// Memo/Task: optional watched callback with invalidate
+// Memo/Task/deriveSignal function form: optional watched with invalidate
 const derived = createMemo(() => element.get().textContent ?? '', {
-  watched: (invalidate) => {
+  watched: invalidate => {
     const obs = new MutationObserver(() => invalidate())
     obs.observe(element.get(), { childList: true })
     return () => obs.disconnect()
@@ -255,11 +294,11 @@ dispose() // cleans up effect and runs the returned cleanup
 - Biome for code formatting and linting
 
 ## When suggesting code:
-1. Use `create*()` factory functions, not class constructors
-2. Follow the established patterns for signal creation and usage
+1. Use factory functions (`create*` for mutable sources, `derive*` for derivations), not class constructors
+2. Route construction through the matrix above — never write a derived value from inside an effect
 3. Use proper TypeScript types and generics with `T extends {}`
 4. Include JSDoc for public APIs
 5. Consider performance implications (batching, granular dependencies)
 6. Handle errors with the existing error classes and validation functions
-7. Support async operations with AbortSignal when relevant
+7. Support async operations with AbortSignal when relevant — name the parameter `abortSignal`
 8. Use function overloads when callback signatures have sync/async variants

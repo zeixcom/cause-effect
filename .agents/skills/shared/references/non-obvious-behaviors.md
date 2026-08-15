@@ -130,23 +130,25 @@ const results = createTask(async () => {
 })
 
 // Correct — abort signal forwarded; stale requests are cancelled
-const results = createTask(async (prev, signal) => {
+const results = createTask(async (prev, abortSignal) => {
   return fetch(`/api/search?q=${query.get()}`, { signal }).then(r => r.json())
 })
 ```
 </task_abort_on_dependency_change>
 
 <sensor_unset_before_first_value>
-**Reading a Sensor or Task before it has produced a value throws `UnsetSignalValueError`.**
-Unlike State, these signals have no initial value — they are explicitly "unset" until the
-first value arrives.
+**Reading an external-push signal or an async derivation before it has produced a value
+throws `UnsetSignalValueError`.** Unlike a created signal, these have no initial value — they
+are explicitly "unset" until the first value arrives.
 
 Guard against this with `match`, which provides a `nil` branch for the unset case:
 
 ```typescript
-const tick = createSensor<number>(set => {
-  const id = setInterval(() => set(Date.now()), 1000)
-  return () => clearInterval(id)
+const tick = createSensor<number>({
+  watched: emit => {
+    const id = setInterval(() => emit(Date.now()), 1000)
+    return () => clearInterval(id)
+  },
 })
 
 // Wrong — throws UnsetSignalValueError on first run, before the interval fires
@@ -172,30 +174,30 @@ children.
 </scope_cleanup_is_synchronous>
 
 <async_requires_async_syntax>
-**Async routing in `createSignal`/`createComputed` requires the `async`/`await` keyword.**
+**Async routing in `deriveSignal` requires the `async`/`await` keyword.**
 The library detects async callbacks by their function prototype
 (`Object.getPrototypeOf(fn) === async-function prototype`), not by their return value, because
 the routing decision is made before the callback ever runs. A *synchronous* function that
-happens to return a `Promise` is classified as a `Memo`, not a `Task`.
+happens to return a `Promise` is classified as a sync derivation, not an async one.
 
 This used to fail silently (the memo cached the raw `Promise` object). It now throws
-`PromiseValueError` the first time the misclassified Memo is read, since `recomputeMemo()`
+`PromiseValueError` the first time the misclassified memo is read, since `recomputeMemo()`
 checks the computed value against `instanceof Promise`:
 
 ```typescript
-// WRONG — sync function returning a Promise becomes a Memo<number>.
+// WRONG — sync function returning a Promise becomes a sync derivation.
 // Throws PromiseValueError on first .get().
-const data = createComputed((): Promise<number> => fetch('/api').then(r => r.json()))
+const data = deriveSignal((): Promise<number> => fetch('/api').then(r => r.json()))
 
 // Correct — async keyword makes isAsyncFunction return true, routing to createTask.
-const data = createComputed(async (): Promise<number> => {
+const data = deriveSignal(async (): Promise<number> => {
   const r = await fetch('/api')
   return r.json()
 })
 ```
 
 If you must wrap a Promise-returning API, always use the `async` keyword so the library
-routes it to `createTask` (with abort/pending support) rather than `createMemo`.
+routes it to the async path (with abort/pending support) rather than the sync one.
 </async_requires_async_syntax>
 
 <self_writing_effects_converge_or_throw>
@@ -310,8 +312,8 @@ such a property — `byKey` reads directly from the internal signals map.
 type T = { get: string }
 const store = createStore<T>({ get: 'value' })
 
-store.get   // () => T  — the method, NOT the child State
-store.byKey('get')  // State<string> — the child signal via the escape hatch
+store.get   // () => T  — the method, NOT the child signal
+store.byKey('get')  // MutableSignal<string> — the child signal via the escape hatch
 ```
 
 This is inherent to the proxy design and is not considered a bug: base methods are a small

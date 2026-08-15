@@ -5,6 +5,28 @@
 `CONTEXT.md` at the repo root defines the domain vocabulary. Use the approved term for every
 concept. The _Avoid_ list under each entry names disallowed synonyms.
 
+## Construction Routing
+
+Value types are indexed by shape × mutability (`Signal`/`MutableSignal`, `List`/`MutableList`,
+`Store`/`MutableStore`), plus orthogonal `Effect` and `Slot`. Construction is indexed by origin:
+`create*` → mutable, `derive*` → readonly. Route by "you have Y, you want X → call Z":
+
+| You have | You want single value | You want keyed sequence | You want keyed record |
+|---|---|---|---|
+| Value you own | `createSignal(value)` | `createList(array)` | `createStore(record)` |
+| Other signals, sync | `deriveSignal(fn)` | `deriveList(fn)` | `deriveStore(fn)` |
+| Other signals, async | `deriveSignal(asyncFn)` | `deriveList(asyncFn, { initial })` | `deriveStore(asyncFn, { initial })` |
+| External source | `deriveSignal(seed, { watched })` | `deriveList(seed, { watched })` | `deriveStore(seed, { watched })` |
+| Source array + item transform | — | `deriveList(source, itemFn)` | — |
+
+- Never write a derived value from inside an effect — derive it. Every cell above is reachable.
+- Narrow single-origin factories (`createState`, `createMemo`, `createTask`, `createSensor`) exist
+  for tree-shaking; `deriveSignal` dispatches to them.
+- `watched` is always an option, never a callback position. Seed input → `(emit) => Cleanup`;
+  function input → `(invalidate) => Cleanup`.
+- Guards: `isSignal` matches the single-value shape only — `List`, `Store`, `Slot` have their own.
+  "Anything reactive" → `typeof x?.get === 'function'`.
+
 ## Available Skills
 
 Each skill carries its own reference knowledge and workflows. Invoke the one that matches the

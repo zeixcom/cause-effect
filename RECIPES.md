@@ -8,13 +8,13 @@ For more foundational concepts, check out the [Guide](GUIDE.md), learn about the
 
 ## 1. Multi-Step Wizard Pattern
 
-A common challenge in UI development is orchestrating a multi-step form or wizard. The recommended approach is to keep each step's data encapsulated in its own reactive primitive and use a `Memo` to declaratively compute the overall state of the wizard.
+A common challenge in UI development is orchestrating a multi-step form or wizard. The recommended approach is to keep each step's data encapsulated in its own reactive primitive and use a derivation to declaratively compute the overall state of the wizard.
 
 ### Architecture
 
-- **Step Data:** Use independent `Store` or `State` signals for each step. This ensures that typing in Step 1 doesn't trigger unrelated re-evaluations for Step 2.
-- **Validation:** Use `Memo` signals to derive the validity of each step. Memos automatically re-evaluate only when their specific dependencies change.
-- **Wizard State Machine:** Compute the overall wizard progression (e.g., current step index, `canProceed` boolean, percentage complete) via a central `Memo`.
+- **Step Data:** Use independent Stores or mutable signals for each step. This ensures that typing in Step 1 doesn't trigger unrelated re-evaluations for Step 2.
+- **Validation:** Derive the validity of each step. Derivations automatically re-evaluate only when their specific dependencies change.
+- **Wizard State Machine:** Compute the overall wizard progression (e.g., current step index, `canProceed` boolean, percentage complete) via one central derivation.
 
 ### Example
 
@@ -88,12 +88,12 @@ When several signals that depend on each other are updated in sequence without b
 
 ### The Solution: `batch()` and Granular Lists
 
-Use a `List` to manage structural integrity (adding or removing items). `List` provides each item with its own stable `State` signal. When applying massive incoming modifications (e.g., from a server sync), wrap all mutations in a single `batch()` block. This prevents cascading effect re-runs and guarantees that the graph settles precisely *once*.
+Use a `List` to manage structural integrity (adding or removing items). A `List` gives each item its own stable signal. When applying massive incoming modifications (e.g., from a server sync), wrap all mutations in a single `batch()` block. This prevents cascading effect re-runs and guarantees that the graph settles precisely *once*.
 
 ### Example
 
 ```typescript
-import { createList, createMemo, createEffect, batch } from '@zeix/cause-effect';
+import { createList, createMemo, createEffect, deriveList, batch } from '@zeix/cause-effect';
 
 // 1. Define a complex nested list structure using a stable key
 const workspaces = createList([
@@ -101,9 +101,9 @@ const workspaces = createList([
   { id: 'w2', name: 'Design', members: ['Charlie'], active: false }
 ], { keyConfig: w => w.id });
 
-// 2. Item-level memoization via deriveCollection
+// 2. Item-level memoization via deriveList
 // This function only re-evaluates for the specific workspace that has been updated
-const activeMemberCount = workspaces.deriveCollection(workspace => {
+const activeMemberCount = deriveList(workspaces, workspace => {
   return workspace.active ? workspace.members.length : 0;
 });
 
@@ -209,7 +209,7 @@ An `ok` or `err` handler needs to do asynchronous work. Handlers may return a `P
 Split the two cases:
 
 - **Fire-and-forget external work** — analytics, an IndexedDB write, a toast notification — belongs in an async handler. A cleanup function returned by the resolved `Promise` is registered and runs synchronously before the next re-run.
-- **Async work that drives reactive state** belongs in a `Task`. A `Task` receives an `AbortSignal`, cancels automatically when its dependencies change, and exposes pending, resolved, and error states that compose with `nil` and `err`.
+- **Async work that drives reactive state** belongs in an async derivation (`deriveSignal(asyncFn)` or `createTask`). It receives an `AbortSignal`, cancels automatically when its dependencies change, and exposes pending, resolved, and error states that compose with `nil` and `err`.
 
 ### Example
 
@@ -222,9 +222,9 @@ createEffect(() => match(trigger, {
   }
 }))
 
-// ✓ Do: derive the async value as a Task, read it in match()
-const result = createTask(async (_, signal) =>
-  fetch('/api/data', { signal }).then(r => r.json()))
+// ✓ Do: derive the async value, read it in match()
+const result = createTask(async (_, abortSignal) =>
+  fetch('/api/data', { signal: abortSignal }).then(r => r.json()))
 
 createEffect(() => match(result, {
   ok: data => render(data),
@@ -249,29 +249,34 @@ An event listener, a WebSocket, or a `MutationObserver` should exist only while 
 
 ### The Architecture
 
-`Sensor` and `Collection` take a watched callback as their first argument. `Store` and `List` accept one as the `watched` option. In every case the callback runs when an effect first reads the signal, and its returned cleanup runs when no effect watches it any more.
+The seed forms of `deriveSignal`, `deriveList`, and `deriveStore` — and `createSensor` — take a `watched` callback in their options. `Store` and `List` accept one as the `watched` option too. In every case the callback runs when an effect first reads the signal, and its returned cleanup runs when no effect watches it any more. A seed-form callback receives an `emit` function; a Store or List `watched` callback receives nothing.
 
-`Memo` and `Task` also accept `watched`, but their callback receives an `invalidate` function instead. This activates a computed signal that must react to an external event as well as to its tracked dependencies.
+Derivations with a function input also accept `watched`, but their callback receives an `invalidate` function instead. This activates a derivation that must react to an external event as well as to its tracked dependencies.
 
 ### Example
 
 ```js
-import { createSensor, createCollection, createEffect } from '@zeix/cause-effect'
+import { createSensor, deriveList, createEffect } from '@zeix/cause-effect'
 
 // Sensor: track external input
-const windowSize = createSensor((set) => {
-  const update = () => set({ w: innerWidth, h: innerHeight })
-  update()
-  window.addEventListener('resize', update)
-  return () => window.removeEventListener('resize', update)
+const windowSize = createSensor({
+  watched: (emit) => {
+    const update = () => emit({ w: innerWidth, h: innerHeight })
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  },
 })
 
-// Collection: receive external data
-const feed = createCollection((applyChanges) => {
-  const es = new EventSource('/feed')
-  es.onmessage = (e) => applyChanges(JSON.parse(e.data))
-  return () => es.close()
-}, { keyConfig: item => item.id })
+// Derived list: receive external data
+const feed = deriveList([], {
+  watched: (emit) => {
+    const es = new EventSource('/feed')
+    es.onmessage = (e) => emit(JSON.parse(e.data))
+    return () => es.close()
+  },
+  keyConfig: item => item.id
+})
 
 // Resources are created only when the effect runs
 const cleanup = createEffect(() => {
@@ -283,13 +288,13 @@ const cleanup = createEffect(() => {
 cleanup()
 ```
 
-### Propagation through `deriveCollection()`
+### Propagation through `deriveList()`
 
-When an effect reads a derived collection, the `watched` callback on the source List, Store, or Collection activates automatically, through any number of chained levels. Mutating the source does not tear the resource down. When the last effect disposes, cleanup cascades upstream through every intermediate node.
+When an effect reads a derived list, the `watched` callback on the source List, Store, or external-push signal activates automatically, through any number of chained levels. Mutating the source does not tear the resource down. When the last effect disposes, cleanup cascades upstream through every intermediate node.
 
 ### Activation timing: conditional reads delay it
 
-Dependencies are tracked from the `.get()` calls that actually execute. A read inside a branch that has not run yet — for example inside `match()`'s `ok` branch while a Task is still pending — does not activate `watched` until that branch runs. Read signals eagerly, before the conditional logic, when you need immediate activation:
+Dependencies are tracked from the `.get()` calls that actually execute. A read inside a branch that has not run yet — for example inside `match()`'s `ok` branch while an async derivation is still pending — does not activate `watched` until that branch runs. Read signals eagerly, before the conditional logic, when you need immediate activation:
 
 ```js
 createEffect(() => {
@@ -308,7 +313,7 @@ const changes = createMemo((prev) => {
   // ... diff prev vs next ...
   return { current: next, added, removed }
 }, {
-  value: { current: new Set(), added: [], removed: [] },
+  initial: { current: new Set(), added: [], removed: [] },
   watched: (invalidate) => {
     const observer = new MutationObserver(() => invalidate())
     observer.observe(parent, { childList: true, subtree: true })
@@ -323,4 +328,4 @@ This pattern suits:
 - Network connections that can be established lazily
 - Expensive computations that should pause when nothing needs them
 - External subscriptions such as WebSocket or Server-Sent Events
-- Computed signals that must react to external events like DOM mutations or timers
+- Derivations that must react to external events like DOM mutations or timers

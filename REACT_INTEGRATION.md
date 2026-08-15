@@ -72,7 +72,7 @@ function useScope(setup: () => void): void {
 
 React StrictMode mounts and unmounts components twice in development. Because `createScope` returns a dispose function and `useEffect` cleanup calls it, the double-mount cycle works correctly without any special handling.
 
-### Async: Task states in React
+### Async: pending states in React
 
 Two variants cover different needs.
 
@@ -80,19 +80,21 @@ Two variants cover different needs.
 
 ```ts
 import { useSyncExternalStore } from 'react'
-import type { Task } from '@zeix/cause-effect'
+import type { Signal } from '@zeix/cause-effect'
 
-function useTask<T extends {}>(task: Task<T>): {
+function useTask<T extends {}>(task: Signal<T>): {
   data: T | undefined
   isPending: boolean
   error: unknown
 }
 ```
 
-**Suspense variant** — throws a Promise when the Task is in the `nil` state (no value yet), throws an Error in the `err` state, returns `T` when resolved. For the `stale` state (re-fetching with a retained value), it should return the retained value rather than throwing — this matches the `stale` fallback in `match()` and aligns with React's `useDeferredValue` mental model:
+`isPending` comes from the graph utility `isPending(signal)`, which subscribes to the pending state and returns `false` for a signal with no async origin.
+
+**Suspense variant** — throws a Promise when the async derivation is in the `nil` state (no value yet), throws an Error in the `err` state, returns `T` when resolved. For the `stale` state (re-fetching with a retained value), it should return the retained value rather than throwing — this matches the `stale` fallback in `match()` and aligns with React's `useDeferredValue` mental model:
 
 ```ts
-function useTaskSuspense<T extends {}>(task: Task<T>): T
+function useTaskSuspense<T extends {}>(task: Signal<T>): T
 // throws Promise when nil (→ <Suspense> boundary)
 // throws Error when err (→ <ErrorBoundary>)
 // returns retained T when stale (→ render continues with previous value)
@@ -101,15 +103,15 @@ function useTaskSuspense<T extends {}>(task: Task<T>): T
 
 ### Props: converting React props to signals
 
-React props are values passed on every render, not signals. To make a prop reactive within the graph, convert it to a stable `State` signal updated synchronously before paint:
+React props are values passed on every render, not signals. To make a prop reactive within the graph, convert it to a stable mutable signal updated synchronously before paint:
 
 ```ts
 import { useLayoutEffect, useMemo } from 'react'
-import { createState } from '@zeix/cause-effect'
-import type { State } from '@zeix/cause-effect'
+import { createSignal } from '@zeix/cause-effect'
+import type { MutableSignal } from '@zeix/cause-effect'
 
-function useSignalProp<T extends {}>(value: T): State<T> {
-  const signal = useMemo(() => createState(value), [])
+function useSignalProp<T extends {}>(value: T): MutableSignal<T> {
+  const signal = useMemo(() => createSignal(value), [])
   useLayoutEffect(() => { signal.set(value) }, [value])
   return signal
 }
@@ -123,7 +125,7 @@ function useSignalProp<T extends {}>(value: T): State<T> {
 
 ```tsx
 import { useSignal } from './use-signal'
-import type { List, State } from '@zeix/cause-effect'
+import type { List, Signal } from '@zeix/cause-effect'
 import type { ReactNode } from 'react'
 
 function Each<T extends {}>({
@@ -131,7 +133,7 @@ function Each<T extends {}>({
   children,
 }: {
   list: List<T>
-  children: (signal: State<T>, key: string) => ReactNode
+  children: (signal: Signal<T>, key: string) => ReactNode
 }) {
   const keys = useSignal(/* subscribe to list structural changes */)
   return <>{keys.map(key => children(list.byKey(key), key))}</>
@@ -153,25 +155,25 @@ Usage:
 `match()` requires an active owner — it must be called inside an effect or scope. React render has no active owner. The integration needs a `useMatch()` hook that subscribes to the relevant signal states and dispatches to handlers synchronously in render:
 
 ```ts
-import type { Task, Memo, MatchHandlers } from '@zeix/cause-effect'
+import type { Signal, MatchHandlers } from '@zeix/cause-effect'
 
 function useMatch<T extends {}>(
-  signal: Task<T> | Memo<T>,
+  signal: Signal<T>,
   handlers: MatchHandlers<T>,
-): ReturnType<MatchHandlers<T>[keyof MatchHandlers<T>]>
+): ReturnType<MatchHandlers<T>[keyof MatchHandlers<T]]>
 ```
 
 The cleanup semantics from `match()` — cleanup runs before the next handler dispatch — do not map to React render returns. Any cleanup from handlers should be managed in a wrapping `useEffect`, not inside `useMatch` itself.
 
 ### SSR
 
-`useSyncExternalStore` accepts a third `getServerSnapshot` argument. For synchronous signals (`State`, `Memo`), `getServerSnapshot` is identical to `getSnapshot` — the value is available synchronously:
+`useSyncExternalStore` accepts a third `getServerSnapshot` argument. For created and synchronously derived signals, `getServerSnapshot` is identical to `getSnapshot` — the value is available synchronously:
 
 ```ts
 useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 ```
 
-For `Task`, the server snapshot should return the nil/pending state, or a pre-fetched value if one was provided via `options.value`. React's streaming SSR handles async resolution through Suspense boundaries.
+For an async derivation (`deriveSignal(asyncFn)`, `createTask`), the server snapshot should return the nil/pending state, or a pre-fetched value if one was provided via `initial`. React's streaming SSR handles async resolution through Suspense boundaries.
 
 ## Package Shape
 
@@ -193,10 +195,10 @@ Recommended exports:
 |---|---|
 | `useSignal(signal)` | Subscribe a component to any readable signal |
 | `useScope(fn)` | Tie a Cause & Effect scope to component lifecycle |
-| `useTask(task)` | Explicit `{ data, isPending, error }` tuple |
+| `useTask(task)` | Explicit `{ data, isPending, error }` tuple from `isPending(signal)` |
 | `useTaskSuspense(task)` | Suspense-throwing variant |
 | `useMatch(signal, handlers)` | Conditional dispatch in render |
-| `useSignalProp(value)` | Convert a React prop to a stable `State` signal |
+| `useSignalProp(value)` | Convert a React prop to a stable mutable signal |
 | `<Each list={...}>` | Keyed list rendering with item-level granularity |
 
 ## The DevTools Problem

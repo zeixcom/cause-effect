@@ -56,8 +56,8 @@ create(set => ({
 
 ```ts
 const userId = createState(1)
-const user = createTask(async (prev, abort) => {
-  const res = await fetch(`/api/users/${userId.get()}`, { signal: abort })
+const user = createTask(async (_prev, abortSignal) => {
+  const res = await fetch(`/api/users/${userId.get()}`, { signal: abortSignal })
   return res.json()
 })
 
@@ -72,7 +72,7 @@ createEffect(() => match(user, {
 Three things disappear:
 
 - **The trigger.** `userId` is a dependency, so changing it re-runs the Task. You never call the fetch by hand.
-- **The race.** A dependency change aborts the in-flight request through `abort`. The slower response cannot win.
+- **The race.** A dependency change aborts the in-flight request through `abortSignal`. The slower response cannot win.
 - **The coordination.** `stale` fires during a re-fetch with the previous value retained, so data and status never disagree.
 
 The sections below cover only what is specific to each library.
@@ -257,6 +257,35 @@ createEffect(() => {
 
 If you need a value derived from itself (a running total, a counter), compute it with `createMemo()` instead of writing back into the signal an effect reads.
 
+### Effects write outward, not inward
+
+An effect can call `.set()`. The type system allows it. The rule is direction: write outward — to the DOM, the network, or storage. That is what an effect is for. Never write inward — to a signal that a computation could derive.
+
+An inward write is a dependency the graph cannot see. The graph knows the effect reads `A`, and it knows `B` exists. It does not know that `B` depends on `A`. Five consequences follow, and all of them are mechanical:
+
+1. `B` is stale for a whole flush pass. Any effect that reads `B` in the same flush sees the previous value.
+2. Equality suppression is lost. The effect ran, so `B` is written even when `A` recomputed to an equal value.
+3. There is no abort-on-change. An out-of-order async response overwrites a newer one.
+4. `B` has no lazy lifecycle. It stays alive when nothing observes it.
+5. The multi-pass `flush()` and `EffectConvergenceError` exist mainly to keep this pattern from diverging.
+
+Every shape can be derived from every origin, so the corrective is a construction call, not discipline:
+
+```ts
+// Outward write — correct: the DOM is not a signal
+createEffect(() => {
+  label.textContent = user.name.get()
+})
+
+// Inward write — wrong: derive instead
+createEffect(() => {
+  fullName.set(`${user.firstName.get()} ${user.lastName.get()}`)
+})
+const fullName = deriveSignal(() =>
+  `${user.firstName.get()} ${user.lastName.get()}`,
+)
+```
+
 ### Non-nullable signals
 
 All signals enforce `T extends {}` — `null` and `undefined` are excluded at the type level. This means you can trust that `.get()` always returns a real value without null checks.
@@ -285,7 +314,7 @@ createEffect(() => {
 **What to do instead:**
 
 - For async results: use `createTask()` — a Task without reactive dependencies works like a Promise that resolves into the graph. Use `match()` to handle the pending state.
-- For external input that starts undefined: use `createSensor()` with its lazy start callback, and `match()` to handle the unset state — or pass an initial `value` in its options if a sensible default exists.
+- For external input that starts undefined: use `createSensor()` with its lazy `watched` callback, and `match()` to handle the unset state — or pass `initial` in its options if a sensible default exists.
 - For optional state: use a discriminated union, an empty string, an empty array, `0`, or `false` — whatever the zero value for your type is:
 
 ```ts
@@ -419,21 +448,30 @@ Each item is its own signal. Sorting reorders keys without destroying signals or
 
 Write through `.replace()` rather than `byKey().set()` — see [List](README.md#list) for why.
 
-### Collection: derived arrays with item-level memoization
+### Derived lists: per-item memoization
 
-A Collection is a set of keyed items with per-item memoization, so a change to one item does not invalidate the others.
+A derived list gives every item its own memoized signal, so a change to one item does not invalidate the others.
 
-Frameworks solve this with memoized child components — `React.memo` plus a stable `key`, or Vue's per-child reactivity. Those work at the render layer. `.deriveCollection()` works at the data layer, so the memoization holds regardless of what renders it:
+Frameworks solve this with memoized child components — `React.memo` plus a stable `key`, or Vue's per-child reactivity. Those work at the render layer. `deriveList(source, itemFn)` works at the data layer, so the memoization holds regardless of what renders it:
 
 ```ts
-const display = todos.deriveCollection(todo => ({
+const display = deriveList(todos, todo => ({
   label: todo.done ? `[x] ${todo.text}` : `[ ] ${todo.text}`
 }))
 ```
 
-When one item changes, only its derived signal recomputes. Structural changes are tracked separately from value changes, so adding an item does not re-derive the rest.
+When one item changes, only its derived signal recomputes. Structural changes are tracked separately from value changes, so adding an item does not re-derive the rest. The source can be any signal holding an array — including an async one, which is how a fetched array becomes a keyed list with per-item granularity:
 
-A Collection can also be externally-driven: `createCollection()` takes a start callback and applies incoming data as granular add, change, and remove operations rather than replacing the array. See the [Collection API](README.md#collection) for both forms, async mapping, and chaining.
+```ts
+// An async array, keyed and memoized per item — no effect in between
+const users = deriveList(
+  async (_prev, abortSignal) =>
+    (await fetch(`/api/users?q=${query.get()}`, { signal: abortSignal })).json(),
+  { initial: [], keyConfig: u => u.id },
+)
+```
+
+The item function can itself be async; each item's computation then cancels when its source item changes. An externally driven list uses the seed form — `deriveList(seed, { watched })` — where the `watched` callback receives an `emit` function and applies incoming data as granular add, change, and remove operations rather than replacing the array. See the [List API](README.md#list) for all forms.
 
 ### Sensor: lazy external input
 
@@ -442,21 +480,23 @@ Frameworks typically manage event listeners inside component lifecycle hooks (`u
 ```ts
 import { createSensor, createEffect } from '@zeix/cause-effect'
 
-const windowSize = createSensor((set) => {
-  const update = () => set({ w: innerWidth, h: innerHeight })
-  update()
-  window.addEventListener('resize', update)
-  return () => window.removeEventListener('resize', update)
+const windowSize = createSensor<{ w: number; h: number }>({
+  watched: emit => {
+    const update = () => emit({ w: innerWidth, h: innerHeight })
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  },
 })
 ```
 
-The start callback runs lazily — only when an effect first reads the sensor. When no effects are watching, the cleanup runs automatically. When an effect reads it again, the start callback runs again. No manual setup/teardown.
+The `watched` callback runs lazily — only when an effect first reads the sensor. When no effects are watching, the cleanup runs automatically. When an effect reads it again, `watched` runs again. No manual setup/teardown.
 
 ### Slot: stable property delegation
 
 A Slot is a forwarding layer to a swappable backing signal, and it holds no value of its own. It has no `update()` method, and `isMutableSignal()` excludes it.
 
-If you are building a component system, you often need to expose signals as object properties via `Object.defineProperty()`. The challenge arises when a property must switch its backing signal without breaking existing sinks. A property may switch from a local writable `State` to a parent-controlled read-only `Memo`.
+If you are building a component system, you often need to expose signals as object properties via `Object.defineProperty()`. The challenge arises when a property must switch its backing signal without breaking existing sinks. A property may switch from a local writable signal to a parent-controlled derived signal.
 
 `createSlot()` solves this. It provides a stable reactive source that delegates to a swappable backing signal. The slot object itself is a valid property descriptor:
 
@@ -478,94 +518,40 @@ Writes forward to the current backing signal when it is writable. See [Slot](REA
 
 ## Utilities for Generic Code
 
-Framework code rarely needs these. They matter when you write a layer that accepts state from a caller and cannot know in advance which signal type it will receive — a component factory, a binding helper, or an adapter. React's equivalent problem is a hook that must accept "a value or a state setter"; here the polymorphic factories resolve it at the type level.
+Framework code rarely needs these. They matter when you write a layer that accepts state from a caller and cannot know in advance which signal shape it will receive — a component factory, a binding helper, or an adapter.
 
-**`createSignal(value)`** converts any value to its corresponding signal type:
-
-```ts
-import { createSignal } from '@zeix/cause-effect'
-
-createSignal(0)                          // → State<number>
-createSignal([1, 2, 3])                  // → List<number>
-createSignal({ x: 0 })                   // → Store<{ x: number }>
-createSignal(() => x.get() * 2)          // → Memo<number>
-createSignal(async (_, s) =>
-  fetch('/api', { signal: s }).then(r => r.json()))  // → Task<Response>
-```
-
-A value that is already a signal is returned unchanged, which makes the function safe to call on caller-supplied input.
-
-**`createMutableSignal(value)`** is the same, restricted to `State`, `Store`, and `List`. It throws `InvalidSignalValueError` for a function or a read-only signal.
-
-**`createComputed(callback, options?)`** creates a `Memo` or a `Task`, by detecting whether the callback is async:
-
-```ts
-const doubled = createComputed(() => count.get() * 2)
-const data    = createComputed(async (_, signal) =>
-  fetch(url.get(), { signal }).then(r => r.json()))
-```
-
-The split is decided from the callback itself, before it runs. A callback that omits `async` but returns a `Promise` becomes a `Memo`, and throws `PromiseValueError` on first read rather than caching the `Promise` as its value.
-
-**Type predicates**
+**Shape guards** narrow an unknown value to one shape. Each readonly guard matches both the mutable and the readonly version of its shape; each `isMutable*` guard additionally requires write access:
 
 | Predicate | True for |
 |---|---|
-| `isSignal(value)` | Any signal (all 9 types) |
-| `isMutableSignal(value)` | `State`, `Store`, `List` — signals with `.set()` and `.update()` |
-| `isComputed(value)` | `Memo`, `Task` — derived signals |
+| `isSignal(value)` | The single-value shape — `createSignal`, `deriveSignal`, `createState`, `createMemo`, `createTask`, `createSensor` outputs |
+| `isMutableSignal(value)` | The single-value shape with `.set()` / `.update()` |
+| `isList(value)` / `isMutableList(value)` | The keyed-sequence shape (`deriveList` / `createList`) |
+| `isStore(value)` / `isMutableStore(value)` | The keyed-record shape (`deriveStore` / `createStore`) |
+| `isSlot(value)` | A `Slot` |
 
-`MutableSignal<T>` is the TypeScript type matching `isMutableSignal`. Use it as a parameter type in generic code that accepts any writable signal.
+Two facts about the guards prevent surprises:
+
+- `isSignal()` matches only the single-value shape. A `List`, a `Store`, and a `Slot` each have their own guard. Guarding a value that may be any of them? Check the shape you mean, in the order your code handles them.
+- For "is this any reactive value at all", do not reach for a guard. Use the structural check — `typeof x?.get === 'function'`. It accepts every signal shape and descriptor-like objects a tag check never would.
+
+`Signal<T>`, `List<T, S>`, and `Store<T>` are the TypeScript types behind the readonly guards; `MutableSignal<T>`, `MutableList<T, S>`, and `MutableStore<T>` behind the mutable ones. Use the readonly types as parameter types and accept anything derived. `isSignalOfType(value, type)` remains the primitive all guards are built on.
 
 ## Choosing the Right Signal
 
-```
-Does the data come from *outside* the reactive system?
-│
-├─ Yes, single value → `createSensor(set => { ... })`
-│   (mouse position, window resize, media queries, DOM observers, etc.)
-│   Tip: Use `{ equals: SKIP_EQUALITY }` for mutable object observation
-│
-├─ Yes, keyed collection → `createCollection(applyChanges => { ... })`
-│   (WebSocket streams, Server-Sent Events, external data feeds, etc.)
-│
-└─ No, managed internally? What kind of data is it?
-    │
-    ├─ *Primitive* (number/string/boolean)
-    │   │
-    │   ├─ Do you want to mutate it directly?
-    │   │     └─ Yes → `createState()`
-    │   │
-    │   └─ Is it derived from other signals?
-    │         │
-    │         ├─ Sync derived
-    │         │     ├─ Simple/cheap → plain function (preferred)
-    │         │     └─ Expensive/shared/stateful → `createMemo()`
-    │         │
-    │         └─ Async derived → `createTask()`
-    │            (cancellation + memoization + pending/error state)
-    │
-    ├─ *Plain Object*
-    │   │
-    │   ├─ Do you want to mutate individual properties?
-    │   │     ├─ Yes → `createStore()`
-    │   │     └─ No, whole object mutations only → `createState()`
-    │   │
-    │   └─ Is it derived from other signals?
-    │         ├─ Sync derived → plain function or `createMemo()`
-    │         └─ Async derived → `createTask()`
-    │
-    └─ *Array*
-        │
-        ├─ Do you need to mutate it (add/remove/sort) with stable item identity?
-        │     ├─ Yes → `createList()`
-        │     └─ No, whole array mutations only → `createState()`
-        │
-        └─ Is it derived / read-only transformation of a `List` or `Collection`?
-              └─ Yes → `.deriveCollection()`
-                 (memoized + supports async mapping + chaining)
+Two questions decide the shape: what kind of data is it, and who produces it? Construction follows the matrix — `create*` yields the writable type, `derive*` yields a readonly one:
 
-Do you need a *stable property position* that can swap its backing signal?
-└─ Yes → `createSlot(existingSignal)`
-   (integration layers, custom elements, property descriptors)
-```
+| You have / you want | Single value | Keyed sequence | Keyed record |
+|---|---|---|---|
+| A value you own | `createSignal(value)` | `createList(array)` | `createStore(record)` |
+| Other signals (sync) | `deriveSignal(fn)` | `deriveList(fn)` | `deriveStore(fn)` |
+| Other signals (async) | `deriveSignal(asyncFn)` | `deriveList(asyncFn, { initial })` | `deriveStore(asyncFn, { initial })` |
+| An external source | `deriveSignal(seed, { watched })` | `deriveList(seed, { watched })` | `deriveStore(seed, { watched })` |
+| A source array + item transform | — | `deriveList(source, itemFn)` | — |
+
+Notes on the matrix:
+
+- The async forms for `List` and `Store` require `initial`, so a derived collection is never unset. `isPending(signal)` distinguishes loading-empty from resolved-empty. A derived single value stays unset until the first resolution unless you pass `initial` — `match()`'s `nil` branch depends on that.
+- The external-source forms take a seed value plus a `watched` lifecycle in options. The callback receives an `emit` function shaped for the target: `emit(value)` for a single value, `emit(changes)` for a list, `emit(patch)` for a store.
+- The narrow factories `createState`, `createMemo`, `createTask`, and `createSensor` construct the same shapes with a single origin each. They exist for tree-shaking — an import of one construction path must not pull in the others. `deriveSignal` dispatches to them internally.
+- Do you need a *stable property position* that can swap its backing signal? Use `createSlot(existingSignal)` — integration layers, custom elements, property descriptors.
