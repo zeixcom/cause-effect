@@ -1,5 +1,24 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **`deriveStore(input, options?)`**: New factory that closes the derivation gap for the keyed-record shape — previously no `Store` could be derived from a computation, an async source, or an external push; the only way to build a reactive record from a `Task` or `Memo` was an imperative write inside an effect. Each property is backed by a `Memo` reading the source directly, preserving `Store`'s per-property granularity; `byKey` and proxy reads stay untracked for structural changes, consistent with `createStore` and [ADR-0015](adr/0015-composite-lookup-methods-track-structural-changes.md). Nothing derived exposes a setter, so an imperative write is now a compile error rather than a convention to remember. Accepts a sync function, an async function (`options.initial` required), or a seed record with `options.watched`. New exported types `DerivedStore<T>`, `DeriveStoreOptions<T>`, `StoreCallback<T>`.
+- **`deriveList(input, options?)`**: New factory unifying every origin a keyed sequence can come from — synchronous computation, asynchronous computation (`options.initial` required), external push (seed array + `options.watched`), and per-item derivation from any `CollectionSource`. Returns the same read-only type as `.deriveCollection()`. New exported type `DeriveListOptions<T>`.
+- **`deriveCollection` accepts any `Signal<U[]>` source**: Previously restricted to an already-keyed `List` or `Collection`, which was the specific wall forcing an effect-write for the common "fetch an array, key it, render per item" pipeline. An unkeyed source is now adapted on read (`keyedAdapter`), diffing against the previous read with the same `diffArrays` algorithm `List.set()` uses so item identity stays stable across recomputes. New `options` parameter (`keyConfig`, `itemEquals`) and exported type `DeriveCollectionOptions<U>`; `CollectionSource<T>` widened to include `Signal<T[]>`.
+- **`isPending(signal)` / `abort(signal)`**: New graph-level utilities (exported from the package root) that work on any signal with an asynchronous origin — including a `deriveList`/`deriveStore` backed internally by a `Task`, not just a bare `Task`. `isPending` is reactive; both are no-ops on a signal with no asynchronous origin.
+- **`MutableList<T>` / `isMutableList(x)`**: Non-deprecated 1.x bridge names for the mutable keyed-sequence type and its guard, ahead of the v2.0 taxonomy where `List` is repurposed as the readonly base. Same type and behavior as today's `List`/`isList`.
+- **`DerivedList<T>` / `isDerivedList(x)`**: Non-deprecated 1.x bridge names for the read-only keyed-sequence type and its guard, ahead of the v2.0 taxonomy where this type becomes `List`. Same type and behavior as today's `Collection`/`isCollection`.
+- **`tools/codemod-v2.ts`**: New ts-morph codemod that rewrites consumer code to the v2.0 bridge names (`List`→`MutableList`, `isList`→`isMutableList`, `Collection`→`DerivedList`, `isCollection`→`isDerivedList`, `createCollection(cb, o?)`→`deriveList(seed, { ... })`). Meaning-preserving: output compiles and behaves identically before and after. Exact identifier match only; `--module` scopes which import declarations are rewritten (defaults to `cause-effect`).
+- **`MIGRATION-2.0.md`**: New guide documenting the v2.0 shape-indexed taxonomy ([ADR-0018](adr/0018-shape-indexed-signal-types.md), Proposed), the bridge-name table, how to run the codemod, and what it cannot decide automatically (read-only `List<T>` positions, origin guards, `createSignal` shape coercion).
+
+### Deprecated
+
+- **`List<T>` / `isList(x)`**: Marked `@deprecated`. Use `MutableList<T>` / `isMutableList(x)` instead — same type and behavior today. In v2.0, `List` is repurposed as the readonly base (today's `Collection`), so code that keeps using the old name will silently change meaning at that release.
+- **`Collection<T>` / `isCollection(x)`**: Marked `@deprecated`. Use `DerivedList<T>` / `isDerivedList(x)` instead — same type and behavior today. In v2.0, `Collection` is removed; the readonly base is named `List`.
+- **`createCollection(watched, options?)`**: Marked `@deprecated`. Use `deriveList(seed, { watched, ... })` instead — the external-push form of `deriveList` replaces this factory in v2.0. The seed argument takes the place of the `value` option; every other option carries over unchanged.
+
 ## 1.4.1
 
 ### Fixed
