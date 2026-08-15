@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test'
 import {
-	createCollection,
 	createList,
 	createState,
 	createStore,
@@ -39,7 +38,7 @@ describe('List — readonly base and mutable extension share one tag', () => {
 	test('isList matches both the mutable and the readonly sequence', () => {
 		expect(isList(createList([1]))).toBe(true)
 		expect(isList(deriveList(() => [1]))).toBe(true)
-		expect(isList(createCollection({ watched: () => () => {} }))).toBe(true)
+		expect(isList(deriveList([], { watched: () => () => {} }))).toBe(true)
 	})
 
 	test('isList rejects non-lists', () => {
@@ -56,7 +55,7 @@ describe('List — readonly base and mutable extension share one tag', () => {
 
 	test('isMutableList rejects a readonly sequence', () => {
 		expect(isMutableList(deriveList(() => [1]))).toBe(false)
-		expect(isMutableList(createCollection({ watched: () => () => {} }))).toBe(
+		expect(isMutableList(deriveList([], { watched: () => () => {} }))).toBe(
 			false,
 		)
 	})

@@ -8,6 +8,7 @@ import {
 	createState,
 	createStore,
 	createTask,
+	deriveList,
 	isList,
 	isSignal,
 	match,
@@ -817,7 +818,7 @@ describe('List', () => {
 			dispose()
 		})
 
-		test('should activate watched via sync deriveCollection', () => {
+		test('should activate watched via sync per-item derivation', () => {
 			let watchedCalled = false
 			let unwatchedCalled = false
 			const list = createList([1, 2, 3], {
@@ -829,7 +830,7 @@ describe('List', () => {
 				},
 			})
 
-			const derived = list.deriveCollection((v: number) => v * 2)
+			const derived = deriveList(list, (v: number) => v * 2)
 
 			expect(watchedCalled).toBe(false)
 
@@ -844,7 +845,7 @@ describe('List', () => {
 			expect(unwatchedCalled).toBe(true)
 		})
 
-		test('should activate watched via async deriveCollection', async () => {
+		test('should activate watched via async per-item derivation', async () => {
 			let watchedCalled = false
 			let unwatchedCalled = false
 			const list = createList([1, 2, 3], {
@@ -856,7 +857,8 @@ describe('List', () => {
 				},
 			})
 
-			const derived = list.deriveCollection(
+			const derived = deriveList(
+				list,
 				async (v: number, _abort: AbortSignal) => v * 2,
 			)
 
@@ -876,7 +878,7 @@ describe('List', () => {
 			expect(unwatchedCalled).toBe(true)
 		})
 
-		test('should not tear down watched during list mutation via deriveCollection', () => {
+		test('should not tear down watched during list mutation via per-item derivation', () => {
 			let activations = 0
 			let deactivations = 0
 			const list = createList([1, 2], {
@@ -888,7 +890,7 @@ describe('List', () => {
 				},
 			})
 
-			const derived = list.deriveCollection((v: number) => v * 2)
+			const derived = deriveList(list, (v: number) => v * 2)
 
 			let result: number[] = []
 			const dispose = createEffect(() => {
@@ -943,7 +945,7 @@ describe('List', () => {
 			dispose()
 		})
 
-		test('should activate watched via chained deriveCollection', () => {
+		test('should activate watched via chained per-item derivations', () => {
 			let watchedCalled = false
 			const list = createList([1, 2, 3], {
 				watched: () => {
@@ -952,8 +954,8 @@ describe('List', () => {
 				},
 			})
 
-			const doubled = list.deriveCollection((v: number) => v * 2)
-			const quadrupled = doubled.deriveCollection((v: number) => v * 2)
+			const doubled = deriveList(list, (v: number) => v * 2)
+			const quadrupled = deriveList(doubled, (v: number) => v * 2)
 
 			expect(watchedCalled).toBe(false)
 
@@ -965,7 +967,7 @@ describe('List', () => {
 			dispose()
 		})
 
-		test('should activate watched via deriveCollection read inside match()', async () => {
+		test('should activate watched via per-item derivation read inside match()', async () => {
 			let watchedCalled = false
 			const list = createList([1, 2], {
 				watched: () => {
@@ -974,7 +976,7 @@ describe('List', () => {
 				},
 			})
 
-			const derived = list.deriveCollection((v: number) => v * 10)
+			const derived = deriveList(list, (v: number) => v * 10)
 
 			const task = createTask(async () => {
 				await wait(10)

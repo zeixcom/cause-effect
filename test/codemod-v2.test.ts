@@ -93,4 +93,25 @@ describe('codemod-v2: report', () => {
 		)
 		expect(report.needsManualReview.join('\n')).toContain('read-only positions')
 	})
+
+	test('flags isSignal and isMutableSignal call sites without rewriting them', () => {
+		const { output, report } = migrateSource(
+			"import { isMutableSignal, isSignal } from '@zeix/cause-effect'\n" +
+				'if (isSignal(x)) read(x)\n' +
+				'if (isMutableSignal(y)) write(y)\n',
+			{ module: 'not-a-real-import' },
+		)
+		expect(output).toContain('if (isSignal(x)) read(x)')
+		expect(output).toContain('if (isMutableSignal(y)) write(y)')
+		expect(report.needsManualReview.join('\n')).toContain(
+			'2 isSignal()/isMutableSignal() call(s)',
+		)
+	})
+
+	test('does not flag isSignal when absent', () => {
+		const { report } = migrateSource('const a = 1\n', {
+			module: 'not-a-real-import',
+		})
+		expect(report.needsManualReview.join('\n')).not.toContain('isSignal()')
+	})
 })

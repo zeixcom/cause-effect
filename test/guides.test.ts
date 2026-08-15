@@ -9,6 +9,7 @@ import {
 	createSlot,
 	createState,
 	createTask,
+	deriveList,
 	match,
 } from '../index.ts'
 
@@ -63,7 +64,7 @@ describe('Guide: Keyed Collections', () => {
 		dispose()
 	})
 
-	test('deriveCollection maps item values to a read-only collection', () => {
+	test('deriveList maps item values to a read-only list', () => {
 		const todos = createList<Todo>(
 			[
 				{ id: 'a', title: 'Write docs', done: false },
@@ -71,13 +72,13 @@ describe('Guide: Keyed Collections', () => {
 			],
 			{ keyConfig: item => item.id },
 		)
-		const visibleTitles = todos.deriveCollection(item =>
+		const visibleTitles = deriveList(todos, item =>
 			item.done ? 'archived' : item.title,
 		)
 		expect(visibleTitles.get()).toEqual(['Write docs', 'archived'])
 	})
 
-	test('deriveCollection updates when an item is replaced', () => {
+	test('deriveList updates when an item is replaced', () => {
 		const todos = createList<Todo>(
 			[
 				{ id: 'a', title: 'Write docs', done: false },
@@ -85,7 +86,7 @@ describe('Guide: Keyed Collections', () => {
 			],
 			{ keyConfig: item => item.id },
 		)
-		const visibleTitles = todos.deriveCollection(item =>
+		const visibleTitles = deriveList(todos, item =>
 			item.done ? 'archived' : item.title,
 		)
 		todos.replace('b', { id: 'b', title: 'Ship release', done: false })
@@ -101,7 +102,7 @@ describe('Guide: Keyed Collections', () => {
 			],
 			{ keyConfig: item => item.id },
 		)
-		const titles = todos.deriveCollection(item => item.title)
+		const titles = deriveList(todos, item => item.title)
 		todos.sort((a, b) => a.title.localeCompare(b.title))
 		expect(todos.get().map(t => t.title)).toEqual([
 			'Audit docs build',
@@ -152,7 +153,7 @@ describe('Guide: Keyed Collections', () => {
 		const openCount = createMemo(
 			() => todos.get().filter(item => !item.done).length,
 		)
-		const visibleTitles = todos.deriveCollection(item =>
+		const visibleTitles = deriveList(todos, item =>
 			item.done ? 'archived' : item.title,
 		)
 
@@ -192,7 +193,7 @@ describe('Guide: Async Data Pipelines', () => {
 				if (abort.aborted) return SEED
 				return { items: [{ id: '1', title: query.get() }], total: 1 }
 			},
-			{ value: SEED },
+			{ initial: SEED },
 		)
 		const states: string[] = []
 		const dispose = createEffect(() => {
@@ -217,7 +218,7 @@ describe('Guide: Async Data Pipelines', () => {
 				await wait(50)
 				return { items: [{ id: '1', title: 'test' }], total: 42 }
 			},
-			{ value: SEED },
+			{ initial: SEED },
 		)
 		const totalPages = createMemo(() =>
 			Math.max(1, Math.ceil(results.get().total / 20)),
@@ -244,7 +245,7 @@ describe('Guide: Async Data Pipelines', () => {
 				if (abort.aborted) return SEED
 				return { items: [{ id: '1', title: `${q} p${p}` }], total: 1 }
 			},
-			{ value: SEED },
+			{ initial: SEED },
 		)
 		const dispose = createEffect(() => {
 			match(results, {
@@ -278,7 +279,7 @@ describe('Guide: Async Data Pipelines', () => {
 				}
 				return { items: [{ id: '1', title: q }], total: 1 }
 			},
-			{ value: SEED },
+			{ initial: SEED },
 		)
 		const dispose = createEffect(() => {
 			match(results, {

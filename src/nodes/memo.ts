@@ -5,8 +5,8 @@ import {
 } from '../errors'
 import {
 	batchDepth,
-	type ComputedOptions,
 	DEFAULT_EQUALITY,
+	type DeriveSignalOptions,
 	FLAG_DIRTY,
 	flush,
 	type MemoCallback,
@@ -35,7 +35,7 @@ const WHERE = 'createMemo'
  * @template T - The type of value computed by the memo
  * @param fn - The computation function that receives the previous value
  * @param options - Optional configuration for the memo
- * @param options.value - Optional initial value for reducer patterns
+ * @param options.initial - Optional initial value for reducer patterns
  * @param options.equals - Optional equality function. Defaults to strict equality (`===`)
  * @param options.guard - Optional type guard to validate values
  * @param options.watched - Optional callback invoked when the memo is first watched by an effect.
@@ -55,28 +55,28 @@ const WHERE = 'createMemo'
  * @example
  * ```ts
  * // Using previous value
- * const sum = createMemo((prev) => prev + count.get(), { value: 0, equals: Object.is });
+ * const sum = createMemo((prev) => prev + count.get(), { initial: 0, equals: Object.is });
  * ```
  */
 function createMemo<T extends {}>(
 	fn: (prev: T) => T,
-	options: ComputedOptions<T> & { value: T },
+	options: DeriveSignalOptions<T> & { initial: T },
 ): Signal<T>
 function createMemo<T extends {}>(
 	fn: MemoCallback<T>,
-	options?: ComputedOptions<T>,
+	options?: DeriveSignalOptions<T>,
 ): Signal<T>
 function createMemo<T extends {}>(
 	fn: MemoCallback<T>,
-	options?: ComputedOptions<T>,
+	options?: DeriveSignalOptions<T>,
 ): Signal<T> {
 	validateCallback(WHERE, fn, isSyncFunction)
-	if (options?.value !== undefined)
-		validateSignalValue(WHERE, options.value, options?.guard)
+	if (options?.initial !== undefined)
+		validateSignalValue(WHERE, options.initial, options?.guard)
 
 	const node: MemoNode<T> = {
 		fn,
-		value: options?.value as T,
+		value: options?.initial as T,
 		flags: FLAG_DIRTY,
 		sources: null,
 		sourcesTail: null,

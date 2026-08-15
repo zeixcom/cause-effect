@@ -131,8 +131,8 @@ declare function createStore<T extends UnknownRecord>(value: T, options?: StoreO
  * @example
  * ```ts
  * const user = deriveStore(
- *   async (_prev, abort) => {
- *     const res = await fetch(`/api/users/${id.get()}`, { signal: abort })
+ *   async (_prev, abortSignal) => {
+ *     const res = await fetch(`/api/users/${id.get()}`, { signal: abortSignal })
  *     return res.json() as Promise<{ name: string; email: string }>
  *   },
  *   { initial: { name: '', email: '' } },
@@ -143,7 +143,7 @@ declare function createStore<T extends UnknownRecord>(value: T, options?: StoreO
  * ```
  */
 declare function deriveStore<T extends UnknownRecord>(input: () => T, options?: DeriveStoreOptions<T>): Store<T>;
-declare function deriveStore<T extends UnknownRecord>(input: (prev: T, abort: AbortSignal) => Promise<T>, options: DeriveStoreOptions<T> & {
+declare function deriveStore<T extends UnknownRecord>(input: (prev: T, abortSignal: AbortSignal) => Promise<T>, options: DeriveStoreOptions<T> & {
     initial: T;
 }): Store<T>;
 declare function deriveStore<T extends UnknownRecord>(input: T, options: DeriveStoreOptions<T> & {

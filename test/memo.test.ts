@@ -238,7 +238,7 @@ describe('Memo', () => {
 					receivedPrev = prev
 					return prev + 1
 				},
-				{ value: 10 },
+				{ initial: 10 },
 			)
 			expect(memo.get()).toBe(11)
 			expect(receivedPrev).toBe(10)
@@ -262,7 +262,7 @@ describe('Memo', () => {
 					receivedPrev = prev
 					return source.get() * 2
 				},
-				{ value: 0 },
+				{ initial: 0 },
 			)
 
 			expect(memo.get()).toBe(10)
@@ -280,7 +280,7 @@ describe('Memo', () => {
 					const inc = increment.get()
 					return inc === 0 ? prev : prev + inc
 				},
-				{ value: 0 },
+				{ initial: 0 },
 			)
 
 			expect(sum.get()).toBe(0)
@@ -298,7 +298,7 @@ describe('Memo', () => {
 					if (shouldError.get()) throw new Error('fail')
 					return prev + counter.get()
 				},
-				{ value: 10 },
+				{ initial: 10 },
 			)
 
 			expect(memo.get()).toBe(11) // 10 + 1
@@ -319,7 +319,7 @@ describe('Memo', () => {
 			const source = createState(1)
 			let downstream = 0
 			const memo = createMemo(() => ({ x: source.get() % 2 }), {
-				value: { x: -1 },
+				initial: { x: -1 },
 				equals: (a, b) => a.x === b.x,
 			})
 			const tail = createMemo(() => {
@@ -344,7 +344,7 @@ describe('Memo', () => {
 		test('should validate initial value against guard', () => {
 			expect(() => {
 				createMemo(() => 42, {
-					value: -1,
+					initial: -1,
 					guard: (v): v is number => typeof v === 'number' && v >= 0,
 				})
 			}).toThrow('[createMemo] Signal value -1 is invalid')
@@ -352,7 +352,7 @@ describe('Memo', () => {
 
 		test('should accept initial value that passes guard', () => {
 			const memo = createMemo(prev => prev + 1, {
-				value: 0,
+				initial: 0,
 				guard: (v): v is number => typeof v === 'number' && v >= 0,
 			})
 			expect(memo.get()).toBe(1)
@@ -382,7 +382,7 @@ describe('Memo', () => {
 		test('should throw NullishSignalValueError for null initial value', () => {
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
-				createMemo(() => 42, { value: null })
+				createMemo(() => 42, { initial: null })
 			}).toThrow('[createMemo] Signal value cannot be null or undefined')
 		})
 	})
@@ -393,7 +393,7 @@ describe('Memo', () => {
 			const externalValue = 1
 
 			const memo = createMemo(() => externalValue, {
-				value: 0,
+				initial: 0,
 				watched: _invalidate => {
 					watchedCount++
 					return () => {}
@@ -417,7 +417,7 @@ describe('Memo', () => {
 			const externalValue = 1
 
 			const memo = createMemo(() => externalValue, {
-				value: 0,
+				initial: 0,
 				watched: _invalidate => {
 					return () => {
 						cleanedUp = true
@@ -447,7 +447,7 @@ describe('Memo', () => {
 					return externalValue
 				},
 				{
-					value: 0,
+					initial: 0,
 					watched: inv => {
 						invalidate = inv
 						return () => {}
@@ -478,7 +478,7 @@ describe('Memo', () => {
 			let invalidate!: () => void
 
 			const memo = createMemo(() => externalValue, {
-				value: 0,
+				initial: 0,
 				watched: inv => {
 					invalidate = inv
 					return () => {}
@@ -509,7 +509,7 @@ describe('Memo', () => {
 			const externalValue = 1
 
 			const memo = createMemo(() => externalValue, {
-				value: 0,
+				initial: 0,
 				watched: _invalidate => {
 					watchedCount++
 					return () => {}
@@ -545,7 +545,7 @@ describe('Memo', () => {
 					return source.get() + externalValue
 				},
 				{
-					value: 0,
+					initial: 0,
 					watched: inv => {
 						invalidate = inv
 						return () => {}

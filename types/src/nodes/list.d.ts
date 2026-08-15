@@ -48,8 +48,6 @@ type List<T extends {}, S extends Signal<T> = Signal<T>> = {
     byKey(key: string): S | undefined;
     keyAt(index: number): string | undefined;
     indexOfKey(key: string): number;
-    deriveCollection<R extends {}>(callback: (sourceValue: T) => R): List<R>;
-    deriveCollection<R extends {}>(callback: (sourceValue: T, abort: AbortSignal) => Promise<R>): List<R>;
 };
 /**
  * A reactive ordered array with stable keys and per-item reactivity.

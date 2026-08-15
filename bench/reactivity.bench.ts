@@ -1,7 +1,6 @@
 import { bench, group, run } from 'mitata'
 import {
 	batch,
-	createCollection,
 	createEffect,
 	createList,
 	createMemo,
@@ -10,6 +9,7 @@ import {
 	createState,
 	createStore,
 	createTask,
+	deriveList,
 	SKIP_EQUALITY,
 } from '../index.ts'
 import type { ReactiveFramework } from '../test/util/reactive-framework'
@@ -401,7 +401,7 @@ group('Task: resolve propagation', () => {
 
 	const src = createState(1)
 	const task = createTask(async () => src.get() * 2, {
-		value: 0,
+		initial: 0,
 	})
 	createEffect(() => {
 		task.get()
@@ -446,7 +446,7 @@ group('Sensor: create + update (SKIP_EQUALITY)', () => {
 				set(obj)
 				return () => {}
 			},
-			value: obj,
+			initial: obj,
 			equals: SKIP_EQUALITY,
 		})
 		createEffect(() => {
@@ -513,7 +513,7 @@ group('List: reactive propagation', () => {
 group('Collection: derive 50 items (sync)', () => {
 	bench('cause-effect', () => {
 		const list = createList(Array.from({ length: 50 }, (_, i) => i + 1))
-		const col = list.deriveCollection((v: number) => v * 2)
+		const col = deriveList(list, (v: number) => v * 2)
 		col.get()
 	})
 })
@@ -521,15 +521,15 @@ group('Collection: derive 50 items (sync)', () => {
 group('Collection: chain 2 derivations', () => {
 	bench('cause-effect', () => {
 		const list = createList(Array.from({ length: 20 }, (_, i) => i + 1))
-		const col1 = list.deriveCollection((v: number) => v * 2)
-		const col2 = col1.deriveCollection((v: number) => v + 1)
+		const col1 = deriveList(list, (v: number) => v * 2)
+		const col2 = deriveList(col1, (v: number) => v + 1)
 		col2.get()
 	})
 })
 
 group('Collection: reactive update', () => {
 	const list = createList([1, 2, 3, 4, 5])
-	const col = list.deriveCollection((v: number) => v * 10)
+	const col = deriveList(list, (v: number) => v * 10)
 	createEffect(() => {
 		col.get()
 	})
@@ -642,7 +642,7 @@ group('List: replace in 1000-item list', () => {
 group('Collection: derive 1000 items (sync)', () => {
 	bench('cause-effect', () => {
 		const list = createList(Array.from({ length: 1000 }, (_, i) => i + 1))
-		const col = list.deriveCollection((v: number) => v * 2)
+		const col = deriveList(list, (v: number) => v * 2)
 		col.get()
 	})
 })
@@ -650,15 +650,15 @@ group('Collection: derive 1000 items (sync)', () => {
 group('Collection: chain 5 derivations (100 items)', () => {
 	bench('cause-effect', () => {
 		const list = createList(Array.from({ length: 100 }, (_, i) => i + 1))
-		let col = list.deriveCollection((v: number) => v * 2)
-		for (let i = 1; i < 5; i++) col = col.deriveCollection((v: number) => v + 1)
+		let col = deriveList(list, (v: number) => v * 2)
+		for (let i = 1; i < 5; i++) col = deriveList(col, (v: number) => v + 1)
 		col.get()
 	})
 })
 
 group('Collection: large reactive update (1000 items)', () => {
 	const list = createList(Array.from({ length: 1000 }, (_, i) => i))
-	const col = list.deriveCollection((v: number) => v * 10)
+	const col = deriveList(list, (v: number) => v * 10)
 	// biome-ignore lint/style/noNonNullAssertion: list is pre-populated
 	const firstKey = list.keyAt(0)!
 	createEffect(() => {
@@ -676,7 +676,7 @@ group(
 	() => {
 		type Item = { id: string }
 		let apply!: (changes: { add?: Item[]; remove?: Item[] }) => void
-		const col = createCollection<Item>({
+		const col = deriveList([], {
 			watched: applyChanges => {
 				apply = applyChanges
 				return () => {}
@@ -823,7 +823,7 @@ group('Task: 10 tasks reading 1 state (fanout)', () => {
 
 	const src = createState(0)
 	const tasks = Array.from({ length: 10 }, () =>
-		createTask(async () => src.get() * 2, { value: 0 }),
+		createTask(async () => src.get() * 2, { initial: 0 }),
 	)
 	for (const t of tasks) createEffect(() => void t.get())
 
@@ -838,10 +838,10 @@ group('Task: chain of 5 tasks', () => {
 	const wait = () => new Promise<void>(r => setTimeout(r, 0))
 
 	const src = createState(1)
-	let current = createTask(async () => src.get(), { value: 0 })
+	let current = createTask(async () => src.get(), { initial: 0 })
 	for (let i = 0; i < 4; i++) {
 		const prev = current
-		current = createTask(async () => prev.get() + 1, { value: 0 })
+		current = createTask(async () => prev.get() + 1, { initial: 0 })
 	}
 	createEffect(() => void current.get())
 

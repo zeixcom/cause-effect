@@ -81,7 +81,7 @@ describe('Sensor', () => {
 					set(10)
 					return () => {}
 				},
-				value: 0,
+				initial: 0,
 			})
 
 			const doubled = createMemo(() => sensor.get() * 2)
@@ -335,7 +335,7 @@ describe('Sensor', () => {
 		test('should use initial value before activation', () => {
 			const sensor = createSensor<number>({
 				watched: () => () => {},
-				value: 99,
+				initial: 99,
 			})
 
 			let received: number | undefined
@@ -359,7 +359,7 @@ describe('Sensor', () => {
 					set(obj)
 					return () => {}
 				},
-				value: obj,
+				initial: obj,
 				equals: SKIP_EQUALITY,
 			})
 
@@ -471,7 +471,7 @@ describe('Sensor', () => {
 		test('should throw NullishSignalValueError for null initial value', () => {
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
-				createSensor<number>({ watched: () => () => {}, value: null })
+				createSensor<number>({ watched: () => () => {}, initial: null })
 			}).toThrow('[createSensor] Signal value cannot be null or undefined')
 		})
 	})

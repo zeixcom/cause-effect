@@ -1,4 +1,4 @@
-import { type ComputedOptions, type MemoCallback, type Signal } from '../graph';
+import { type DeriveSignalOptions, type MemoCallback, type Signal } from '../graph';
 /**
  * Creates a derived reactive computation that caches its result.
  * The computation automatically tracks dependencies and recomputes when they change.
@@ -10,7 +10,7 @@ import { type ComputedOptions, type MemoCallback, type Signal } from '../graph';
  * @template T - The type of value computed by the memo
  * @param fn - The computation function that receives the previous value
  * @param options - Optional configuration for the memo
- * @param options.value - Optional initial value for reducer patterns
+ * @param options.initial - Optional initial value for reducer patterns
  * @param options.equals - Optional equality function. Defaults to strict equality (`===`)
  * @param options.guard - Optional type guard to validate values
  * @param options.watched - Optional callback invoked when the memo is first watched by an effect.
@@ -30,11 +30,11 @@ import { type ComputedOptions, type MemoCallback, type Signal } from '../graph';
  * @example
  * ```ts
  * // Using previous value
- * const sum = createMemo((prev) => prev + count.get(), { value: 0, equals: Object.is });
+ * const sum = createMemo((prev) => prev + count.get(), { initial: 0, equals: Object.is });
  * ```
  */
-declare function createMemo<T extends {}>(fn: (prev: T) => T, options: ComputedOptions<T> & {
-    value: T;
+declare function createMemo<T extends {}>(fn: (prev: T) => T, options: DeriveSignalOptions<T> & {
+    initial: T;
 }): Signal<T>;
-declare function createMemo<T extends {}>(fn: MemoCallback<T>, options?: ComputedOptions<T>): Signal<T>;
+declare function createMemo<T extends {}>(fn: MemoCallback<T>, options?: DeriveSignalOptions<T>): Signal<T>;
 export { createMemo };

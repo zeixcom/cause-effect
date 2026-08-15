@@ -26,7 +26,7 @@ describe('Task', () => {
 					await wait(50)
 					return 42
 				},
-				{ value: 0 },
+				{ initial: 0 },
 			)
 			expect(task.get()).toBe(0)
 			await wait(60)
@@ -34,7 +34,7 @@ describe('Task', () => {
 		})
 
 		test('should have Symbol.toStringTag of "Signal"', () => {
-			const task = createTask(async () => 1, { value: 0 })
+			const task = createTask(async () => 1, { initial: 0 })
 			expect(task[Symbol.toStringTag]).toBe('Signal')
 		})
 
@@ -49,14 +49,14 @@ describe('Task', () => {
 
 	describe('isSignal', () => {
 		test('should identify task signals', () => {
-			expect(isSignal(createTask(async () => 1, { value: 0 }))).toBe(true)
+			expect(isSignal(createTask(async () => 1, { initial: 0 }))).toBe(true)
 		})
 
 		test('should return false for non-signal values', () => {
 			expect(isSignal(42)).toBe(false)
 			expect(isSignal(null)).toBe(false)
 			expect(isSignal({})).toBe(false)
-			expect(isMutableSignal(createTask(async () => 1, { value: 0 }))).toBe(
+			expect(isMutableSignal(createTask(async () => 1, { initial: 0 }))).toBe(
 				false,
 			)
 		})
@@ -69,7 +69,7 @@ describe('Task', () => {
 					await wait(50)
 					return 42
 				},
-				{ value: 0 },
+				{ initial: 0 },
 			)
 			task.get() // trigger computation
 			expect(isPending(task)).toBe(true)
@@ -79,7 +79,7 @@ describe('Task', () => {
 		})
 
 		test('should return false before first get()', () => {
-			const task = createTask(async () => 42, { value: 0 })
+			const task = createTask(async () => 42, { initial: 0 })
 			expect(isPending(task)).toBe(false)
 		})
 	})
@@ -93,7 +93,7 @@ describe('Task', () => {
 					if (!signal.aborted) completed = true
 					return 42
 				},
-				{ value: 0 },
+				{ initial: 0 },
 			)
 			task.get() // trigger computation
 			expect(isPending(task)).toBe(true)
@@ -106,7 +106,7 @@ describe('Task', () => {
 		test('should be a no-op when called on an idle task', () => {
 			// abort() on a task with no in-flight computation must not throw
 			// and must leave pending false.
-			const task = createTask(async () => 42, { value: 0 })
+			const task = createTask(async () => 42, { initial: 0 })
 			expect(isPending(task)).toBe(false)
 			expect(() => abort(task)).not.toThrow()
 			expect(isPending(task)).toBe(false)
@@ -118,7 +118,7 @@ describe('Task', () => {
 					await wait(20)
 					return 99
 				},
-				{ value: 0 },
+				{ initial: 0 },
 			)
 			abort(task) // idle abort
 			expect(task.get()).toBe(0) // still serves the initial value
@@ -136,7 +136,7 @@ describe('Task', () => {
 					await wait(50)
 					return val * 2
 				},
-				{ value: 0 },
+				{ initial: 0 },
 			)
 
 			let result = 0
@@ -179,16 +179,16 @@ describe('Task', () => {
 					await wait(80)
 					return 10
 				},
-				{ value: 0 },
+				{ initial: 0 },
 			)
 			const b = createTask(
 				async () => {
 					await wait(80)
 					return 20
 				},
-				{ value: 0 },
+				{ initial: 0 },
 			)
-			const sum = createMemo(() => a.get() + b.get(), { value: 0 })
+			const sum = createMemo(() => a.get() + b.get(), { initial: 0 })
 			expect(sum.get()).toBe(0)
 			await wait(90)
 			expect(sum.get()).toBe(30)
@@ -206,7 +206,7 @@ describe('Task', () => {
 					if (signal.aborted) wasAborted = true
 					return val
 				},
-				{ value: 0 },
+				{ initial: 0 },
 			)
 
 			task.get() // start computation
@@ -226,7 +226,7 @@ describe('Task', () => {
 					await wait(100)
 					return source.get()
 				},
-				{ value: 0 },
+				{ initial: 0 },
 			)
 
 			task.get()
@@ -249,7 +249,7 @@ describe('Task', () => {
 					await wait(50)
 					throw new Error('async failure')
 				},
-				{ value: 0 },
+				{ initial: 0 },
 			)
 			task.get()
 			await wait(60)
@@ -265,7 +265,7 @@ describe('Task', () => {
 					if (value === 2) throw new Error('bad value')
 					return value
 				},
-				{ value: 0 },
+				{ initial: 0 },
 			)
 
 			task.get()
@@ -297,7 +297,7 @@ describe('Task', () => {
 					if (v >= 2) throw new Error('persistent failure')
 					return v
 				},
-				{ value: 0 },
+				{ initial: 0 },
 			)
 
 			// First error establishes node.error.
@@ -331,7 +331,7 @@ describe('Task', () => {
 					if (v >= 2) throw new Error('fail')
 					return v * 10
 				},
-				{ value: 0 },
+				{ initial: 0 },
 			)
 
 			task.get()
@@ -353,7 +353,7 @@ describe('Task', () => {
 					await wait(50)
 					return 42
 				},
-				{ value: 10 },
+				{ initial: 10 },
 			)
 			expect(task.get()).toBe(10)
 		})
@@ -366,7 +366,7 @@ describe('Task', () => {
 					await wait(50)
 					return prev + 5
 				},
-				{ value: 10 },
+				{ initial: 10 },
 			)
 
 			expect(task.get()).toBe(10)
@@ -385,7 +385,7 @@ describe('Task', () => {
 					await wait(50)
 					return val + prev
 				},
-				{ value: 0 },
+				{ initial: 0 },
 			)
 
 			let result = 0
@@ -413,7 +413,7 @@ describe('Task', () => {
 					return { x: val % 2 }
 				},
 				{
-					value: { x: -1 },
+					initial: { x: -1 },
 					equals: (a, b) => a.x === b.x,
 				},
 			)
@@ -441,7 +441,7 @@ describe('Task', () => {
 			expect(() => {
 				createTask(async () => 42, {
 					// @ts-expect-error - Testing invalid input
-					value: 'foo',
+					initial: 'foo',
 					guard: (v): v is number => typeof v === 'number',
 				})
 			}).toThrow('[createTask] Signal value "foo" is invalid')
@@ -449,7 +449,7 @@ describe('Task', () => {
 
 		test('should accept initial value that passes guard', () => {
 			const task = createTask(async () => 42, {
-				value: 10,
+				initial: 10,
 				guard: (v): v is number => typeof v === 'number',
 			})
 			expect(task.get()).toBe(10)
@@ -478,7 +478,7 @@ describe('Task', () => {
 		test('should throw NullishSignalValueError for null initial value', () => {
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
-				createTask(async () => 42, { value: null })
+				createTask(async () => 42, { initial: null })
 			}).toThrow('[createTask] Signal value cannot be null or undefined')
 		})
 	})
@@ -502,7 +502,7 @@ describe('Task', () => {
 			Object.setPrototypeOf(boom, ASYNC_PROTO)
 			expect(Object.getPrototypeOf(boom)).toBe(ASYNC_PROTO)
 
-			const task = createTask(boom, { value: 0 })
+			const task = createTask(boom, { initial: 0 })
 
 			// First read surfaces the real error
 			expect(() => task.get()).toThrow('sync boom')
@@ -537,7 +537,7 @@ describe('Task', () => {
 					return 1
 				},
 				{
-					value: 0,
+					initial: 0,
 					watched: _invalidate => {
 						watchedCount++
 						return () => {}
@@ -566,7 +566,7 @@ describe('Task', () => {
 					return 1
 				},
 				{
-					value: 0,
+					initial: 0,
 					watched: _invalidate => {
 						return () => {
 							cleanedUp = true
@@ -598,7 +598,7 @@ describe('Task', () => {
 					return externalValue
 				},
 				{
-					value: 0,
+					initial: 0,
 					watched: inv => {
 						invalidate = inv
 						return () => {}
@@ -637,7 +637,7 @@ describe('Task', () => {
 					return 1
 				},
 				{
-					value: 0,
+					initial: 0,
 					watched: inv => {
 						invalidate = inv
 						return () => {}

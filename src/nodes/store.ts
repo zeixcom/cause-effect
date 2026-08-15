@@ -488,8 +488,8 @@ function createStore<T extends UnknownRecord>(
  * @example
  * ```ts
  * const user = deriveStore(
- *   async (_prev, abort) => {
- *     const res = await fetch(`/api/users/${id.get()}`, { signal: abort })
+ *   async (_prev, abortSignal) => {
+ *     const res = await fetch(`/api/users/${id.get()}`, { signal: abortSignal })
  *     return res.json() as Promise<{ name: string; email: string }>
  *   },
  *   { initial: { name: '', email: '' } },
@@ -504,7 +504,7 @@ function deriveStore<T extends UnknownRecord>(
 	options?: DeriveStoreOptions<T>,
 ): Store<T>
 function deriveStore<T extends UnknownRecord>(
-	input: (prev: T, abort: AbortSignal) => Promise<T>,
+	input: (prev: T, abortSignal: AbortSignal) => Promise<T>,
 	options: DeriveStoreOptions<T> & { initial: T },
 ): Store<T>
 function deriveStore<T extends UnknownRecord>(
@@ -512,7 +512,7 @@ function deriveStore<T extends UnknownRecord>(
 	options: DeriveStoreOptions<T> & { watched: StoreCallback<T> },
 ): Store<T>
 function deriveStore<T extends UnknownRecord>(
-	input: (() => T) | ((prev: T, abort: AbortSignal) => Promise<T>) | T,
+	input: (() => T) | ((prev: T, abortSignal: AbortSignal) => Promise<T>) | T,
 	options?: DeriveStoreOptions<T>,
 ): Store<T> {
 	// External push: a seed record plus a watched lifecycle. A mutable Store already
@@ -538,8 +538,8 @@ function deriveStore<T extends UnknownRecord>(
 	// empty record rather than throwing: the contract is that the record is never
 	// unset, and an empty seed satisfies it. `isPending()` carries the loading state.
 	const task = isAsyncFunction(input)
-		? createTask(input as (prev: T, abort: AbortSignal) => Promise<T>, {
-				value: (options?.initial ?? {}) as T,
+		? createTask(input as (prev: T, abortSignal: AbortSignal) => Promise<T>, {
+				initial: (options?.initial ?? {}) as T,
 			})
 		: undefined
 	const source: Signal<T> =

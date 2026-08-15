@@ -5,8 +5,8 @@ import {
 } from '../errors'
 import {
 	batchDepth,
-	type ComputedOptions,
 	DEFAULT_EQUALITY,
+	type DeriveSignalOptions,
 	FLAG_DIRTY,
 	flush,
 	makeSubscribe,
@@ -42,7 +42,7 @@ const WHERE = 'createTask'
  * @template T - The type of value resolved by the task
  * @param fn - The async computation function that receives the previous value and an AbortSignal
  * @param options - Optional configuration for the task
- * @param options.value - Optional initial value for reducer patterns
+ * @param options.initial - Optional initial value for reducer patterns
  * @param options.equals - Optional equality function. Defaults to strict equality (`===`)
  * @param options.guard - Optional type guard to validate values
  * @param options.watched - Optional callback invoked when the task is first watched by an effect.
@@ -53,8 +53,8 @@ const WHERE = 'createTask'
  * @example
  * ```ts
  * const userId = createState(1);
- * const user = createTask(async (prev, signal) => {
- *   const response = await fetch(`/api/users/${userId.get()}`, { signal });
+ * const user = createTask(async (prev, abortSignal) => {
+ *   const response = await fetch(`/api/users/${userId.get()}`, { signal: abortSignal });
  *   return response.json();
  * });
  *
@@ -71,20 +71,20 @@ const WHERE = 'createTask'
  * ```
  */
 function createTask<T extends {}>(
-	fn: (prev: T, signal: AbortSignal) => Promise<T>,
-	options: ComputedOptions<T> & { value: T },
+	fn: (prev: T, abortSignal: AbortSignal) => Promise<T>,
+	options: DeriveSignalOptions<T> & { initial: T },
 ): Signal<T>
 function createTask<T extends {}>(
 	fn: TaskCallback<T>,
-	options?: ComputedOptions<T>,
+	options?: DeriveSignalOptions<T>,
 ): Signal<T>
 function createTask<T extends {}>(
 	fn: TaskCallback<T>,
-	options?: ComputedOptions<T>,
+	options?: DeriveSignalOptions<T>,
 ): Signal<T> {
 	validateCallback(WHERE, fn, isAsyncFunction)
-	if (options?.value !== undefined)
-		validateSignalValue(WHERE, options.value, options?.guard)
+	if (options?.initial !== undefined)
+		validateSignalValue(WHERE, options.initial, options?.guard)
 
 	const pendingNode: StateNode<boolean> = {
 		value: false,
@@ -95,7 +95,7 @@ function createTask<T extends {}>(
 
 	const node: TaskNode<T> = {
 		fn,
-		value: options?.value as T,
+		value: options?.initial as T,
 		sources: null,
 		sourcesTail: null,
 		sinks: null,

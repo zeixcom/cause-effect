@@ -149,7 +149,7 @@ describe('createEffect', () => {
 
 			// Memo whose computed value does not change on invalidation
 			const memo = createMemo(() => 42, {
-				value: 42,
+				initial: 42,
 				watched: inv => {
 					invalidate = inv
 					return () => {}
@@ -180,7 +180,7 @@ describe('createEffect', () => {
 			let externalValue = 1
 
 			const memo = createMemo(() => externalValue, {
-				value: 0,
+				initial: 0,
 				watched: inv => {
 					invalidate = inv
 					return () => {}
@@ -215,7 +215,7 @@ describe('createEffect', () => {
 
 			// Custom equals: treat values as equal when they round to the same integer
 			const memo = createMemo(() => externalValue, {
-				value: 0,
+				initial: 0,
 				equals: (a, b) => Math.floor(a) === Math.floor(b),
 				watched: inv => {
 					invalidate = inv
@@ -250,7 +250,7 @@ describe('createEffect', () => {
 			let effectCount = 0
 
 			const watchedMemo = createMemo(() => 42, {
-				value: 42,
+				initial: 42,
 				watched: inv => {
 					invalidate = inv
 					return () => {}
@@ -282,7 +282,7 @@ describe('createEffect', () => {
 			let effectCount = 0
 
 			const memo = createMemo(() => 42, {
-				value: 42,
+				initial: 42,
 				watched: inv => {
 					invalidate = inv
 					return () => {}
@@ -314,7 +314,7 @@ describe('createEffect', () => {
 			const state = createState(1)
 
 			const memo = createMemo(() => 42, {
-				value: 42,
+				initial: 42,
 				watched: inv => {
 					invalidate = inv
 					return () => {}
@@ -783,7 +783,7 @@ describe('match', () => {
 					await wait(50)
 					return 99
 				},
-				{ value: 42 },
+				{ initial: 42 },
 			)
 			let okCount = 0
 			let staleCount = 0
@@ -816,7 +816,7 @@ describe('match', () => {
 					await wait(100)
 					return 42
 				},
-				{ value: 0 },
+				{ initial: 0 },
 			)
 			const log: string[] = []
 
@@ -850,7 +850,7 @@ describe('match', () => {
 					await wait(50)
 					return 99
 				},
-				{ value: 42 },
+				{ initial: 42 },
 			)
 			let okCount = 0
 
@@ -876,7 +876,7 @@ describe('match', () => {
 					await wait(50)
 					return 99
 				},
-				{ value: 0 },
+				{ initial: 0 },
 			)
 			let okCount = 0
 			let staleCount = 0
@@ -909,7 +909,7 @@ describe('match', () => {
 					await wait(200)
 					return 42
 				},
-				{ value: 0 },
+				{ initial: 0 },
 			)
 			const nilTask = createTask(async () => {
 				await wait(200)
@@ -947,7 +947,7 @@ describe('match', () => {
 					await wait(50)
 					return val * 10
 				},
-				{ value: 0 },
+				{ initial: 0 },
 			)
 			const log: string[] = []
 
@@ -983,7 +983,7 @@ describe('match', () => {
 					await wait(50)
 					return 42
 				},
-				{ value: 42 },
+				{ initial: 42 },
 			)
 			const log: string[] = []
 
@@ -1018,7 +1018,7 @@ describe('match', () => {
 					await wait(50)
 					return 99
 				},
-				{ value: 42 },
+				{ initial: 42 },
 			)
 			let cleanupCount = 0
 

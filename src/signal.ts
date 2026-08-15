@@ -1,20 +1,16 @@
 import { validateCallback } from './errors'
 import {
-	type Cleanup,
-	type ComputedOptions,
+	type DeriveSignalOptions,
 	type MemoCallback,
 	type MutableSignal,
 	type Signal,
+	type SignalCallback,
 	type SignalOptions,
 	type TaskCallback,
 	TYPE_SIGNAL,
 } from './graph'
 import { createMemo } from './nodes/memo'
-import {
-	createSensor,
-	type SensorCallback,
-	type SensorOptions,
-} from './nodes/sensor'
+import { createSensor } from './nodes/sensor'
 import { createState } from './nodes/state'
 import { createTask } from './nodes/task'
 import {
@@ -23,30 +19,6 @@ import {
 	isSignalOfType,
 	isSyncFunction,
 } from './util'
-
-/* === Types === */
-
-/**
- * Options for `deriveSignal`. Which members apply depends on the input kind:
- * `initial` seeds the async form (optional — without it the signal is unset
- * until the first resolution), and `watched` is required when the input is a
- * seed value (external push). See ADR-0018.
- *
- * @template T - The type of value the signal holds
- */
-type DeriveSignalOptions<T extends {}> = SignalOptions<T> & {
-	/**
-	 * Initial value for the async derivation form. Optional escape from
-	 * `UnsetSignalValueError` before the first resolution.
-	 */
-	initial?: T
-
-	/**
-	 * For a function input: an invalidation callback, as on `createMemo` and
-	 * `createTask`. For a seed value: the external-push lifecycle, required.
-	 */
-	watched?: ((invalidate: () => void) => Cleanup) | SensorCallback<T>
-}
 
 /* === Factory Functions === */
 
@@ -101,8 +73,8 @@ function createSignal<T extends {}>(
  * @example
  * ```ts
  * const userId = createSignal(1)
- * const user = deriveSignal(async (_prev, abort) => {
- *   const response = await fetch(`/api/users/${userId.get()}`, { signal: abort })
+ * const user = deriveSignal(async (_prev, abortSignal) => {
+ *   const response = await fetch(`/api/users/${userId.get()}`, { signal: abortSignal })
  *   return response.json()
  * }, { initial: fallbackUser })
  * ```
@@ -113,35 +85,32 @@ function deriveSignal<T extends {}>(
 ): Signal<T>
 function deriveSignal<T extends {}>(
 	input: T,
-	options: DeriveSignalOptions<T> & { watched: SensorCallback<T> },
+	options: SignalOptions<T> & { initial?: T } & {
+		watched: SignalCallback<T>
+	},
 ): Signal<T>
 function deriveSignal<T extends {}>(
 	input: MemoCallback<T> | TaskCallback<T> | T,
-	options?: DeriveSignalOptions<T>,
+	options?:
+		| DeriveSignalOptions<T>
+		| (SignalOptions<T> & { initial?: T; watched?: SignalCallback<T> }),
 ): Signal<T> {
 	if (isFunction(input)) {
-		// The narrow factories name the seed `value`; the façade family says `initial`.
-		// Built conditionally so `undefined` is never assigned to an optional
-		// property (`exactOptionalPropertyTypes`).
-		const seed = options?.initial as T | undefined
-		const computed = (
-			seed === undefined ? options : { ...options, value: seed }
-		) as ComputedOptions<T>
+		// The seed option is `initial` for the whole derive family; the narrow
+		// factories take the same options object verbatim.
 		return isAsyncFunction(input)
-			? createTask(input as TaskCallback<T>, computed)
-			: createMemo(input as MemoCallback<T>, computed)
+			? createTask(input as TaskCallback<T>, options as DeriveSignalOptions<T>)
+			: createMemo(input as MemoCallback<T>, options as DeriveSignalOptions<T>)
 	}
 
-	// External push: a seed value plus a watched lifecycle.
-	const watched = options?.watched as SensorCallback<T> | undefined
+	// External push: a seed value plus a watched lifecycle. The seed is the
+	// initial value — it overrides any explicit `initial` option.
+	const watched = options?.watched as SignalCallback<T> | undefined
 	validateCallback('deriveSignal', watched, isSyncFunction)
-	const sensorOptions = {
-		watched,
-		value: input as T,
-	} as SensorOptions<T> & { watched: SensorCallback<T> }
-	if (options?.equals !== undefined) sensorOptions.equals = options.equals
-	if (options?.guard !== undefined) sensorOptions.guard = options.guard
-	return createSensor(sensorOptions)
+	return createSensor({
+		...options,
+		initial: input,
+	} as SignalOptions<T> & { initial?: T } & { watched: SignalCallback<T> })
 }
 
 /* === Guards === */
@@ -173,10 +142,4 @@ function isMutableSignal(value: unknown): value is MutableSignal<unknown & {}> {
 	)
 }
 
-export {
-	createSignal,
-	type DeriveSignalOptions,
-	deriveSignal,
-	isMutableSignal,
-	isSignal,
-}
+export { createSignal, deriveSignal, isMutableSignal, isSignal }

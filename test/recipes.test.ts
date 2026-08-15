@@ -6,6 +6,7 @@ import {
 	createMemo,
 	createState,
 	createStore,
+	deriveList,
 } from '../index'
 
 /* === Types ===
@@ -112,7 +113,7 @@ describe('Recipes', () => {
 			{ keyConfig: (w: Workspace) => w.id },
 		)
 
-		const activeMemberCount = workspaces.deriveCollection(workspace => {
+		const activeMemberCount = deriveList(workspaces, workspace => {
 			return workspace.active ? workspace.members.length : 0
 		})
 

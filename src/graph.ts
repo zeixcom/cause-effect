@@ -49,7 +49,7 @@ type TaskNode<T extends {}> = SourceFields<T> &
 	OptionsFields<T> &
 	SinkFields &
 	AsyncFields & {
-		fn: (prev: T, abort: AbortSignal) => Promise<T>
+		fn: (prev: T, abortSignal: AbortSignal) => Promise<T>
 		pendingNode: StateNode<boolean>
 	}
 
@@ -120,21 +120,46 @@ type SignalOptions<T extends {}> = {
 	equals?: (a: T, b: T) => boolean
 }
 
-type ComputedOptions<T extends {}> = SignalOptions<T> & {
+/**
+ * Setup callback for the external-push origin: the seed-input form of
+ * `deriveSignal` and the `watched` option of `createSensor`. Runs when the
+ * signal becomes watched and receives an `emit` function that pushes a new
+ * value into the graph.
+ *
+ * @template T - The type of value the signal holds
+ * @param emit - Pushes a new value and propagates the change to sinks
+ * @returns A cleanup function that runs when the signal is no longer watched
+ */
+type SignalCallback<T extends {}> = (emit: (next: T) => void) => Cleanup
+
+/**
+ * Options for the single-value derive family: `deriveSignal` with a function
+ * input, and the narrow factories `createMemo` and `createTask`. `initial`
+ * seeds an async derivation (or the reducer pattern's starting value). See
+ * ADR-0018.
+ *
+ * The external-push form — `deriveSignal(seed, { watched })` and `createSensor` —
+ * takes the same members but a `watched` of type `SignalCallback`; it is spelled
+ * as an inline intersection at those signatures, because a union of the two
+ * `watched` shapes here would break contextual typing of inline callbacks.
+ *
+ * @template T - The type of value the signal holds
+ */
+type DeriveSignalOptions<T extends {}> = SignalOptions<T> & {
 	/**
-	 * Optional initial value.
-	 * Useful for reducer patterns so that calculations start with a value of correct type.
+	 * Initial value. For an async derivation, the optional escape from
+	 * `UnsetSignalValueError` before the first resolution. For the narrow
+	 * factories, also the seed for reducer patterns.
 	 */
-	value?: T
+	initial?: T
 
 	/**
-	 * Optional callback invoked when the signal is first watched by an effect.
-	 * Receives an `invalidate` function that marks the signal dirty and triggers re-evaluation.
-	 * Must return a cleanup function that is called when the signal is no longer watched.
-	 *
-	 * This enables lazy resource activation for computed signals that need to
-	 * react to external events (e.g. DOM mutations, timers) in addition to
-	 * tracked signal dependencies.
+	 * An invalidation callback, as on `createMemo` and `createTask`: invoked
+	 * when the signal is first watched by an effect, receives an `invalidate`
+	 * function that marks the signal dirty, and must return a cleanup function
+	 * that runs when the signal is no longer watched. This enables lazy
+	 * resource activation for computations that also react to external events
+	 * (e.g. DOM mutations, timers).
 	 */
 	watched?: (invalidate: () => void) => Cleanup
 }
@@ -168,12 +193,12 @@ type MemoCallback<T extends {}> = (prev: T | undefined) => T
  *
  * @template T - The type of value computed
  * @param prev - The previous computed value
- * @param signal - An AbortSignal that aborts when the task is cancelled
+ * @param abortSignal - An AbortSignal that aborts when the task is cancelled
  * @returns A promise that resolves to the new computed value
  */
 type TaskCallback<T extends {}> = (
 	prev: T | undefined,
-	signal: AbortSignal,
+	abortSignal: AbortSignal,
 ) => Promise<T>
 
 /**
@@ -224,13 +249,17 @@ const DEFAULT_EQUALITY = <T extends {}>(a: T, b: T): boolean => a === b
  *
  * @example
  * ```ts
- * const el = createSensor<HTMLElement>((set) => {
- *   const node = document.getElementById('box')!;
- *   set(node);
- *   const obs = new MutationObserver(() => set(node));
- *   obs.observe(node, { attributes: true });
- *   return () => obs.disconnect();
- * }, { value: node, equals: SKIP_EQUALITY });
+ * const el = createSensor<HTMLElement>({
+ *   watched: (emit) => {
+ *     const node = document.getElementById('box')!
+ *     emit(node);
+ *     const obs = new MutationObserver(() => emit(node));
+ *     obs.observe(node, { attributes: true });
+ *     return () => obs.disconnect();
+ *   },
+ *   initial: node,
+ *   equals: SKIP_EQUALITY,
+ * });
  * ```
  */
 const SKIP_EQUALITY = (_a?: unknown, _b?: unknown): boolean => false
@@ -305,11 +334,6 @@ const deepEqualInner = (
  * ```
  */
 const DEEP_EQUALITY = <T extends {}>(a: T, b: T): boolean => deepEqual(a, b)
-
-/**
- * @deprecated Use {@link DEEP_EQUALITY} instead.
- */
-const isEqual = DEEP_EQUALITY
 
 /* === Link Management === */
 
@@ -923,10 +947,10 @@ export {
 	batch,
 	batchDepth,
 	type Cleanup,
-	type ComputedOptions,
 	createScope,
 	DEEP_EQUALITY,
 	DEFAULT_EQUALITY,
+	type DeriveSignalOptions,
 	type EffectCallback,
 	type EffectNode,
 	FLAG_CHECK,
@@ -935,7 +959,6 @@ export {
 	FLAG_RELINK,
 	flush,
 	getAsyncSource,
-	isEqual,
 	isPending,
 	link,
 	type MaybeCleanup,
@@ -954,6 +977,7 @@ export {
 	type Scope,
 	type ScopeOptions,
 	type Signal,
+	type SignalCallback,
 	type SignalOptions,
 	type SinkNode,
 	SKIP_EQUALITY,

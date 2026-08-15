@@ -22,18 +22,18 @@ export {
 	abort,
 	batch,
 	type Cleanup,
-	type ComputedOptions,
 	createScope,
 	DEEP_EQUALITY,
 	DEFAULT_EQUALITY,
+	type DeriveSignalOptions,
 	type EffectCallback,
-	isEqual,
 	isPending,
 	type MaybeCleanup,
 	type MemoCallback,
 	type MutableSignal,
 	type ScopeOptions,
 	type Signal,
+	type SignalCallback,
 	type SignalOptions,
 	SKIP_EQUALITY,
 	type TaskCallback,
@@ -41,15 +41,11 @@ export {
 	untrack,
 } from './src/graph'
 export {
-	type CollectionCallback,
-	type CollectionChanges,
-	type CollectionOptions,
-	type CollectionSource,
-	createCollection,
-	type DeriveCollectionCallback,
-	type DeriveCollectionOptions,
 	type DeriveListOptions,
 	deriveList,
+	type ListCallback,
+	type ListChanges,
+	type ListSource,
 } from './src/nodes/collection'
 export {
 	createEffect,
@@ -68,11 +64,7 @@ export {
 	type MutableList,
 } from './src/nodes/list'
 export { createMemo } from './src/nodes/memo'
-export {
-	createSensor,
-	type SensorCallback,
-	type SensorOptions,
-} from './src/nodes/sensor'
+export { createSensor } from './src/nodes/sensor'
 export {
 	createSlot,
 	isSlot,
@@ -94,7 +86,6 @@ export {
 export { createTask } from './src/nodes/task'
 export {
 	createSignal,
-	type DeriveSignalOptions,
 	deriveSignal,
 	isMutableSignal,
 	isSignal,
@@ -102,7 +93,6 @@ export {
 export {
 	isAsyncFunction,
 	isFunction,
-	isObjectOfType,
 	isRecord,
 	isSignalOfType,
 	valueString,

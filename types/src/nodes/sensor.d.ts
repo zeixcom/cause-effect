@@ -1,25 +1,4 @@
-import { type Cleanup, type Signal, type SignalOptions } from '../graph';
-/**
- * Configuration options for `createSensor`.
- *
- * @template T - The type of value produced by the sensor
- */
-type SensorOptions<T extends {}> = SignalOptions<T> & {
-    /**
-     * Optional initial value. Avoids `UnsetSignalValueError` on first read
-     * before the watched callback fires.
-     */
-    value?: T;
-};
-/**
- * Setup callback for `createSensor`. Runs when the sensor becomes watched.
- * Receives a `set` function to push new values into the graph.
- *
- * @template T - The type of value produced by the sensor
- * @param set - Updates the sensor value and propagates the change to its sinks
- * @returns A cleanup function that runs when the sensor is no longer watched
- */
-type SensorCallback<T extends {}> = (set: (next: T) => void) => Cleanup;
+import { type Signal, type SignalCallback, type SignalOptions } from '../graph';
 /**
  * Creates a sensor that tracks external input while it is watched.
  *
@@ -31,8 +10,8 @@ type SensorCallback<T extends {}> = (set: (next: T) => void) => Cleanup;
  * @since 0.18.0
  * @template T - The type of value produced by the sensor
  * @param options - Configuration for the sensor.
- * @param options.watched - The callback that runs when the sensor becomes watched. Receives a `set` function and returns a cleanup function.
- * @param options.value - Optional initial value. Avoids `UnsetSignalValueError` on first read
+ * @param options.watched - The callback that runs when the sensor becomes watched. Receives an `emit` function and returns a cleanup function.
+ * @param options.initial - Optional initial value. Avoids `UnsetSignalValueError` on first read
  *   before the watched callback fires. Essential for the mutable-object observation pattern.
  * @param options.equals - Optional equality function. Defaults to strict equality (`===`). Use `SKIP_EQUALITY`
  *   for mutable objects where the reference stays the same but internal state changes.
@@ -41,17 +20,17 @@ type SensorCallback<T extends {}> = (set: (next: T) => void) => Cleanup;
  *
  * @example Tracking external values
  * ```ts
- * // An initial `value` avoids UnsetSignalValueError on the first read,
+ * // An initial value avoids UnsetSignalValueError on the first read,
  * // before any mousemove event has fired.
  * const mousePos = createSensor<{ x: number; y: number }>({
- *   watched: (set) => {
+ *   watched: (emit) => {
  *     const handler = (e: MouseEvent) => {
- *       set({ x: e.clientX, y: e.clientY });
+ *       emit({ x: e.clientX, y: e.clientY });
  *     };
  *     window.addEventListener('mousemove', handler);
  *     return () => window.removeEventListener('mousemove', handler);
  *   },
- *   value: { x: 0, y: 0 },
+ *   initial: { x: 0, y: 0 },
  * });
  * ```
  *
@@ -60,19 +39,21 @@ type SensorCallback<T extends {}> = (set: (next: T) => void) => Cleanup;
  * import { createSensor, SKIP_EQUALITY } from 'cause-effect';
  *
  * const el = createSensor<HTMLElement>({
- *   watched: (set) => {
+ *   watched: (emit) => {
  *     const node = document.getElementById('box')!;
- *     set(node);
- *     const obs = new MutationObserver(() => set(node));
+ *     emit(node);
+ *     const obs = new MutationObserver(() => emit(node));
  *     obs.observe(node, { attributes: true });
  *     return () => obs.disconnect();
  *   },
- *   value: node,
+ *   initial: node,
  *   equals: SKIP_EQUALITY,
  * });
  * ```
  */
-declare function createSensor<T extends {}>(options: SensorOptions<T> & {
-    watched: SensorCallback<T>;
+declare function createSensor<T extends {}>(options: SignalOptions<T> & {
+    initial?: T;
+} & {
+    watched: SignalCallback<T>;
 }): Signal<T>;
-export { createSensor, type SensorCallback, type SensorOptions };
+export { createSensor, type SignalCallback };

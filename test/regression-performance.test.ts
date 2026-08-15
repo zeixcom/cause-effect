@@ -4,7 +4,7 @@ import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type * as currentApi from '../index.ts'
-import type { CollectionChanges } from '../index.ts'
+import type { ListChanges } from '../index.ts'
 
 type Api = typeof currentApi
 
@@ -261,25 +261,21 @@ describe('Performance — composite nodes', () => {
 		// The stable baseline still ships the 1.x `createCollection(watched, options)`
 		// signature, so this benchmark passes each side the call shape it expects.
 		type LegacyCreateCollection = (
-			watched: (
-				apply: (changes: CollectionChanges<Item>) => void,
-			) => () => void,
+			watched: (apply: (changes: ListChanges<Item>) => void) => () => void,
 			options?: { keyConfig: (item: Item) => string },
 		) => { get(): Item[] }
 		const setup = (f: Api, legacyWatchedPosition: boolean) => () => {
-			let apply!: (changes: CollectionChanges<Item>) => void
-			const watched = (
-				applyChanges: (changes: CollectionChanges<Item>) => void,
-			) => {
+			let apply!: (changes: ListChanges<Item>) => void
+			const watched = (applyChanges: (changes: ListChanges<Item>) => void) => {
 				apply = applyChanges
 				return () => {}
 			}
 			const keyConfig = (item: Item): string => item.id
 			const col = legacyWatchedPosition
-				? (f.createCollection as unknown as LegacyCreateCollection)(watched, {
-						keyConfig,
-					})
-				: f.createCollection<Item>({ watched, keyConfig })
+				? (
+						f as unknown as { createCollection: LegacyCreateCollection }
+					).createCollection(watched, { keyConfig })
+				: f.deriveList<Item>([], { watched, keyConfig })
 			f.createEffect(() => {
 				col.get()
 			})
@@ -294,9 +290,19 @@ describe('Performance — composite nodes', () => {
 	})
 
 	test('derived collection item update (2000 iterations)', () => {
-		const setup = (f: Api) => () => {
+		// The stable baseline predates `deriveList(source, fn)`; it exposes the
+		// per-item derivation as the `.deriveCollection()` method instead.
+		type LegacyDerived = { get(): number[] }
+		const setup = (f: Api, legacyMethod: boolean) => () => {
 			const list = f.createList<number>(Array.from({ length: 5 }, (_, i) => i))
-			const derived = list.deriveCollection((v: number) => v * 2)
+			const cb = (v: number) => v * 2
+			const derived: LegacyDerived = legacyMethod
+				? (
+						list as unknown as {
+							deriveCollection(cb: (v: number) => number): LegacyDerived
+						}
+					).deriveCollection(cb)
+				: f.deriveList(list, cb)
 			// biome-ignore lint/style/noNonNullAssertion: list is pre-populated
 			const firstKey = list.keyAt(0)!
 			f.createEffect(() => {
@@ -305,7 +311,7 @@ describe('Performance — composite nodes', () => {
 			let i = 0
 			return () => f.batch(() => list.replace(firstKey, ++i))
 		}
-		const m = measurePair(setup(current), setup(stable), 2000)
+		const m = measurePair(setup(current, false), setup(stable, true), 2000)
 		check('derivedCollection', m)
 	})
 })

@@ -1,4 +1,4 @@
-import { type ComputedOptions, type Signal, type TaskCallback } from '../graph';
+import { type DeriveSignalOptions, type Signal, type TaskCallback } from '../graph';
 /**
  * Creates an asynchronous reactive computation (colorless async).
  * The computation automatically tracks dependencies and re-executes when they change.
@@ -14,7 +14,7 @@ import { type ComputedOptions, type Signal, type TaskCallback } from '../graph';
  * @template T - The type of value resolved by the task
  * @param fn - The async computation function that receives the previous value and an AbortSignal
  * @param options - Optional configuration for the task
- * @param options.value - Optional initial value for reducer patterns
+ * @param options.initial - Optional initial value for reducer patterns
  * @param options.equals - Optional equality function. Defaults to strict equality (`===`)
  * @param options.guard - Optional type guard to validate values
  * @param options.watched - Optional callback invoked when the task is first watched by an effect.
@@ -25,8 +25,8 @@ import { type ComputedOptions, type Signal, type TaskCallback } from '../graph';
  * @example
  * ```ts
  * const userId = createState(1);
- * const user = createTask(async (prev, signal) => {
- *   const response = await fetch(`/api/users/${userId.get()}`, { signal });
+ * const user = createTask(async (prev, abortSignal) => {
+ *   const response = await fetch(`/api/users/${userId.get()}`, { signal: abortSignal });
  *   return response.json();
  * });
  *
@@ -42,8 +42,8 @@ import { type ComputedOptions, type Signal, type TaskCallback } from '../graph';
  * }
  * ```
  */
-declare function createTask<T extends {}>(fn: (prev: T, signal: AbortSignal) => Promise<T>, options: ComputedOptions<T> & {
-    value: T;
+declare function createTask<T extends {}>(fn: (prev: T, abortSignal: AbortSignal) => Promise<T>, options: DeriveSignalOptions<T> & {
+    initial: T;
 }): Signal<T>;
-declare function createTask<T extends {}>(fn: TaskCallback<T>, options?: ComputedOptions<T>): Signal<T>;
+declare function createTask<T extends {}>(fn: TaskCallback<T>, options?: DeriveSignalOptions<T>): Signal<T>;
 export { createTask };

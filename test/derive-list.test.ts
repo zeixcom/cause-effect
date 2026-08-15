@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test'
 import {
-	type CollectionChanges,
 	createEffect,
 	createList,
 	createMemo,
@@ -9,6 +8,7 @@ import {
 	createTask,
 	deriveList,
 	isList,
+	type ListChanges,
 	type Signal,
 } from '../index.ts'
 
@@ -381,7 +381,7 @@ describe('deriveList', () => {
 
 	describe('external push', () => {
 		test('drives a sequence from a watched callback', async () => {
-			let push: ((changes: CollectionChanges<number>) => void) | undefined
+			let push: ((changes: ListChanges<number>) => void) | undefined
 			const items = deriveList([1, 2], {
 				watched: apply => {
 					push = apply

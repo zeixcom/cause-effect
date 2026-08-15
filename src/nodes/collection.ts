@@ -39,16 +39,16 @@ import { createTask } from './task'
 /* === Types === */
 
 /**
- * A source `deriveCollection` can key and derive from.
+ * A source `deriveList` can key and derive from.
  *
  * A `List` (mutable or readonly) is already keyed, and its stable keys are used directly.
  * Any other `Signal<T[]>` — a synchronous derivation, an asynchronous derivation, an external
  * push, a `Slot` — is keyed on read by the adapter, which is what lets an asynchronous array
- * become a keyed collection.
+ * become a keyed sequence.
  *
  * @template T - The type of items in the source
  */
-type CollectionSource<T extends {}> = List<T> | Signal<T[]>
+type ListSource<T extends {}> = List<T> | Signal<T[]>
 
 /**
  * The minimal keyed interface `deriveCollection` consumes from its source.
@@ -62,36 +62,29 @@ type KeyedSource<T extends {}> = {
 }
 
 /**
- * Configuration options for `deriveCollection`.
- *
- * Both options apply only when the source is a plain `Signal<T[]>`. A `List` or
- * readonly `List` source carries its own keys and item equality already.
- *
- * @template T - The type of items in the source
- */
-type DeriveCollectionOptions<T extends {}> = {
-	/** Key generation strategy for an unkeyed source. See `KeyConfig`. Defaults to positional keys. */
-	keyConfig?: KeyConfig<T>
-	/** Equality function for adapted per-item signals. Defaults to deep equality. */
-	itemEquals?: (a: T, b: T) => boolean
-}
-
-/**
  * Configuration options for `deriveList`.
  *
+ * `keyConfig` and `itemEquals` apply when the source is a plain `Signal<T[]>` or the input
+ * is a seed array; a `List` source carries its own keys and item equality already.
+ *
  * @template T - The type of items in the derived sequence
+ * @template S - The item-signal type of the external-push form; inferred from `createItem`
  */
-type DeriveListOptions<T extends {}> = DeriveCollectionOptions<T> & {
-	/** Seed value for an asynchronous derivation. Keeps the sequence readable before the first resolution. */
+type DeriveListOptions<T extends {}, S extends Signal<T> = Signal<T>> = {
+	/** Key generation strategy for an unkeyed source or the external-push form. See `KeyConfig`. Defaults to positional keys. */
+	keyConfig?: KeyConfig<T>
+	/** Equality function for per-item signals. Defaults to deep equality. */
+	itemEquals?: (a: T, b: T) => boolean
+	/** Initial items for an asynchronous derivation. Keeps the sequence readable before the first resolution. */
 	initial?: T[]
 	/** Lifecycle callback for an external-push origin. Required when `input` is a seed array. */
-	watched?: CollectionCallback<T>
+	watched?: ListCallback<T>
 	/** Factory for per-item signals in the external-push form. Defaults to `createState`. */
-	createItem?: (value: T) => Signal<T>
+	createItem?: (value: T) => S
 }
 
 /**
- * Transformation callback for `deriveCollection`, either sync or async.
+ * Transformation callback for the per-item derivation, either sync or async.
  * A sync callback produces a `Signal<T>` per item. An async callback produces an
  * asynchronously derived `Signal<T>` per item, which cancels when the source item changes.
  *
@@ -100,14 +93,14 @@ type DeriveListOptions<T extends {}> = DeriveCollectionOptions<T> & {
  */
 type DeriveCollectionCallback<T extends {}, U extends {}> =
 	| ((sourceValue: U) => T)
-	| ((sourceValue: U, abort: AbortSignal) => Promise<T>)
+	| ((sourceValue: U, abortSignal: AbortSignal) => Promise<T>)
 
 /**
- * Granular mutation descriptor passed to the `applyChanges` callback inside a `CollectionCallback`.
+ * Granular mutation descriptor passed to the `emit` callback inside a `ListCallback`.
  *
- * @template T - The type of items in the collection
+ * @template T - The type of items in the sequence
  */
-type CollectionChanges<T> = {
+type ListChanges<T> = {
 	/** Items to add. Each item is assigned a new key via the configured `keyConfig`. */
 	add?: T[]
 	/** Items whose values have changed. Matched to existing entries by key. */
@@ -117,13 +110,14 @@ type CollectionChanges<T> = {
 }
 
 /**
- * Configuration options for `createCollection`.
+ * Configuration for the external-push constructor backing `deriveList(seed, { watched })`.
+ * Module-private: `deriveList` is the only public route to an externally driven List.
  *
- * @template T - The type of items in the collection
+ * @template T - The type of items in the sequence
  */
 type CollectionOptions<T extends {}, S extends Signal<T> = Signal<T>> = {
 	/** Initial items. Defaults to `[]`. */
-	value?: T[]
+	initial?: T[]
 	/** Key generation strategy. See `KeyConfig`. Defaults to auto-increment. */
 	keyConfig?: KeyConfig<T>
 	/** Factory for per-item signals. Defaults to `createState`. */
@@ -133,15 +127,15 @@ type CollectionOptions<T extends {}, S extends Signal<T> = Signal<T>> = {
 }
 
 /**
- * Setup callback for `createCollection`. Runs when the collection becomes watched.
- * Receives an `applyChanges` function to push granular mutations into the graph.
+ * Setup callback for the external-push form of `deriveList`. Runs when the sequence
+ * becomes watched. Receives an `emit` function to push granular mutations into the graph.
  *
- * @template T - The type of items in the collection
- * @param apply - Call with a `CollectionChanges` object to add, update, or remove items
- * @returns A cleanup function that runs when the collection is no longer watched
+ * @template T - The type of items in the sequence
+ * @param emit - Call with a `ListChanges` object to add, update, or remove items
+ * @returns A cleanup function that runs when the sequence is no longer watched
  */
-type CollectionCallback<T extends {}> = (
-	apply: (changes: CollectionChanges<T>) => void,
+type ListCallback<T extends {}> = (
+	emit: (changes: ListChanges<T>) => void,
 ) => Cleanup
 
 /* === Functions === */
@@ -164,7 +158,7 @@ type CollectionCallback<T extends {}> = (
  */
 function keyedAdapter<T extends {}>(
 	source: Signal<T[]>,
-	options?: DeriveCollectionOptions<T>,
+	options?: DeriveListOptions<T>,
 ): KeyedSource<T> {
 	const [generateKey, contentBased] = getKeyGenerator(options?.keyConfig)
 	const itemEquals = options?.itemEquals ?? DEEP_EQUALITY
@@ -317,17 +311,6 @@ function collectionFacade<T extends {}, S extends Signal<T>>(
 			prepare()
 			return getKeys().indexOf(key)
 		},
-
-		deriveCollection<R extends {}>(
-			cb: DeriveCollectionCallback<R, T>,
-		): List<R> {
-			return (
-				deriveCollection as <T2 extends {}, U2 extends {}>(
-					source: CollectionSource<U2>,
-					callback: DeriveCollectionCallback<T2, U2>,
-				) => List<T2>
-			)(collection, cb)
-		},
 	}
 
 	return collection
@@ -335,6 +318,7 @@ function collectionFacade<T extends {}, S extends Signal<T>>(
 
 /**
  * Creates a derived List from a List, with per-item memoization.
+ * Module-private: `deriveList(source, itemFn)` is the public entry to this path.
  * A sync callback creates a Signal per item. An async callback creates an asynchronously
  * derived Signal per item. The node reads the source keys, so a structural change propagates.
  *
@@ -342,28 +326,27 @@ function collectionFacade<T extends {}, S extends Signal<T>>(
  * on read — see `keyedAdapter`. This is what lets an asynchronously derived array become a
  * keyed sequence without an intermediate effect.
  *
- * @since 0.18.0
  * @param source - The source to derive from: a List, or any `Signal<U[]>`
  * @param callback - Transformation function applied to each item
  * @param options - Key generation and item equality. Applies only to an unkeyed source.
  * @returns A List signal
  */
 function deriveCollection<T extends {}, U extends {}>(
-	source: CollectionSource<U>,
+	source: ListSource<U>,
 	callback: (sourceValue: U) => T,
-	options?: DeriveCollectionOptions<U>,
+	options?: DeriveListOptions<U>,
 ): List<T>
 function deriveCollection<T extends {}, U extends {}>(
-	source: CollectionSource<U>,
-	callback: (sourceValue: U, abort: AbortSignal) => Promise<T>,
-	options?: DeriveCollectionOptions<U>,
+	source: ListSource<U>,
+	callback: (sourceValue: U, abortSignal: AbortSignal) => Promise<T>,
+	options?: DeriveListOptions<U>,
 ): List<T>
 function deriveCollection<T extends {}, U extends {}>(
-	sourceInput: CollectionSource<U>,
+	sourceInput: ListSource<U>,
 	// Optional only for the internal pass-through form used by `deriveList(fn)`; every
 	// public overload requires it.
 	callback?: DeriveCollectionCallback<T, U>,
-	options?: DeriveCollectionOptions<U>,
+	options?: DeriveListOptions<U>,
 ): List<T> {
 	if (callback) validateCallback('deriveCollection', callback)
 
@@ -391,7 +374,7 @@ function deriveCollection<T extends {}, U extends {}>(
 		}
 
 		const signal = isAsync
-			? createTask(async (prev: T | undefined, abort: AbortSignal) => {
+			? createTask(async (prev: T | undefined, abortSignal: AbortSignal) => {
 					// Look up the item signal without a structural edge (byKey now
 					// tracks structure), then read its value tracked so the Task
 					// depends on the item's value but not on structural changes.
@@ -401,8 +384,8 @@ function deriveCollection<T extends {}, U extends {}>(
 					const sourceValue = itemSignal.get() as U
 					if (sourceValue == null) return prev as T
 					return (
-						callback as (sourceValue: U, abort: AbortSignal) => Promise<T>
-					)(sourceValue, abort)
+						callback as (sourceValue: U, abortSignal: AbortSignal) => Promise<T>
+					)(sourceValue, abortSignal)
 				})
 			: createMemo(() => {
 					// Look up the item signal without a structural edge (byKey now
@@ -512,27 +495,23 @@ function isMutableItem<T extends {}>(
 
 /**
  * Creates an externally-driven List with a watched lifecycle.
+ * Module-private: `deriveList(seed, { watched })` is the only public route here.
  *
- * The watched callback receives an `applyChanges(changes)` helper to manage items. The
- * collection activates when an effect first reads it, and deactivates when it is no longer
- * watched. A structural mutation through `applyChanges` does not restart that lifecycle.
+ * The watched callback receives an `emit(changes)` helper to manage items. The
+ * sequence activates when an effect first reads it, and deactivates when it is no
+ * longer watched. A structural mutation through `emit` does not restart that lifecycle.
  *
- * @deprecated Use `deriveList(seed, { watched })` — the external-push form of `deriveList`
- * replaces this factory in v2.0. The seed takes the place of the `value` option; every other
- * option carries over unchanged.
- *
- * @since 0.18.0
- * @param options - Configuration including the watched lifecycle, initial value, key generation, and item signal creation
- * @param options.watched - Callback that runs when the collection becomes watched. Receives the applyChanges helper.
+ * @param options - Configuration including the watched lifecycle, initial items, key generation, and item signal creation
+ * @param options.watched - Callback that runs when the sequence becomes watched. Receives the emit helper.
  * @returns A read-only List signal
  */
 function createCollection<T extends {}, S extends Signal<T> = Signal<T>>(
-	options: CollectionOptions<T, S> & { watched: CollectionCallback<T> },
+	options: CollectionOptions<T, S> & { watched: ListCallback<T> },
 ): List<T, S> {
 	const watched = options.watched
-	const value = options.value ?? []
-	if (value.length)
-		validateSignalValue('createCollection', value, Array.isArray)
+	const initial = options.initial ?? []
+	if (initial.length)
+		validateSignalValue('createCollection', initial, Array.isArray)
 	validateCallback('createCollection', watched, isSyncFunction)
 
 	const signals = new Map<string, S>()
@@ -567,7 +546,7 @@ function createCollection<T extends {}, S extends Signal<T> = Signal<T>>(
 
 	const node: MemoNode<T[]> = {
 		fn: buildValue,
-		value,
+		value: initial,
 		flags: FLAG_DIRTY,
 		sources: null,
 		sourcesTail: null,
@@ -577,17 +556,17 @@ function createCollection<T extends {}, S extends Signal<T> = Signal<T>>(
 		error: undefined,
 	}
 
-	// Initialize signals for initial value
-	for (const item of value) {
+	// Initialize signals for the initial items
+	for (const item of initial) {
 		const key = generateKey(item)
 		signals.set(key, itemFactory(item))
 		itemToKey.set(item, key)
 		keys.push(key)
 	}
-	node.value = value
+	node.value = initial
 	node.flags = FLAG_DIRTY // First refresh() will establish child edges
 
-	const onChanges = (changes: CollectionChanges<T>): void => {
+	const onChanges = (changes: ListChanges<T>): void => {
 		const { add, change, remove } = changes
 		if (!add?.length && !change?.length && !remove?.length) return
 		let structural = false
@@ -692,8 +671,8 @@ function createCollection<T extends {}, S extends Signal<T> = Signal<T>>(
  * @example
  * ```ts
  * // Previously impossible without an effect: an async array as a keyed sequence.
- * const users = deriveList(async (_prev, abort) => {
- *   const res = await fetch(`/api/users?q=${query.get()}`, { signal: abort })
+ * const users = deriveList(async (_prev, abortSignal) => {
+ *   const res = await fetch(`/api/users?q=${query.get()}`, { signal: abortSignal })
  *   return res.json()
  * }, { initial: [], keyConfig: (u: User) => u.id })
  *
@@ -708,39 +687,44 @@ function deriveList<T extends {}>(
 	options?: DeriveListOptions<T>,
 ): List<T>
 function deriveList<T extends {}>(
-	input: (prev: T[], abort: AbortSignal) => Promise<T[]>,
+	input: (prev: T[], abortSignal: AbortSignal) => Promise<T[]>,
 	options: DeriveListOptions<T> & { initial: T[] },
 ): List<T>
-function deriveList<T extends {}>(
+function deriveList<T extends {}, S extends Signal<T> = Signal<T>>(
 	input: T[],
-	options: DeriveListOptions<T> & { watched: CollectionCallback<T> },
-): List<T>
+	options: DeriveListOptions<T, S> & { watched: ListCallback<T> },
+): List<T, S>
 function deriveList<T extends {}, U extends {}>(
-	input: CollectionSource<U>,
+	input: ListSource<U>,
 	itemCallback: (sourceValue: U) => T,
-	options?: DeriveCollectionOptions<U>,
+	options?: DeriveListOptions<U>,
 ): List<T>
 function deriveList<T extends {}, U extends {}>(
-	input: CollectionSource<U>,
-	itemCallback: (sourceValue: U, abort: AbortSignal) => Promise<T>,
-	options?: DeriveCollectionOptions<U>,
+	input: ListSource<U>,
+	itemCallback: (sourceValue: U, abortSignal: AbortSignal) => Promise<T>,
+	options?: DeriveListOptions<U>,
 ): List<T>
-function deriveList<T extends {}, U extends {}>(
+function deriveList<
+	T extends {},
+	U extends {},
+	S extends Signal<T> = Signal<T>,
+>(
 	input:
 		| (() => T[])
-		| ((prev: T[], abort: AbortSignal) => Promise<T[]>)
+		| ((prev: T[], abortSignal: AbortSignal) => Promise<T[]>)
 		| T[]
-		| CollectionSource<U>,
-	itemOrOptions?: DeriveCollectionCallback<T, U> | DeriveListOptions<T>,
-	maybeOptions?: DeriveCollectionOptions<U>,
-): List<T> {
+		| ListSource<U>,
+	itemOrOptions?: DeriveCollectionCallback<T, U> | DeriveListOptions<T, S>,
+	maybeOptions?: DeriveListOptions<U>,
+): List<T, S> {
 	// Per-item derivation: the second argument is the callback, not the options.
+	// S participates only in the external-push overload; here it defaults to Signal<T>.
 	if (isFunction(itemOrOptions))
 		return deriveCollection(
-			input as CollectionSource<U>,
+			input as ListSource<U>,
 			itemOrOptions as (sourceValue: U) => T,
 			maybeOptions,
-		)
+		) as List<T, S>
 
 	const options = itemOrOptions as DeriveListOptions<T> | undefined
 
@@ -748,9 +732,9 @@ function deriveList<T extends {}, U extends {}>(
 	// the adapter's slices as the derived slices — one Memo per item, not two. The cast
 	// reaches the implementation signature; no public overload omits the callback.
 	const passthrough = deriveCollection as unknown as <V extends {}>(
-		source: CollectionSource<V>,
+		source: ListSource<V>,
 		callback: undefined,
-		options?: DeriveCollectionOptions<V>,
+		options?: DeriveListOptions<V>,
 	) => List<V>
 
 	// External push: a seed array plus a watched lifecycle. Checked before the
@@ -758,13 +742,13 @@ function deriveList<T extends {}, U extends {}>(
 	if (!isFunction(input)) {
 		validateSignalValue('deriveList', input, Array.isArray)
 		validateCallback('deriveList', options?.watched, isSyncFunction)
-		// `initial` is ignored by createCollection; the rest of the options are
-		// shared verbatim, and the seed takes the place of `value`.
+		// The seed takes the place of `initial`; the rest of the options are
+		// shared verbatim with the external-push constructor.
 		return createCollection({
-			...(options as CollectionOptions<T>),
-			watched: options?.watched as CollectionCallback<T>,
-			value: input as T[],
-		}) as List<T>
+			...(options as CollectionOptions<T, S>),
+			watched: options?.watched as ListCallback<T>,
+			initial: input as T[],
+		}) as List<T, S>
 	}
 
 	// Asynchronous derivation. `initial` defaults to empty rather than throwing:
@@ -772,40 +756,35 @@ function deriveList<T extends {}, U extends {}>(
 	// it. `isPending()` carries the loading distinction instead of the value.
 	if (isAsyncFunction(input)) {
 		const task = createTask(
-			input as (prev: T[], abort: AbortSignal) => Promise<T[]>,
-			{ value: options?.initial ?? [] },
+			input as (prev: T[], abortSignal: AbortSignal) => Promise<T[]>,
+			{ initial: options?.initial ?? [] },
 		)
 		const derived = passthrough<T>(
 			task as Signal<T[]>,
 			undefined,
-			options as DeriveCollectionOptions<T>,
+			options as DeriveListOptions<T>,
 		)
 		// The asynchrony lives in the internal asynchronous derivation, so `isPending(derived)`
 		// and `abort(derived)` resolve through it. See ADR-0018.
 		const asyncSource = getAsyncSource(task)
 		if (asyncSource) registerAsyncSource(derived, asyncSource)
-		return derived
+		return derived as List<T, S>
 	}
 
 	// Synchronous derivation.
 	return passthrough<T>(
 		createMemo(input as () => T[]) as Signal<T[]>,
 		undefined,
-		options as DeriveCollectionOptions<T>,
-	)
+		options as DeriveListOptions<T>,
+	) as List<T, S>
 }
 
 /* === Exports === */
 
 export {
-	type CollectionCallback,
-	type CollectionChanges,
-	type CollectionOptions,
-	type CollectionSource,
-	createCollection,
-	type DeriveCollectionCallback,
-	type DeriveCollectionOptions,
 	type DeriveListOptions,
-	deriveCollection,
 	deriveList,
+	type ListCallback,
+	type ListChanges,
+	type ListSource,
 }

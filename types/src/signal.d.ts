@@ -1,25 +1,4 @@
-import { type Cleanup, type MemoCallback, type MutableSignal, type Signal, type SignalOptions, type TaskCallback } from './graph';
-import { type SensorCallback } from './nodes/sensor';
-/**
- * Options for `deriveSignal`. Which members apply depends on the input kind:
- * `initial` seeds the async form (optional — without it the signal is unset
- * until the first resolution), and `watched` is required when the input is a
- * seed value (external push). See ADR-0018.
- *
- * @template T - The type of value the signal holds
- */
-type DeriveSignalOptions<T extends {}> = SignalOptions<T> & {
-    /**
-     * Initial value for the async derivation form. Optional escape from
-     * `UnsetSignalValueError` before the first resolution.
-     */
-    initial?: T;
-    /**
-     * For a function input: an invalidation callback, as on `createMemo` and
-     * `createTask`. For a seed value: the external-push lifecycle, required.
-     */
-    watched?: ((invalidate: () => void) => Cleanup) | SensorCallback<T>;
-};
+import { type DeriveSignalOptions, type MemoCallback, type MutableSignal, type Signal, type SignalCallback, type SignalOptions, type TaskCallback } from './graph';
 /**
  * Create a mutable single-value signal from a plain value.
  *
@@ -65,15 +44,17 @@ declare function createSignal<T extends {}>(value: T, options?: SignalOptions<T>
  * @example
  * ```ts
  * const userId = createSignal(1)
- * const user = deriveSignal(async (_prev, abort) => {
- *   const response = await fetch(`/api/users/${userId.get()}`, { signal: abort })
+ * const user = deriveSignal(async (_prev, abortSignal) => {
+ *   const response = await fetch(`/api/users/${userId.get()}`, { signal: abortSignal })
  *   return response.json()
  * }, { initial: fallbackUser })
  * ```
  */
 declare function deriveSignal<T extends {}>(input: TaskCallback<T> | MemoCallback<T>, options?: DeriveSignalOptions<T>): Signal<T>;
-declare function deriveSignal<T extends {}>(input: T, options: DeriveSignalOptions<T> & {
-    watched: SensorCallback<T>;
+declare function deriveSignal<T extends {}>(input: T, options: SignalOptions<T> & {
+    initial?: T;
+} & {
+    watched: SignalCallback<T>;
 }): Signal<T>;
 /**
  * Check whether a value is a Signal — the single-value shape, matching both the mutable
@@ -93,4 +74,4 @@ declare function isSignal<T extends {}>(value: unknown): value is Signal<T>;
  * @returns True if value is a mutable Signal, false otherwise
  */
 declare function isMutableSignal(value: unknown): value is MutableSignal<unknown & {}>;
-export { createSignal, type DeriveSignalOptions, deriveSignal, isMutableSignal, isSignal, };
+export { createSignal, deriveSignal, isMutableSignal, isSignal };

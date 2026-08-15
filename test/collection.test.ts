@@ -1,15 +1,15 @@
 import { describe, expect, test } from 'bun:test'
 import {
 	batch,
-	type CollectionChanges,
-	createCollection,
 	createEffect,
 	createList,
 	createMemo,
 	createScope,
 	createState,
 	createStore,
+	deriveList,
 	isList,
+	type ListChanges,
 } from '../index.ts'
 
 /* === Utility Functions === */
@@ -19,12 +19,9 @@ const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 /* === Tests === */
 
 describe('Collection', () => {
-	describe('createCollection', () => {
+	describe('deriveList external push', () => {
 		test('should create a collection with initial values', () => {
-			const col = createCollection({
-				watched: () => () => {},
-				value: [1, 2, 3],
-			})
+			const col = deriveList([1, 2, 3], { watched: () => () => {} })
 
 			expect(col.get()).toEqual([1, 2, 3])
 			expect(col.length).toBe(3)
@@ -32,31 +29,30 @@ describe('Collection', () => {
 		})
 
 		test('should create an empty collection', () => {
-			const col = createCollection<number>({ watched: () => () => {} })
+			const col = deriveList([], { watched: () => () => {} })
 
 			expect(col.get()).toEqual([])
 			expect(col.length).toBe(0)
 		})
 
 		test('should have Symbol.toStringTag of "List"', () => {
-			const col = createCollection({ watched: () => () => {}, value: [1] })
+			const col = deriveList([1], { watched: () => () => {} })
 			expect(col[Symbol.toStringTag]).toBe('List')
 		})
 
 		test('should have Symbol.isConcatSpreadable set to true', () => {
-			const col = createCollection({ watched: () => () => {}, value: [1] })
+			const col = deriveList([1], { watched: () => () => {} })
 			expect(col[Symbol.isConcatSpreadable]).toBe(true)
 		})
 
 		test('should support at(), byKey(), keyAt(), indexOfKey()', () => {
-			const col = createCollection({
-				watched: () => () => {},
-				value: [
+			const col = deriveList(
+				[
 					{ id: 'a', name: 'Alice' },
 					{ id: 'b', name: 'Bob' },
 				],
-				keyConfig: item => item.id,
-			})
+				{ watched: () => () => {}, keyConfig: item => item.id },
+			)
 
 			expect(col.keyAt(0)).toBe('a')
 			expect(col.keyAt(1)).toBe('b')
@@ -68,10 +64,7 @@ describe('Collection', () => {
 		})
 
 		test('should support iteration', () => {
-			const col = createCollection({
-				watched: () => () => {},
-				value: [10, 20, 30],
-			})
+			const col = deriveList([10, 20, 30], { watched: () => () => {} })
 
 			const values = []
 			for (const signal of col) values.push(signal.get())
@@ -79,9 +72,8 @@ describe('Collection', () => {
 		})
 
 		test('should support custom key config with string prefix', () => {
-			const col = createCollection({
+			const col = deriveList([10, 20], {
 				watched: () => () => {},
-				value: [10, 20],
 				keyConfig: 'item-',
 			})
 
@@ -93,9 +85,8 @@ describe('Collection', () => {
 
 		test('should support custom createItem factory', () => {
 			let guardCalled = false
-			const col = createCollection({
+			const col = deriveList([5, 10], {
 				watched: () => () => {},
-				value: [5, 10],
 				createItem: value =>
 					createState(value, {
 						guard: (v): v is number => {
@@ -112,7 +103,7 @@ describe('Collection', () => {
 
 	describe('isList', () => {
 		test('should identify collection signals', () => {
-			const col = createCollection({ watched: () => () => {}, value: [1] })
+			const col = deriveList([1], { watched: () => () => {} })
 			expect(isList(col)).toBe(true)
 		})
 
@@ -128,14 +119,13 @@ describe('Collection', () => {
 			let started = false
 			let cleaned = false
 
-			const col = createCollection({
+			const col = deriveList([1], {
 				watched: () => {
 					started = true
 					return () => {
 						cleaned = true
 					}
 				},
-				value: [1],
 			})
 
 			expect(started).toBe(false)
@@ -155,12 +145,11 @@ describe('Collection', () => {
 
 		test('should activate via keys() access in effect', () => {
 			let started = false
-			const col = createCollection({
+			const col = deriveList([1], {
 				watched: () => {
 					started = true
 					return () => {}
 				},
-				value: [1],
 			})
 
 			expect(started).toBe(false)
@@ -179,8 +168,8 @@ describe('Collection', () => {
 
 	describe('applyChanges', () => {
 		test('should add items', () => {
-			let apply: ((changes: CollectionChanges<number>) => void) | undefined
-			const col = createCollection<number>({
+			let apply: ((changes: ListChanges<number>) => void) | undefined
+			const col = deriveList<number>([], {
 				watched: applyChanges => {
 					apply = applyChanges
 					return () => {}
@@ -208,14 +197,13 @@ describe('Collection', () => {
 
 		test('should change item values', () => {
 			let apply:
-				| ((changes: CollectionChanges<{ id: string; val: number }>) => void)
+				| ((changes: ListChanges<{ id: string; val: number }>) => void)
 				| undefined
-			const col = createCollection({
+			const col = deriveList([{ id: 'x', val: 1 }], {
 				watched: applyChanges => {
 					apply = applyChanges
 					return () => {}
 				},
-				value: [{ id: 'x', val: 1 }],
 				keyConfig: item => item.id,
 			})
 
@@ -239,20 +227,22 @@ describe('Collection', () => {
 
 		test('should remove items', () => {
 			let apply:
-				| ((changes: CollectionChanges<{ id: string; v: number }>) => void)
+				| ((changes: ListChanges<{ id: string; v: number }>) => void)
 				| undefined
-			const col = createCollection({
-				watched: applyChanges => {
-					apply = applyChanges
-					return () => {}
-				},
-				value: [
+			const col = deriveList(
+				[
 					{ id: 'a', v: 1 },
 					{ id: 'b', v: 2 },
 					{ id: 'c', v: 3 },
 				],
-				keyConfig: item => item.id,
-			})
+				{
+					watched: applyChanges => {
+						apply = applyChanges
+						return () => {}
+					},
+					keyConfig: item => item.id,
+				},
+			)
 
 			const values: { id: string; v: number }[][] = []
 			const dispose = createScope(() => {
@@ -282,19 +272,21 @@ describe('Collection', () => {
 
 		test('should handle mixed add/change/remove', () => {
 			let apply:
-				| ((changes: CollectionChanges<{ id: string; v: number }>) => void)
+				| ((changes: ListChanges<{ id: string; v: number }>) => void)
 				| undefined
-			const col = createCollection({
-				watched: applyChanges => {
-					apply = applyChanges
-					return () => {}
-				},
-				value: [
+			const col = deriveList(
+				[
 					{ id: 'a', v: 1 },
 					{ id: 'b', v: 2 },
 				],
-				keyConfig: item => item.id,
-			})
+				{
+					watched: applyChanges => {
+						apply = applyChanges
+						return () => {}
+					},
+					keyConfig: item => item.id,
+				},
+			)
 
 			const values: { id: string; v: number }[][] = []
 			const dispose = createScope(() => {
@@ -320,13 +312,12 @@ describe('Collection', () => {
 		})
 
 		test('should skip when no changes provided', () => {
-			let apply: ((changes: CollectionChanges<number>) => void) | undefined
-			const col = createCollection({
+			let apply: ((changes: ListChanges<number>) => void) | undefined
+			const col = deriveList([1], {
 				watched: applyChanges => {
 					apply = applyChanges
 					return () => {}
 				},
-				value: [1],
 			})
 
 			let callCount = 0
@@ -348,8 +339,8 @@ describe('Collection', () => {
 		})
 
 		test('should trigger effects on structural changes', () => {
-			let apply: ((changes: CollectionChanges<string>) => void) | undefined
-			const col = createCollection<string>({
+			let apply: ((changes: ListChanges<string>) => void) | undefined
+			const col = deriveList<string>([], {
 				watched: applyChanges => {
 					apply = applyChanges
 					return () => {}
@@ -376,8 +367,8 @@ describe('Collection', () => {
 		})
 
 		test('should batch multiple calls', () => {
-			let apply: ((changes: CollectionChanges<number>) => void) | undefined
-			const col = createCollection<number>({
+			let apply: ((changes: ListChanges<number>) => void) | undefined
+			const col = deriveList<number>([], {
 				watched: applyChanges => {
 					apply = applyChanges
 					return () => {}
@@ -409,8 +400,8 @@ describe('Collection', () => {
 
 		test('should throw DuplicateKeyError when add produces a duplicate key', () => {
 			type Item = { id: string; v: number }
-			let apply: ((changes: CollectionChanges<Item>) => void) | undefined
-			const col = createCollection<Item>({
+			let apply: ((changes: ListChanges<Item>) => void) | undefined
+			const col = deriveList<Item>([], {
 				watched: applyChanges => {
 					apply = applyChanges
 					return () => {}
@@ -441,13 +432,12 @@ describe('Collection', () => {
 
 		test('should throw DuplicateKeyError when adding a key that already exists', () => {
 			type Item = { id: string; v: number }
-			let apply: ((changes: CollectionChanges<Item>) => void) | undefined
-			const col = createCollection<Item>({
+			let apply: ((changes: ListChanges<Item>) => void) | undefined
+			const col = deriveList([{ id: 'a', v: 1 }], {
 				watched: applyChanges => {
 					apply = applyChanges
 					return () => {}
 				},
-				value: [{ id: 'a', v: 1 }],
 				keyConfig: item => item.id,
 			})
 
@@ -472,8 +462,8 @@ describe('Collection', () => {
 			// disagreed with get(). The whole batch must be validated before any
 			// mutation happens.
 			type Item = { id: string; v: number }
-			let apply: ((changes: CollectionChanges<Item>) => void) | undefined
-			const col = createCollection<Item>({
+			let apply: ((changes: ListChanges<Item>) => void) | undefined
+			const col = deriveList<Item>([], {
 				watched: applyChanges => {
 					apply = applyChanges
 					return () => {}
@@ -506,17 +496,16 @@ describe('Collection', () => {
 		})
 	})
 
-	describe('createCollection lookup methods track structural changes', () => {
+	describe('external-push lookup methods track structural changes', () => {
 		test('byKey() tracks structural changes (add/remove)', () => {
 			type Item = { id: string; v: number }
-			let apply: ((changes: CollectionChanges<Item>) => void) | undefined
-			const col = createCollection<Item>({
+			let apply: ((changes: ListChanges<Item>) => void) | undefined
+			const col = deriveList([{ id: 'a', v: 1 }], {
 				watched: applyChanges => {
 					apply = applyChanges
 					return () => {}
 				},
 				keyConfig: item => item.id,
-				value: [{ id: 'a', v: 1 }],
 			})
 			let effectCount = 0
 			const dispose = createScope(() => {
@@ -538,14 +527,13 @@ describe('Collection', () => {
 
 		test('at(), keyAt(), indexOfKey() track structural changes', () => {
 			type Item = { id: string; v: number }
-			let apply: ((changes: CollectionChanges<Item>) => void) | undefined
-			const col = createCollection<Item>({
+			let apply: ((changes: ListChanges<Item>) => void) | undefined
+			const col = deriveList([{ id: 'a', v: 1 }], {
 				watched: applyChanges => {
 					apply = applyChanges
 					return () => {}
 				},
 				keyConfig: item => item.id,
-				value: [{ id: 'a', v: 1 }],
 			})
 			let byAt = 0
 			let byKeyAt = 0
@@ -578,14 +566,13 @@ describe('Collection', () => {
 
 		test('Symbol.iterator tracks structural changes', () => {
 			type Item = { id: string; v: number }
-			let apply: ((changes: CollectionChanges<Item>) => void) | undefined
-			const col = createCollection<Item>({
+			let apply: ((changes: ListChanges<Item>) => void) | undefined
+			const col = deriveList([{ id: 'a', v: 1 }], {
 				watched: applyChanges => {
 					apply = applyChanges
 					return () => {}
 				},
 				keyConfig: item => item.id,
-				value: [{ id: 'a', v: 1 }],
 			})
 			let runs = 0
 			const dispose = createScope(() => {
@@ -616,14 +603,13 @@ describe('Collection', () => {
 		// once during setup (transient leak, mode b).
 		test('applyChanges({ change }) inside an effect does not transiently re-run', () => {
 			type Item = { id: string; v: number }
-			let apply: ((changes: CollectionChanges<Item>) => void) | undefined
-			const col = createCollection<Item>({
+			let apply: ((changes: ListChanges<Item>) => void) | undefined
+			const col = deriveList([{ id: 'a', v: 1 }], {
 				watched: applyChanges => {
 					apply = applyChanges
 					return () => {}
 				},
 				keyConfig: item => item.id,
-				value: [{ id: 'a', v: 1 }],
 			})
 
 			// Subscribe to activate the collection (triggers watched -> sets apply)
@@ -655,21 +641,21 @@ describe('Collection', () => {
 		test('should throw InvalidCallbackError for non-function watched', () => {
 			expect(() => {
 				// @ts-expect-error - testing non-function
-				createCollection({ watched: 42 })
+				deriveList([], { watched: 42 })
 			}).toThrow('Callback 42 is invalid')
 		})
 
 		test('should throw InvalidCallbackError for async watched', () => {
 			expect(() => {
 				// @ts-expect-error - testing async function
-				createCollection({ watched: async () => () => {} })
+				deriveList([], { watched: async () => () => {} })
 			}).toThrow('invalid')
 		})
 
 		test('applyChanges change for nonexistent key is silently skipped', () => {
 			type Item = { id: string; v: number }
-			let apply: ((changes: CollectionChanges<Item>) => void) | undefined
-			const col = createCollection<Item>({
+			let apply: ((changes: ListChanges<Item>) => void) | undefined
+			const col = deriveList<Item>([], {
 				watched: applyChanges => {
 					apply = applyChanges
 					return () => {}
@@ -694,13 +680,12 @@ describe('Collection', () => {
 
 		test('applyChanges remove for nonexistent key is silently skipped', () => {
 			type Item = { id: string; v: number }
-			let apply: ((changes: CollectionChanges<Item>) => void) | undefined
-			const col = createCollection<Item>({
+			let apply: ((changes: ListChanges<Item>) => void) | undefined
+			const col = deriveList([{ id: 'a', v: 1 }], {
 				watched: applyChanges => {
 					apply = applyChanges
 					return () => {}
 				},
-				value: [{ id: 'a', v: 1 }],
 				keyConfig: item => item.id,
 			})
 			const dispose = createScope(() => {
@@ -720,10 +705,10 @@ describe('Collection', () => {
 		})
 	})
 
-	describe('deriveCollection', () => {
+	describe('deriveList per-item derivation', () => {
 		test('should transform list values with sync callback', () => {
 			const numbers = createList([1, 2, 3])
-			const doubled = numbers.deriveCollection((v: number) => v * 2)
+			const doubled = deriveList(numbers, (v: number) => v * 2)
 
 			expect(doubled.get()).toEqual([2, 4, 6])
 			expect(doubled.length).toBe(3)
@@ -731,7 +716,8 @@ describe('Collection', () => {
 
 		test('should transform values with async callback', async () => {
 			const numbers = createList([1, 2, 3])
-			const doubled = numbers.deriveCollection(
+			const doubled = deriveList(
+				numbers,
 				async (v: number, abort: AbortSignal) => {
 					await wait(10)
 					if (abort.aborted) throw new Error('Aborted')
@@ -754,7 +740,7 @@ describe('Collection', () => {
 
 		test('should handle empty source list', () => {
 			const empty = createList<number>([])
-			const doubled = empty.deriveCollection((v: number) => v * 2)
+			const doubled = deriveList(empty, (v: number) => v * 2)
 
 			expect(doubled.get()).toEqual([])
 			expect(doubled.length).toBe(0)
@@ -762,7 +748,7 @@ describe('Collection', () => {
 
 		test('should return Signal at index', () => {
 			const list = createList([1, 2, 3])
-			const doubled = list.deriveCollection((v: number) => v * 2)
+			const doubled = deriveList(list, (v: number) => v * 2)
 
 			expect(doubled.at(0)?.get()).toBe(2)
 			expect(doubled.at(1)?.get()).toBe(4)
@@ -772,7 +758,7 @@ describe('Collection', () => {
 
 		test('should return Signal by source key', () => {
 			const list = createList([10, 20])
-			const doubled = list.deriveCollection((v: number) => v * 2)
+			const doubled = deriveList(list, (v: number) => v * 2)
 
 			// biome-ignore lint/style/noNonNullAssertion: index is within bounds
 			const key0 = list.keyAt(0)!
@@ -785,7 +771,7 @@ describe('Collection', () => {
 
 		test('should support keyAt, indexOfKey, and keys', () => {
 			const list = createList([10, 20, 30])
-			const col = list.deriveCollection((v: number) => v)
+			const col = deriveList(list, (v: number) => v)
 
 			const key0 = col.keyAt(0)
 			expect(key0).toBeDefined()
@@ -797,7 +783,7 @@ describe('Collection', () => {
 
 		test('should support for...of via Symbol.iterator', () => {
 			const list = createList([1, 2, 3])
-			const doubled = list.deriveCollection((v: number) => v * 2)
+			const doubled = deriveList(list, (v: number) => v * 2)
 
 			const signals = [...doubled]
 			expect(signals).toHaveLength(3)
@@ -811,7 +797,7 @@ describe('Collection', () => {
 
 		test('should react to source additions', () => {
 			const list = createList([1, 2])
-			const doubled = list.deriveCollection((v: number) => v * 2)
+			const doubled = deriveList(list, (v: number) => v * 2)
 
 			let result: number[] = []
 			let effectCount = 0
@@ -830,7 +816,7 @@ describe('Collection', () => {
 
 		test('should react to source removals', () => {
 			const list = createList([1, 2, 3])
-			const doubled = list.deriveCollection((v: number) => v * 2)
+			const doubled = deriveList(list, (v: number) => v * 2)
 
 			expect(doubled.get()).toEqual([2, 4, 6])
 			list.remove(1)
@@ -840,7 +826,7 @@ describe('Collection', () => {
 
 		test('should react to item mutations', () => {
 			const list = createList([1, 2])
-			const doubled = list.deriveCollection((v: number) => v * 2)
+			const doubled = deriveList(list, (v: number) => v * 2)
 
 			let result: number[] = []
 			createEffect(() => {
@@ -854,7 +840,8 @@ describe('Collection', () => {
 
 		test('async collection should react to changes', async () => {
 			const list = createList([1, 2])
-			const doubled = list.deriveCollection(
+			const doubled = deriveList(
+				list,
 				async (v: number, abort: AbortSignal) => {
 					await wait(5)
 					if (abort.aborted) throw new Error('Aborted')
@@ -877,8 +864,8 @@ describe('Collection', () => {
 
 		test('should chain from collection', () => {
 			const list = createList([1, 2, 3])
-			const doubled = list.deriveCollection((v: number) => v * 2)
-			const quadrupled = doubled.deriveCollection((v: number) => v * 2)
+			const doubled = deriveList(list, (v: number) => v * 2)
+			const quadrupled = deriveList(doubled, (v: number) => v * 2)
 
 			expect(quadrupled.get()).toEqual([4, 8, 12])
 
@@ -886,12 +873,9 @@ describe('Collection', () => {
 			expect(quadrupled.get()).toEqual([4, 8, 12, 16])
 		})
 
-		test('should chain from createCollection source', () => {
-			const col = createCollection({
-				watched: () => () => {},
-				value: [1, 2, 3],
-			})
-			const doubled = col.deriveCollection((v: number) => v * 2)
+		test('should chain from an external-push source', () => {
+			const col = deriveList([1, 2, 3], { watched: () => () => {} })
+			const doubled = deriveList(col, (v: number) => v * 2)
 
 			expect(doubled.get()).toEqual([2, 4, 6])
 			expect(isList(doubled)).toBe(true)
@@ -899,7 +883,7 @@ describe('Collection', () => {
 
 		test('should propagate errors from per-item memos', () => {
 			const list = createList([1, 2, 3])
-			const mapped = list.deriveCollection((v: number) => {
+			const mapped = deriveList(list, (v: number) => {
 				if (v === 2) throw new Error('bad item')
 				return v * 2
 			})
@@ -909,7 +893,7 @@ describe('Collection', () => {
 
 		test('byKey() tracks structural changes in source list', () => {
 			const list = createList([1, 2])
-			const doubled = list.deriveCollection((v: number) => v * 2)
+			const doubled = deriveList(list, (v: number) => v * 2)
 			let effectCount = 0
 			const dispose = createScope(() => {
 				createEffect(() => {
@@ -928,7 +912,7 @@ describe('Collection', () => {
 
 		test('at(), keyAt(), indexOfKey() track structural changes in source', () => {
 			const list = createList([1])
-			const doubled = list.deriveCollection((v: number) => v * 2)
+			const doubled = deriveList(list, (v: number) => v * 2)
 			let byAt = 0
 			let byKeyAt = 0
 			let byIndexOfKey = 0
@@ -958,12 +942,12 @@ describe('Collection', () => {
 		})
 
 		test('per-item memo does NOT gain a structural edge on the source', () => {
-			// Regression guard: byKey() now tracks, so deriveCollection's
+			// Regression guard: byKey() now tracks, so the per-item derivation's
 			// internal source.byKey(key).get() must be untracked. Otherwise
 			// every per-item memo would recompute on any structural change.
 			const list = createList([1, 2, 3])
 			let memoRuns = 0
-			const doubled = list.deriveCollection((v: number) => {
+			const doubled = deriveList(list, (v: number) => {
 				memoRuns++
 				return v * 2
 			})
@@ -987,7 +971,7 @@ describe('Collection', () => {
 
 		test('Symbol.iterator tracks structural changes in source', () => {
 			const list = createList([1, 2])
-			const doubled = list.deriveCollection((v: number) => v * 2)
+			const doubled = deriveList(list, (v: number) => v * 2)
 			let runs = 0
 			const dispose = createScope(() => {
 				createEffect(() => {
@@ -1027,7 +1011,8 @@ describe('Collection', () => {
 					[{ id: 'item1', amount: 3, pricePerUnit: 12.5 }],
 					{ keyConfig: (item: { id: string }) => item.id },
 				)
-				const rowPrices = list.deriveCollection(
+				const rowPrices = deriveList(
+					list,
 					(item: { amount: number; pricePerUnit: number }) =>
 						item.amount * item.pricePerUnit,
 				)
@@ -1054,7 +1039,7 @@ describe('Collection', () => {
 test('Type Inference for custom createItem', () => {
 	// This test primarily checks compilation types but also runtime presence
 	type TodoItem = { id: string; text: string; done: boolean }
-	const col = createCollection({
+	const col = deriveList([] as TodoItem[], {
 		watched: () => () => {},
 		keyConfig: 'todo',
 		createItem: createStore<TodoItem>,

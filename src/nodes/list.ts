@@ -21,11 +21,6 @@ import {
 	untrack,
 } from '../graph'
 import { isFunction, isSignalOfType } from '../util'
-import {
-	type CollectionSource,
-	type DeriveCollectionCallback,
-	deriveCollection,
-} from './collection'
 import { createState } from './state'
 
 /* === Types === */
@@ -86,10 +81,6 @@ type List<T extends {}, S extends Signal<T> = Signal<T>> = {
 	byKey(key: string): S | undefined
 	keyAt(index: number): string | undefined
 	indexOfKey(key: string): number
-	deriveCollection<R extends {}>(callback: (sourceValue: T) => R): List<R>
-	deriveCollection<R extends {}>(
-		callback: (sourceValue: T, abort: AbortSignal) => Promise<R>,
-	): List<R>
 }
 
 /**
@@ -606,17 +597,6 @@ function createList<
 			}
 
 			return Object.values(remove)
-		},
-
-		deriveCollection<R extends {}>(
-			cb: DeriveCollectionCallback<R, T>,
-		): List<R> {
-			return (
-				deriveCollection as <T2 extends {}, U2 extends {}>(
-					source: CollectionSource<U2>,
-					callback: DeriveCollectionCallback<T2, U2>,
-				) => List<T2>
-			)(list, cb)
 		},
 	}
 

@@ -3,8 +3,9 @@
  *
  * Every rewrite is meaning-preserving: the new names denote exactly what the old
  * names denote in 1.x. What the codemod cannot decide — read-only `List<T>`
- * positions, origin guards, the `createSignal` shape coercion — stays untouched
- * and is covered by `MIGRATION-2.0.md`.
+ * positions, origin guards, `isSignal`/`isMutableSignal` narrowing, the
+ * `createSignal` shape coercion — stays untouched or is flagged for manual
+ * review, and is covered by `MIGRATION-2.0.md`.
  *
  * Renames (exact identifier match only — `ListOptions`, `CollectionCallback` etc.
  * are distinct symbols and are left alone):
@@ -246,6 +247,23 @@ function migrateSource(
 	if (report.renamed.List)
 		report.needsManualReview.push(
 			`${report.renamed.List} List reference(s) renamed to MutableList; narrow read-only positions to DerivedList if you want the v2 meaning early`,
+		)
+
+	// In 2.0 these guards match only the single-value shape, so a call site whose
+	// argument can be a List, Store, or Slot silently changes behavior. There is
+	// nothing to rewrite — the fix depends on what the argument can be — so the
+	// codemod enumerates the sites for the manual audit.
+	let guardSites = 0
+	for (const call of file.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+		if (call.wasForgotten()) continue
+		const expression = call.getExpression()
+		if (expression.getKind() !== SyntaxKind.Identifier) continue
+		const name = expression.getText()
+		if (name === 'isSignal' || name === 'isMutableSignal') guardSites += 1
+	}
+	if (guardSites)
+		report.needsManualReview.push(
+			`${guardSites} isSignal()/isMutableSignal() call(s): in 2.0 these match only the single-value shape — verify the argument is never a List, Store, or Slot`,
 		)
 
 	syncImports(file, options.module ?? 'cause-effect')
