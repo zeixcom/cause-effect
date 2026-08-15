@@ -16,6 +16,8 @@
  * | `Collection<T>`            | `DerivedList<T>`             |
  * | `isCollection(x)`          | `isDerivedList(x)`           |
  * | `createCollection(cb, o?)` | `deriveList(seed, { ... })`  |
+ * | `Store<T>`                 | `MutableStore<T>`            |
+ * | `isStore(x)`               | `isMutableStore(x)`          |
  *
  * `--module` limits which import declarations are updated (a substring match on
  * the module specifier). It defaults to `cause-effect`.
@@ -53,6 +55,8 @@ const RENAMES = new Map([
 	['isList', 'isMutableList'],
 	['Collection', 'DerivedList'],
 	['isCollection', 'isDerivedList'],
+	['Store', 'MutableStore'],
+	['isStore', 'isMutableStore'],
 ])
 
 // Positions where an identifier names something (a member, a declaration)
@@ -171,6 +175,8 @@ function syncImports(file: SourceFile, module: string): void {
 		'DerivedList',
 		'isDerivedList',
 		'deriveList',
+		'MutableStore',
+		'isMutableStore',
 	]) {
 		if (!used.has(named)) continue
 		const existing = declaration
@@ -237,7 +243,7 @@ function migrateSource(
 	}
 	if (skippedOwnNames)
 		report.needsManualReview.push(
-			`${skippedOwnNames} occurrence(s) of List/Collection name the file's own member or declaration and were not renamed — verify no reference to them was renamed by mistake`,
+			`${skippedOwnNames} occurrence(s) of List/Collection/Store name the file's own member or declaration and were not renamed — verify no reference to them was renamed by mistake`,
 		)
 
 	// A blanket `List → MutableList` rewrite preserves the 1.x meaning but also
@@ -246,6 +252,14 @@ function migrateSource(
 	if (report.renamed.List)
 		report.needsManualReview.push(
 			`${report.renamed.List} List reference(s) renamed to MutableList; narrow read-only positions to DerivedList if you want the v2 meaning early`,
+		)
+
+	// 1.x `isStore` checks the shape tag only, so it also matches a `DerivedStore`;
+	// `isMutableStore` adds the write-capability check and rejects one. A call site
+	// that sees derived stores changes behavior under this rename.
+	if (report.renamed.isStore)
+		report.needsManualReview.push(
+			`${report.renamed.isStore} isStore reference(s) renamed to isMutableStore; isMutableStore rejects a DerivedStore, so verify no call site relied on isStore matching a deriveStore result`,
 		)
 
 	syncImports(file, options.module ?? 'cause-effect')

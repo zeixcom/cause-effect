@@ -27,22 +27,23 @@ type SensorOptions<T extends {}> = SignalOptions<T> & {
     value?: T;
 };
 /**
- * Setup callback for `createSensor`. Invoked when the sensor gains its first downstream
- * subscriber; receives a `set` function to push new values into the graph.
+ * Setup callback for `createSensor`. Runs when the sensor becomes watched.
+ * Receives a `set` function to push new values into the graph.
  *
  * @template T - The type of value produced by the sensor
- * @param set - Updates the sensor value and propagates the change to subscribers
- * @returns A cleanup function invoked when the sensor loses all subscribers
+ * @param set - Updates the sensor value and propagates the change to its sinks
+ * @returns A cleanup function that runs when the sensor is no longer watched
  */
 type SensorCallback<T extends {}> = (set: (next: T) => void) => Cleanup;
 /**
- * Creates a sensor that tracks external input and updates a state value as long as it is active.
- * Sensors get activated when they are first accessed by an effect and deactivated when they are
- * no longer watched. This lazy activation pattern ensures resources are only consumed when needed.
+ * Creates a sensor that tracks external input while it is watched.
+ *
+ * A sensor activates when an effect first reads it, and deactivates when it is no longer
+ * watched. It therefore holds an external resource only while something reads its value.
  *
  * @since 0.18.0
  * @template T - The type of value produced by the sensor
- * @param watched - The callback invoked when the sensor starts being watched, receives a `set` function and returns a cleanup function.
+ * @param watched - The callback that runs when the sensor becomes watched. Receives a `set` function and returns a cleanup function.
  * @param options - Optional configuration for the sensor.
  * @param options.value - Optional initial value. Avoids `UnsetSignalValueError` on first read
  *   before the watched callback fires. Essential for the mutable-object observation pattern.

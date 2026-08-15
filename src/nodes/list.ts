@@ -102,6 +102,11 @@ type MutableList<
 	replace(key: string, value: T): void
 	sort(compareFn?: (a: T, b: T) => number): void
 	splice(start: number, deleteCount?: number, ...items: T[]): T[]
+	/**
+	 * @deprecated Use the top-level `deriveList(source, itemFn)` instead —
+	 * `users.deriveCollection(f)` becomes `deriveList(users, f)`. Both `.deriveCollection()`
+	 * forms are removed in v2.0. See `MIGRATION-2.0.md`.
+	 */
 	deriveCollection<R extends {}>(
 		callback: (sourceValue: T) => R,
 	): DerivedList<R>

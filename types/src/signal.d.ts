@@ -1,8 +1,8 @@
 import { type ComputedOptions, type MemoCallback, type Signal, type TaskCallback } from './graph';
-import { type List, type UnknownRecord } from './nodes/list';
+import { type MutableList, type UnknownRecord } from './nodes/list';
 import { type Memo } from './nodes/memo';
 import { type State } from './nodes/state';
-import { type Store } from './nodes/store';
+import { type MutableStore } from './nodes/store';
 import { type Task } from './nodes/task';
 /**
  * A readable and writable signal — the type union of `State`, `Store`, and `List`.
@@ -30,8 +30,8 @@ declare function createComputed<T extends {}>(callback: MemoCallback<T>, options
  * @since 0.9.6
  */
 declare function createSignal<T extends {}>(value: Signal<T>): Signal<T>;
-declare function createSignal<T extends {}>(value: readonly T[]): List<T>;
-declare function createSignal<T extends UnknownRecord>(value: T): Store<T>;
+declare function createSignal<T extends {}>(value: readonly T[]): MutableList<T>;
+declare function createSignal<T extends UnknownRecord>(value: T): MutableStore<T>;
 declare function createSignal<T extends {}>(value: TaskCallback<T>): Task<T>;
 declare function createSignal<T extends {}>(value: MemoCallback<T>): Memo<T>;
 declare function createSignal<T extends {}>(value: T): State<T>;
@@ -41,8 +41,8 @@ declare function createSignal<T extends {}>(value: T): State<T>;
  * @since 0.17.0
  */
 declare function createMutableSignal<T extends {}>(value: MutableSignal<T>): MutableSignal<T>;
-declare function createMutableSignal<T extends {}>(value: readonly T[]): List<T>;
-declare function createMutableSignal<T extends UnknownRecord>(value: T): Store<T>;
+declare function createMutableSignal<T extends {}>(value: readonly T[]): MutableList<T>;
+declare function createMutableSignal<T extends UnknownRecord>(value: T): MutableStore<T>;
 declare function createMutableSignal<T extends {}>(value: T): State<T>;
 /**
  * Check if a value is a computed signal

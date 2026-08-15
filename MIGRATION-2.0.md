@@ -16,6 +16,8 @@ for the rationale.
 The hazard this guide exists to defuse: **`List<T>` changes meaning.** Today it is the
 *mutable* type. In 2.0 it is the *readonly base* — which is today's `Collection`. The bridge
 names and the codemod below convert that silent flip into a staged, deprecation-driven rename.
+**`Store<T>` flips the same way** — today's mutable type, 2.0's readonly base (today's
+`DerivedStore`) — and gets the same bridge treatment.
 
 ## Bridge names (1.5.0)
 
@@ -26,9 +28,16 @@ names and the codemod below convert that silent flip into a staged, deprecation-
 | `Collection<T>` | `DerivedList<T>` | `List<T>` | Same type, same behavior — the readonly keyed sequence returned by `deriveList`. |
 | `isCollection(x)` | `isDerivedList(x)` | `isList(x)` | |
 | `createCollection(watched, options?)` | `deriveList(seed, { watched, … })` | `deriveList(seed, { watched, … })` | The `value` option becomes the seed argument; every other option carries over verbatim. Available since 1.5.0. |
+| `Store<T>` | `MutableStore<T>` | `MutableStore<T>` | Same type, same behavior. The `Store` name is recycled for the readonly base (today's `DerivedStore`). |
+| `isStore(x)` | `isMutableStore(x)` | `isMutableStore(x)` | 1.x `isStore` checks the shape tag only, so it matches a `DerivedStore` too; `isMutableStore` also requires the write capability. In 2.0, `isStore` narrows to the readonly base. |
 
 `createList`, `deriveList`, `deriveStore`, `createState`, `createMemo`, `createTask`,
 `createSensor`, `createSlot`, `createEffect`, and `match` keep their names and behavior.
+
+Two 1.5 names rename once more at the 2.0 boundary: `DerivedList<T>` becomes `List<T>` and
+`DerivedStore<T>` becomes `Store<T>`. Adopting the bridge names therefore means one more
+mechanical rename when you move to 2.0 — only `MutableList<T>` and `MutableStore<T>` are
+terminal vocabulary, carried into 2.0 unchanged.
 
 ## Running the codemod
 
@@ -43,6 +52,13 @@ and your own declarations named `List` are left alone) and syncs the imports. Ru
 formatter afterwards; the rewritten `deriveList(...)` calls are syntactically valid but not
 formatted to taste.
 
+`--module <name>` scopes which import declarations are updated: the codemod syncs imports
+only on declarations whose module specifier *contains* `<name>` as a substring. The default,
+`cause-effect`, matches `@zeix/cause-effect` and any deeper specifier under it alike. A
+consumer that re-exports the library can pass its own scope — for example
+`--module @zeix/le-truc` — to rewrite exactly the imports pulling from that package, still
+including deeper specifiers such as `@zeix/le-truc/subpath`.
+
 ## What the codemod cannot decide
 
 **Read-only `List<T>` positions.** The codemod renames *every* `List` reference to
@@ -52,10 +68,18 @@ narrow it to `DerivedList<T>` today — or do nothing, and let it become the v2 
 the 2.0 boundary. Either is safe; leaving it `MutableList` is merely more permissive than
 necessary.
 
-**`.deriveCollection(fn)` methods.** The method form stays in 1.x and 2.0 folds it into the
-top-level `deriveList(source, fn)`. A chain `users.deriveCollection(f)` becomes
-`deriveList(users, f)` — mechanically findable, but the codemod leaves methods alone so your
-pipelines stay diffable. Migrate when you adopt the other v2 renames.
+**`.deriveCollection(fn)` methods.** Deprecated as of 1.5.0. Both forms are **removed in
+2.0** — the method on `MutableList`/`DerivedList` and the module-level `deriveCollection`
+(which 1.5.0 already unexports) — folded into the top-level `deriveList(source, itemFn)`.
+A chain `users.deriveCollection(f)` becomes `deriveList(users, f)` — mechanically findable,
+but the codemod deliberately leaves methods alone so your pipelines stay diffable. Migrate
+by hand when you adopt the other v2 renames.
+
+**`CollectionSource<T>`.** Renames to `ListSource<T>` in 2.0 — same structure, new name.
+The codemod has no rule for it (like `ListOptions`-style longer names, it is a distinct
+symbol rather than a deprecated one), so rename it by hand. This is also the answer for
+`reconcile`-style signatures that mention it: the 2.0 signature says `ListSource<T>` where
+1.x said `CollectionSource<T>`.
 
 **Origin guards.** `isState`, `isMemo`, `isTask`, `isSensor`, and `isComputed` have no
 mechanical replacement — they are removed because origin is no longer part of the consumption

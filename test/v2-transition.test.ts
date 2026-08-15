@@ -4,17 +4,25 @@ import {
 	createCollection,
 	createList,
 	createState,
+	createStore,
 	type DerivedList,
 	deriveList,
+	deriveStore,
 	isCollection,
 	isDerivedList,
 	isList,
 	isMutableList,
+	isMutableStore,
+	isStore,
 	type List,
 	type MutableList,
+	type MutableStore,
+	type Store,
 } from '../index.ts'
 
 /* === Tests === */
+
+type Config = { debug: boolean; level?: number }
 
 describe('MutableList — the v2 name of the mutable List type', () => {
 	test('createList satisfies both the new and the deprecated name', () => {
@@ -86,5 +94,36 @@ describe('guards preserve the tag-based taxonomy', () => {
 		const derived = deriveList(() => [1])
 		expect(isMutableList(list) && !isMutableList(derived)).toBe(true)
 		expect(isDerivedList(derived) && !isDerivedList(list)).toBe(true)
+	})
+})
+
+describe('MutableStore — the v2 name of the mutable Store type', () => {
+	test('createStore satisfies both the new and the deprecated name', () => {
+		const store: MutableStore<Config> = createStore({ debug: false })
+		const asDeprecated: Store<Config> = store
+		const roundTrip: MutableStore<Config> = asDeprecated
+		expect(roundTrip.add('level', 3)).toBe('level')
+		expect(roundTrip.get()).toEqual({ debug: false, level: 3 })
+	})
+
+	test('isMutableStore matches a mutable store and narrows to its write methods', () => {
+		const store = createStore({ a: 1 })
+		expect(isMutableStore(store)).toBe(true)
+		if (isMutableStore(store)) expect(store.add('b', 2)).toBe('b')
+	})
+
+	test('isMutableStore rejects derived stores and non-stores', () => {
+		expect(isMutableStore(deriveStore(() => ({ a: 1 })))).toBe(false)
+		expect(isMutableStore(createState(1))).toBe(false)
+		expect(isMutableStore(createList([1]))).toBe(false)
+		expect(isMutableStore('store')).toBe(false)
+	})
+
+	test('isStore stays the tag-based guard, matching derived stores too', () => {
+		// MutableStore and DerivedStore share the 'Store' tag in 1.x — pinned here so
+		// the deprecation of isStore never quietly narrows its runtime behavior.
+		expect(isStore(createStore({ a: 1 }))).toBe(true)
+		expect(isStore(deriveStore(() => ({ a: 1 })))).toBe(true)
+		expect(isStore(createState(1))).toBe(false)
 	})
 })

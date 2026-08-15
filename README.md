@@ -208,6 +208,8 @@ createEffect(() => console.log('User:', user.get())) // watch the full object
 
 Access a property with `.byKey()`, or directly as `user.name` through the Proxy. Iterate with the reactive `.keys()` method to observe structural changes. Add and remove properties with `.add(key, value)` and `.remove(key)`.
 
+> **Naming ahead of 2.0:** the mutable store type is also exported as `MutableStore` — the name it keeps in 2.0, where `Store` becomes the readonly base (today's `DerivedStore`). `isMutableStore()` is the matching guard; unlike the tag-based `isStore()`, it rejects a derived store. See [MIGRATION-2.0.md](MIGRATION-2.0.md).
+
 ### List
 
 A reactive array with individually reactive items and stable keys. Each item becomes its own signal and keeps its identity through sorting and reordering.

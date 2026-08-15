@@ -46,6 +46,15 @@ the names 2.0 actually lands on. If exploration finds the shape needs to change,
 bridge names are revisited *before* 1.5 ships, not after. Le Truc coordinates its 2.5 minor to
 1.5's release, and its 3.0 to 2.0's — see CE-011.
 
+**Go decision recorded (2026-08-15):** the v2-side condition is satisfied. `v2/shape-exploration`
+landed CE-005..CE-008 with no unresolved blocker in `NOTES.md`, then completed its entire task
+list — the vocabulary reductions (CE-022), file consolidation (CE-023), the sync-only-bundle fix
+(CE-024), the ADR-0018 amendments (CE-027), the documentation rewrites (CE-009/CE-010/CE-028), and
+the 2.0 bundle-ceiling re-baseline (CE-015) — and ADR-0018's Status line moved to ✅ Accepted on
+2026-08-15. The v2 shape held up: the bridge names this release ships are the names 2.0 lands on.
+Only CE-011 (the Le Truc 2.0/3.0 coordination) remains open there; it gates the 2.0 release, not
+this one. On this branch, CE-021 is now gated only on CE-025 and CE-026 landing below.
+
 ---
 
 - [x] CE-012: Fix stale index resolution in `keyedAdapter` — done ✓
@@ -143,8 +152,8 @@ bridge names are revisited *before* 1.5 ships, not after. Le Truc coordinates it
 
 ## `release/1.5.0` — bridge release prep
 
-- [x] CE-019: Add CHANGELOG.md entries for the 1.5 bridge work
-  **Skill:** changelog-keeper – done
+- [x] CE-019: Add CHANGELOG.md entries for the 1.5 bridge work — done ✓
+  **Skill:** changelog-keeper
   **Context:** Document CE-001..CE-004, CE-012..CE-014 (derivation-gap closures: `deriveStore`,
   the widened `deriveCollection`, `deriveList`, `isPending`/`abort`) and CE-016..CE-018 (the
   `MutableList`/`DerivedList` bridge names and their guards, `createCollection`/`List`/
@@ -153,19 +162,36 @@ bridge names are revisited *before* 1.5 ships, not after. Le Truc coordinates it
   each entry per the skill's Added/Changed/Deprecated/Fixed categories. Do **not** rename
   `[Unreleased]` to `1.5.0` yet — that is CE-021, gated separately.
 
-- [x] CE-020: Tech-writer pass on `MIGRATION-2.0.md`
-  **Skill:** tech-writer – done
+- [x] CE-020: Tech-writer pass on `MIGRATION-2.0.md` — done ✓
+  **Skill:** tech-writer
   **Context:** Flagged in CE-017's Check note as a dev-written draft. Fold it into the existing
   doc set's tone and structure (compare `GUIDE.md`/`README.md`), verify every named export and
   code sample against the current `index.ts` surface, and cross-link it from `README.md` wherever
   not already done. Do not add v2.0-taxonomy content here — CE-009/CE-010 own that, on
   `v2/shape-exploration`, once the shape is confirmed.
 
+- [x] CE-025: Back-port `MutableStore`/`isMutableStore` bridge names to 1.x — reviewed ✓
+  **Skill:** cause-effect-dev
+  **Context:** Le Truc round 2 §3 (PR #78) — a real gap CE-016 missed: the **Store flip** (1.x `Store` = the mutable type, 2.0 `Store` = the readonly base) has exactly the structure of the `List` flip the ADR calls its most error-prone part, but got no bridge, no codemod rule, and no ADR mention. On `release/1.5.0`: make `MutableStore<T>` the real name of today's mutable Store and add the `isMutableStore` guard (v2's CE-005 already defines both — port the definitions so the two branches converge); mark `Store`/`isStore` `@deprecated` with the v2-flip message mirroring the `List` wording ("Store's current mutable meaning ends in 2.0 — use `MutableStore`; in 2.0, `Store` is the readonly base, today's `DerivedStore`"); extend `tools/codemod-v2.ts` with the meaning-preserving renames `Store`→`MutableStore`, `isStore`→`isMutableStore`, using the same identifier-vs-declaration guards as the List rules; update the bridge table in `MIGRATION-2.0.md`. Le Truc holds their `createList<TodoItem, Store<TodoItem>>` annotations pending this. Also verify and document `--module`: it is a substring match on the module specifier (`tools/codemod-v2.ts:149`), so `--module @zeix/le-truc` works as Le Truc intends — document the invocation with the substring semantics called out. Append the `CHANGELOG.md` `[Unreleased]` entries for this task in changelog-keeper format (CE-019 runs separately and must not be blocked on ordering).
+  **Changed:** `src/nodes/store.ts` (`BaseMutableStore`/`MutableStore` are the real names — was `BaseStore`/`Store`; nested `byKey`/iterator references migrated; `createStore` returns `MutableStore<T>`; `Store<T> = MutableStore<T>` deprecated alias with the mirrored flip message; new `isMutableStore` guard — tag check plus the `.add` write capability, ported from v2's CE-005; `isStore` deprecated but **kept tag-based**; internal `signalCategory` uses `isMutableStore`), `src/signal.ts` (`createSignal`/`createMutableSignal` record overloads retyped to `MutableStore<T>`; `isMutableSignal` inlines the `'Store'` tag check with a comment instead of calling the deprecated `isStore` — behavior identical), `index.ts` (+`isMutableStore`, +`MutableStore`), `tools/codemod-v2.ts` (`Store`/`isStore` rename rules, header-table rows, import-sync list, own-name message now "List/Collection/Store", new manual-review hint for `isStore` renames), `test/v2-transition.test.ts` (4 tests), `test/codemod-v2.test.ts` (3 tests), `MIGRATION-2.0.md` (bridge-table rows, Store-flip hazard sentence, terminal-vocabulary paragraph, `--module` substring semantics), `README.md` (Store "Naming ahead of 2.0" note), `CHANGELOG.md` `[Unreleased]`, `types/` regenerated.
+  **How:** One deliberate deviation from the `List` pattern, forced by the tag layout: `isStore` **cannot** delegate to `isMutableStore` the way `isList` delegates to `isMutableList`, because the mutable Store and the `DerivedStore` share the `'Store'` tag (unlike `List` vs `Collection`) — delegation would silently stop matching derived stores in a minor release, and `test/derive-store.test.ts:30` pins that they match today. The deprecated `isStore` therefore keeps its tag check (which is also exactly what v2's `isStore` does — the branches converge on behavior; only the 1.x narrowing is mutable), and the deprecation message says so. For the same reason the codemod's `isStore`→`isMutableStore` rename is *not* behavior-identical on derived stores, so it fires a report-only manual-review hint mirroring the read-only-`List` one. `isMutableStore` ports v2's definition verbatim except the tag check is inlined (v2 calls its non-deprecated `isStore`; ours is deprecated and must not flag our own source).
+  **Verified:** `bun run check` green end to end — 644/644 tests (7 new), perf regression 9/9, bundle 23851 B min / 8245 B gz / 2484 B core (+78/+17/0 over the branch base, from the one new guard function; diagnostic ceilings hold, core unchanged). Codemod CLI smoke-tested on a sample file: renames apply in place, imports sync, the `isStore` hint fires. `types/` regenerated from a clean cache — the committed declarations were stale in six files before this task (JSDoc-wording drift, same pattern CE-006 found on v2), so that diff carries those fixes alongside the real changes.
+  **Review:** Approved ✓. Independently re-ran `bun run check`: 644/644 tests, `tsc --noEmit` clean, bundle 23851 B / 8245 B / 2484 B core — reproduces exactly. The `isStore` non-delegation is the right call: the mutable Store and `DerivedStore` share the `'Store'` tag (confirmed in `store.ts`), so a delegating `isStore` would silently stop matching `deriveStore` results in a minor release — `test/v2-transition.test.ts`'s "isStore stays the tag-based guard" case pins this. `isMutableSignal` correctly switches to `isSignalOfType(value, TYPE_STORE)` rather than calling the now-deprecated `isStore`, preserving the exact prior tag-based behavior (including matching a `DerivedStore`, a pre-existing trait, not a new bug — already tracked for v2 under CE-022(i)'s guard-flip warning). Codemod's `--module` substring semantics verified directly against `syncImports()` (`tools/codemod-v2.ts:153`, `.includes(module)`), matching the new MIGRATION-2.0.md wording. `types/` diff spot-checked across the six flagged files — wording-only plus the CE-004 exports `graph.d.ts` was missing; nothing unexplained.
+
+- [x] CE-026: Deprecate `.deriveCollection()` in 1.x and state the 2.0 intents in `MIGRATION-2.0.md` — reviewed ✓
+  **Skill:** cause-effect-dev
+  **Context:** Le Truc round 2 §2 and §4 (PR #78). In 1.5, `deriveList` subsumes every `deriveCollection` use, yet neither form carries a deprecation marker — the "born deprecated" hazard in mirror image (promoting a name in the 1.5 release notes that 2.0 removes). The top-level `deriveCollection` is already unexported (CE-014), so the marker matters on the **method**: mark `List.deriveCollection()`/`MutableList.deriveCollection()` `@deprecated` pointing at `deriveList(source, itemFn)`; the rewrite `users.deriveCollection(f)` → `deriveList(users, f)` is mechanical even though the codemod deliberately leaves methods alone. In `MIGRATION-2.0.md`, state plainly: (a) both `deriveCollection` forms are removed in 2.0 (CE-022c); (b) `CollectionSource` renames to `ListSource` in 2.0 — the codemod's exact-identifier rules will **not** catch it (a longer name), so it is a manual rename; this answers Le Truc's reconcile-signature question; (c) adopters of the 1.5 bridge names face one more mechanical rename at 2.0 (`DerivedList`→`List`, `DerivedStore`→`Store`); only `MutableList` is terminal vocabulary; (d) the `--module @zeix/le-truc` invocation from CE-025. Append the `CHANGELOG.md` `[Unreleased]` entries likewise.
+  **Changed:** `src/nodes/list.ts` (`@deprecated` JSDoc on the `MutableList.deriveCollection()` overloads — covers `List` too, since `List` is its alias), `src/nodes/collection.ts` (same marker on the `DerivedList.deriveCollection()` overloads), `MIGRATION-2.0.md` (the `.deriveCollection` section now states both forms are **removed in 2.0**, folded into `deriveList(source, itemFn)`; new `CollectionSource<T>` → `ListSource<T>` manual-rename entry answering the reconcile-signature question; (c) landed as the terminal-vocabulary paragraph after the bridge table — updated to name **both** `MutableList` and `MutableStore` as terminal, since CE-025 landed in the same change and the task text predated it), `CHANGELOG.md` `[Unreleased]` Deprecated.
+  **How:** Two in-spirit extensions of the task text, both flagged for review: the marker also went on `DerivedList`'s own `deriveCollection()` (the task names `List`/`MutableList`, but `DerivedList` carries the same method and CE-022c removes it in 2.0 just the same — leaving it unmarked would keep the born-deprecated hazard alive on exactly the type `deriveList` returns), and the terminal-vocabulary statement gained `MutableStore` alongside `MutableList` because CE-025 makes it 2.0-stable vocabulary. One JSDoc block sits above the first overload of each pair — deprecation is symbol-level, so it flags both call shapes.
+  **Verified:** `bun run check` green end to end — 644/644 tests, perf 9/9, bundle 3/3 (figures under CE-025; this task is markers and docs only, no runtime change).
+  **Review:** Approved ✓. Extending the `@deprecated` marker to `DerivedList.deriveCollection()` alongside `MutableList`'s was the right call, not scope creep — `deriveList` is the flagship 1.5 API and its return type is exactly `DerivedList`, so leaving that copy unmarked would have kept the born-deprecated hazard alive on the one type consumers actually get back. `MIGRATION-2.0.md`'s new `CollectionSource<T>` → `ListSource<T>` entry correctly identifies why the codemod can't help (distinct symbol, not a deprecated alias) and lines up with CE-022's landed rename on `v2/shape-exploration`. No runtime change, both markers confirmed present in the diff, docs consistent with CE-025.
+
 - [ ] CE-021: ⚠️ Prepare and tag the 1.5.0 release — gated
   **Skill:** changelog-keeper
-  **Context:** Do **not** start until `v2/shape-exploration` has delivered sufficient confidence —
-  see the Branch plan note above; record the go decision here (or in ADR-0018's Status line)
-  before starting. Depends on CE-019. Follow the skill's `<preparing_a_release>` steps: rename
+  **Context:** The v2-side gate is satisfied — see the Go decision note above (ADR-0018 ✅
+  Accepted 2026-08-15). Depends on CE-025 and CE-026 — Le Truc round 2 endorses PR #78 for merge
+  *with* those two additions while the release is still in draft. Follow the
+  skill's `<preparing_a_release>` steps: rename
   `## [Unreleased]` to `## 1.5.0`, bump `version` in `package.json` and the `@version` tag in
   `index.ts`, then re-point the performance baseline at the published release — required for this
   minor bump, per `../cause-effect-dev/workflows/update-perf-baseline.md`. Coordinate the actual
@@ -175,36 +201,74 @@ bridge names are revisited *before* 1.5 ships, not after. Le Truc coordinates it
 
 ## `v2/shape-exploration` — v2.0 shape confidence
 
-- [ ] CE-005: Collapse the type vocabulary to shape × mutability
-  **Skill:** cause-effect-dev
-  **Context:** ⚠️ Breaking. Also drop the `getAsyncSource` duck-type shim in `src/graph.ts` once `Task.isPending()`/`abort()` are gone, leaving the `asyncSources` WeakMap as the only resolution path. Per ADR-0018 §1. Define `Signal`/`MutableSignal`, `List`/`MutableList`, `Store`/`MutableStore` as the complete value-type set; delete `State`, `Memo`, `Task`, `Sensor`, and `Collection` as type names. Change `Symbol.toStringTag` to carry the shape (`'Signal' | 'List' | 'Store'`) and update `isSignalOfType` call sites accordingly. Replace the origin guards (`isState`, `isMemo`, `isTask`, `isSensor`, `isCollection`, `isComputed`) with shape guards (`isSignal`, `isList`, `isStore`, `isMutableSignal`, `isMutableList`, `isMutableStore`). `isSlot` is unchanged; `Slot` stays out of scope entirely (it abstracts over `{ get, set? }` and ignores other methods by design). Note the migration hazard called out in ADR-0018 §Consequences: `List<T>` changes meaning from mutable to readonly, so existing code typed `List<T>` and calling `.add()` breaks at the type level. If this surfaces a blocker the additive/bridge work did not anticipate, write it to `NOTES.md` rather than pushing ahead — that is exactly the signal this branch exists to catch before it reaches `release/1.5.0`.
+**Synced from `v2/shape-exploration` (2026-08-15): the shape held up — every task below is
+complete and reviewed except CE-011, which gates the 2.0 release, not this one.** Full task
+records (Changed/How/Verified/Review) live on that branch's TODO.md; recorded here are the
+outcomes that bear on this branch's remaining work. ADR-0018 is ✅ Accepted there (2026-08-15),
+amended with the Store-flip and guard-flip consequences that Le Truc round 2 and the review
+surfaced.
 
-- [ ] CE-006: Introduce `createSignal` / `deriveSignal` and retire the composite façades
-  **Skill:** cause-effect-dev
-  **Context:** ⚠️ Breaking — depends on CE-005. Per ADR-0018 §3 and §5. `createSignal(value, options?)` → `MutableSignal<T>`; `deriveSignal(input, options?)` → `Signal<T>` with the three-way dispatch. Retain `createState`, `createMemo`, `createTask`, and `createSensor` as narrow single-origin entry points returning the collapsed types — this is a tree-shaking requirement, not compatibility (see REQUIREMENTS.md §Bundle Size). Remove `createComputed` and `createMutableSignal` (subsumed). The shape-sniffing coercion currently in `createSignal` (`src/signal.ts:87`) is removed with **no replacement export** — Le Truc's `src/` never calls it (its exposure is Le Truc's re-export surface; Le Truc ships its own helper in its 3.0). Document the recipe in the migration notes: `Array.isArray(v) ? createList(v) : isRecord(v) ? createStore(v) : createState(v)`.
+- [x] CE-005: Collapse the type vocabulary to shape × mutability — reviewed ✓
+  **Outcome:** `Symbol.toStringTag` carries shape only (`Signal`/`List`/`Store`/`Slot`); the
+  origin types and guards are gone. `Store<T>` is now the readonly base (was `DerivedStore`),
+  `MutableStore<T>` the mutable extension (was `Store`), with `isMutableStore` added — the
+  mutability guards check for a `.set`/`.add` capability at runtime, not the tag. **CE-025 ports
+  these `MutableStore`/`isMutableStore` definitions so the two branches converge.** One recorded
+  wrinkle, irrelevant to 1.x (where `MutableStore` names today's `Store` whole): `MutableStore<T>`
+  is not a tsc-checkable structural subtype of `Store<T>` for a generic `T`, because `byKey`'s
+  return type is a per-key conditional.
 
-- [ ] CE-007: Move `watched` fully into options
-  **Skill:** cause-effect-dev
-  **Context:** ⚠️ Breaking — depends on CE-006. Per ADR-0018 §4. `createSensor(watched)` and `createCollection(watched)` currently take the callback in the first position, which is indistinguishable at runtime from a sync derivation callback. Normalize both to the option form. Unify the `watched` signature across shapes: `(emit) => Cleanup` when the input is a seed value, `() => Cleanup` (invalidation only) when the input is a function — the latter is today's Memo `watched`. Verify the lazy `watched`/`unwatched` lifecycle is unchanged; it is pinned by existing tests.
+- [x] CE-006: Introduce `createSignal` / `deriveSignal` and retire the composite façades — reviewed ✓
+  **Outcome:** `createSignal(value)` → `MutableSignal<T>`, `deriveSignal` with the three-way
+  dispatch; `createComputed`/`createMutableSignal` removed. The shape-sniffing coercion is gone
+  with no replacement export — the recipe (`Array.isArray(v) ? createList(v) : isRecord(v) ?
+  createStore(v) : createState(v)`) stays in MIGRATION-2.0.md, which this branch's CE-020 pass
+  verified against the 1.x surface.
 
-- [ ] CE-008: Verify the core budget after the collapse
-  **Skill:** cause-effect-dev
-  **Context:** Depends on CE-007. **Scope reduced** — this task previously assumed merging `Collection` into `List` would "offset some of the added surface" against the gzipped limit. CE-013 showed that assumption is wrong: deduplication reliably shrinks minified size and *grows* gzipped size, because gzip already compresses a second near-identical copy almost for free. The full-library figures are now a diagnostic with slack (REQUIREMENTS.md § Bundle Size), so they need no defending here.
+- [x] CE-007: Move `watched` fully into options — reviewed ✓
+  **Outcome:** `createSensor`/`createCollection` take `watched` as a required options member —
+  the positional-`watched` signature is 1.x-only vocabulary, documented as such in v2's
+  MIGRATION-2.0.md.
 
-  What remains is the part that is a real promise: verify the **≤ 4096 B gzipped core budget** still holds with only `createState` + `createMemo` + `createEffect` imported (`test/util/core-entry.ts`). That budget is the entire reason CE-006 retains the narrow single-origin factories — if it fails, `createSignal`/`deriveSignal` are pulling the async or watched machinery into the core path and CE-006 is wrong. Report the figure either way. Do not raise the core limit; if it genuinely cannot be met, correct the claim in REQUIREMENTS.md and README.md and raise it in NOTES.md.
+- [x] CE-008: Verify the core budget after the collapse — reviewed ✓
+  **Outcome:** holds — 2291 B gzipped for the `createState`+`createMemo`+`createEffect` trio,
+  44 % headroom under 4096 B. The `refresh()`-dispatch finding it raised became CE-024.
 
-- [ ] CE-009: Rewrite the derivation guidance as a routing table
-  **Skill:** tech-writer
-  **Context:** Depends on CE-003 (done). Per ADR-0018 §Context and REQUIREMENTS.md §Every Shape Is Derivable. In `GUIDE.md`, replace the normative "derive everything" framing with the mechanism: an effect-write is a dependency edge the graph cannot see, and the five consequences follow from that one fact (stale reads within a flush pass, lost `equals` suppression, no abort-on-change, no lazy lifecycle, the multi-pass `flush()` + `EffectConvergenceError` that exists to contain it). State the exception plainly — writing outward to DOM, network, or storage is what an effect is for. Then add the shape × origin matrix as a lookup table in `AGENTS.md`, `.github/copilot-instructions.md`, and `CONTEXT.md`, phrased as "you have Y, you want X → call Z". The table is the point: a prohibition is not actionable by a code-generating model, a routing table is.
+- [x] CE-022: Take the v2 vocabulary reductions and naming unification — reviewed ✓
+  **Outcome:** confirms CE-026's stated 2.0 intents as landed facts — the `.deriveCollection()`
+  methods are removed (c), `CollectionSource` is now `ListSource` (b), and the callback/option
+  renames landed (`ListCallback`/`ListChanges`, `initial`, `emit`, `abortSignal`). The codemod
+  flags `isSignal`/`isMutableSignal` call sites for manual review (j): those guards flip
+  silently in 2.0, which v2's MIGRATION-2.0.md warns about.
 
-- [ ] CE-010: Update the embedded skill references
-  **Skill:** tech-writer
-  **Context:** Depends on CE-009. `.agents/skills/cause-effect/references/signal-types.md` and `.agents/skills/shared/references/api-facts.md` embed the 9-type taxonomy and are loaded by both the `cause-effect` and `cause-effect-dev` skills. They are the highest-leverage surface for the AI-misuse problem, since they are read before any code is written. Update to the shape-indexed taxonomy and the construction matrix. Check `CONTEXT.md` for vocabulary entries that need an _Avoid_ list — `Collection` and `Sensor` become disallowed synonyms for `List` and the external-push construction form.
+- [x] CE-023: Consolidate the source-file structure to the shape taxonomy — reviewed ✓
+  **Outcome:** `src/nodes/collection.ts` folded into `src/nodes/list.ts`, the signal types into
+  `src/nodes/signal.ts`; no public-surface change. Relevant only when diffing the branches.
 
-- [ ] CE-015: Re-baseline the full-library bundle ceiling before release
-  **Skill:** cause-effect-dev
-  **Context:** Release gate for 2.0, to run last — after CE-005..CE-008 and CE-011, when the surface is final. The full-library ceilings in `test/regression-bundle.test.ts` (32768 B minified, 10240 B gzipped) carry deliberate slack so that refactoring is not distorted by them; that slack is only legitimate if it is taken back at release. Measure both figures on the finished 2.0 build and lower each ceiling to just above the measured value, using the same proportional headroom the core budget has (~1.6x). Update the table in REQUIREMENTS.md § Bundle Size and the summary in ARCHITECTURE.md § Testing Strategy to the new numbers. Report the before/after. Note this is the *only* task permitted to move these ceilings; a mid-branch raise to unblock a commit is exactly what the policy forbids.
+- [x] CE-024: Remove the task recompute path from sync-only bundles — reviewed ✓
+  **Outcome:** core dropped to 2072 B gzipped; a built sync-only bundle contains no
+  `AbortController` (content grep). ADR-0018 §5's mechanism claim is now literally true.
+
+- [x] CE-027: Amend ADR-0018 with the review outcomes; move Status off "Proposed" — done ✓
+  **Outcome:** ADR-0018 ✅ Accepted 2026-08-15, with the Store-flip and guard-flip entries in
+  Negative Consequences — the v2-side gate input CE-021 was waiting on.
+
+- [x] CE-009: Rewrite the derivation guidance as a routing table — done ✓
+  **Outcome:** GUIDE/AGENTS/copilot-instructions/CONTEXT on v2 carry the shape × origin
+  construction matrix ("you have Y, you want X → call Z") and the no-umbrella-noun rule.
+
+- [x] CE-010: Update the embedded skill references — done ✓
+  **Outcome:** the skill references and CONTEXT.md vocabulary on v2 are shape-indexed;
+  `Collection`/`Sensor`/`Computed`/`State`/`Memo`/`Task` moved to avoid-lists.
+
+- [x] CE-028: Sync `README.md`, `RECIPES.md`, and `REACT_INTEGRATION.md` to the v2 surface — done ✓
+  **Outcome:** all three verified against the v2 `index.ts`; no stale 1.x name remains.
+
+- [x] CE-015: Re-baseline the full-library bundle ceiling before release — done ✓
+  **Outcome:** the 2.0 ceilings are 28672 B min / 10240 B gz, and the core promise is tightened
+  to 3072 B. This branch's own 32768 B / 10240 B ceilings are untouched — 1.x code, 1.x budget.
 
 - [ ] CE-011: Coordinate the Le Truc migration
   **Skill:** cause-effect-dev
-  **Context:** ⚠️ Blocking for the v2.0 release, not for the branch. Per Le Truc's own audit (2026-08-14): internally it uses `createMemo` (→ `deriveSignal`), the `isMemo`/`isState` guards, and `Memo`/`State` type annotations across ~10 files — a mechanical migration they estimate at 1–2 dev-days. It does **not** call `createSignal`, `createList`, `createCollection`, `deriveCollection`, or the origin guards in `src/`; those names are exposed only through its `index.ts` re-export surface (~40 names), which is what forces a coordinated Le Truc 3.0. Audit that surface against CE-005..CE-007, write the migration notes (including the `createSignal`-coercion recipe, which Le Truc ships as its own helper), and confirm the `Slot` integration layer is genuinely unaffected — ADR-0018 assumes it is because `Slot` abstracts over `{ get, set? }` only. If that assumption fails, raise it in `NOTES.md` rather than widening `Slot`'s scope unilaterally. Also coordinate the 2.0 npm publish with Le Truc's 3.0, mirroring how CE-021 coordinates 1.5.0 with Le Truc's 2.5.
+  **Context:** ⚠️ Blocking for the v2.0 release, not for the branch. Per Le Truc's own audit (2026-08-14): internally it uses `createMemo` (→ `deriveSignal`), the `isMemo`/`isState` guards, and `Memo`/`State` type annotations across ~10 files — a mechanical migration they estimate at 1–2 dev-days. It does **not** call `createSignal`, `createList`, `createCollection`, `deriveCollection`, or the origin guards in `src/`; those names are exposed only through its `index.ts` re-export surface (~40 names), which is what forces a coordinated Le Truc 3.0. Audit that surface against CE-005..CE-007 and CE-022, write the migration notes (including the `createSignal`-coercion recipe, which Le Truc ships as its own helper, and the `isSignal`/`isMutableSignal` flip warnings from CE-022(i)), and confirm the `Slot` integration layer is genuinely unaffected — ADR-0018 assumes it is because `Slot` abstracts over `{ get, set? }` only. If that assumption fails, raise it in `NOTES.md` rather than widening `Slot`'s scope unilaterally. Also coordinate the 2.0 npm publish with Le Truc's 3.0, mirroring how CE-021 coordinates 1.5.0 with Le Truc's 2.5.
+  **Le Truc round 2 (2026-08-15, PR #78 §5) — their commitments to factor in:** Le Truc 2.5.0 depends on `^1.5.0`, re-exports every bridge name with mirrored deprecations, migrates their examples to the bridge names, and widens `reconcile` to unkeyed `Signal<E[]>` sources. One correction their plan implies: the widening must go through `deriveList(source, itemFn)` — the top-level `deriveCollection` has been unexported since CE-014, and the keyedAdapter machinery is reachable only through `deriveList`. Their `Store<T>` item-type annotations (e.g. `createList<TodoItem, Store<TodoItem>>`) are held pending the CE-025 bridge decision.

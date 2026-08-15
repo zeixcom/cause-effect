@@ -21,9 +21,9 @@ import {
 } from './nodes/list'
 import { createMemo, isMemo, type Memo } from './nodes/memo'
 import { createState, isState, type State } from './nodes/state'
-import { createStore, isStore, type Store } from './nodes/store'
+import { createStore, type MutableStore } from './nodes/store'
 import { createTask, isTask, type Task } from './nodes/task'
-import { isAsyncFunction, isFunction, isRecord } from './util'
+import { isAsyncFunction, isFunction, isRecord, isSignalOfType } from './util'
 
 /* === Types === */
 
@@ -85,7 +85,7 @@ function createComputed<T extends {}>(
  */
 function createSignal<T extends {}>(value: Signal<T>): Signal<T>
 function createSignal<T extends {}>(value: readonly T[]): MutableList<T>
-function createSignal<T extends UnknownRecord>(value: T): Store<T>
+function createSignal<T extends UnknownRecord>(value: T): MutableStore<T>
 function createSignal<T extends {}>(value: TaskCallback<T>): Task<T>
 function createSignal<T extends {}>(value: MemoCallback<T>): Memo<T>
 function createSignal<T extends {}>(value: T): State<T>
@@ -110,7 +110,7 @@ function createMutableSignal<T extends {}>(
 	value: MutableSignal<T>,
 ): MutableSignal<T>
 function createMutableSignal<T extends {}>(value: readonly T[]): MutableList<T>
-function createMutableSignal<T extends UnknownRecord>(value: T): Store<T>
+function createMutableSignal<T extends UnknownRecord>(value: T): MutableStore<T>
 function createMutableSignal<T extends {}>(value: T): State<T>
 function createMutableSignal(value: unknown): unknown {
 	if (isMutableSignal(value)) return value
@@ -159,7 +159,12 @@ function isSignal<T extends {}>(value: unknown): value is Signal<T> {
  * @returns True if value is a State, Store, or List, false otherwise
  */
 function isMutableSignal(value: unknown): value is MutableSignal<unknown & {}> {
-	return isState(value) || isStore(value) || isMutableList(value)
+	// Deliberately the broad tag check, not `isMutableStore`: a `DerivedStore` shares the
+	// 'Store' tag and this guard has matched it since `deriveStore` exists — narrowing it
+	// would be a silent runtime flip. See MIGRATION-2.0.md.
+	return (
+		isState(value) || isSignalOfType(value, TYPE_STORE) || isMutableList(value)
+	)
 }
 
 export {
