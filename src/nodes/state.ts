@@ -25,6 +25,11 @@ type UpdateCallback<T extends {}> = (prev: T) => T
  * A mutable reactive state container.
  * A write propagates to every sink that depends on the state.
  *
+ * @deprecated `State` is removed in v2.0 with no mechanical replacement — origin is no longer
+ * part of the consumption contract. Use `isSignal`/`isMutableSignal` or a plain property check
+ * instead of matching on this type. See [MIGRATION-2.0.md](../../MIGRATION-2.0.md) § Origin
+ * guards and [ADR-0018](../../adr/0018-shape-indexed-signal-types.md).
+ *
  * @template T - The type of value stored in the state
  */
 type State<T extends {}> = {
@@ -113,6 +118,10 @@ function createState<T extends {}>(
 
 /**
  * Checks if a value is a State signal.
+ *
+ * @deprecated Removed in v2.0 with no mechanical replacement — use `isSignal`/`isMutableSignal`
+ * or a plain property check instead. See [MIGRATION-2.0.md](../../MIGRATION-2.0.md) § Origin
+ * guards.
  *
  * @since 0.9.0
  * @param value - The value to check

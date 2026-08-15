@@ -205,7 +205,7 @@ this one. On this branch, CE-021 is now gated only on CE-025 and CE-026 landing 
   **Reviewed by architect ✓** — consistency review confirmed against `index.ts`; no code changes,
   docs only. Unblocks CE-021.
 
-- [ ] CE-030: Mark the origin-specific types and guards `@deprecated` ahead of their v2.0 removal
+- [x] CE-030: Mark the origin-specific types and guards `@deprecated` ahead of their v2.0 removal — done, pending review ⏳
   **Skill:** cause-effect-dev
   **Context:** Found in a v1.5 ↔ v2.0 public-API cross-check (2026-08-16), run before the 1.5.0
   publish. `v2/shape-exploration`'s `index.ts` exports none of `State`, `isState`, `Memo`, `isMemo`,
@@ -222,8 +222,24 @@ this one. On this branch, CE-021 is now gated only on CE-025 and CE-026 landing 
   `isComputed`; `src/graph.ts`: `ComputedOptions`), pointing at `isSignal`/`isMutableSignal` or a
   plain property check per MIGRATION-2.0.md's own guidance, and linking `MIGRATION-2.0.md`'s
   "Origin guards" section. No runtime behavior changes — JSDoc only. Blocks npm publish of 1.5.0.
+  **Changed:** `src/nodes/state.ts` (`State`, `isState`), `src/nodes/memo.ts` (`Memo`, `isMemo`),
+  `src/nodes/task.ts` (`Task`, `isTask`), `src/nodes/sensor.ts` (`Sensor`, `isSensor`,
+  `SensorCallback`, `SensorOptions`), `src/signal.ts` (`isComputed`) — twelve `@deprecated` JSDoc
+  markers added, all pointing at `isSignal`/`isMutableSignal` or a plain property check per
+  `MIGRATION-2.0.md`'s existing "Origin guards" wording. `types/` regenerated.
+  **How:** JSDoc only, no behavior change. `ComputedOptions` (`src/graph.ts`) was in the task's
+  symbol list but is **not** deprecated — checked its call sites first (per this skill's
+  "read before writing" rule) and found `createMemo`/`createTask` still use it unchanged; it's
+  only `createComputed`'s use of it that's superseded (by `deriveSignal`, CE-032). Deprecating the
+  type would have flagged those two live, non-deprecated functions' own options parameter in every
+  editor — the same class of bug CE-018 already fixed once at the export-block level.
+  **Verified:** `bun run check` green — 651/651 tests, `tsc --noEmit` clean, bundle within ceiling
+  (see CE-032 for the combined figures; this task alone is JSDoc, no runtime/bundle delta).
+  **Check:** Was excluding `ComputedOptions` the right call, or should it get a narrower note
+  instead (e.g. "deprecated only when reached through `createComputed`")? JSDoc has no way to
+  scope a deprecation to one caller, so I left it fully non-deprecated rather than mis-flag it.
 
-- [ ] CE-031: Mark `Collection`'s auxiliary callback/options types `@deprecated`
+- [x] CE-031: Mark `Collection`'s auxiliary callback/options types `@deprecated` — done, pending review ⏳
   **Skill:** cause-effect-dev
   **Context:** Found in the same cross-check as CE-030 (2026-08-16). `Collection`, `isCollection`,
   `createCollection`, and `.deriveCollection()` are already `@deprecated` (CE-016/CE-026), but six
@@ -238,8 +254,33 @@ this one. On this branch, CE-021 is now gated only on CE-025 and CE-026 landing 
   exists (`CollectionSource` → `ListSource`) and noting "removed in v2.0, folded into `deriveList`'s
   own options/callback shape" for the rest. No runtime behavior changes — JSDoc only. Blocks npm
   publish of 1.5.0.
+  **Changed:** `src/nodes/collection.ts` (`CollectionOptions` marked `@deprecated`). `NOTES.md`
+  (new entry — see below).
+  **How:** Checked every call site of all six named types before writing any marker (per this
+  skill's "read before writing" rule), not just their absence from `v2/shape-exploration`'s
+  `index.ts`. Only `CollectionOptions` is safe: it's used solely by the already-deprecated
+  `createCollection`. The other five — `CollectionCallback`, `CollectionChanges`,
+  `CollectionSource`, `DeriveCollectionCallback`, `DeriveCollectionOptions` — are load-bearing for
+  `deriveList`'s **current, non-deprecated, flagship** public overloads (its per-item form's
+  `source`/`options` parameters and its external-push form's `watched` option,
+  `src/nodes/collection.ts:764-788`). Marking any of those five `@deprecated` would flag
+  `deriveList`'s own live parameters in every editor — the same class of bug excluding
+  `ComputedOptions` avoided in CE-030.
+  **Blocked, written to `NOTES.md`:** the five require a design decision this skill's scope
+  doesn't cover unilaterally — introduce `ListSource`/`ListCallback`/`ListChanges` bridge names
+  now (mirroring CE-016's `List`→`MutableList` treatment) and migrate `deriveList`'s own signature
+  onto them, or accept the same "one more rename at 2.0" treatment already given to
+  `DerivedList`/`DerivedStore` (no bridge, since there's no meaning-flip risk — only a
+  compile-time rename). See `NOTES.md` § CE-031 for the full writeup and my lean (accept the
+  rename, don't add bridge names for something with no flip risk).
+  **Verified:** `bun run check` green — 651/651 tests, `tsc --noEmit` clean (see CE-032 for
+  combined bundle figures).
+  **Check:** Does the `NOTES.md` blocker read as a real open question, or should I have picked
+  option (b) myself and shipped it? I judged this as a scope decision (how far the
+  born-deprecated policy reaches) rather than a mechanical follow-through, so left it for
+  architect/user resolution rather than deciding unilaterally.
 
-- [ ] CE-032: Back-port `deriveSignal` and deprecate `createComputed`/`createMutableSignal`
+- [x] CE-032: Back-port `deriveSignal` and deprecate `createComputed`/`createMutableSignal` — done, pending review ⏳
   **Skill:** cause-effect-dev
   **Context:** Decided 2026-08-16, overriding MIGRATION-2.0.md's current "no action needed until
   2.0" call on `createComputed`/`createMutableSignal` (found in the CE-030/CE-031 cross-check).
@@ -275,6 +316,30 @@ this one. On this branch, CE-021 is now gated only on CE-025 and CE-026 landing 
   **Verify:** `bun run check` green; new tests for `deriveSignal`'s three dispatch arms and for
   both new `@deprecated` markers not accidentally breaking `tsc --noEmit`. Blocks npm publish of
   1.5.0 alongside CE-030/CE-031.
+  **Changed:** `src/signal.ts` (`deriveSignal(input, options?)`, new `DeriveSignalOptions<T>` type,
+  `createComputed`/`createMutableSignal` marked `@deprecated`), `index.ts` (+`deriveSignal`,
+  +`DeriveSignalOptions`), `test/signal.test.ts` (7 new tests), `MIGRATION-2.0.md` (bridge-table
+  rows for `createComputed`→`deriveSignal` and `createMutableSignal`→`createSignal`; the "no action
+  needed until 2.0" line replaced with the actual deprecation notices; origin-guards paragraph
+  extended to name the types CE-030 deprecated), `CHANGELOG.md` (new `## [Unreleased]` section
+  above `## 1.5.0`), `types/` regenerated.
+  **How:** Three-arm dispatch — sync function → `createMemo`, async function → `createTask`, seed
+  value + `options.watched` → `createSensor` — all three returned as `Signal<T>` (structural,
+  matches v2's shape-not-origin design; `Signal<T> = { get(): T }` already exists unchanged in
+  1.5). Resolved the `initial`-required-or-optional question the task flagged: **optional**,
+  diverging deliberately from `deriveList`/`deriveStore`. Reason: ADR-0018 §3's own table scopes
+  the required-`initial` rule to `List`/`Store` only ("`initial` required for List/Store") — it
+  never claimed Signal should follow suit. Unlike an array or record, an unconstrained `T` has no
+  universal empty value, so `deriveSignal`'s async arm keeps `createTask`'s existing
+  optional-value, throw-on-early-read contract unchanged. Did not reuse `SensorCallback` directly
+  (now `@deprecated` under CE-030) for the seed-form's `watched` parameter — inlined the shape
+  instead (`(set: (next: T) => void) => Cleanup`), so the brand-new function's public signature
+  doesn't reference a deprecated type. `createMutableSignal`'s deprecation JSDoc calls out that
+  `createSignal` is a **wider** replacement (accepts functions/signals it used to reject), not an
+  identical one — same distinction the task text asked for.
+  **Verified:** `bun run check` green — 651/651 tests (7 new), `tsc --noEmit` clean, bundle 24060 B
+  min / 8299 B gz / 2481 B core (all under ceiling; +209 B / +54 B / -3 B over the CE-025 baseline
+  for one new function). `types/` regenerated from a clean `tsc --project tsconfig.build.json`.
 
 - [x] CE-021: Prepare and tag the 1.5.0 release — done, pending publish ⏳
   **Skill:** changelog-keeper

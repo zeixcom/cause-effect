@@ -102,6 +102,10 @@ type CollectionChanges<T> = {
 /**
  * Configuration options for `createCollection`.
  *
+ * @deprecated `createCollection` is deprecated in favor of `deriveList(seed, { watched, ... })`
+ * — this options type goes with it. Removed in v2.0, folded into `deriveList`'s own options
+ * shape. See [MIGRATION-2.0.md](../../MIGRATION-2.0.md).
+ *
  * @template T - The type of items in the collection
  */
 type CollectionOptions<T extends {}, S extends Signal<T> = Signal<T>> = {

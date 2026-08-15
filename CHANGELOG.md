@@ -1,5 +1,18 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **`deriveSignal(input, options?)`**: New factory unifying every origin a single-value signal can come from — a sync function, an async function, or an external push (seed value + `options.watched`) — mirroring `deriveList`/`deriveStore`'s shape. Dispatches internally to `createMemo`/`createTask`/`createSensor` and returns the result as `Signal<T>`, not the deprecated `Memo`/`Task` union. `options.initial` seeds the async form and reducer patterns; unlike `deriveList`/`deriveStore`, it stays optional — a `Signal<T>` has no universal "empty" default the way an array or record does, so an early read before the first resolution throws `UnsetSignalValueError`, matching `createTask`'s existing contract ([ADR-0018](adr/0018-shape-indexed-signal-types.md) §3 scopes the required-`initial` rule to `List`/`Store` only). New exported type `DeriveSignalOptions<T>`. The 1.5.0 bridge for `createComputed`, ahead of v2.0's `deriveSignal`.
+
+### Deprecated
+
+- **`createComputed(fn, options?)`**: Marked `@deprecated`. Use `deriveSignal(fn, options?)` instead — same dispatch, `options.value` renamed to `options.initial`.
+- **`createMutableSignal(value)`**: Marked `@deprecated`. Use `createSignal(value)` instead — note this is a *wider* replacement, not an identical one: `createSignal` additionally accepts a function or an already-existing signal, both of which `createMutableSignal` rejects with `InvalidSignalValueError`. For a plain value, array, or record, both behave identically. `createMutableSignal` has no v2.0 replacement — call `createState`/`createList`/`createStore` directly.
+- **`State<T>` / `isState(x)`, `Memo<T>` / `isMemo(x)`, `Task<T>` / `isTask(x)`, `Sensor<T>` / `isSensor(x)` / `SensorCallback<T>` / `SensorOptions<T>`, `isComputed(x)`**: Marked `@deprecated`. All are removed in v2.0 with no mechanical replacement — origin is no longer part of the consumption contract. Use `isSignal`/`isMutableSignal` or a plain property check instead of matching on these types/guards. `ComputedOptions<T>` is unaffected — `createMemo`/`createTask` still use it; only `createComputed`'s use of it is superseded by `deriveSignal`.
+- **`CollectionOptions<T, S>`**: Marked `@deprecated`. Used only by the already-deprecated `createCollection`; removed in v2.0, folded into `deriveList`'s own options shape.
+
 ## 1.5.0
 
 ### Added

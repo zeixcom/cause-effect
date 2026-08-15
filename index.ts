@@ -107,6 +107,8 @@ export {
 	createComputed,
 	createMutableSignal,
 	createSignal,
+	type DeriveSignalOptions,
+	deriveSignal,
 	isComputed,
 	isMutableSignal,
 	isSignal,

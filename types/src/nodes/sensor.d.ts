@@ -2,6 +2,11 @@ import { type Cleanup, type SignalOptions } from '../graph';
 /**
  * A read-only signal that tracks external input and updates a state value as long as it is active.
  *
+ * @deprecated `Sensor` is removed in v2.0 with no mechanical replacement — origin is no longer
+ * part of the consumption contract. Use `isSignal`/`isMutableSignal` or a plain property check
+ * instead of matching on this type. See [MIGRATION-2.0.md](../../MIGRATION-2.0.md) § Origin
+ * guards and [ADR-0018](../../adr/0018-shape-indexed-signal-types.md).
+ *
  * @template T - The type of value produced by the sensor
  */
 type Sensor<T extends {}> = {
@@ -17,6 +22,11 @@ type Sensor<T extends {}> = {
 /**
  * Configuration options for `createSensor`.
  *
+ * @deprecated Removed in v2.0 — `createSensor`'s options shape changes there (`watched` moves
+ * into options; see [MIGRATION-2.0.md](../../MIGRATION-2.0.md)'s note on the positional-`watched`
+ * signature being 1.x-only vocabulary). No standalone replacement export; this type is not part
+ * of the public 2.0 surface.
+ *
  * @template T - The type of value produced by the sensor
  */
 type SensorOptions<T extends {}> = SignalOptions<T> & {
@@ -29,6 +39,10 @@ type SensorOptions<T extends {}> = SignalOptions<T> & {
 /**
  * Setup callback for `createSensor`. Runs when the sensor becomes watched.
  * Receives a `set` function to push new values into the graph.
+ *
+ * @deprecated Removed in v2.0 — replaced by the shared `SignalCallback` type used across the
+ * whole `deriveSignal` family (`emit` instead of `set`, otherwise the same shape). No standalone
+ * replacement export in 1.x. See [MIGRATION-2.0.md](../../MIGRATION-2.0.md).
  *
  * @template T - The type of value produced by the sensor
  * @param set - Updates the sensor value and propagates the change to its sinks
@@ -81,6 +95,10 @@ type SensorCallback<T extends {}> = (set: (next: T) => void) => Cleanup;
 declare function createSensor<T extends {}>(watched: SensorCallback<T>, options?: SensorOptions<T>): Sensor<T>;
 /**
  * Checks if a value is a Sensor signal.
+ *
+ * @deprecated Removed in v2.0 with no mechanical replacement — use `isSignal`/`isMutableSignal`
+ * or a plain property check instead. See [MIGRATION-2.0.md](../../MIGRATION-2.0.md) § Origin
+ * guards.
  *
  * @since 0.18.0
  * @param value - The value to check

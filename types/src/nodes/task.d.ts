@@ -4,6 +4,12 @@ import { type ComputedOptions, type TaskCallback } from '../graph';
  * Automatically tracks dependencies and re-executes when they change.
  * Provides abort semantics and pending state tracking.
  *
+ * @deprecated `Task` is removed in v2.0 with no mechanical replacement — origin is no longer
+ * part of the consumption contract. Use `isSignal`/`isMutableSignal` or a plain property check
+ * instead of matching on this type; use the graph-level `isPending`/`abort` functions instead of
+ * the methods on this type. See [MIGRATION-2.0.md](../../MIGRATION-2.0.md) § Origin guards and
+ * [ADR-0018](../../adr/0018-shape-indexed-signal-types.md).
+ *
  * @template T - The type of value resolved by the task
  */
 type Task<T extends {}> = {
@@ -71,6 +77,10 @@ declare function createTask<T extends {}>(fn: (prev: T, signal: AbortSignal) => 
 declare function createTask<T extends {}>(fn: TaskCallback<T>, options?: ComputedOptions<T>): Task<T>;
 /**
  * Checks if a value is a Task signal.
+ *
+ * @deprecated Removed in v2.0 with no mechanical replacement — use `isSignal`/`isMutableSignal`
+ * or a plain property check instead. See [MIGRATION-2.0.md](../../MIGRATION-2.0.md) § Origin
+ * guards.
  *
  * @since 0.18.0
  * @param value - The value to check

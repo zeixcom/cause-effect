@@ -30,6 +30,8 @@ names and the codemod below convert that silent flip into a staged, deprecation-
 | `createCollection(watched, options?)` | `deriveList(seed, { watched, … })` | `deriveList(seed, { watched, … })` | The `value` option becomes the seed argument; every other option carries over verbatim. Available since 1.5.0. |
 | `Store<T>` | `MutableStore<T>` | `MutableStore<T>` | Same type, same behavior. The `Store` name is recycled for the readonly base (today's `DerivedStore`). |
 | `isStore(x)` | `isMutableStore(x)` | `isMutableStore(x)` | 1.x `isStore` checks the shape tag only, so it matches a `DerivedStore` too; `isMutableStore` also requires the write capability. In 2.0, `isStore` narrows to the readonly base. |
+| `createComputed(fn, options?)` | `deriveSignal(fn, options?)` | `deriveSignal(fn, options?)` | Same dispatch (sync → `Memo`, async → `Task`), returned as `Signal<T>` instead of the deprecated `Memo`/`Task` union. `options.value` becomes `options.initial`. Available since 1.5.0. |
+| `createMutableSignal(value)` | `createSignal(value)` | — (no replacement) | Not a like-for-like swap: `createSignal` additionally accepts a function or an already-existing signal, which `createMutableSignal` rejects. For a plain value, array, or record, both behave identically. `createMutableSignal` has no 2.0 replacement — call `createState`/`createList`/`createStore` directly. |
 
 `createList`, `deriveList`, `deriveStore`, `createState`, `createMemo`, `createTask`,
 `createSensor`, `createSlot`, `createEffect`, and `match` keep their names and behavior.
@@ -85,9 +87,21 @@ symbol rather than a deprecated one), so rename it by hand. This is also the ans
 mechanical replacement — they are removed because origin is no longer part of the consumption
 contract. Each use needs a decision: usually the shape guards (`isSignal`, `isMutableSignal`)
 or a plain property check. The v2 codemod cannot make that call; audit these uses by hand.
+The types `State`, `Memo`, `Task`, `Sensor`, `SensorCallback`, `SensorOptions`, and
+`ComputedOptions` (the last only via `createComputed` — `createMemo`/`createTask` keep it)
+are removed alongside their guards for the same reason.
 
-**`createComputed` and `createMutableSignal`.** Subsumed in 2.0 by `deriveSignal` and
-`createSignal`. Both remain available in 1.x; no action needed until 2.0.
+**`createComputed(fn, options?)`.** Deprecated as of 1.5.0. Use `deriveSignal(fn, options?)` —
+same dispatch, `options.value` renamed to `options.initial`. The codemod has no rule for this
+rename (a call-site rewrite, not an identifier rename — `options.value` would need updating
+too), so migrate by hand.
+
+**`createMutableSignal(value)`.** Deprecated as of 1.5.0. Use `createSignal(value)` instead —
+note this is a *wider* replacement, not an identical one: `createSignal` additionally accepts a
+function or an already-existing signal, both of which `createMutableSignal` rejects with
+`InvalidSignalValueError`. In 2.0 there is no single function that dispatches on shape for
+mutable construction at all — call `createState`/`createList`/`createStore` directly, or see
+the coercion recipe below if you need the dispatch.
 
 ## The `createSignal` shape coercion
 

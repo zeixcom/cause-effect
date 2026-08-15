@@ -1,6 +1,6 @@
 /**
  * @name Cause & Effect
- * @version 1.4.1
+ * @version 1.5.0
  * @author Esther Brunner
  */
 export { CircularDependencyError, DuplicateKeyError, EffectConvergenceError, type Guard, InvalidCallbackError, InvalidSignalValueError, InvalidStoreMutationError, NullishSignalValueError, PromiseValueError, ReadonlySignalError, RequiredOwnerError, UnsetSignalValueError, } from './src/errors';
@@ -14,5 +14,5 @@ export { createSlot, isSlot, type Slot, type SlotDescriptor, } from './src/nodes
 export { createState, isState, type State, type UpdateCallback, } from './src/nodes/state';
 export { createStore, type DerivedStore, type DeriveStoreOptions, deriveStore, isMutableStore, isStore, type MutableStore, type Store, type StoreCallback, type StoreOptions, } from './src/nodes/store';
 export { createTask, isTask, type Task } from './src/nodes/task';
-export { createComputed, createMutableSignal, createSignal, isComputed, isMutableSignal, isSignal, type MutableSignal, } from './src/signal';
+export { createComputed, createMutableSignal, createSignal, type DeriveSignalOptions, deriveSignal, isComputed, isMutableSignal, isSignal, type MutableSignal, } from './src/signal';
 export { isAsyncFunction, isFunction, isObjectOfType, isRecord, isSignalOfType, valueString, } from './src/util';
