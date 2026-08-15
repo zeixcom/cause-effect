@@ -14,15 +14,15 @@ import {
 	FLAG_DIRTY,
 	FLAG_RELINK,
 	flush,
+	getAsyncSource,
 	link,
 	type MemoNode,
+	type MutableSignal,
 	makeSubscribe,
 	propagate,
-	refresh,
 	refreshComposite,
 	registerAsyncSource,
 	type Signal,
-	type SinkNode,
 	TYPE_STORE,
 	untrack,
 } from '../graph'
@@ -42,7 +42,7 @@ import {
 	type UnknownRecord,
 } from './list'
 import { createMemo } from './memo'
-import { createState, type State } from './state'
+import { createState } from './state'
 import { createTask } from './task'
 
 /* === Types === */
@@ -55,58 +55,16 @@ type StoreOptions = {
 	watched?: () => Cleanup
 }
 
+/**
+ * A read-only reactive object with per-property reactivity, reachable through a proxy.
+ * Each property is a `MutableSignal`, a nested `MutableStore`, or a `MutableList` on the
+ * mutable extension `MutableStore`; a plain `Signal` when derived (`deriveStore`). There is
+ * no `set`, `update`, `add`, or `remove` on the base — a derived record is written only by
+ * its derivation. See ADR-0018.
+ *
+ * @template T - The plain-object type whose properties become reactive signals
+ */
 type BaseStore<T extends UnknownRecord> = {
-	readonly [Symbol.toStringTag]: 'Store'
-	readonly [Symbol.isConcatSpreadable]: false
-	[Symbol.iterator](): IterableIterator<
-		[
-			string,
-			State<T[keyof T] & {}> | Store<UnknownRecord> | MutableList<unknown & {}>,
-		]
-	>
-	keys(): IterableIterator<string>
-	byKey<K extends keyof T & string>(
-		key: K,
-	): T[K] extends readonly (infer U extends {})[]
-		? MutableList<U>
-		: T[K] extends UnknownRecord
-			? Store<T[K]>
-			: T[K] extends unknown & {}
-				? State<T[K] & {}>
-				: State<T[K] & {}> | undefined
-	get(): T
-	set(next: T): void
-	update(fn: (prev: T) => T): void
-	add<K extends keyof T & string>(key: K, value: T[K]): K
-	remove(key: string): void
-}
-
-/**
- * A reactive object with per-property reactivity.
- * Each property becomes a `State`, a nested `Store`, or a `List`, reachable through the proxy.
- * A write to one property re-runs only the effects that read that property.
- *
- * @template T - The plain-object type whose properties become reactive signals
- */
-type Store<T extends UnknownRecord> = BaseStore<T> & {
-	[K in keyof T]: T[K] extends readonly (infer U extends {})[]
-		? MutableList<U>
-		: T[K] extends UnknownRecord
-			? Store<T[K]>
-			: T[K] extends unknown & {}
-				? State<T[K] & {}>
-				: State<T[K] & {}> | undefined
-}
-
-/**
- * The read-only projection of a Store, returned by `deriveStore`.
- * Each property is a `Signal`, reachable through the proxy exactly as on a `Store`.
- * There is no `set`, `update`, `add`, or `remove` — a derived record is written only by
- * its derivation.
- *
- * @template T - The plain-object type whose properties become reactive signals
- */
-type BaseDerivedStore<T extends UnknownRecord> = {
 	readonly [Symbol.toStringTag]: 'Store'
 	readonly [Symbol.isConcatSpreadable]: false
 	[Symbol.iterator](): IterableIterator<[string, Signal<T[keyof T] & {}>]>
@@ -115,8 +73,56 @@ type BaseDerivedStore<T extends UnknownRecord> = {
 	get(): T
 }
 
-type DerivedStore<T extends UnknownRecord> = BaseDerivedStore<T> & {
+type Store<T extends UnknownRecord> = BaseStore<T> & {
 	[K in keyof T]: Signal<T[K] & {}> | undefined
+}
+
+/**
+ * A reactive object with per-property reactivity.
+ * Each property becomes a `MutableSignal`, a nested `MutableStore`, or a `MutableList`,
+ * reachable through the proxy. A write to one property re-runs only the effects that read
+ * that property.
+ *
+ * @template T - The plain-object type whose properties become reactive signals
+ */
+type BaseMutableStore<T extends UnknownRecord> = {
+	readonly [Symbol.toStringTag]: 'Store'
+	readonly [Symbol.isConcatSpreadable]: false
+	[Symbol.iterator](): IterableIterator<
+		[
+			string,
+			(
+				| MutableSignal<T[keyof T] & {}>
+				| MutableStore<UnknownRecord>
+				| MutableList<unknown & {}>
+			),
+		]
+	>
+	keys(): IterableIterator<string>
+	byKey<K extends keyof T & string>(
+		key: K,
+	): T[K] extends readonly (infer U extends {})[]
+		? MutableList<U>
+		: T[K] extends UnknownRecord
+			? MutableStore<T[K]>
+			: T[K] extends unknown & {}
+				? MutableSignal<T[K] & {}>
+				: MutableSignal<T[K] & {}> | undefined
+	get(): T
+	set(next: T): void
+	update(fn: (prev: T) => T): void
+	add<K extends keyof T & string>(key: K, value: T[K]): K
+	remove(key: string): void
+}
+
+type MutableStore<T extends UnknownRecord> = BaseMutableStore<T> & {
+	[K in keyof T]: T[K] extends readonly (infer U extends {})[]
+		? MutableList<U>
+		: T[K] extends UnknownRecord
+			? MutableStore<T[K]>
+			: T[K] extends unknown & {}
+				? MutableSignal<T[K] & {}>
+				: MutableSignal<T[K] & {}> | undefined
 }
 
 /**
@@ -225,13 +231,14 @@ function diffRecords<T extends UnknownRecord>(prev: T, next: T): DiffResult {
 
 /**
  * Creates a reactive store with deeply nested reactive properties.
- * Each property becomes its own signal. A primitive becomes a State, an object becomes a
- * nested Store, and an array becomes a List. The proxy exposes each property directly.
+ * Each property becomes its own signal. A primitive becomes a `MutableSignal`, an object
+ * becomes a nested `MutableStore`, and an array becomes a `MutableList`. The proxy exposes
+ * each property directly.
  *
  * @since 0.15.0
  * @param value - Initial object value of the store
  * @param options - Optional configuration for watch lifecycle
- * @returns A Store with reactive properties
+ * @returns A MutableStore with reactive properties
  *
  * @example
  * ```ts
@@ -255,12 +262,14 @@ function diffRecords<T extends UnknownRecord>(prev: T, next: T): DiffResult {
 function createStore<T extends UnknownRecord>(
 	value: T,
 	options?: StoreOptions,
-): Store<T> {
+): MutableStore<T> {
 	validateSignalValue(TYPE_STORE, value, isRecord)
 
 	const signals = new Map<
 		string,
-		State<unknown & {}> | Store<UnknownRecord> | MutableList<unknown & {}>
+		| MutableSignal<unknown & {}>
+		| MutableStore<UnknownRecord>
+		| MutableList<unknown & {}>
 	>()
 
 	// --- Internal helpers ---
@@ -283,8 +292,8 @@ function createStore<T extends UnknownRecord>(
 	}
 	const signalCategory = (
 		signal:
-			| State<unknown & {}>
-			| Store<UnknownRecord>
+			| MutableSignal<unknown & {}>
+			| MutableStore<UnknownRecord>
 			| MutableList<unknown & {}>,
 	): ShapeCategory => {
 		if (isMutableList(signal)) return 'list'
@@ -367,7 +376,7 @@ function createStore<T extends UnknownRecord>(
 	for (const key of Object.keys(value)) addSignal(key, value[key])
 
 	// --- Store object ---
-	const store: BaseStore<T> = {
+	const store: BaseMutableStore<T> = {
 		[Symbol.toStringTag]: TYPE_STORE,
 		[Symbol.isConcatSpreadable]: false as const,
 
@@ -377,8 +386,8 @@ function createStore<T extends UnknownRecord>(
 				yield [key, signal] as [
 					string,
 					(
-						| State<T[keyof T] & {}>
-						| Store<UnknownRecord>
+						| MutableSignal<T[keyof T] & {}>
+						| MutableStore<UnknownRecord>
 						| MutableList<unknown & {}>
 					),
 				]
@@ -394,10 +403,10 @@ function createStore<T extends UnknownRecord>(
 			return signals.get(key) as T[K] extends readonly (infer U extends {})[]
 				? MutableList<U>
 				: T[K] extends UnknownRecord
-					? Store<T[K]>
+					? MutableStore<T[K]>
 					: T[K] extends unknown & {}
-						? State<T[K] & {}>
-						: State<T[K] & {}> | undefined
+						? MutableSignal<T[K] & {}>
+						: MutableSignal<T[K] & {}> | undefined
 		},
 
 		get() {
@@ -447,7 +456,7 @@ function createStore<T extends UnknownRecord>(
 	return new Proxy(
 		store as unknown as ProxyTarget,
 		storeProxyHandler,
-	) as unknown as Store<T>
+	) as unknown as MutableStore<T>
 }
 
 /**
@@ -455,8 +464,8 @@ function createStore<T extends UnknownRecord>(
  *
  * The origin follows from `input`, so one factory covers every way a keyed record can come
  * to exist. This closes the largest gap in the derivation matrix: before it, no `Store`
- * could be derived from anything, and the only way to build one from a `Task` or a `Memo`
- * was an imperative write from inside an effect.
+ * could be derived from anything, and the only way to build one from an asynchronous or a
+ * synchronous derivation was an imperative write from inside an effect.
  *
  * | `input` | `options` | Origin |
  * |---|---|---|
@@ -464,7 +473,7 @@ function createStore<T extends UnknownRecord>(
  * | async function | `initial` required | Asynchronous derivation |
  * | record | `watched` required | External push |
  *
- * Each property is a `Memo` that reads the source itself, so a write to one property of
+ * Each property is a `Signal` that reads the source itself, so a write to one property of
  * the source re-runs only the effects that read that property — the same per-property
  * granularity `createStore` gives. Unlike `createStore`, nested records and arrays are
  * not recursively converted to nested `Store`s and `List`s; a nested property is a plain
@@ -493,19 +502,19 @@ function createStore<T extends UnknownRecord>(
 function deriveStore<T extends UnknownRecord>(
 	input: () => T,
 	options?: DeriveStoreOptions<T>,
-): DerivedStore<T>
+): Store<T>
 function deriveStore<T extends UnknownRecord>(
 	input: (prev: T, abort: AbortSignal) => Promise<T>,
 	options: DeriveStoreOptions<T> & { initial: T },
-): DerivedStore<T>
+): Store<T>
 function deriveStore<T extends UnknownRecord>(
 	input: T,
 	options: DeriveStoreOptions<T> & { watched: StoreCallback<T> },
-): DerivedStore<T>
+): Store<T>
 function deriveStore<T extends UnknownRecord>(
 	input: (() => T) | ((prev: T, abort: AbortSignal) => Promise<T>) | T,
 	options?: DeriveStoreOptions<T>,
-): DerivedStore<T> {
+): Store<T> {
 	// External push: a seed record plus a watched lifecycle. A mutable Store already
 	// implements exactly this — granular child signals driven from outside — so it
 	// backs the read-only facade rather than being reimplemented.
@@ -513,7 +522,7 @@ function deriveStore<T extends UnknownRecord>(
 		validateSignalValue(TYPE_STORE, input, isRecord)
 		const watched = options?.watched as StoreCallback<T>
 		validateCallback(TYPE_STORE, watched, isSyncFunction)
-		let inner: Store<T>
+		let inner: MutableStore<T>
 		const emit = (patch: Partial<T>): void => {
 			inner.update(prev => ({ ...prev, ...patch }))
 		}
@@ -522,7 +531,7 @@ function deriveStore<T extends UnknownRecord>(
 			() => inner.get(),
 			() => inner.keys(),
 			key => inner.byKey(key) as unknown as Signal<T[keyof T & string] & {}>,
-		) as DerivedStore<T>
+		) as Store<T>
 	}
 
 	// Normalize the computation to a single-value source. `initial` defaults to an
@@ -633,11 +642,12 @@ function deriveStore<T extends UnknownRecord>(
 			ensureFresh()
 			return signals.get(key) as Signal<T[keyof T & string] & {}> | undefined
 		},
-	) as DerivedStore<T>
+	) as Store<T>
 
-	// The asynchrony lives in the internal Task, so `isPending(derived)` and
-	// `abort(derived)` resolve through it. See ADR-0018.
-	if (task) registerAsyncSource(derived, task)
+	// The asynchrony lives in the internal asynchronous derivation, so `isPending(derived)`
+	// and `abort(derived)` resolve through it. See ADR-0018.
+	const asyncSource = task && getAsyncSource(task)
+	if (asyncSource) registerAsyncSource(derived, asyncSource)
 	return derived
 }
 
@@ -650,8 +660,8 @@ function readonlyFacade<T extends UnknownRecord>(
 	read: () => T,
 	readKeys: () => IterableIterator<string>,
 	readByKey: (key: string) => Signal<unknown & {}> | undefined,
-): DerivedStore<T> {
-	const store: BaseDerivedStore<T> = {
+): Store<T> {
+	const store: BaseStore<T> = {
 		[Symbol.toStringTag]: TYPE_STORE,
 		[Symbol.isConcatSpreadable]: false as const,
 
@@ -674,11 +684,12 @@ function readonlyFacade<T extends UnknownRecord>(
 	return new Proxy(
 		store as unknown as ProxyTarget,
 		storeProxyHandler,
-	) as unknown as DerivedStore<T>
+	) as unknown as Store<T>
 }
 
 /**
- * Checks if a value is a Store signal.
+ * Checks if a value is a Store signal — the readonly base, matching both the mutable and
+ * readonly keyed-record shapes. Use `isMutableStore` to also require write access.
  *
  * @since 0.15.0
  * @param value - The value to check
@@ -688,14 +699,31 @@ function isStore<T extends UnknownRecord>(value: unknown): value is Store<T> {
 	return isSignalOfType(value, TYPE_STORE)
 }
 
+/**
+ * Checks if a value is a mutable Store signal.
+ *
+ * @since 2.0.0
+ * @param value - The value to check
+ * @returns True if the value is a mutable Store
+ */
+function isMutableStore<T extends UnknownRecord>(
+	value: unknown,
+): value is MutableStore<T> {
+	return (
+		isStore(value) &&
+		typeof (value as Record<string, unknown>).add === 'function'
+	)
+}
+
 /* === Exports === */
 
 export {
 	createStore,
-	type DerivedStore,
 	type DeriveStoreOptions,
 	deriveStore,
+	isMutableStore,
 	isStore,
+	type MutableStore,
 	type Store,
 	type StoreCallback,
 	type StoreOptions,

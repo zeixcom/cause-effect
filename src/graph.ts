@@ -75,7 +75,20 @@ type Edge = {
 /* === Public API Types === */
 
 type Signal<T extends {}> = {
+	readonly [Symbol.toStringTag]?: string
 	get(): T
+}
+
+/**
+ * A readable and writable single-value signal.
+ * The complete value-type set is `Signal`/`MutableSignal`, `List`/`MutableList`, and
+ * `Store`/`MutableStore` — indexed by shape and mutability, not by origin. See ADR-0018.
+ *
+ * @template T - The type of value held by the signal
+ */
+type MutableSignal<T extends {}> = Signal<T> & {
+	set(value: T): void
+	update(callback: (value: T) => T): void
 }
 
 /**
@@ -172,12 +185,8 @@ type EffectCallback = () => MaybeCleanup
 
 /* === Constants === */
 
-const TYPE_STATE = 'State'
-const TYPE_MEMO = 'Memo'
-const TYPE_TASK = 'Task'
-const TYPE_SENSOR = 'Sensor'
+const TYPE_SIGNAL = 'Signal'
 const TYPE_LIST = 'List'
-const TYPE_COLLECTION = 'Collection'
 const TYPE_STORE = 'Store'
 const TYPE_SLOT = 'Slot'
 
@@ -452,7 +461,7 @@ function recomputeMemo(node: MemoNode<unknown & {}>): void {
 	try {
 		const next = node.fn(node.value)
 		// fn misclassified as sync by isAsyncFunction (it checks the callback, not its return value)
-		if (next instanceof Promise) throw new PromiseValueError(TYPE_MEMO)
+		if (next instanceof Promise) throw new PromiseValueError(TYPE_SIGNAL)
 		if (node.error || !node.equals(next, node.value)) {
 			node.value = next
 			node.error = undefined
@@ -571,9 +580,7 @@ function refresh(node: SinkNode): void {
 	}
 
 	if (node.flags & FLAG_RUNNING) {
-		throw new CircularDependencyError(
-			'controller' in node ? TYPE_TASK : 'value' in node ? TYPE_MEMO : 'Effect',
-		)
+		throw new CircularDependencyError('value' in node ? TYPE_SIGNAL : 'Effect')
 	}
 
 	if (node.flags & FLAG_DIRTY) {
@@ -841,8 +848,9 @@ function refreshComposite<T extends {}>(
 /* === Async State Utilities === */
 
 /**
- * The async capabilities a signal may carry. A `Task` implements this directly.
- * A composite derived from an async source registers its source instead.
+ * The async capabilities a signal may carry. An asynchronously derived `Signal` registers
+ * its own controller here; a composite derived from an async source registers that source
+ * instead. See ADR-0018 §2.
  */
 type PendingSource = {
 	isPending(): boolean
@@ -867,12 +875,6 @@ function registerAsyncSource(signal: object, source: PendingSource): void {
 /** Resolves the async capabilities of a signal, if it has any. */
 function getAsyncSource(signal: unknown): PendingSource | undefined {
 	if (signal == null || typeof signal !== 'object') return undefined
-	const candidate = signal as Partial<PendingSource>
-	if (
-		typeof candidate.isPending === 'function' &&
-		typeof candidate.abort === 'function'
-	)
-		return candidate as PendingSource
 	return asyncSources.get(signal)
 }
 
@@ -932,12 +934,14 @@ export {
 	FLAG_DIRTY,
 	FLAG_RELINK,
 	flush,
+	getAsyncSource,
 	isEqual,
 	isPending,
 	link,
 	type MaybeCleanup,
 	type MemoCallback,
 	type MemoNode,
+	type MutableSignal,
 	makeSubscribe,
 	type PendingSource,
 	propagate,
@@ -958,14 +962,10 @@ export {
 	setState,
 	type TaskCallback,
 	type TaskNode,
-	TYPE_COLLECTION,
 	TYPE_LIST,
-	TYPE_MEMO,
-	TYPE_SENSOR,
+	TYPE_SIGNAL,
 	TYPE_SLOT,
-	TYPE_STATE,
 	TYPE_STORE,
-	TYPE_TASK,
 	trimSources,
 	unlink,
 	unown,

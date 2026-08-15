@@ -7,7 +7,7 @@ import {
 	createStore,
 	InvalidStoreMutationError,
 	isList,
-	isState,
+	isMutableSignal,
 	isStore,
 } from '../index.ts'
 
@@ -689,7 +689,7 @@ describe('Store', () => {
 		test('primitive-to-array type change produces a List child, not a State holding an array', () => {
 			type Shape = { count: number | number[] }
 			const store = createStore<Shape>({ count: 5 })
-			expect(isState(store.count)).toBe(true)
+			expect(isMutableSignal(store.count)).toBe(true)
 			expect(store.count.get()).toBe(5)
 
 			// Now change the shape to an array.
@@ -706,7 +706,7 @@ describe('Store', () => {
 			expect(isList(store.count)).toBe(true)
 
 			store.set({ count: 5 })
-			expect(isState(store.count)).toBe(true)
+			expect(isMutableSignal(store.count)).toBe(true)
 			expect(store.count.get()).toBe(5)
 		})
 	})
@@ -719,7 +719,7 @@ describe('Store', () => {
 				store.name = 'Bob'
 			}).toThrow(InvalidStoreMutationError)
 			// The State signal is not shadowed
-			expect(isState(store.name)).toBe(true)
+			expect(isMutableSignal(store.name)).toBe(true)
 			expect(store.name.get()).toBe('Alice')
 			// The reactive value is unchanged
 			expect(store.get()).toEqual({ name: 'Alice' })

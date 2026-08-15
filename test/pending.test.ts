@@ -32,7 +32,7 @@ describe('isPending', () => {
 		expect(isPending({})).toBe(false)
 	})
 
-	test('agrees with Task.isPending()', async () => {
+	test('reflects an asynchronous derivation while it is in flight', async () => {
 		const task = createTask(async () => {
 			await wait(10)
 			return 1
@@ -46,12 +46,10 @@ describe('isPending', () => {
 				}
 			})
 		})
-		expect(isPending(task)).toBe(task.isPending())
 		expect(isPending(task)).toBe(true)
 
 		await wait(30)
 		expect(isPending(task)).toBe(false)
-		expect(task.isPending()).toBe(false)
 		dispose()
 	})
 

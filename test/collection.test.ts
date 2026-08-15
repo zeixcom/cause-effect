@@ -9,7 +9,6 @@ import {
 	createScope,
 	createState,
 	createStore,
-	isCollection,
 	isList,
 } from '../index.ts'
 
@@ -26,7 +25,7 @@ describe('Collection', () => {
 
 			expect(col.get()).toEqual([1, 2, 3])
 			expect(col.length).toBe(3)
-			expect(isCollection(col)).toBe(true)
+			expect(isList(col)).toBe(true)
 		})
 
 		test('should create an empty collection', () => {
@@ -36,9 +35,9 @@ describe('Collection', () => {
 			expect(col.length).toBe(0)
 		})
 
-		test('should have Symbol.toStringTag of "Collection"', () => {
+		test('should have Symbol.toStringTag of "List"', () => {
 			const col = createCollection(() => () => {}, { value: [1] })
-			expect(col[Symbol.toStringTag]).toBe('Collection')
+			expect(col[Symbol.toStringTag]).toBe('List')
 		})
 
 		test('should have Symbol.isConcatSpreadable set to true', () => {
@@ -104,19 +103,16 @@ describe('Collection', () => {
 		})
 	})
 
-	describe('isCollection', () => {
+	describe('isList', () => {
 		test('should identify collection signals', () => {
 			const col = createCollection(() => () => {}, { value: [1] })
-			expect(isCollection(col)).toBe(true)
+			expect(isList(col)).toBe(true)
 		})
 
-		test('should return false for non-collection values', () => {
-			expect(isCollection(42)).toBe(false)
-			expect(isCollection(null)).toBe(false)
-			expect(isCollection({})).toBe(false)
-			expect(isList(createCollection(() => () => {}, { value: [1] }))).toBe(
-				false,
-			)
+		test('should return false for non-list values', () => {
+			expect(isList(42)).toBe(false)
+			expect(isList(null)).toBe(false)
+			expect(isList({})).toBe(false)
 		})
 	})
 
@@ -882,7 +878,7 @@ describe('Collection', () => {
 			const doubled = col.deriveCollection((v: number) => v * 2)
 
 			expect(doubled.get()).toEqual([2, 4, 6])
-			expect(isCollection(doubled)).toBe(true)
+			expect(isList(doubled)).toBe(true)
 		})
 
 		test('should propagate errors from per-item memos', () => {

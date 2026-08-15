@@ -8,31 +8,15 @@ import {
 	type Cleanup,
 	DEFAULT_EQUALITY,
 	link,
+	type Signal,
 	type SignalOptions,
 	type StateNode,
 	setState,
-	TYPE_SENSOR,
+	TYPE_SIGNAL,
 } from '../graph'
-import { isSignalOfType, isSyncFunction } from '../util'
+import { isSyncFunction } from '../util'
 
 /* === Types === */
-
-/**
- * A read-only signal that tracks external input and updates a state value as long as it is active.
- *
- * @template T - The type of value produced by the sensor
- */
-type Sensor<T extends {}> = {
-	readonly [Symbol.toStringTag]: 'Sensor'
-
-	/**
-	 * Gets the current value of the sensor.
-	 * When called inside another reactive context, creates a dependency.
-	 * @returns The sensor value
-	 * @throws UnsetSignalValueError If the sensor value is still unset when read.
-	 */
-	get(): T
-}
 
 /**
  * Configuration options for `createSensor`.
@@ -57,6 +41,8 @@ type SensorOptions<T extends {}> = SignalOptions<T> & {
  */
 type SensorCallback<T extends {}> = (set: (next: T) => void) => Cleanup
 
+const WHERE = 'createSensor'
+
 /* === Exported Functions === */
 
 /**
@@ -64,6 +50,8 @@ type SensorCallback<T extends {}> = (set: (next: T) => void) => Cleanup
  *
  * A sensor activates when an effect first reads it, and deactivates when it is no longer
  * watched. It therefore holds an external resource only while something reads its value.
+ * The shape this factory returns is `Signal<T>` — the single-value, readonly member of the
+ * shape-indexed value-type set. See ADR-0018.
  *
  * @since 0.18.0
  * @template T - The type of value produced by the sensor
@@ -105,10 +93,10 @@ type SensorCallback<T extends {}> = (set: (next: T) => void) => Cleanup
 function createSensor<T extends {}>(
 	watched: SensorCallback<T>,
 	options?: SensorOptions<T>,
-): Sensor<T> {
-	validateCallback(TYPE_SENSOR, watched, isSyncFunction)
+): Signal<T> {
+	validateCallback(WHERE, watched, isSyncFunction)
 	if (options?.value !== undefined)
-		validateSignalValue(TYPE_SENSOR, options.value, options?.guard)
+		validateSignalValue(WHERE, options.value, options?.guard)
 
 	const node: StateNode<T> = {
 		value: options?.value as T,
@@ -120,39 +108,20 @@ function createSensor<T extends {}>(
 	}
 
 	return {
-		[Symbol.toStringTag]: TYPE_SENSOR,
+		[Symbol.toStringTag]: TYPE_SIGNAL,
 		get(): T {
 			if (activeSink) {
 				if (!node.sinks)
 					node.stop = watched((next: T): void => {
-						validateSignalValue(TYPE_SENSOR, next, node.guard)
+						validateSignalValue(WHERE, next, node.guard)
 						setState(node, next)
 					})
 				link(node, activeSink)
 			}
-			validateReadValue(TYPE_SENSOR, node.value)
+			validateReadValue(WHERE, node.value)
 			return node.value
 		},
 	}
 }
 
-/**
- * Checks if a value is a Sensor signal.
- *
- * @since 0.18.0
- * @param value - The value to check
- * @returns True if the value is a Sensor
- */
-function isSensor<T extends {} = unknown & {}>(
-	value: unknown,
-): value is Sensor<T> {
-	return isSignalOfType(value, TYPE_SENSOR)
-}
-
-export {
-	createSensor,
-	isSensor,
-	type Sensor,
-	type SensorCallback,
-	type SensorOptions,
-}
+export { createSensor, type SensorCallback, type SensorOptions }

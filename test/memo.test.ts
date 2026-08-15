@@ -5,8 +5,8 @@ import {
 	createMemo,
 	createScope,
 	createState,
-	isMemo,
-	isState,
+	isMutableSignal,
+	isSignal,
 	PromiseValueError,
 	UnsetSignalValueError,
 } from '../index.ts'
@@ -20,9 +20,9 @@ describe('Memo', () => {
 			expect(derived.get()).toBe(3)
 		})
 
-		test('should have Symbol.toStringTag of "Memo"', () => {
+		test('should have Symbol.toStringTag of "Signal"', () => {
 			const memo = createMemo(() => 0)
-			expect(memo[Symbol.toStringTag]).toBe('Memo')
+			expect(memo[Symbol.toStringTag]).toBe('Signal')
 		})
 
 		test('should evaluate lazily on first get()', () => {
@@ -42,16 +42,16 @@ describe('Memo', () => {
 		})
 	})
 
-	describe('isMemo', () => {
+	describe('isSignal', () => {
 		test('should identify memo signals', () => {
-			expect(isMemo(createMemo(() => 0))).toBe(true)
+			expect(isSignal(createMemo(() => 0))).toBe(true)
 		})
 
-		test('should return false for non-memo values', () => {
-			expect(isMemo(42)).toBe(false)
-			expect(isMemo(null)).toBe(false)
-			expect(isMemo({})).toBe(false)
-			expect(isState(createMemo(() => 0))).toBe(false)
+		test('should return false for non-signal values', () => {
+			expect(isSignal(42)).toBe(false)
+			expect(isSignal(null)).toBe(false)
+			expect(isSignal({})).toBe(false)
+			expect(isMutableSignal(createMemo(() => 0))).toBe(false)
 		})
 	})
 
@@ -185,7 +185,7 @@ describe('Memo', () => {
 			const a = createState(1)
 			const b = createMemo(() => c.get() + 1)
 			const c = createMemo((): number => b.get() + a.get())
-			expect(() => b.get()).toThrow('[Memo] Circular dependency detected')
+			expect(() => b.get()).toThrow('[Signal] Circular dependency detected')
 		})
 
 		test('should propagate errors from computation', () => {
@@ -347,7 +347,7 @@ describe('Memo', () => {
 					value: -1,
 					guard: (v): v is number => typeof v === 'number' && v >= 0,
 				})
-			}).toThrow('[Memo] Signal value -1 is invalid')
+			}).toThrow('[createMemo] Signal value -1 is invalid')
 		})
 
 		test('should accept initial value that passes guard', () => {
@@ -362,12 +362,16 @@ describe('Memo', () => {
 	describe('Input Validation', () => {
 		test('should throw InvalidCallbackError for non-function callback', () => {
 			// @ts-expect-error - Testing invalid input
-			expect(() => createMemo(null)).toThrow('[Memo] Callback null is invalid')
+			expect(() => createMemo(null)).toThrow(
+				'[createMemo] Callback null is invalid',
+			)
 			// @ts-expect-error - Testing invalid input
-			expect(() => createMemo(42)).toThrow('[Memo] Callback 42 is invalid')
+			expect(() => createMemo(42)).toThrow(
+				'[createMemo] Callback 42 is invalid',
+			)
 			// @ts-expect-error - Testing invalid input
 			expect(() => createMemo('str')).toThrow(
-				'[Memo] Callback "str" is invalid',
+				'[createMemo] Callback "str" is invalid',
 			)
 		})
 
@@ -379,7 +383,7 @@ describe('Memo', () => {
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
 				createMemo(() => 42, { value: null })
-			}).toThrow('[Memo] Signal value cannot be null or undefined')
+			}).toThrow('[createMemo] Signal value cannot be null or undefined')
 		})
 	})
 

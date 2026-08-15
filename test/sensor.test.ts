@@ -3,8 +3,8 @@ import {
 	createEffect,
 	createMemo,
 	createSensor,
-	isMemo,
-	isSensor,
+	isMutableSignal,
+	isSignal,
 	SKIP_EQUALITY,
 	UnsetSignalValueError,
 } from '../index.ts'
@@ -17,9 +17,9 @@ const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
 describe('Sensor', () => {
 	describe('createSensor', () => {
-		test('should have Symbol.toStringTag of "Sensor"', () => {
+		test('should have Symbol.toStringTag of "Signal"', () => {
 			const sensor = createSensor<number>(() => () => {})
-			expect(sensor[Symbol.toStringTag]).toBe('Sensor')
+			expect(sensor[Symbol.toStringTag]).toBe('Signal')
 		})
 
 		test('should throw UnsetSignalValueError when read outside an effect', () => {
@@ -50,16 +50,16 @@ describe('Sensor', () => {
 		})
 	})
 
-	describe('isSensor', () => {
+	describe('isSignal', () => {
 		test('should identify sensor signals', () => {
-			expect(isSensor(createSensor<number>(() => () => {}))).toBe(true)
+			expect(isSignal(createSensor<number>(() => () => {}))).toBe(true)
 		})
 
-		test('should return false for non-sensor values', () => {
-			expect(isSensor(42)).toBe(false)
-			expect(isSensor(null)).toBe(false)
-			expect(isSensor({})).toBe(false)
-			expect(isMemo(createSensor<number>(() => () => {}))).toBe(false)
+		test('should return false for non-signal values', () => {
+			expect(isSignal(42)).toBe(false)
+			expect(isSignal(null)).toBe(false)
+			expect(isSignal({})).toBe(false)
+			expect(isMutableSignal(createSensor<number>(() => () => {}))).toBe(false)
 		})
 	})
 
@@ -425,7 +425,7 @@ describe('Sensor', () => {
 			expect(() => {
 				// biome-ignore lint/suspicious/noExplicitAny: testing invalid input
 				setFn(null as any)
-			}).toThrow('[Sensor] Signal value cannot be null or undefined')
+			}).toThrow('[createSensor] Signal value cannot be null or undefined')
 		})
 	})
 
@@ -434,7 +434,7 @@ describe('Sensor', () => {
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
 				createSensor(null)
-			}).toThrow('[Sensor] Callback null is invalid')
+			}).toThrow('[createSensor] Callback null is invalid')
 		})
 
 		test('should throw InvalidCallbackError for async start callback', () => {
@@ -448,7 +448,7 @@ describe('Sensor', () => {
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
 				createSensor<number>(() => () => {}, { value: null })
-			}).toThrow('[Sensor] Signal value cannot be null or undefined')
+			}).toThrow('[createSensor] Signal value cannot be null or undefined')
 		})
 	})
 })

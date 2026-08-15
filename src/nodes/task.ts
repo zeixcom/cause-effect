@@ -12,49 +12,18 @@ import {
 	makeSubscribe,
 	propagate,
 	refresh,
+	registerAsyncSource,
+	type Signal,
 	type SinkNode,
 	type StateNode,
 	setState,
 	type TaskCallback,
 	type TaskNode,
-	TYPE_TASK,
+	TYPE_SIGNAL,
 } from '../graph'
-import { isAsyncFunction, isSignalOfType } from '../util'
+import { isAsyncFunction } from '../util'
 
-/* === Types === */
-
-/**
- * An asynchronous reactive computation (colorless async).
- * Automatically tracks dependencies and re-executes when they change.
- * Provides abort semantics and pending state tracking.
- *
- * @template T - The type of value resolved by the task
- */
-type Task<T extends {}> = {
-	readonly [Symbol.toStringTag]: 'Task'
-
-	/**
-	 * Gets the current value of the task.
-	 * Returns the last resolved value, even while a new computation is pending.
-	 * When called inside another reactive context, creates a dependency.
-	 * @returns The current value
-	 * @throws UnsetSignalValueError If the task value is still unset when read.
-	 */
-	get(): T
-
-	/**
-	 * Checks if the task is currently executing.
-	 * Used by `match()` to route to the `stale` handler when the task has a retained value.
-	 * @returns True if a computation is in progress
-	 */
-	isPending(): boolean
-
-	/**
-	 * Aborts the current computation if one is running.
-	 * The task's AbortSignal aborts.
-	 */
-	abort(): void
-}
+const WHERE = 'createTask'
 
 /* === Exported Functions === */
 
@@ -62,6 +31,12 @@ type Task<T extends {}> = {
  * Creates an asynchronous reactive computation (colorless async).
  * The computation automatically tracks dependencies and re-executes when they change.
  * Provides abort semantics - in-flight computations are aborted when dependencies change.
+ * The shape this factory returns is `Signal<T>` — the single-value, readonly member of the
+ * shape-indexed value-type set. See ADR-0018.
+ *
+ * Pending state and abort control are graph utilities rather than methods on the returned
+ * signal — asynchrony is an origin, not a shape, so any of the three shapes can be derived
+ * asynchronously. Use `isPending(signal)` and `abort(signal)` from the graph module.
  *
  * @since 0.18.0
  * @template T - The type of value resolved by the task
@@ -73,7 +48,7 @@ type Task<T extends {}> = {
  * @param options.watched - Optional callback invoked when the task is first watched by an effect.
  *   Receives an `invalidate` function to mark the task dirty and trigger re-execution.
  *   Must return a cleanup function called when no effects are watching.
- * @returns A Task object with get(), isPending(), and abort() methods
+ * @returns A Signal object with a get() method
  *
  * @example
  * ```ts
@@ -90,7 +65,7 @@ type Task<T extends {}> = {
  * @example
  * ```ts
  * // Check pending state
- * if (user.isPending()) {
+ * if (isPending(user)) {
  *   console.log('Loading...');
  * }
  * ```
@@ -98,18 +73,18 @@ type Task<T extends {}> = {
 function createTask<T extends {}>(
 	fn: (prev: T, signal: AbortSignal) => Promise<T>,
 	options: ComputedOptions<T> & { value: T },
-): Task<T>
+): Signal<T>
 function createTask<T extends {}>(
 	fn: TaskCallback<T>,
 	options?: ComputedOptions<T>,
-): Task<T>
+): Signal<T>
 function createTask<T extends {}>(
 	fn: TaskCallback<T>,
 	options?: ComputedOptions<T>,
-): Task<T> {
-	validateCallback(TYPE_TASK, fn, isAsyncFunction)
+): Signal<T> {
+	validateCallback(WHERE, fn, isAsyncFunction)
 	if (options?.value !== undefined)
-		validateSignalValue(TYPE_TASK, options.value, options?.guard)
+		validateSignalValue(WHERE, options.value, options?.guard)
 
 	const pendingNode: StateNode<boolean> = {
 		value: false,
@@ -147,15 +122,18 @@ function createTask<T extends {}>(
 
 	const pendingSubscribe = makeSubscribe(pendingNode)
 
-	return {
-		[Symbol.toStringTag]: TYPE_TASK,
+	const task: Signal<T> = {
+		[Symbol.toStringTag]: TYPE_SIGNAL,
 		get(): T {
 			subscribe()
 			refresh(node as unknown as SinkNode)
 			if (node.error) throw node.error
-			validateReadValue(TYPE_TASK, node.value)
+			validateReadValue(WHERE, node.value)
 			return node.value
 		},
+	}
+
+	registerAsyncSource(task, {
 		isPending(): boolean {
 			pendingSubscribe()
 			return node.pendingNode.value
@@ -165,18 +143,9 @@ function createTask<T extends {}>(
 			node.controller = undefined
 			setState(node.pendingNode, false)
 		},
-	}
+	})
+
+	return task
 }
 
-/**
- * Checks if a value is a Task signal.
- *
- * @since 0.18.0
- * @param value - The value to check
- * @returns True if the value is a Task
- */
-function isTask<T extends {} = unknown & {}>(value: unknown): value is Task<T> {
-	return isSignalOfType(value, TYPE_TASK)
-}
-
-export { createTask, isTask, type Task }
+export { createTask }

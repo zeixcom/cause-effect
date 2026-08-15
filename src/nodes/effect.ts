@@ -10,6 +10,7 @@ import {
 	type EffectNode,
 	FLAG_CLEAN,
 	FLAG_DIRTY,
+	isPending,
 	type MaybeCleanup,
 	registerCleanup,
 	runCleanup,
@@ -18,7 +19,6 @@ import {
 	scheduleEffect,
 	trimSources,
 } from '../graph'
-import { isTask } from './task'
 
 /* === Types === */
 
@@ -41,7 +41,7 @@ type MatchHandlers<T extends readonly Signal<unknown & {}>[]> = {
 	err?: (errors: readonly Error[]) => MaybePromise<MaybeCleanup>
 	/** Called when one or more signals are unset (pending). */
 	nil?: () => MaybePromise<MaybeCleanup>
-	/** Called when all signals have a (stale) value but one or more Task signals are re-computing. Falls back to `ok` if absent. */
+	/** Called when all signals have a (stale) value but one or more are asynchronously re-computing. Falls back to `ok` if absent. */
 	stale?: () => MaybePromise<MaybeCleanup>
 }
 
@@ -57,7 +57,7 @@ type SingleMatchHandlers<T extends {}> = {
 	err?: (error: Error) => MaybePromise<MaybeCleanup>
 	/** Called when the signal is unset (pending). */
 	nil?: () => MaybePromise<MaybeCleanup>
-	/** Called when the signal has a (stale) value but the Task is re-computing. Falls back to `ok` if absent. */
+	/** Called when the signal has a (stale) value but is asynchronously re-computing. Falls back to `ok` if absent. */
 	stale?: () => MaybePromise<MaybeCleanup>
 }
 
@@ -164,7 +164,7 @@ function match<T extends {}>(
  *
  * **Async handlers are for external side effects only.** Use them for DOM mutations,
  * analytics, logging, and any fire-and-forget API call whose result does not drive
- * reactive state. Do not call `.set()` on a signal inside an async handler. Use a `Task`
+ * reactive state. Do not call `.set()` on a signal inside an async handler. Use `createTask`
  * instead: it receives an `AbortSignal`, cancels on re-run, and composes with the `nil`
  * and `err` branches.
  *
@@ -218,9 +218,7 @@ function match(
 		else if (errors) out = err(errors)
 		else if (
 			stale &&
-			(isSingle
-				? isTask(signals[0]) && signals[0].isPending()
-				: signals.some(s => isTask(s) && s.isPending()))
+			(isSingle ? isPending(signals[0]) : signals.some(s => isPending(s)))
 		)
 			out = stale()
 		else out = ok(values)

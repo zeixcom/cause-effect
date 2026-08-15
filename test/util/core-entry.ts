@@ -9,6 +9,7 @@ import {
 	createMemo,
 	createState,
 	createTask,
+	isPending,
 } from '../../index.ts'
 
 const count = createState(0)
@@ -20,7 +21,7 @@ const delayed = createTask(async (_prev, signal) => {
 })
 
 createEffect(() => {
-	console.log(doubled.get(), delayed.get(), delayed.isPending())
+	console.log(doubled.get(), delayed.get(), isPending(delayed))
 })
 
 count.set(1)

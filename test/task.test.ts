@@ -1,12 +1,14 @@
 import { describe, expect, test } from 'bun:test'
 import {
+	abort,
 	createEffect,
 	createMemo,
 	createScope,
 	createState,
 	createTask,
-	isMemo,
-	isTask,
+	isMutableSignal,
+	isPending,
+	isSignal,
 	UnsetSignalValueError,
 } from '../index.ts'
 
@@ -31,9 +33,9 @@ describe('Task', () => {
 			expect(task.get()).toBe(42)
 		})
 
-		test('should have Symbol.toStringTag of "Task"', () => {
+		test('should have Symbol.toStringTag of "Signal"', () => {
 			const task = createTask(async () => 1, { value: 0 })
-			expect(task[Symbol.toStringTag]).toBe('Task')
+			expect(task[Symbol.toStringTag]).toBe('Signal')
 		})
 
 		test('should throw UnsetSignalValueError before resolution with no initial value', () => {
@@ -45,16 +47,18 @@ describe('Task', () => {
 		})
 	})
 
-	describe('isTask', () => {
+	describe('isSignal', () => {
 		test('should identify task signals', () => {
-			expect(isTask(createTask(async () => 1, { value: 0 }))).toBe(true)
+			expect(isSignal(createTask(async () => 1, { value: 0 }))).toBe(true)
 		})
 
-		test('should return false for non-task values', () => {
-			expect(isTask(42)).toBe(false)
-			expect(isTask(null)).toBe(false)
-			expect(isTask({})).toBe(false)
-			expect(isMemo(createTask(async () => 1, { value: 0 }))).toBe(false)
+		test('should return false for non-signal values', () => {
+			expect(isSignal(42)).toBe(false)
+			expect(isSignal(null)).toBe(false)
+			expect(isSignal({})).toBe(false)
+			expect(isMutableSignal(createTask(async () => 1, { value: 0 }))).toBe(
+				false,
+			)
 		})
 	})
 
@@ -68,15 +72,15 @@ describe('Task', () => {
 				{ value: 0 },
 			)
 			task.get() // trigger computation
-			expect(task.isPending()).toBe(true)
+			expect(isPending(task)).toBe(true)
 			await wait(60)
 			task.get() // read resolved value
-			expect(task.isPending()).toBe(false)
+			expect(isPending(task)).toBe(false)
 		})
 
 		test('should return false before first get()', () => {
 			const task = createTask(async () => 42, { value: 0 })
-			expect(task.isPending()).toBe(false)
+			expect(isPending(task)).toBe(false)
 		})
 	})
 
@@ -92,9 +96,9 @@ describe('Task', () => {
 				{ value: 0 },
 			)
 			task.get() // trigger computation
-			expect(task.isPending()).toBe(true)
-			task.abort()
-			expect(task.isPending()).toBe(false)
+			expect(isPending(task)).toBe(true)
+			abort(task)
+			expect(isPending(task)).toBe(false)
 			await wait(60)
 			expect(completed).toBe(false)
 		})
@@ -103,9 +107,9 @@ describe('Task', () => {
 			// abort() on a task with no in-flight computation must not throw
 			// and must leave pending false.
 			const task = createTask(async () => 42, { value: 0 })
-			expect(task.isPending()).toBe(false)
-			expect(() => task.abort()).not.toThrow()
-			expect(task.isPending()).toBe(false)
+			expect(isPending(task)).toBe(false)
+			expect(() => abort(task)).not.toThrow()
+			expect(isPending(task)).toBe(false)
 		})
 
 		test('should allow re-fetch via get() after abort on an idle task', async () => {
@@ -116,7 +120,7 @@ describe('Task', () => {
 				},
 				{ value: 0 },
 			)
-			task.abort() // idle abort
+			abort(task) // idle abort
 			expect(task.get()).toBe(0) // still serves the initial value
 			await wait(40)
 			expect(task.get()).toBe(99) // re-fetched after the abort
@@ -440,7 +444,7 @@ describe('Task', () => {
 					value: 'foo',
 					guard: (v): v is number => typeof v === 'number',
 				})
-			}).toThrow('[Task] Signal value "foo" is invalid')
+			}).toThrow('[createTask] Signal value "foo" is invalid')
 		})
 
 		test('should accept initial value that passes guard', () => {
@@ -457,21 +461,25 @@ describe('Task', () => {
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
 				createTask((_a: unknown) => 42)
-			}).toThrow('[Task] Callback (_a) => 42 is invalid')
+			}).toThrow('[createTask] Callback (_a) => 42 is invalid')
 		})
 
 		test('should throw InvalidCallbackError for non-function callback', () => {
 			// @ts-expect-error - Testing invalid input
-			expect(() => createTask(null)).toThrow('[Task] Callback null is invalid')
+			expect(() => createTask(null)).toThrow(
+				'[createTask] Callback null is invalid',
+			)
 			// @ts-expect-error - Testing invalid input
-			expect(() => createTask(42)).toThrow('[Task] Callback 42 is invalid')
+			expect(() => createTask(42)).toThrow(
+				'[createTask] Callback 42 is invalid',
+			)
 		})
 
 		test('should throw NullishSignalValueError for null initial value', () => {
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
 				createTask(async () => 42, { value: null })
-			}).toThrow('[Task] Signal value cannot be null or undefined')
+			}).toThrow('[createTask] Signal value cannot be null or undefined')
 		})
 	})
 
@@ -499,7 +507,7 @@ describe('Task', () => {
 			// First read surfaces the real error
 			expect(() => task.get()).toThrow('sync boom')
 			// Must not be left pending
-			expect(task.isPending()).toBe(false)
+			expect(isPending(task)).toBe(false)
 			// Subsequent reads must throw the SAME error, not a spurious
 			// CircularDependencyError. The message check is sufficient: a
 			// CircularDependencyError message would contain "Circular dependency".

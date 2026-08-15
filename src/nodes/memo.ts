@@ -14,30 +14,13 @@ import {
 	makeSubscribe,
 	propagate,
 	refresh,
+	type Signal,
 	type SinkNode,
-	TYPE_MEMO,
+	TYPE_SIGNAL,
 } from '../graph'
-import { isSignalOfType, isSyncFunction } from '../util'
+import { isSyncFunction } from '../util'
 
-/* === Types === */
-
-/**
- * A derived reactive computation that caches its result.
- * Automatically tracks dependencies and recomputes when they change.
- *
- * @template T - The type of value computed by the memo
- */
-type Memo<T extends {}> = {
-	readonly [Symbol.toStringTag]: 'Memo'
-
-	/**
-	 * Gets the current value of the memo.
-	 * Recomputes if dependencies have changed since last access.
-	 * When called inside another reactive context, creates a dependency.
-	 * @returns The computed value
-	 */
-	get(): T
-}
+const WHERE = 'createMemo'
 
 /* === Exported Functions === */
 
@@ -45,6 +28,8 @@ type Memo<T extends {}> = {
  * Creates a derived reactive computation that caches its result.
  * The computation automatically tracks dependencies and recomputes when they change.
  * Uses lazy evaluation - only computes when the value is accessed.
+ * The shape this factory returns is `Signal<T>` — the single-value, readonly member of the
+ * shape-indexed value-type set. See ADR-0018.
  *
  * @since 0.18.0
  * @template T - The type of value computed by the memo
@@ -56,7 +41,7 @@ type Memo<T extends {}> = {
  * @param options.watched - Optional callback invoked when the memo is first watched by an effect.
  *   Receives an `invalidate` function to mark the memo dirty and trigger recomputation.
  *   Must return a cleanup function called when no effects are watching.
- * @returns A Memo object with a get() method
+ * @returns A Signal object with a get() method
  *
  * @example
  * ```ts
@@ -76,18 +61,18 @@ type Memo<T extends {}> = {
 function createMemo<T extends {}>(
 	fn: (prev: T) => T,
 	options: ComputedOptions<T> & { value: T },
-): Memo<T>
+): Signal<T>
 function createMemo<T extends {}>(
 	fn: MemoCallback<T>,
 	options?: ComputedOptions<T>,
-): Memo<T>
+): Signal<T>
 function createMemo<T extends {}>(
 	fn: MemoCallback<T>,
 	options?: ComputedOptions<T>,
-): Memo<T> {
-	validateCallback(TYPE_MEMO, fn, isSyncFunction)
+): Signal<T> {
+	validateCallback(WHERE, fn, isSyncFunction)
 	if (options?.value !== undefined)
-		validateSignalValue(TYPE_MEMO, options.value, options?.guard)
+		validateSignalValue(WHERE, options.value, options?.guard)
 
 	const node: MemoNode<T> = {
 		fn,
@@ -115,26 +100,15 @@ function createMemo<T extends {}>(
 	)
 
 	return {
-		[Symbol.toStringTag]: TYPE_MEMO,
+		[Symbol.toStringTag]: TYPE_SIGNAL,
 		get() {
 			subscribe()
 			refresh(node as unknown as SinkNode)
 			if (node.error) throw node.error
-			validateReadValue(TYPE_MEMO, node.value)
+			validateReadValue(WHERE, node.value)
 			return node.value
 		},
 	}
 }
 
-/**
- * Checks if a value is a Memo signal.
- *
- * @since 0.18.0
- * @param value - The value to check
- * @returns True if the value is a Memo
- */
-function isMemo<T extends {} = unknown & {}>(value: unknown): value is Memo<T> {
-	return isSignalOfType(value, TYPE_MEMO)
-}
-
-export { createMemo, isMemo, type Memo }
+export { createMemo }

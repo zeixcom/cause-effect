@@ -11,42 +11,36 @@ import {
 	createStore,
 	createTask,
 	InvalidSignalValueError,
-	isComputed,
 	isList,
-	isMemo,
 	isMutableSignal,
 	isSignal,
-	isState,
 	isStore,
-	isTask,
 	type List,
-	type Memo,
+	type MutableSignal,
+	type MutableStore,
 	PromiseValueError,
 	type Signal,
-	type State,
-	type Store,
-	type Task,
 } from '../index.ts'
 
 /* === Tests === */
 
 describe('createComputed', () => {
-	test('creates a Memo from a sync callback', () => {
+	test('creates a Signal from a sync callback', () => {
 		const count = createState(2)
 		const doubled = createComputed(() => count.get() * 2)
-		expect(isMemo(doubled)).toBe(true)
+		expect(isSignal(doubled)).toBe(true)
 		expect(doubled.get()).toBe(4)
 
-		const typedResult: Memo<number> = doubled
+		const typedResult: Signal<number> = doubled
 		expect(typedResult).toBeDefined()
 	})
 
-	test('creates a Task from an async callback', () => {
+	test('creates a Signal from an async callback', () => {
 		const cleanup = createScope(() => {
 			const result = createComputed(async () => 'hello')
-			expect(isTask(result)).toBe(true)
+			expect(isSignal(result)).toBe(true)
 
-			const typedResult: Task<string> = result
+			const typedResult: Signal<string> = result
 			expect(typedResult).toBeDefined()
 		})
 		cleanup()
@@ -56,42 +50,42 @@ describe('createComputed', () => {
 		const result = createComputed(
 			(): Promise<string> => Promise.resolve('hello'),
 		)
-		expect(isMemo(result)).toBe(true) // misclassified before invocation, as documented
+		expect(isSignal(result)).toBe(true) // misclassified before invocation, as documented
 		expect(() => result.get()).toThrow(PromiseValueError)
 	})
 })
 
 describe('createSignal', () => {
-	test('converts a primitive to State', () => {
+	test('converts a primitive to a MutableSignal', () => {
 		const result = createSignal(42)
-		expect(isState(result)).toBe(true)
+		expect(isMutableSignal(result)).toBe(true)
 		expect(result.get()).toBe(42)
 
-		const typedResult: State<number> = result
+		const typedResult: MutableSignal<number> = result
 		expect(typedResult).toBeDefined()
 	})
 
-	test('converts a non-plain object to State', () => {
+	test('converts a non-plain object to a MutableSignal', () => {
 		const date = new Date('2024-01-01')
 		const result = createSignal(date)
-		expect(isState(result)).toBe(true)
+		expect(isMutableSignal(result)).toBe(true)
 		expect(result.get()).toBe(date)
 
-		const typedResult: State<Date> = result
+		const typedResult: MutableSignal<Date> = result
 		expect(typedResult).toBeDefined()
 	})
 
-	test('converts a record to Store', () => {
+	test('converts a record to a MutableStore', () => {
 		const result = createSignal({ name: 'Alice', age: 30 })
 		expect(isStore(result)).toBe(true)
 		expect(result.name.get()).toBe('Alice')
 		expect(result.age.get()).toBe(30)
 
-		const typedResult: Store<{ name: string; age: number }> = result
+		const typedResult: MutableStore<{ name: string; age: number }> = result
 		expect(typedResult).toBeDefined()
 	})
 
-	test('converts an array to List', () => {
+	test('converts an array to a MutableList', () => {
 		const result = createSignal([
 			{ id: 1, name: 'Alice' },
 			{ id: 2, name: 'Bob' },
@@ -104,27 +98,27 @@ describe('createSignal', () => {
 		expect(typedResult).toBeDefined()
 	})
 
-	test('converts an empty array to List', () => {
+	test('converts an empty array to a MutableList', () => {
 		const result = createSignal([])
 		expect(isList(result)).toBe(true)
 		expect(result.length).toBe(0)
 	})
 
-	test('converts a sync function to Memo', () => {
+	test('converts a sync function to a readonly Signal', () => {
 		const result = createSignal(() => Math.random())
-		expect(isMemo(result)).toBe(true)
+		expect(isSignal(result)).toBe(true)
 		expect(typeof result.get()).toBe('number')
 
-		const typedResult: Memo<number> = result
+		const typedResult: Signal<number> = result
 		expect(typedResult).toBeDefined()
 	})
 
-	test('converts an async function to Task', () => {
+	test('converts an async function to a readonly Signal', () => {
 		const cleanup = createScope(() => {
 			const result = createSignal(async () => 'hello')
-			expect(isTask(result)).toBe(true)
+			expect(isSignal(result)).toBe(true)
 
-			const typedResult: Task<string> = result
+			const typedResult: Signal<string> = result
 			expect(typedResult).toBeDefined()
 		})
 		cleanup()
@@ -158,18 +152,18 @@ describe('createSignal', () => {
 })
 
 describe('createMutableSignal', () => {
-	test('converts a primitive to State', () => {
+	test('converts a primitive to a MutableSignal', () => {
 		const result = createMutableSignal(42)
-		expect(isState(result)).toBe(true)
+		expect(isMutableSignal(result)).toBe(true)
 		expect(result.get()).toBe(42)
 	})
 
-	test('converts a record to Store', () => {
+	test('converts a record to a MutableStore', () => {
 		const result = createMutableSignal({ name: 'Alice' })
 		expect(isStore(result)).toBe(true)
 	})
 
-	test('converts an array to List', () => {
+	test('converts an array to a MutableList', () => {
 		const result = createMutableSignal([1, 2, 3])
 		expect(isList(result)).toBe(true)
 	})
@@ -208,43 +202,20 @@ describe('createMutableSignal', () => {
 	})
 })
 
-describe('isComputed', () => {
-	test('returns true for Memo', () => {
-		expect(isComputed(createMemo(() => 42))).toBe(true)
-	})
-
-	test('returns true for Task', () => {
-		const cleanup = createScope(() => {
-			expect(isComputed(createTask(async () => 42))).toBe(true)
-		})
-		cleanup()
-	})
-
-	test('returns false for State', () => {
-		expect(isComputed(createState(42))).toBe(false)
-	})
-
-	test('returns false for non-signals', () => {
-		expect(isComputed(42)).toBe(false)
-		expect(isComputed('hello')).toBe(false)
-		expect(isComputed(null)).toBe(false)
-	})
-})
-
 describe('isSignal', () => {
-	test('returns true for all signal types', () => {
+	test('returns true only for the single-value shape', () => {
 		const cleanup = createScope(() => {
 			expect(isSignal(createState(42))).toBe(true)
 			expect(isSignal(createMemo(() => 42))).toBe(true)
 			expect(isSignal(createTask(async () => 42))).toBe(true)
-			expect(isSignal(createStore({ a: 1 }))).toBe(true)
-			expect(isSignal(createList([1, 2, 3]))).toBe(true)
-			expect(isSignal(createSlot(createState(1)))).toBe(true)
 		})
 		cleanup()
 	})
 
-	test('returns false for non-signals', () => {
+	test('returns false for other shapes and non-signals', () => {
+		expect(isSignal(createStore({ a: 1 }))).toBe(false)
+		expect(isSignal(createList([1, 2, 3]))).toBe(false)
+		expect(isSignal(createSlot(createState(1)))).toBe(false)
 		expect(isSignal(42)).toBe(false)
 		expect(isSignal('hello')).toBe(false)
 		expect(isSignal({ get: () => 42 })).toBe(false)
@@ -254,10 +225,13 @@ describe('isSignal', () => {
 })
 
 describe('isMutableSignal', () => {
-	test('returns true for State, Store, and List', () => {
+	test('returns true only for a mutable single-value signal', () => {
 		expect(isMutableSignal(createState(42))).toBe(true)
-		expect(isMutableSignal(createStore({ a: 1 }))).toBe(true)
-		expect(isMutableSignal(createList([1, 2, 3]))).toBe(true)
+	})
+
+	test('returns false for other shapes', () => {
+		expect(isMutableSignal(createStore({ a: 1 }))).toBe(false)
+		expect(isMutableSignal(createList([1, 2, 3]))).toBe(false)
 	})
 
 	test('returns false for read-only signals', () => {

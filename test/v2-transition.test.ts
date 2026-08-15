@@ -1,90 +1,105 @@
 import { describe, expect, test } from 'bun:test'
 import {
-	type Collection,
 	createCollection,
 	createList,
 	createState,
-	type DerivedList,
+	createStore,
 	deriveList,
-	isCollection,
-	isDerivedList,
+	deriveStore,
 	isList,
 	isMutableList,
+	isMutableSignal,
+	isMutableStore,
+	isSignal,
+	isStore,
 	type List,
 	type MutableList,
+	type MutableSignal,
+	type MutableStore,
+	type Signal,
 } from '../index.ts'
 
-/* === Tests === */
+/* === Tests ===
+ *
+ * ADR-0018 collapses the 1.x nine-type taxonomy into six types indexed by shape ×
+ * mutability. `Symbol.toStringTag` carries only the shape ('Signal' | 'List' | 'Store'),
+ * so a guard for the readonly base (`isList`, `isStore`) matches both the mutable and the
+ * readonly member of a shape, and a `isMutable*` guard additionally requires write access.
+ */
 
-describe('MutableList — the v2 name of the mutable List type', () => {
-	test('createList satisfies both the new and the deprecated name', () => {
+describe('List — readonly base and mutable extension share one tag', () => {
+	test('createList satisfies both List and MutableList', () => {
 		const list: MutableList<string> = createList(['a'])
-		const asDeprecated: List<string> = list
-		const roundTrip: MutableList<string> = asDeprecated
-		expect(roundTrip.add('b')).toBe('1')
-		expect(roundTrip.get()).toEqual(['a', 'b'])
+		const asBase: List<string> = list
+		expect(asBase.get()).toEqual(['a'])
+		expect(list.add('b')).toBe('1')
+		expect(list.get()).toEqual(['a', 'b'])
 	})
 
-	test('isMutableList matches a mutable list', () => {
+	test('isList matches both the mutable and the readonly sequence', () => {
+		expect(isList(createList([1]))).toBe(true)
+		expect(isList(deriveList(() => [1]))).toBe(true)
+		expect(isList(createCollection(() => () => {}))).toBe(true)
+	})
+
+	test('isList rejects non-lists', () => {
+		expect(isList(createState(1))).toBe(false)
+		expect(isList('list')).toBe(false)
+		expect(isList(null)).toBe(false)
+	})
+
+	test('isMutableList matches only the mutable sequence', () => {
 		const list = createList([1, 2])
 		expect(isMutableList(list)).toBe(true)
 		if (isMutableList(list)) expect(list.add(3)).toBe('2')
 	})
 
-	test('isMutableList rejects non-lists and read-only sequences', () => {
-		expect(isMutableList(createState(1))).toBe(false)
+	test('isMutableList rejects a readonly sequence', () => {
 		expect(isMutableList(deriveList(() => [1]))).toBe(false)
-		expect(isMutableList('list')).toBe(false)
+		expect(isMutableList(createCollection(() => () => {}))).toBe(false)
 	})
 
-	test('isList stays a working alias of isMutableList', () => {
-		const list = createList([1])
-		expect(isList(list)).toBe(true)
-		expect(isList(deriveList(() => [1]))).toBe(false)
-	})
-})
-
-describe('DerivedList — the v2-facing name of the Collection type', () => {
-	test('every deriveList origin satisfies both names', () => {
-		const sync: DerivedList<number> = deriveList(() => [1])
-		const asDeprecated: Collection<number> = sync
-		const roundTrip: DerivedList<number> = asDeprecated
-		expect(roundTrip.get()).toEqual([1])
-	})
-
-	test('createCollection still returns the same type', () => {
-		const collection: DerivedList<string> = createCollection(() => () => {})
-		expect(collection.get()).toEqual([])
-	})
-
-	test('isDerivedList matches every read-only sequence origin', () => {
-		expect(isDerivedList(deriveList(() => [1]))).toBe(true)
-		expect(
-			isDerivedList(deriveList(async () => [1], { initial: [] as number[] })),
-		).toBe(true)
-		expect(isDerivedList(deriveList([], { watched: () => () => {} }))).toBe(
-			true,
-		)
-		expect(isDerivedList(createCollection(() => () => {}))).toBe(true)
-	})
-
-	test('isDerivedList rejects mutable lists and non-lists', () => {
-		expect(isDerivedList(createList([1]))).toBe(false)
-		expect(isDerivedList(createState(1))).toBe(false)
-		expect(isDerivedList('collection')).toBe(false)
-	})
-
-	test('isCollection stays a working alias of isDerivedList', () => {
-		expect(isCollection(createCollection(() => () => {}))).toBe(true)
-		expect(isCollection(createList([1]))).toBe(false)
-	})
-})
-
-describe('guards preserve the tag-based taxonomy', () => {
-	test('a list and a derived list are distinguishable in both directions', () => {
+	test('a mutable and a readonly list are distinguishable in both directions', () => {
 		const list = createList([1])
 		const derived = deriveList(() => [1])
 		expect(isMutableList(list) && !isMutableList(derived)).toBe(true)
-		expect(isDerivedList(derived) && !isDerivedList(list)).toBe(true)
+		expect(isList(derived) && isList(list)).toBe(true)
+	})
+})
+
+describe('Store — readonly base and mutable extension share one tag', () => {
+	test('createStore satisfies MutableStore, and is readable through Store', () => {
+		const store: MutableStore<{ a: number }> = createStore({ a: 1 })
+		expect(store.get()).toEqual({ a: 1 })
+		expect(isStore(store)).toBe(true)
+	})
+
+	test('isStore matches both the mutable and the readonly record', () => {
+		expect(isStore(createStore({ a: 1 }))).toBe(true)
+		expect(isStore(deriveStore(() => ({ a: 1 })))).toBe(true)
+	})
+
+	test('isMutableStore matches only the mutable record', () => {
+		expect(isMutableStore(createStore({ a: 1 }))).toBe(true)
+		expect(isMutableStore(deriveStore(() => ({ a: 1 })))).toBe(false)
+	})
+})
+
+describe('Signal — readonly base and mutable extension share one tag', () => {
+	test('createState satisfies both Signal and MutableSignal', () => {
+		const state: MutableSignal<number> = createState(1)
+		const asBase: Signal<number> = state
+		expect(asBase.get()).toBe(1)
+	})
+
+	test('isSignal matches only the single-value shape', () => {
+		expect(isSignal(createState(1))).toBe(true)
+		expect(isSignal(createList([1]))).toBe(false)
+		expect(isSignal(createStore({ a: 1 }))).toBe(false)
+	})
+
+	test('isMutableSignal matches only the mutable single-value shape', () => {
+		expect(isMutableSignal(createState(1))).toBe(true)
+		expect(isMutableSignal(createList([1]))).toBe(false)
 	})
 })

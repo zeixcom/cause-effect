@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { createEffect, createState, isMemo, isState } from '../index.ts'
+import {
+	createEffect,
+	createState,
+	isMutableSignal,
+	isSignal,
+} from '../index.ts'
 
 /* === Tests === */
 
@@ -17,22 +22,22 @@ describe('State', () => {
 			expect(createState({ a: 1 }).get()).toEqual({ a: 1 })
 		})
 
-		test('should have Symbol.toStringTag of "State"', () => {
+		test('should have Symbol.toStringTag of "Signal"', () => {
 			const state = createState(0)
-			expect(state[Symbol.toStringTag]).toBe('State')
+			expect(state[Symbol.toStringTag]).toBe('Signal')
 		})
 	})
 
-	describe('isState', () => {
+	describe('isMutableSignal', () => {
 		test('should identify state signals', () => {
-			expect(isState(createState(0))).toBe(true)
+			expect(isMutableSignal(createState(0))).toBe(true)
 		})
 
 		test('should return false for non-state values', () => {
-			expect(isState(42)).toBe(false)
-			expect(isState(null)).toBe(false)
-			expect(isState({})).toBe(false)
-			expect(isMemo(createState(0))).toBe(false)
+			expect(isMutableSignal(42)).toBe(false)
+			expect(isMutableSignal(null)).toBe(false)
+			expect(isMutableSignal({})).toBe(false)
+			expect(isSignal(createState(0))).toBe(true)
 		})
 	})
 
@@ -132,14 +137,16 @@ describe('State', () => {
 				createState(0, {
 					guard: (v): v is number => typeof v === 'number' && v > 0,
 				})
-			}).toThrow('[State] Signal value 0 is invalid')
+			}).toThrow('[createState] Signal value 0 is invalid')
 		})
 
 		test('should validate set() values against guard', () => {
 			const state = createState(1, {
 				guard: (v): v is number => typeof v === 'number' && v > 0,
 			})
-			expect(() => state.set(0)).toThrow('[State] Signal value 0 is invalid')
+			expect(() => state.set(0)).toThrow(
+				'[createState] Signal value 0 is invalid',
+			)
 			expect(state.get()).toBe(1) // unchanged
 		})
 
@@ -148,7 +155,7 @@ describe('State', () => {
 				guard: (v): v is number => typeof v === 'number' && v > 0,
 			})
 			expect(() => state.update(() => 0)).toThrow(
-				'[State] Signal value 0 is invalid',
+				'[createState] Signal value 0 is invalid',
 			)
 			expect(state.get()).toBe(1) // unchanged
 		})
@@ -184,7 +191,7 @@ describe('State', () => {
 				guard: (v): v is number => Number.isFinite(v),
 			})
 			expect(() => state.set(NaN)).toThrow(
-				'[State] Signal value NaN is invalid',
+				'[createState] Signal value NaN is invalid',
 			)
 			expect(state.get()).toBe(1)
 		})
@@ -194,10 +201,10 @@ describe('State', () => {
 				guard: (v): v is number => Number.isFinite(v),
 			})
 			expect(() => state.set(Infinity)).toThrow(
-				'[State] Signal value Infinity is invalid',
+				'[createState] Signal value Infinity is invalid',
 			)
 			expect(() => state.set(-Infinity)).toThrow(
-				'[State] Signal value -Infinity is invalid',
+				'[createState] Signal value -Infinity is invalid',
 			)
 			expect(state.get()).toBe(1)
 		})
@@ -221,12 +228,12 @@ describe('State', () => {
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
 				createState(null)
-			}).toThrow('[State] Signal value cannot be null or undefined')
+			}).toThrow('[createState] Signal value cannot be null or undefined')
 
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
 				createState(undefined)
-			}).toThrow('[State] Signal value cannot be null or undefined')
+			}).toThrow('[createState] Signal value cannot be null or undefined')
 		})
 
 		test('should throw NullishSignalValueError for null or undefined in set()', () => {
@@ -234,12 +241,12 @@ describe('State', () => {
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
 				state.set(null)
-			}).toThrow('[State] Signal value cannot be null or undefined')
+			}).toThrow('[createState] Signal value cannot be null or undefined')
 
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
 				state.set(undefined)
-			}).toThrow('[State] Signal value cannot be null or undefined')
+			}).toThrow('[createState] Signal value cannot be null or undefined')
 		})
 
 		test('should throw NullishSignalValueError for nullish return from update()', () => {
@@ -247,12 +254,12 @@ describe('State', () => {
 			expect(() => {
 				// @ts-expect-error - Testing invalid return value
 				state.update(() => null)
-			}).toThrow('[State] Signal value cannot be null or undefined')
+			}).toThrow('[createState] Signal value cannot be null or undefined')
 
 			expect(() => {
 				// @ts-expect-error - Testing invalid return value
 				state.update(() => undefined)
-			}).toThrow('[State] Signal value cannot be null or undefined')
+			}).toThrow('[createState] Signal value cannot be null or undefined')
 
 			expect(state.get()).toBe(42) // unchanged
 		})
@@ -262,12 +269,12 @@ describe('State', () => {
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
 				state.update(null)
-			}).toThrow('[State] Callback null is invalid')
+			}).toThrow('[createState] Callback null is invalid')
 
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
 				state.update('not a function')
-			}).toThrow('[State] Callback "not a function" is invalid')
+			}).toThrow('[createState] Callback "not a function" is invalid')
 		})
 
 		test('should propagate errors thrown by update callback', () => {

@@ -2,55 +2,37 @@ import { InvalidSignalValueError } from './errors'
 import {
 	type ComputedOptions,
 	type MemoCallback,
+	type MutableSignal,
 	type Signal,
 	type TaskCallback,
-	TYPE_COLLECTION,
-	TYPE_LIST,
-	TYPE_MEMO,
-	TYPE_SENSOR,
+	TYPE_SIGNAL,
 	TYPE_SLOT,
-	TYPE_STATE,
-	TYPE_STORE,
-	TYPE_TASK,
 } from './graph'
 import {
 	createList,
+	isList,
 	isMutableList,
 	type MutableList,
 	type UnknownRecord,
 } from './nodes/list'
-import { createMemo, isMemo, type Memo } from './nodes/memo'
-import { createState, isState, type State } from './nodes/state'
-import { createStore, isStore, type Store } from './nodes/store'
-import { createTask, isTask, type Task } from './nodes/task'
-import { isAsyncFunction, isFunction, isRecord } from './util'
+import { createMemo } from './nodes/memo'
+import { createState } from './nodes/state'
+import {
+	createStore,
+	isMutableStore,
+	isStore,
+	type MutableStore,
+} from './nodes/store'
+import { createTask } from './nodes/task'
+import { isAsyncFunction, isFunction, isRecord, isSignalOfType } from './util'
 
-/* === Types === */
-
-/**
- * A readable and writable signal — the type union of `State`, `Store`, and `List`.
- * Use as a parameter type for generic code that accepts any writable signal.
- *
- * @template T - The type of value held by the signal
- */
-type MutableSignal<T extends {}> = {
-	get(): T
-	set(value: T): void
-	update(callback: (value: T) => T): void
+/** Local, non-generic Slot check — avoids `isSignalOfType`'s generic inferring `unknown`. */
+function isSlotLike(value: unknown): boolean {
+	return (
+		value != null &&
+		(value as Record<symbol, unknown>)[Symbol.toStringTag] === TYPE_SLOT
+	)
 }
-
-/* === Constants === */
-
-const SIGNAL_TYPES = new Set([
-	TYPE_STATE,
-	TYPE_MEMO,
-	TYPE_TASK,
-	TYPE_SENSOR,
-	TYPE_SLOT,
-	TYPE_LIST,
-	TYPE_COLLECTION,
-	TYPE_STORE,
-])
 
 /* === Factory Functions === */
 
@@ -62,17 +44,9 @@ const SIGNAL_TYPES = new Set([
  * @param options - Optional configuration
  */
 function createComputed<T extends {}>(
-	callback: TaskCallback<T>,
-	options?: ComputedOptions<T>,
-): Task<T>
-function createComputed<T extends {}>(
-	callback: MemoCallback<T>,
-	options?: ComputedOptions<T>,
-): Memo<T>
-function createComputed<T extends {}>(
 	callback: TaskCallback<T> | MemoCallback<T>,
 	options?: ComputedOptions<T>,
-): Memo<T> | Task<T> {
+): Signal<T> {
 	return isAsyncFunction(callback)
 		? createTask(callback as TaskCallback<T>, options)
 		: createMemo(callback as MemoCallback<T>, options)
@@ -85,12 +59,17 @@ function createComputed<T extends {}>(
  */
 function createSignal<T extends {}>(value: Signal<T>): Signal<T>
 function createSignal<T extends {}>(value: readonly T[]): MutableList<T>
-function createSignal<T extends UnknownRecord>(value: T): Store<T>
-function createSignal<T extends {}>(value: TaskCallback<T>): Task<T>
-function createSignal<T extends {}>(value: MemoCallback<T>): Memo<T>
-function createSignal<T extends {}>(value: T): State<T>
+function createSignal<T extends UnknownRecord>(value: T): MutableStore<T>
+function createSignal<T extends {}>(
+	value: TaskCallback<T> | MemoCallback<T>,
+): Signal<T>
+function createSignal<T extends {}>(value: T): MutableSignal<T>
 function createSignal(value: unknown): unknown {
-	if (isSignal(value)) return value
+	// Broader than the exported `isSignal` guard (which matches only the single-value
+	// shape): this idempotency check accepts any signal this module can construct, so
+	// re-wrapping an existing List, Store, or Slot is a no-op rather than a coercion error.
+	if (isSignal(value) || isList(value) || isStore(value) || isSlotLike(value))
+		return value
 	if (value == null) throw new InvalidSignalValueError('createSignal', value)
 	if (isAsyncFunction(value))
 		return createTask(value as TaskCallback<unknown & {}>)
@@ -110,11 +89,19 @@ function createMutableSignal<T extends {}>(
 	value: MutableSignal<T>,
 ): MutableSignal<T>
 function createMutableSignal<T extends {}>(value: readonly T[]): MutableList<T>
-function createMutableSignal<T extends UnknownRecord>(value: T): Store<T>
-function createMutableSignal<T extends {}>(value: T): State<T>
+function createMutableSignal<T extends UnknownRecord>(value: T): MutableStore<T>
+function createMutableSignal<T extends {}>(value: T): MutableSignal<T>
 function createMutableSignal(value: unknown): unknown {
-	if (isMutableSignal(value)) return value
-	if (value == null || isFunction(value) || isSignal(value))
+	if (isMutableSignal(value) || isMutableList(value) || isMutableStore(value))
+		return value
+	if (
+		value == null ||
+		isFunction(value) ||
+		isSignal(value) ||
+		isList(value) ||
+		isStore(value) ||
+		isSlotLike(value)
+	)
 		throw new InvalidSignalValueError('createMutableSignal', value)
 	if (Array.isArray(value) && value.every(item => item != null))
 		return createList(value as (unknown & {})[])
@@ -125,49 +112,36 @@ function createMutableSignal(value: unknown): unknown {
 /* === Guards === */
 
 /**
- * Check if a value is a computed signal
- *
- * @since 0.9.0
- * @param value - Value to check
- * @returns True if value is a computed signal, false otherwise
- */
-function isComputed<T extends {}>(value: unknown): value is Memo<T> | Task<T> {
-	return isMemo(value) || isTask(value)
-}
-
-/**
- * Check whether a value is a Signal
+ * Check whether a value is a Signal — the single-value shape, matching both the mutable
+ * and readonly single-value signals. Use `isMutableSignal` to also require write access.
+ * `List` and `Store` are distinct shapes with their own guards. See ADR-0018.
  *
  * @since 0.9.0
  * @param value - Value to check
  * @returns True if value is a Signal, false otherwise
  */
 function isSignal<T extends {}>(value: unknown): value is Signal<T> {
-	return (
-		value != null &&
-		SIGNAL_TYPES.has(
-			(value as Record<symbol, unknown>)[Symbol.toStringTag] as string,
-		)
-	)
+	return isSignalOfType(value, TYPE_SIGNAL)
 }
 
 /**
- * Check whether a value is a State, Store, or List
+ * Check whether a value is a mutable Signal.
  *
  * @since 0.15.2
  * @param value - Value to check
- * @returns True if value is a State, Store, or List, false otherwise
+ * @returns True if value is a mutable Signal, false otherwise
  */
 function isMutableSignal(value: unknown): value is MutableSignal<unknown & {}> {
-	return isState(value) || isStore(value) || isMutableList(value)
+	return (
+		isSignal(value) &&
+		typeof (value as Record<string, unknown>).set === 'function'
+	)
 }
 
 export {
 	createComputed,
 	createMutableSignal,
 	createSignal,
-	isComputed,
 	isMutableSignal,
 	isSignal,
-	type MutableSignal,
 }

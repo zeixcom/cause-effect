@@ -9,7 +9,7 @@ import {
 	createStore,
 	createTask,
 	isList,
-	isMemo,
+	isSignal,
 	match,
 	NullishSignalValueError,
 } from '../index.ts'
@@ -62,7 +62,7 @@ describe('List', () => {
 			expect(isList(42)).toBe(false)
 			expect(isList(null)).toBe(false)
 			expect(isList({})).toBe(false)
-			expect(isMemo(createList([1]))).toBe(false)
+			expect(isSignal(createList([1]))).toBe(false)
 		})
 	})
 

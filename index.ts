@@ -31,6 +31,7 @@ export {
 	isPending,
 	type MaybeCleanup,
 	type MemoCallback,
+	type MutableSignal,
 	type ScopeOptions,
 	type Signal,
 	type SignalOptions,
@@ -40,7 +41,6 @@ export {
 	untrack,
 } from './src/graph'
 export {
-	type Collection,
 	type CollectionCallback,
 	type CollectionChanges,
 	type CollectionOptions,
@@ -48,11 +48,8 @@ export {
 	createCollection,
 	type DeriveCollectionCallback,
 	type DeriveCollectionOptions,
-	type DerivedList,
 	type DeriveListOptions,
 	deriveList,
-	isCollection,
-	isDerivedList,
 } from './src/nodes/collection'
 export {
 	createEffect,
@@ -70,11 +67,9 @@ export {
 	type ListOptions,
 	type MutableList,
 } from './src/nodes/list'
-export { createMemo, isMemo, type Memo } from './src/nodes/memo'
+export { createMemo } from './src/nodes/memo'
 export {
 	createSensor,
-	isSensor,
-	type Sensor,
 	type SensorCallback,
 	type SensorOptions,
 } from './src/nodes/sensor'
@@ -84,31 +79,25 @@ export {
 	type Slot,
 	type SlotDescriptor,
 } from './src/nodes/slot'
-export {
-	createState,
-	isState,
-	type State,
-	type UpdateCallback,
-} from './src/nodes/state'
+export { createState, type UpdateCallback } from './src/nodes/state'
 export {
 	createStore,
-	type DerivedStore,
 	type DeriveStoreOptions,
 	deriveStore,
+	isMutableStore,
 	isStore,
+	type MutableStore,
 	type Store,
 	type StoreCallback,
 	type StoreOptions,
 } from './src/nodes/store'
-export { createTask, isTask, type Task } from './src/nodes/task'
+export { createTask } from './src/nodes/task'
 export {
 	createComputed,
 	createMutableSignal,
 	createSignal,
-	isComputed,
 	isMutableSignal,
 	isSignal,
-	type MutableSignal,
 } from './src/signal'
 export {
 	isAsyncFunction,

@@ -8,7 +8,7 @@ import {
 	createState,
 	createTask,
 	deriveList,
-	isCollection,
+	isList,
 	type Signal,
 } from '../index.ts'
 
@@ -28,7 +28,7 @@ describe('per-item derivation from an unkeyed source', () => {
 			(v: number) => v * 2,
 		)
 		expect(doubled.get()).toEqual([2, 4, 6])
-		expect(isCollection(doubled)).toBe(true)
+		expect(isList(doubled)).toBe(true)
 	})
 
 	test('derives from a State<T[]> directly', () => {

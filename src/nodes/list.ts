@@ -12,20 +12,18 @@ import {
 	FLAG_RELINK,
 	flush,
 	type MemoNode,
+	type MutableSignal,
 	makeSubscribe,
 	propagate,
-	refresh,
 	refreshComposite,
-	type SinkNode,
+	type Signal,
 	TYPE_LIST,
 	untrack,
 } from '../graph'
-import type { MutableSignal } from '../signal'
 import { isFunction, isSignalOfType } from '../util'
 import {
 	type CollectionSource,
 	type DeriveCollectionCallback,
-	type DerivedList,
 	deriveCollection,
 } from './collection'
 import { createState } from './state'
@@ -70,29 +68,42 @@ type ListOptions<
 }
 
 /**
+ * A read-only reactive keyed sequence with per-item reactivity.
+ * `deriveList()` returns one — from a computation, a seed with a watched lifecycle, or another
+ * source derived per item. The shape all keyed-sequence factories converge on: `createList`
+ * returns the mutable extension `MutableList<T,S>`, which is-a `List<T,S>`. See ADR-0018.
+ *
+ * @template T - The type of items in the sequence
+ */
+type List<T extends {}, S extends Signal<T> = Signal<T>> = {
+	readonly [Symbol.toStringTag]: 'List'
+	readonly [Symbol.isConcatSpreadable]: true
+	[Symbol.iterator](): IterableIterator<S>
+	readonly length: number
+	get(): T[]
+	at(index: number): S | undefined
+	keys(): IterableIterator<string>
+	byKey(key: string): S | undefined
+	keyAt(index: number): string | undefined
+	indexOfKey(key: string): number
+	deriveCollection<R extends {}>(callback: (sourceValue: T) => R): List<R>
+	deriveCollection<R extends {}>(
+		callback: (sourceValue: T, abort: AbortSignal) => Promise<R>,
+	): List<R>
+}
+
+/**
  * A reactive ordered array with stable keys and per-item reactivity.
  * Each item is a `MutableSignal<T>`; structural changes (add/remove/sort) propagate reactively.
- *
- * The name this type carries in v2.0. `List` is a deprecated alias of it.
  *
  * @template T - The type of items in the list
  */
 type MutableList<
 	T extends {},
 	S extends MutableSignal<T> = MutableSignal<T>,
-> = {
-	readonly [Symbol.toStringTag]: 'List'
-	readonly [Symbol.isConcatSpreadable]: true
-	[Symbol.iterator](): IterableIterator<S>
-	readonly length: number
-	get(): T[]
+> = List<T, S> & {
 	set(next: T[]): void
 	update(fn: (prev: T[]) => T[]): void
-	at(index: number): S | undefined
-	keys(): IterableIterator<string>
-	byKey(key: string): S | undefined
-	keyAt(index: number): string | undefined
-	indexOfKey(key: string): number
 	add(value: T): string
 	remove(keyOrIndex: string | number): void
 	/**
@@ -104,27 +115,7 @@ type MutableList<
 	replace(key: string, value: T): void
 	sort(compareFn?: (a: T, b: T) => number): void
 	splice(start: number, deleteCount?: number, ...items: T[]): T[]
-	deriveCollection<R extends {}>(
-		callback: (sourceValue: T) => R,
-	): DerivedList<R>
-	deriveCollection<R extends {}>(
-		callback: (sourceValue: T, abort: AbortSignal) => Promise<R>,
-	): DerivedList<R>
 }
-
-/**
- * The mutable keyed-sequence type, under its v1 name.
- *
- * @deprecated `List`'s current mutable meaning ends in v2.0 — use `MutableList` (same type,
- * same behavior today). In v2.0, `List` is the readonly base, which is today's `Collection`.
- * See [ADR-0018](../../../adr/0018-shape-indexed-signal-types.md) and `MIGRATION-2.0.md`.
- *
- * @template T - The type of items in the list
- */
-type List<
-	T extends {},
-	S extends MutableSignal<T> = MutableSignal<T>,
-> = MutableList<T, S>
 
 /* === Functions === */
 
@@ -619,12 +610,12 @@ function createList<
 
 		deriveCollection<R extends {}>(
 			cb: DeriveCollectionCallback<R, T>,
-		): DerivedList<R> {
+		): List<R> {
 			return (
 				deriveCollection as <T2 extends {}, U2 extends {}>(
 					source: CollectionSource<U2>,
 					callback: DeriveCollectionCallback<T2, U2>,
-				) => DerivedList<T2>
+				) => List<T2>
 			)(list, cb)
 		},
 	}
@@ -633,9 +624,21 @@ function createList<
 }
 
 /**
- * Checks if a value is a mutable List signal.
+ * Checks if a value is a List signal — the readonly base, matching both the mutable and
+ * readonly keyed-sequence shapes. Use `isMutableList` to also require write access.
  *
- * The name this guard carries in v2.0. `isList` is a deprecated alias of it.
+ * @since 2.0.0
+ * @param value - The value to check
+ * @returns True if the value is a List
+ */
+function isList<T extends {}, S extends Signal<T> = Signal<T>>(
+	value: unknown,
+): value is List<T, S> {
+	return isSignalOfType(value, TYPE_LIST)
+}
+
+/**
+ * Checks if a value is a mutable List signal.
  *
  * @since 1.5.0
  * @param value - The value to check
@@ -645,23 +648,10 @@ function isMutableList<
 	T extends {},
 	S extends MutableSignal<T> = MutableSignal<T>,
 >(value: unknown): value is MutableList<T, S> {
-	return isSignalOfType(value, TYPE_LIST)
-}
-
-/**
- * Checks if a value is a List signal.
- *
- * @deprecated Use `isMutableList` — this guard matches only the mutable list today and
- * widens to the readonly base in v2.0.
- *
- * @since 0.15.0
- * @param value - The value to check
- * @returns True if the value is a List
- */
-function isList<T extends {}, S extends MutableSignal<T> = MutableSignal<T>>(
-	value: unknown,
-): value is List<T, S> {
-	return isMutableList<T, S>(value)
+	return (
+		isList(value) &&
+		typeof (value as Record<string, unknown>).add === 'function'
+	)
 }
 
 /* === Exports === */
