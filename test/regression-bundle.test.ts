@@ -10,11 +10,11 @@ describe('Bundle size', () => {
 		// biome-ignore lint/style/noNonNullAssertion: test
 		const bytes = await result.outputs[0]!.arrayBuffer()
 		const size = bytes.byteLength
-		console.log(`  bundleMinified: ${size}B (ceiling: 32768B)`)
+		console.log(`  bundleMinified: ${size}B (ceiling: 28672B)`)
 		// Diagnostic, not a promise — see REQUIREMENTS.md "Bundle Size". This catches
 		// an accidental blowup; it is not a budget to optimise against. Re-baselined
 		// from measurement at each release.
-		expect(size).toBeLessThanOrEqual(32768)
+		expect(size).toBeLessThanOrEqual(28672)
 	})
 
 	test('gzipped bundle should not regress', async () => {
@@ -33,7 +33,7 @@ describe('Bundle size', () => {
 		expect(gzipped).toBeLessThanOrEqual(10240)
 	})
 
-	test('core-signals-only (tree-shaken) gzipped bundle should stay below 4 kB', async () => {
+	test('core-signals-only (tree-shaken) gzipped bundle should stay below 3 kB', async () => {
 		// Imports only the ADR-0018 §5 trio — createState, a synchronous
 		// derivation, createEffect — from the package barrel and actually
 		// wires them together — see test/util/core-entry.ts. A bare
@@ -46,11 +46,11 @@ describe('Bundle size', () => {
 		// biome-ignore lint/style/noNonNullAssertion: test
 		const bytes = await result.outputs[0]!.arrayBuffer()
 		const gzipped = gzipSync(new Uint8Array(bytes)).byteLength
-		console.log(`  bundleCoreGzipped: ${gzipped}B (HARD limit: 4096B)`)
-		// REQUIREMENTS.md: "Core signals only ... Below 4 kB" gzipped (4096B).
+		console.log(`  bundleCoreGzipped: ${gzipped}B (HARD limit: 3072B)`)
+		// REQUIREMENTS.md: "Core signals only ... Below 3 kB" gzipped (3072B).
 		// If this regresses, do not just raise the limit — update the "Below
-		// 4 kB" claim in REQUIREMENTS.md and README.md to the real figure,
+		// 3 kB" claim in REQUIREMENTS.md and README.md to the real figure,
 		// and leave a note in NOTES.md for the Architect.
-		expect(gzipped).toBeLessThanOrEqual(4096)
+		expect(gzipped).toBeLessThanOrEqual(3072)
 	})
 })

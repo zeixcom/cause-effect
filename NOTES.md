@@ -6,9 +6,9 @@ gzipped number as a hard constant selected against consolidating duplicated code
 now have separate roles — see REQUIREMENTS.md § Bundle Size and the Key Decisions row in
 ARCHITECTURE.md:
 
-- **Core, ≤ 4096 B gzipped** — a hard promise, never relaxed. Tree-shaking means this is what a
+- **Core, ≤ 3072 B gzipped** — a hard promise, never relaxed. Tree-shaking means this is what a
   typical consumer actually ships.
-- **Full library, ≤ 32768 B / ≤ 10240 B** — a working diagnostic against accidental blowup,
+- **Full library, ≤ 28672 B / ≤ 10240 B** — a working diagnostic against accidental blowup,
   re-baselined from measurement at release by **CE-015**, and explicitly not defended during a
   refactor.
 

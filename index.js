@@ -9,9 +9,6 @@ function isAsyncFunction(fn) {
 function isSyncFunction(fn) {
   return isFunction(fn) && Object.getPrototypeOf(fn) !== ASYNC_FUNCTION_PROTO;
 }
-function isObjectOfType(value, type) {
-  return Object.prototype.toString.call(value) === `[object ${type}]`;
-}
 function isSignalOfType(value, type) {
   return value != null && value[Symbol.toStringTag] === type;
 }
@@ -124,12 +121,8 @@ function validateCallback(where, value, guard = isFunction) {
     throw new InvalidCallbackError(where, value);
 }
 // src/graph.ts
-var TYPE_STATE = "State";
-var TYPE_MEMO = "Memo";
-var TYPE_TASK = "Task";
-var TYPE_SENSOR = "Sensor";
+var TYPE_SIGNAL = "Signal";
 var TYPE_LIST = "List";
-var TYPE_COLLECTION = "Collection";
 var TYPE_STORE = "Store";
 var TYPE_SLOT = "Slot";
 var FLAG_CLEAN = 0;
@@ -142,6 +135,11 @@ var activeOwner = null;
 var queuedEffects = [];
 var batchDepth = 0;
 var flushing = false;
+function swapActiveSink(node) {
+  const prev = activeSink;
+  activeSink = node;
+  return prev;
+}
 var DEFAULT_EQUALITY = (a, b) => a === b;
 var SKIP_EQUALITY = (_a, _b) => false;
 var deepEqual = (a, b) => deepEqualInner(a, b, new WeakSet);
@@ -191,7 +189,6 @@ var deepEqualInner = (a, b, seen) => {
   }
 };
 var DEEP_EQUALITY = (a, b) => deepEqual(a, b);
-var isEqual = DEEP_EQUALITY;
 function isValidEdge(checkEdge, node) {
   const sourcesTail = node.sourcesTail;
   if (sourcesTail) {
@@ -324,7 +321,7 @@ function recomputeMemo(node) {
   try {
     const next = node.fn(node.value);
     if (next instanceof Promise)
-      throw new PromiseValueError(TYPE_MEMO);
+      throw new PromiseValueError(TYPE_SIGNAL);
     if (node.error || !node.equals(next, node.value)) {
       node.value = next;
       node.error = undefined;
@@ -342,58 +339,6 @@ function recomputeMemo(node) {
       if (e.sink.flags & FLAG_CHECK)
         e.sink.flags |= FLAG_DIRTY;
   }
-  node.flags = FLAG_CLEAN;
-}
-function recomputeTask(node) {
-  node.controller?.abort();
-  const controller = new AbortController;
-  node.controller = controller;
-  node.error = undefined;
-  const prevWatcher = activeSink;
-  activeSink = node;
-  node.sourcesTail = null;
-  node.flags = FLAG_RUNNING;
-  let promise;
-  try {
-    promise = node.fn(node.value, controller.signal);
-  } catch (err) {
-    node.controller = undefined;
-    node.error = err instanceof Error ? err : new Error(String(err));
-    node.flags = FLAG_CLEAN;
-    setState(node.pendingNode, false);
-    return;
-  } finally {
-    activeSink = prevWatcher;
-    trimSources(node);
-  }
-  setState(node.pendingNode, true);
-  promise.then((next) => {
-    if (controller.signal.aborted)
-      return;
-    node.controller = undefined;
-    batch(() => {
-      if (node.error || !node.equals(next, node.value)) {
-        node.value = next;
-        node.error = undefined;
-        for (let e = node.sinks;e; e = e.nextSink)
-          propagate(e.sink);
-      }
-      setState(node.pendingNode, false);
-    });
-  }, (err) => {
-    if (controller.signal.aborted)
-      return;
-    node.controller = undefined;
-    const error = err instanceof Error ? err : new Error(String(err));
-    batch(() => {
-      if (!node.error || error.name !== node.error.name || error.message !== node.error.message) {
-        node.error = error;
-        for (let e = node.sinks;e; e = e.nextSink)
-          propagate(e.sink);
-      }
-      setState(node.pendingNode, false);
-    });
-  });
   node.flags = FLAG_CLEAN;
 }
 function runEffect(node) {
@@ -424,11 +369,11 @@ function refresh(node) {
     }
   }
   if (node.flags & FLAG_RUNNING) {
-    throw new CircularDependencyError("controller" in node ? TYPE_TASK : ("value" in node) ? TYPE_MEMO : "Effect");
+    throw new CircularDependencyError("value" in node ? TYPE_SIGNAL : "Effect");
   }
   if (node.flags & FLAG_DIRTY) {
-    if ("controller" in node)
-      recomputeTask(node);
+    if ("recompute" in node)
+      node.recompute(node);
     else if ("value" in node)
       recomputeMemo(node);
     else
@@ -542,9 +487,158 @@ function makeSubscribe(node, onWatch) {
       link(node, activeSink);
   };
 }
+function refreshComposite(node, buildValue, discoversKeys = false) {
+  if (node.sources) {
+    if (!node.flags)
+      return;
+    const result = discoversKeys ? untrack(buildValue) : undefined;
+    if (node.flags & FLAG_RELINK) {
+      node.flags = FLAG_DIRTY;
+      refresh(node);
+      if (node.error)
+        throw node.error;
+    } else {
+      node.value = discoversKeys ? result : untrack(buildValue);
+      node.flags = FLAG_CLEAN;
+    }
+  } else if (!discoversKeys || node.sinks) {
+    refresh(node);
+    if (node.error)
+      throw node.error;
+  } else {
+    node.value = untrack(buildValue);
+  }
+}
+var asyncSources = new WeakMap;
+function registerAsyncSource(signal, source) {
+  asyncSources.set(signal, source);
+}
+function getAsyncSource(signal) {
+  if (signal == null || typeof signal !== "object")
+    return;
+  return asyncSources.get(signal);
+}
+function isPending(signal) {
+  return getAsyncSource(signal)?.isPending() ?? false;
+}
+function abort(signal) {
+  getAsyncSource(signal)?.abort();
+}
+// src/nodes/effect.ts
+function createEffect(fn) {
+  validateCallback("Effect", fn);
+  const node = {
+    fn,
+    flags: FLAG_DIRTY,
+    sources: null,
+    sourcesTail: null,
+    cleanup: null
+  };
+  const dispose = () => {
+    runCleanup(node);
+    node.fn = undefined;
+    node.flags = FLAG_CLEAN;
+    node.sourcesTail = null;
+    trimSources(node);
+  };
+  if (activeOwner)
+    registerCleanup(activeOwner, dispose);
+  runEffect(node);
+  scheduleEffect(node);
+  return dispose;
+}
+function match(signalOrSignals, handlers) {
+  if (!activeOwner)
+    throw new RequiredOwnerError("match");
+  const isSingle = !Array.isArray(signalOrSignals);
+  const signals = isSingle ? [signalOrSignals] : signalOrSignals;
+  const { nil, stale } = handlers;
+  const ok = isSingle ? (values2) => handlers.ok(values2[0]) : (values2) => handlers.ok(values2);
+  const err = isSingle && handlers.err ? (errors2) => handlers.err(errors2[0]) : handlers.err ?? console.error;
+  let errors;
+  let pending = false;
+  const values = new Array(signals.length);
+  for (let i = 0;i < signals.length; i++) {
+    try {
+      values[i] = signals[i].get();
+    } catch (e) {
+      if (e instanceof UnsetSignalValueError) {
+        pending = true;
+        continue;
+      }
+      if (!errors)
+        errors = [];
+      errors.push(e instanceof Error ? e : new Error(String(e)));
+    }
+  }
+  let out;
+  try {
+    if (pending)
+      out = nil?.();
+    else if (errors)
+      out = err(errors);
+    else if (stale && (isSingle ? isPending(signals[0]) : signals.some((s) => isPending(s))))
+      out = stale();
+    else
+      out = ok(values);
+  } catch (e) {
+    out = err([e instanceof Error ? e : new Error(String(e))]);
+  }
+  if (typeof out === "function")
+    return out;
+  if (out instanceof Promise) {
+    const owner = activeOwner;
+    const controller = new AbortController;
+    registerCleanup(owner, () => controller.abort());
+    out.then((cleanup) => {
+      if (!controller.signal.aborted && typeof cleanup === "function")
+        registerCleanup(owner, cleanup);
+    }).catch((e) => {
+      err([e instanceof Error ? e : new Error(String(e))]);
+    });
+  }
+}
+// src/nodes/memo.ts
+var WHERE = "createMemo";
+function createMemo(fn, options) {
+  validateCallback(WHERE, fn, isSyncFunction);
+  if (options?.initial !== undefined)
+    validateSignalValue(WHERE, options.initial, options?.guard);
+  const node = {
+    fn,
+    value: options?.initial,
+    flags: FLAG_DIRTY,
+    sources: null,
+    sourcesTail: null,
+    sinks: null,
+    sinksTail: null,
+    equals: options?.equals ?? DEFAULT_EQUALITY,
+    error: undefined,
+    stop: undefined
+  };
+  const watched = options?.watched;
+  const subscribe = makeSubscribe(node, watched ? () => watched(() => {
+    propagate(node);
+    if (batchDepth === 0)
+      flush();
+  }) : undefined);
+  return {
+    [Symbol.toStringTag]: TYPE_SIGNAL,
+    get() {
+      subscribe();
+      refresh(node);
+      if (node.error)
+        throw node.error;
+      validateReadValue(WHERE, node.value);
+      return node.value;
+    }
+  };
+}
+
 // src/nodes/state.ts
+var WHERE2 = "createState";
 function createState(value, options) {
-  validateSignalValue(TYPE_STATE, value, options?.guard);
+  validateSignalValue(WHERE2, value, options?.guard);
   const node = {
     value,
     sinks: null,
@@ -553,26 +647,133 @@ function createState(value, options) {
     guard: options?.guard
   };
   return {
-    [Symbol.toStringTag]: TYPE_STATE,
+    [Symbol.toStringTag]: TYPE_SIGNAL,
     get() {
       if (activeSink)
         link(node, activeSink);
       return node.value;
     },
     set(next) {
-      validateSignalValue(TYPE_STATE, next, node.guard);
+      validateSignalValue(WHERE2, next, node.guard);
       setState(node, next);
     },
     update(fn) {
-      validateCallback(TYPE_STATE, fn);
+      validateCallback(WHERE2, fn);
       const next = fn(node.value);
-      validateSignalValue(TYPE_STATE, next, node.guard);
+      validateSignalValue(WHERE2, next, node.guard);
       setState(node, next);
     }
   };
 }
-function isState(value) {
-  return isSignalOfType(value, TYPE_STATE);
+
+// src/nodes/task.ts
+var WHERE3 = "createTask";
+function recomputeTask(node) {
+  node.controller?.abort();
+  const controller = new AbortController;
+  node.controller = controller;
+  node.error = undefined;
+  const prevWatcher = swapActiveSink(node);
+  node.sourcesTail = null;
+  node.flags = FLAG_RUNNING;
+  let promise;
+  try {
+    promise = node.fn(node.value, controller.signal);
+  } catch (err) {
+    node.controller = undefined;
+    node.error = err instanceof Error ? err : new Error(String(err));
+    node.flags = FLAG_CLEAN;
+    setState(node.pendingNode, false);
+    return;
+  } finally {
+    swapActiveSink(prevWatcher);
+    trimSources(node);
+  }
+  setState(node.pendingNode, true);
+  promise.then((next) => {
+    if (controller.signal.aborted)
+      return;
+    node.controller = undefined;
+    batch(() => {
+      if (node.error || !node.equals(next, node.value)) {
+        node.value = next;
+        node.error = undefined;
+        for (let e = node.sinks;e; e = e.nextSink)
+          propagate(e.sink);
+      }
+      setState(node.pendingNode, false);
+    });
+  }, (err) => {
+    if (controller.signal.aborted)
+      return;
+    node.controller = undefined;
+    const error = err instanceof Error ? err : new Error(String(err));
+    batch(() => {
+      if (!node.error || error.name !== node.error.name || error.message !== node.error.message) {
+        node.error = error;
+        for (let e = node.sinks;e; e = e.nextSink)
+          propagate(e.sink);
+      }
+      setState(node.pendingNode, false);
+    });
+  });
+  node.flags = FLAG_CLEAN;
+}
+function createTask(fn, options) {
+  validateCallback(WHERE3, fn, isAsyncFunction);
+  if (options?.initial !== undefined)
+    validateSignalValue(WHERE3, options.initial, options?.guard);
+  const pendingNode = {
+    value: false,
+    sinks: null,
+    sinksTail: null,
+    equals: DEFAULT_EQUALITY
+  };
+  const node = {
+    fn,
+    value: options?.initial,
+    sources: null,
+    sourcesTail: null,
+    sinks: null,
+    sinksTail: null,
+    flags: FLAG_DIRTY,
+    equals: options?.equals ?? DEFAULT_EQUALITY,
+    controller: undefined,
+    error: undefined,
+    stop: undefined,
+    pendingNode,
+    recompute: recomputeTask
+  };
+  const watched = options?.watched;
+  const subscribe = makeSubscribe(node, watched ? () => watched(() => {
+    propagate(node);
+    if (batchDepth === 0)
+      flush();
+  }) : undefined);
+  const pendingSubscribe = makeSubscribe(pendingNode);
+  const task = {
+    [Symbol.toStringTag]: TYPE_SIGNAL,
+    get() {
+      subscribe();
+      refresh(node);
+      if (node.error)
+        throw node.error;
+      validateReadValue(WHERE3, node.value);
+      return node.value;
+    }
+  };
+  registerAsyncSource(task, {
+    isPending() {
+      pendingSubscribe();
+      return node.pendingNode.value;
+    },
+    abort() {
+      node.controller?.abort();
+      node.controller = undefined;
+      setState(node.pendingNode, false);
+    }
+  });
+  return task;
 }
 
 // src/nodes/list.ts
@@ -661,6 +862,325 @@ function diffArrays(prev, next, prevKeys, generateKey, contentBased, itemEquals)
   if (!changed && !keysEqual(prevKeys, nextKeys))
     changed = true;
   return { add, change, remove, newKeys: nextKeys, changed };
+}
+function keyedAdapter(source, options) {
+  const [generateKey, contentBased] = getKeyGenerator(options?.keyConfig);
+  const itemEquals = options?.itemEquals ?? DEEP_EQUALITY;
+  const signals = new Map;
+  const indices = new Map;
+  let keys = [];
+  let prev = [];
+  let syncedFrom;
+  const readSource = () => {
+    try {
+      return source.get();
+    } catch (e) {
+      if (e instanceof UnsetSignalValueError)
+        return [];
+      throw e;
+    }
+  };
+  const ensureKeys = (next) => {
+    if (next === syncedFrom)
+      return;
+    syncedFrom = next;
+    const diff = diffArrays(prev, next, keys, generateKey, contentBased, itemEquals);
+    prev = next;
+    if (keysEqual(keys, diff.newKeys))
+      return;
+    keys = diff.newKeys;
+    indices.clear();
+    for (let i = 0;i < keys.length; i++)
+      indices.set(keys[i], i);
+  };
+  return {
+    keys() {
+      ensureKeys(readSource());
+      for (const key of Array.from(signals.keys()))
+        if (!indices.has(key))
+          signals.delete(key);
+      return keys.values();
+    },
+    byKey(key) {
+      if (!indices.has(key))
+        return;
+      let signal = signals.get(key);
+      if (!signal) {
+        signal = createMemo(() => {
+          const items = readSource();
+          ensureKeys(items);
+          const at = indices.get(key);
+          return at !== undefined ? items[at] : undefined;
+        }, { equals: itemEquals });
+        signals.set(key, signal);
+      }
+      return signal;
+    }
+  };
+}
+function listFacade(node, getKeys, signals, prepare, prepareValue) {
+  const list = {
+    [Symbol.toStringTag]: TYPE_LIST,
+    [Symbol.isConcatSpreadable]: true,
+    *[Symbol.iterator]() {
+      prepare();
+      for (const key of getKeys()) {
+        const signal = signals.get(key);
+        if (signal)
+          yield signal;
+      }
+    },
+    get length() {
+      prepare();
+      return getKeys().length;
+    },
+    keys() {
+      prepare();
+      return getKeys().values();
+    },
+    get() {
+      prepareValue();
+      return node.value;
+    },
+    at(index) {
+      prepare();
+      const key = getKeys()[index];
+      return key !== undefined ? signals.get(key) : undefined;
+    },
+    byKey(key) {
+      prepare();
+      return signals.get(key);
+    },
+    keyAt(index) {
+      prepare();
+      return getKeys()[index];
+    },
+    indexOfKey(key) {
+      prepare();
+      return getKeys().indexOf(key);
+    }
+  };
+  return list;
+}
+function derivePerItem(sourceInput, callback, options) {
+  if (callback)
+    validateCallback("deriveList", callback);
+  const source = isList(sourceInput) ? sourceInput : keyedAdapter(sourceInput, options);
+  const isAsync = isAsyncFunction(callback);
+  const signals = new Map;
+  let keys = [];
+  const addSignal = (key) => {
+    if (!callback) {
+      const passthrough = untrack(() => source.byKey(key));
+      if (passthrough)
+        signals.set(key, passthrough);
+      return;
+    }
+    const signal = isAsync ? createTask(async (prev, abortSignal) => {
+      const itemSignal = untrack(() => source.byKey(key));
+      if (!itemSignal)
+        return prev;
+      const sourceValue = itemSignal.get();
+      if (sourceValue == null)
+        return prev;
+      return callback(sourceValue, abortSignal);
+    }) : createMemo(() => {
+      const itemSignal = untrack(() => source.byKey(key));
+      if (!itemSignal)
+        return;
+      const sourceValue = itemSignal.get();
+      if (sourceValue == null)
+        return;
+      return callback(sourceValue);
+    });
+    signals.set(key, signal);
+  };
+  function syncKeys(nextKeys) {
+    if (!keysEqual(keys, nextKeys)) {
+      const nextSet = new Set(nextKeys);
+      for (const key of keys)
+        if (!nextSet.has(key))
+          signals.delete(key);
+      for (const key of nextKeys)
+        if (!signals.has(key))
+          addSignal(key);
+      keys = nextKeys;
+      node.flags |= FLAG_RELINK;
+    }
+  }
+  function buildValue() {
+    syncKeys(Array.from(source.keys()));
+    const result = [];
+    for (const key of keys) {
+      try {
+        const v = signals.get(key)?.get();
+        if (v != null)
+          result.push(v);
+      } catch (e) {
+        if (!(e instanceof UnsetSignalValueError))
+          throw e;
+      }
+    }
+    return result;
+  }
+  const valuesEqual = keysEqual;
+  const node = {
+    fn: buildValue,
+    value: [],
+    flags: FLAG_DIRTY,
+    sources: null,
+    sourcesTail: null,
+    sinks: null,
+    sinksTail: null,
+    equals: valuesEqual,
+    error: undefined
+  };
+  const ensureFresh = () => {
+    refreshComposite(node, buildValue, true);
+  };
+  const initialKeys = Array.from(untrack(() => source.keys()));
+  for (const key of initialKeys)
+    addSignal(key);
+  keys = initialKeys;
+  const prepare = () => {
+    if (activeSink)
+      link(node, activeSink);
+    ensureFresh();
+  };
+  return listFacade(node, () => keys, signals, prepare, prepare);
+}
+function isMutableItem(value) {
+  return typeof value.set === "function";
+}
+function createExternalList(options) {
+  const watched = options.watched;
+  const initial = options.initial ?? [];
+  if (initial.length)
+    validateSignalValue("deriveList", initial, Array.isArray);
+  validateCallback("deriveList", watched, isSyncFunction);
+  const signals = new Map;
+  const keys = [];
+  const itemToKey = new Map;
+  const [generateKey, contentBased] = getKeyGenerator(options.keyConfig);
+  const resolveKey = (item) => itemToKey.get(item) ?? (contentBased ? generateKey(item) : undefined);
+  const itemFactory = options.createItem ?? ((item) => createState(item, {
+    equals: options.itemEquals ?? DEEP_EQUALITY
+  }));
+  function buildValue() {
+    const result = [];
+    for (const key of keys) {
+      try {
+        const v = signals.get(key)?.get();
+        if (v != null)
+          result.push(v);
+      } catch (e) {
+        if (!(e instanceof UnsetSignalValueError))
+          throw e;
+      }
+    }
+    return result;
+  }
+  const node = {
+    fn: buildValue,
+    value: initial,
+    flags: FLAG_DIRTY,
+    sources: null,
+    sourcesTail: null,
+    sinks: null,
+    sinksTail: null,
+    equals: SKIP_EQUALITY,
+    error: undefined
+  };
+  for (const item of initial) {
+    const key = generateKey(item);
+    signals.set(key, itemFactory(item));
+    itemToKey.set(item, key);
+    keys.push(key);
+  }
+  node.value = initial;
+  node.flags = FLAG_DIRTY;
+  const onChanges = (changes) => {
+    const { add, change, remove } = changes;
+    if (!add?.length && !change?.length && !remove?.length)
+      return;
+    let structural = false;
+    batch(() => {
+      if (add) {
+        const staged = new Map;
+        for (const item of add) {
+          const key = generateKey(item);
+          if (signals.has(key) || staged.has(key))
+            throw new DuplicateKeyError("deriveList", key, item);
+          staged.set(key, item);
+        }
+        for (const [key, item] of staged) {
+          signals.set(key, itemFactory(item));
+          itemToKey.set(item, key);
+          if (!keys.includes(key))
+            keys.push(key);
+          structural = true;
+        }
+      }
+      if (change) {
+        for (const item of change) {
+          const key = resolveKey(item);
+          if (!key)
+            continue;
+          const signal = signals.get(key);
+          if (signal && isMutableItem(signal)) {
+            itemToKey.delete(untrack(() => signal.get()));
+            signal.set(item);
+            itemToKey.set(item, key);
+          }
+        }
+      }
+      if (remove) {
+        for (const item of remove) {
+          const key = resolveKey(item);
+          if (!key)
+            continue;
+          itemToKey.delete(item);
+          signals.delete(key);
+          const index = keys.indexOf(key);
+          if (index !== -1)
+            keys.splice(index, 1);
+          structural = true;
+        }
+      }
+      node.flags = FLAG_DIRTY | (structural ? FLAG_RELINK : 0);
+      for (let e = node.sinks;e; e = e.nextSink)
+        propagate(e.sink);
+    });
+  };
+  const subscribe = makeSubscribe(node, () => watched(onChanges));
+  return listFacade(node, () => keys, signals, subscribe, () => {
+    subscribe();
+    refreshComposite(node, buildValue);
+  });
+}
+function deriveList(input, itemOrOptions, maybeOptions) {
+  if (isFunction(itemOrOptions))
+    return derivePerItem(input, itemOrOptions, maybeOptions);
+  const options = itemOrOptions;
+  const passthrough = derivePerItem;
+  if (!isFunction(input)) {
+    validateSignalValue("deriveList", input, Array.isArray);
+    validateCallback("deriveList", options?.watched, isSyncFunction);
+    return createExternalList({
+      ...options,
+      watched: options?.watched,
+      initial: input
+    });
+  }
+  if (isAsyncFunction(input)) {
+    const task = createTask(input, { initial: options?.initial ?? [] });
+    const derived = passthrough(task, undefined, options);
+    const asyncSource = getAsyncSource(task);
+    if (asyncSource)
+      registerAsyncSource(derived, asyncSource);
+    return derived;
+  }
+  return passthrough(createMemo(input), undefined, options);
 }
 function createList(value, options) {
   validateSignalValue(TYPE_LIST, value, Array.isArray);
@@ -754,23 +1274,7 @@ function createList(value, options) {
     },
     get() {
       subscribe();
-      if (node.sources) {
-        if (node.flags) {
-          if (node.flags & FLAG_RELINK) {
-            node.flags = FLAG_DIRTY;
-            refresh(node);
-            if (node.error)
-              throw node.error;
-          } else {
-            node.value = untrack(buildValue);
-            node.flags = FLAG_CLEAN;
-          }
-        }
-      } else {
-        refresh(node);
-        if (node.error)
-          throw node.error;
-      }
+      refreshComposite(node, buildValue);
       return node.value;
     },
     set(next) {
@@ -933,9 +1437,6 @@ function createList(value, options) {
           flush();
       }
       return Object.values(remove);
-    },
-    deriveCollection(cb) {
-      return deriveCollection(list, cb);
     }
   };
   return list;
@@ -943,537 +1444,164 @@ function createList(value, options) {
 function isList(value) {
   return isSignalOfType(value, TYPE_LIST);
 }
-
-// src/nodes/memo.ts
-function createMemo(fn, options) {
-  validateCallback(TYPE_MEMO, fn, isSyncFunction);
-  if (options?.value !== undefined)
-    validateSignalValue(TYPE_MEMO, options.value, options?.guard);
-  const node = {
-    fn,
-    value: options?.value,
-    flags: FLAG_DIRTY,
-    sources: null,
-    sourcesTail: null,
-    sinks: null,
-    sinksTail: null,
-    equals: options?.equals ?? DEFAULT_EQUALITY,
-    error: undefined,
-    stop: undefined
-  };
-  const watched = options?.watched;
-  const subscribe = makeSubscribe(node, watched ? () => watched(() => {
-    propagate(node);
-    if (batchDepth === 0)
-      flush();
-  }) : undefined);
-  return {
-    [Symbol.toStringTag]: TYPE_MEMO,
-    get() {
-      subscribe();
-      refresh(node);
-      if (node.error)
-        throw node.error;
-      validateReadValue(TYPE_MEMO, node.value);
-      return node.value;
-    }
-  };
-}
-function isMemo(value) {
-  return isSignalOfType(value, TYPE_MEMO);
-}
-
-// src/nodes/task.ts
-function createTask(fn, options) {
-  validateCallback(TYPE_TASK, fn, isAsyncFunction);
-  if (options?.value !== undefined)
-    validateSignalValue(TYPE_TASK, options.value, options?.guard);
-  const pendingNode = {
-    value: false,
-    sinks: null,
-    sinksTail: null,
-    equals: DEFAULT_EQUALITY
-  };
-  const node = {
-    fn,
-    value: options?.value,
-    sources: null,
-    sourcesTail: null,
-    sinks: null,
-    sinksTail: null,
-    flags: FLAG_DIRTY,
-    equals: options?.equals ?? DEFAULT_EQUALITY,
-    controller: undefined,
-    error: undefined,
-    stop: undefined,
-    pendingNode
-  };
-  const watched = options?.watched;
-  const subscribe = makeSubscribe(node, watched ? () => watched(() => {
-    propagate(node);
-    if (batchDepth === 0)
-      flush();
-  }) : undefined);
-  const pendingSubscribe = makeSubscribe(pendingNode);
-  return {
-    [Symbol.toStringTag]: TYPE_TASK,
-    get() {
-      subscribe();
-      refresh(node);
-      if (node.error)
-        throw node.error;
-      validateReadValue(TYPE_TASK, node.value);
-      return node.value;
-    },
-    isPending() {
-      pendingSubscribe();
-      return node.pendingNode.value;
-    },
-    abort() {
-      node.controller?.abort();
-      node.controller = undefined;
-      setState(node.pendingNode, false);
-    }
-  };
-}
-function isTask(value) {
-  return isSignalOfType(value, TYPE_TASK);
-}
-
-// src/nodes/collection.ts
-function deriveCollection(source, callback) {
-  validateCallback(TYPE_COLLECTION, callback);
-  const isAsync = isAsyncFunction(callback);
-  const signals = new Map;
-  let keys = [];
-  const addSignal = (key) => {
-    const signal = isAsync ? createTask(async (prev, abort) => {
-      const itemSignal = untrack(() => source.byKey(key));
-      if (!itemSignal)
-        return prev;
-      const sourceValue = itemSignal.get();
-      if (sourceValue == null)
-        return prev;
-      return callback(sourceValue, abort);
-    }) : createMemo(() => {
-      const itemSignal = untrack(() => source.byKey(key));
-      if (!itemSignal)
-        return;
-      const sourceValue = itemSignal.get();
-      if (sourceValue == null)
-        return;
-      return callback(sourceValue);
-    });
-    signals.set(key, signal);
-  };
-  function syncKeys(nextKeys) {
-    if (!keysEqual(keys, nextKeys)) {
-      const nextSet = new Set(nextKeys);
-      for (const key of keys)
-        if (!nextSet.has(key))
-          signals.delete(key);
-      for (const key of nextKeys)
-        if (!signals.has(key))
-          addSignal(key);
-      keys = nextKeys;
-      node.flags |= FLAG_RELINK;
-    }
-  }
-  function buildValue() {
-    syncKeys(Array.from(source.keys()));
-    const result = [];
-    for (const key of keys) {
-      try {
-        const v = signals.get(key)?.get();
-        if (v != null)
-          result.push(v);
-      } catch (e) {
-        if (!(e instanceof UnsetSignalValueError))
-          throw e;
-      }
-    }
-    return result;
-  }
-  const valuesEqual = (a, b) => {
-    if (a.length !== b.length)
-      return false;
-    for (let i = 0;i < a.length; i++)
-      if (a[i] !== b[i])
-        return false;
-    return true;
-  };
-  const node = {
-    fn: buildValue,
-    value: [],
-    flags: FLAG_DIRTY,
-    sources: null,
-    sourcesTail: null,
-    sinks: null,
-    sinksTail: null,
-    equals: valuesEqual,
-    error: undefined
-  };
-  function ensureFresh() {
-    if (node.sources) {
-      if (node.flags) {
-        const result = untrack(buildValue);
-        if (node.flags & FLAG_RELINK) {
-          node.flags = FLAG_DIRTY;
-          refresh(node);
-          if (node.error)
-            throw node.error;
-        } else {
-          node.value = result;
-          node.flags = FLAG_CLEAN;
-        }
-      }
-    } else if (node.sinks) {
-      refresh(node);
-      if (node.error)
-        throw node.error;
-    } else {
-      node.value = untrack(buildValue);
-    }
-  }
-  const initialKeys = Array.from(untrack(() => source.keys()));
-  for (const key of initialKeys)
-    addSignal(key);
-  keys = initialKeys;
-  const collection = {
-    [Symbol.toStringTag]: TYPE_COLLECTION,
-    [Symbol.isConcatSpreadable]: true,
-    *[Symbol.iterator]() {
-      if (activeSink)
-        link(node, activeSink);
-      ensureFresh();
-      for (const key of keys) {
-        const signal = signals.get(key);
-        if (signal)
-          yield signal;
-      }
-    },
-    get length() {
-      if (activeSink)
-        link(node, activeSink);
-      ensureFresh();
-      return keys.length;
-    },
-    keys() {
-      if (activeSink)
-        link(node, activeSink);
-      ensureFresh();
-      return keys.values();
-    },
-    get() {
-      if (activeSink)
-        link(node, activeSink);
-      ensureFresh();
-      return node.value;
-    },
-    at(index) {
-      if (activeSink)
-        link(node, activeSink);
-      ensureFresh();
-      const key = keys[index];
-      return key !== undefined ? signals.get(key) : undefined;
-    },
-    byKey(key) {
-      if (activeSink)
-        link(node, activeSink);
-      ensureFresh();
-      return signals.get(key);
-    },
-    keyAt(index) {
-      if (activeSink)
-        link(node, activeSink);
-      ensureFresh();
-      return keys[index];
-    },
-    indexOfKey(key) {
-      if (activeSink)
-        link(node, activeSink);
-      ensureFresh();
-      return keys.indexOf(key);
-    },
-    deriveCollection(cb) {
-      return deriveCollection(collection, cb);
-    }
-  };
-  return collection;
-}
-function createCollection(watched, options) {
-  const value = options?.value ?? [];
-  if (value.length)
-    validateSignalValue(TYPE_COLLECTION, value, Array.isArray);
-  validateCallback(TYPE_COLLECTION, watched, isSyncFunction);
-  const signals = new Map;
-  const keys = [];
-  const itemToKey = new Map;
-  const [generateKey, contentBased] = getKeyGenerator(options?.keyConfig);
-  const resolveKey = (item) => itemToKey.get(item) ?? (contentBased ? generateKey(item) : undefined);
-  const itemFactory = options?.createItem ?? ((item) => createState(item, {
-    equals: options?.itemEquals ?? DEEP_EQUALITY
-  }));
-  function buildValue() {
-    const result = [];
-    for (const key of keys) {
-      try {
-        const v = signals.get(key)?.get();
-        if (v != null)
-          result.push(v);
-      } catch (e) {
-        if (!(e instanceof UnsetSignalValueError))
-          throw e;
-      }
-    }
-    return result;
-  }
-  const node = {
-    fn: buildValue,
-    value,
-    flags: FLAG_DIRTY,
-    sources: null,
-    sourcesTail: null,
-    sinks: null,
-    sinksTail: null,
-    equals: SKIP_EQUALITY,
-    error: undefined
-  };
-  for (const item of value) {
-    const key = generateKey(item);
-    signals.set(key, itemFactory(item));
-    itemToKey.set(item, key);
-    keys.push(key);
-  }
-  node.value = value;
-  node.flags = FLAG_DIRTY;
-  const onChanges = (changes) => {
-    const { add, change, remove } = changes;
-    if (!add?.length && !change?.length && !remove?.length)
-      return;
-    let structural = false;
-    batch(() => {
-      if (add) {
-        const staged = new Map;
-        for (const item of add) {
-          const key = generateKey(item);
-          if (signals.has(key) || staged.has(key))
-            throw new DuplicateKeyError(TYPE_COLLECTION, key, item);
-          staged.set(key, item);
-        }
-        for (const [key, item] of staged) {
-          signals.set(key, itemFactory(item));
-          itemToKey.set(item, key);
-          if (!keys.includes(key))
-            keys.push(key);
-          structural = true;
-        }
-      }
-      if (change) {
-        for (const item of change) {
-          const key = resolveKey(item);
-          if (!key)
-            continue;
-          const signal = signals.get(key);
-          if (signal && isState(signal)) {
-            itemToKey.delete(untrack(() => signal.get()));
-            signal.set(item);
-            itemToKey.set(item, key);
-          }
-        }
-      }
-      if (remove) {
-        for (const item of remove) {
-          const key = resolveKey(item);
-          if (!key)
-            continue;
-          itemToKey.delete(item);
-          signals.delete(key);
-          const index = keys.indexOf(key);
-          if (index !== -1)
-            keys.splice(index, 1);
-          structural = true;
-        }
-      }
-      node.flags = FLAG_DIRTY | (structural ? FLAG_RELINK : 0);
-      for (let e = node.sinks;e; e = e.nextSink)
-        propagate(e.sink);
-    });
-  };
-  const subscribe = makeSubscribe(node, () => watched(onChanges));
-  const collection = {
-    [Symbol.toStringTag]: TYPE_COLLECTION,
-    [Symbol.isConcatSpreadable]: true,
-    *[Symbol.iterator]() {
-      subscribe();
-      for (const key of keys) {
-        const signal = signals.get(key);
-        if (signal)
-          yield signal;
-      }
-    },
-    get length() {
-      subscribe();
-      return keys.length;
-    },
-    keys() {
-      subscribe();
-      return keys.values();
-    },
-    get() {
-      subscribe();
-      if (node.sources) {
-        if (node.flags) {
-          if (node.flags & FLAG_RELINK) {
-            node.flags = FLAG_DIRTY;
-            refresh(node);
-            if (node.error)
-              throw node.error;
-          } else {
-            node.value = untrack(buildValue);
-            node.flags = FLAG_CLEAN;
-          }
-        }
-      } else {
-        refresh(node);
-        if (node.error)
-          throw node.error;
-      }
-      return node.value;
-    },
-    at(index) {
-      subscribe();
-      const key = keys[index];
-      return key !== undefined ? signals.get(key) : undefined;
-    },
-    byKey(key) {
-      subscribe();
-      return signals.get(key);
-    },
-    keyAt(index) {
-      subscribe();
-      return keys[index];
-    },
-    indexOfKey(key) {
-      subscribe();
-      return keys.indexOf(key);
-    },
-    deriveCollection(cb) {
-      return deriveCollection(collection, cb);
-    }
-  };
-  return collection;
-}
-function isCollection(value) {
-  return isSignalOfType(value, TYPE_COLLECTION);
-}
-// src/nodes/effect.ts
-function createEffect(fn) {
-  validateCallback("Effect", fn);
-  const node = {
-    fn,
-    flags: FLAG_DIRTY,
-    sources: null,
-    sourcesTail: null,
-    cleanup: null
-  };
-  const dispose = () => {
-    runCleanup(node);
-    node.fn = undefined;
-    node.flags = FLAG_CLEAN;
-    node.sourcesTail = null;
-    trimSources(node);
-  };
-  if (activeOwner)
-    registerCleanup(activeOwner, dispose);
-  runEffect(node);
-  scheduleEffect(node);
-  return dispose;
-}
-function match(signalOrSignals, handlers) {
-  if (!activeOwner)
-    throw new RequiredOwnerError("match");
-  const isSingle = !Array.isArray(signalOrSignals);
-  const signals = isSingle ? [signalOrSignals] : signalOrSignals;
-  const { nil, stale } = handlers;
-  const ok = isSingle ? (values2) => handlers.ok(values2[0]) : (values2) => handlers.ok(values2);
-  const err = isSingle && handlers.err ? (errors2) => handlers.err(errors2[0]) : handlers.err ?? console.error;
-  let errors;
-  let pending = false;
-  const values = new Array(signals.length);
-  for (let i = 0;i < signals.length; i++) {
-    try {
-      values[i] = signals[i].get();
-    } catch (e) {
-      if (e instanceof UnsetSignalValueError) {
-        pending = true;
-        continue;
-      }
-      if (!errors)
-        errors = [];
-      errors.push(e instanceof Error ? e : new Error(String(e)));
-    }
-  }
-  let out;
-  try {
-    if (pending)
-      out = nil?.();
-    else if (errors)
-      out = err(errors);
-    else if (stale && (isSingle ? isTask(signals[0]) && signals[0].isPending() : signals.some((s) => isTask(s) && s.isPending())))
-      out = stale();
-    else
-      out = ok(values);
-  } catch (e) {
-    out = err([e instanceof Error ? e : new Error(String(e))]);
-  }
-  if (typeof out === "function")
-    return out;
-  if (out instanceof Promise) {
-    const owner = activeOwner;
-    const controller = new AbortController;
-    registerCleanup(owner, () => controller.abort());
-    out.then((cleanup) => {
-      if (!controller.signal.aborted && typeof cleanup === "function")
-        registerCleanup(owner, cleanup);
-    }).catch((e) => {
-      err([e instanceof Error ? e : new Error(String(e))]);
-    });
-  }
+function isMutableList(value) {
+  return isList(value) && typeof value.add === "function";
 }
 // src/nodes/sensor.ts
-function createSensor(watched, options) {
-  validateCallback(TYPE_SENSOR, watched, isSyncFunction);
-  if (options?.value !== undefined)
-    validateSignalValue(TYPE_SENSOR, options.value, options?.guard);
+var WHERE4 = "createSensor";
+function createSensor(options) {
+  const watched = options.watched;
+  validateCallback(WHERE4, watched, isSyncFunction);
+  if (options.initial !== undefined)
+    validateSignalValue(WHERE4, options.initial, options.guard);
   const node = {
-    value: options?.value,
+    value: options.initial,
     sinks: null,
     sinksTail: null,
-    equals: options?.equals ?? DEFAULT_EQUALITY,
-    guard: options?.guard,
+    equals: options.equals ?? DEFAULT_EQUALITY,
+    guard: options.guard,
     stop: undefined
   };
   return {
-    [Symbol.toStringTag]: TYPE_SENSOR,
+    [Symbol.toStringTag]: TYPE_SIGNAL,
     get() {
       if (activeSink) {
         if (!node.sinks)
           node.stop = watched((next) => {
-            validateSignalValue(TYPE_SENSOR, next, node.guard);
+            validateSignalValue(WHERE4, next, node.guard);
             setState(node, next);
           });
         link(node, activeSink);
       }
-      validateReadValue(TYPE_SENSOR, node.value);
+      validateReadValue(WHERE4, node.value);
       return node.value;
     }
   };
 }
-function isSensor(value) {
-  return isSignalOfType(value, TYPE_SENSOR);
+// src/nodes/signal.ts
+function createSignal(value, options) {
+  return createState(value, options);
+}
+function deriveSignal(input, options) {
+  if (isFunction(input)) {
+    return isAsyncFunction(input) ? createTask(input, options) : createMemo(input, options);
+  }
+  const watched = options?.watched;
+  validateCallback("deriveSignal", watched, isSyncFunction);
+  return createSensor({
+    ...options,
+    initial: input
+  });
+}
+function isSignal(value) {
+  return isSignalOfType(value, TYPE_SIGNAL);
+}
+function isMutableSignal(value) {
+  return isSignal(value) && typeof value.set === "function";
+}
+// src/nodes/slot.ts
+var settingSlots = new WeakSet;
+function isSignalOrDescriptor(value) {
+  if (isSignal(value))
+    return true;
+  return value !== null && typeof value === "object" && "get" in value && typeof value.get === "function";
+}
+function createSlot(initialSignal, options) {
+  validateSignalValue(TYPE_SLOT, initialSignal, isSignalOrDescriptor);
+  let delegated = initialSignal;
+  const guard = options?.guard;
+  const node = {
+    fn: () => delegated.get(),
+    value: undefined,
+    flags: FLAG_DIRTY,
+    sources: null,
+    sourcesTail: null,
+    sinks: null,
+    sinksTail: null,
+    equals: options?.equals ?? DEFAULT_EQUALITY,
+    error: undefined
+  };
+  const get = () => {
+    if (activeSink)
+      link(node, activeSink);
+    refresh(node);
+    if (node.error)
+      throw node.error;
+    return node.value;
+  };
+  const set = (next) => {
+    if (settingSlots.has(node))
+      throw new Error("[Slot] Circular delegation detected in set()");
+    settingSlots.add(node);
+    try {
+      if (isSlot(delegated))
+        return void delegated.set(next);
+      if ("set" in delegated && typeof delegated.set === "function") {
+        validateSignalValue(TYPE_SLOT, next, guard);
+        delegated.set(next);
+      } else {
+        throw new ReadonlySignalError(TYPE_SLOT);
+      }
+    } finally {
+      settingSlots.delete(node);
+    }
+  };
+  const replace = (next) => {
+    validateSignalValue(TYPE_SLOT, next, isSignalOrDescriptor);
+    delegated = next;
+    node.flags |= FLAG_DIRTY;
+    for (let e = node.sinks;e; e = e.nextSink)
+      propagate(e.sink);
+    if (batchDepth === 0)
+      flush();
+  };
+  return {
+    [Symbol.toStringTag]: TYPE_SLOT,
+    configurable: true,
+    enumerable: true,
+    get,
+    set,
+    replace,
+    current: () => delegated
+  };
+}
+function isSlot(value) {
+  return isSignalOfType(value, TYPE_SLOT);
 }
 // src/nodes/store.ts
+var storeProxyHandler = {
+  get(target, prop) {
+    if (prop in target)
+      return Reflect.get(target, prop);
+    if (typeof prop !== "symbol")
+      return target.byKey(prop);
+  },
+  set(_target, prop) {
+    throw new InvalidStoreMutationError(String(prop), "assign to");
+  },
+  deleteProperty(_target, prop) {
+    throw new InvalidStoreMutationError(String(prop), "delete");
+  },
+  defineProperty(_target, prop) {
+    throw new InvalidStoreMutationError(String(prop), "define");
+  },
+  has(target, prop) {
+    if (prop in target)
+      return true;
+    return target.byKey(String(prop)) !== undefined;
+  },
+  ownKeys(target) {
+    return Array.from(target.keys());
+  },
+  getOwnPropertyDescriptor(target, prop) {
+    if (prop in target)
+      return Reflect.getOwnPropertyDescriptor(target, prop);
+    if (typeof prop === "symbol")
+      return;
+    const signal = target.byKey(String(prop));
+    return signal ? { enumerable: true, configurable: true, writable: true, value: signal } : undefined;
+  }
+};
 function diffRecords(prev, next) {
   const add = {};
   const change = {};
@@ -1520,7 +1648,7 @@ function createStore(value, options) {
     return "state";
   };
   const signalCategory = (signal) => {
-    if (isList(signal))
+    if (isMutableList(signal))
       return "list";
     if (isStore(signal))
       return "store";
@@ -1599,23 +1727,7 @@ function createStore(value, options) {
     },
     get() {
       subscribe();
-      if (node.sources) {
-        if (node.flags) {
-          if (node.flags & FLAG_RELINK) {
-            node.flags = FLAG_DIRTY;
-            refresh(node);
-            if (node.error)
-              throw node.error;
-          } else {
-            node.value = untrack(buildValue);
-            node.flags = FLAG_CLEAN;
-          }
-        }
-      } else {
-        refresh(node);
-        if (node.error)
-          throw node.error;
-      }
+      refreshComposite(node, buildValue);
       return node.value;
     },
     set(next) {
@@ -1654,190 +1766,149 @@ function createStore(value, options) {
       }
     }
   };
-  return new Proxy(store, {
-    get(target, prop) {
-      if (prop in target)
-        return Reflect.get(target, prop);
-      if (typeof prop !== "symbol")
-        return target.byKey(prop);
-    },
-    set(_target, prop) {
-      throw new InvalidStoreMutationError(String(prop), "assign to");
-    },
-    deleteProperty(_target, prop) {
-      throw new InvalidStoreMutationError(String(prop), "delete");
-    },
-    defineProperty(_target, prop) {
-      throw new InvalidStoreMutationError(String(prop), "define");
-    },
-    has(target, prop) {
-      if (prop in target)
-        return true;
-      return target.byKey(String(prop)) !== undefined;
-    },
-    ownKeys(target) {
-      return Array.from(target.keys());
-    },
-    getOwnPropertyDescriptor(target, prop) {
-      if (prop in target)
-        return Reflect.getOwnPropertyDescriptor(target, prop);
-      if (typeof prop === "symbol")
-        return;
-      const signal = target.byKey(String(prop));
-      return signal ? {
-        enumerable: true,
-        configurable: true,
-        writable: true,
-        value: signal
-      } : undefined;
+  return new Proxy(store, storeProxyHandler);
+}
+function deriveStore(input, options) {
+  if (!isFunction(input)) {
+    validateSignalValue(TYPE_STORE, input, isRecord);
+    const watched = options?.watched;
+    validateCallback(TYPE_STORE, watched, isSyncFunction);
+    let inner;
+    const emit = (patch) => {
+      inner.update((prev) => ({ ...prev, ...patch }));
+    };
+    inner = createStore(input, { watched: () => watched(emit) });
+    return readonlyFacade(() => inner.get(), () => inner.keys(), (key) => inner.byKey(key));
+  }
+  const task = isAsyncFunction(input) ? createTask(input, {
+    initial: options?.initial ?? {}
+  }) : undefined;
+  const source = task ?? createMemo(input);
+  const readSource = () => {
+    try {
+      return source.get();
+    } catch (e) {
+      if (e instanceof UnsetSignalValueError)
+        return {};
+      throw e;
     }
-  });
-}
-function isStore(value) {
-  return isSignalOfType(value, TYPE_STORE);
-}
-
-// src/signal.ts
-var SIGNAL_TYPES = new Set([
-  TYPE_STATE,
-  TYPE_MEMO,
-  TYPE_TASK,
-  TYPE_SENSOR,
-  TYPE_SLOT,
-  TYPE_LIST,
-  TYPE_COLLECTION,
-  TYPE_STORE
-]);
-function createComputed(callback, options) {
-  return isAsyncFunction(callback) ? createTask(callback, options) : createMemo(callback, options);
-}
-function createSignal(value) {
-  if (isSignal(value))
-    return value;
-  if (value == null)
-    throw new InvalidSignalValueError("createSignal", value);
-  if (isAsyncFunction(value))
-    return createTask(value);
-  if (isFunction(value))
-    return createMemo(value);
-  if (Array.isArray(value) && value.every((item) => item != null))
-    return createList(value);
-  if (isRecord(value))
-    return createStore(value);
-  return createState(value);
-}
-function createMutableSignal(value) {
-  if (isMutableSignal(value))
-    return value;
-  if (value == null || isFunction(value) || isSignal(value))
-    throw new InvalidSignalValueError("createMutableSignal", value);
-  if (Array.isArray(value) && value.every((item) => item != null))
-    return createList(value);
-  if (isRecord(value))
-    return createStore(value);
-  return createState(value);
-}
-function isComputed(value) {
-  return isMemo(value) || isTask(value);
-}
-function isSignal(value) {
-  return value != null && SIGNAL_TYPES.has(value[Symbol.toStringTag]);
-}
-function isMutableSignal(value) {
-  return isState(value) || isStore(value) || isList(value);
-}
-
-// src/nodes/slot.ts
-var settingSlots = new WeakSet;
-function isSignalOrDescriptor(value) {
-  if (isSignal(value))
-    return true;
-  return value !== null && typeof value === "object" && "get" in value && typeof value.get === "function";
-}
-function createSlot(initialSignal, options) {
-  validateSignalValue(TYPE_SLOT, initialSignal, isSignalOrDescriptor);
-  let delegated = initialSignal;
-  const guard = options?.guard;
+  };
+  const signals = new Map;
+  let keys = [];
+  const addSignal = (key) => {
+    signals.set(key, createMemo(() => readSource()[key], {
+      equals: DEEP_EQUALITY
+    }));
+  };
+  const syncKeys = (next) => {
+    const nextKeys = Object.keys(next);
+    if (keysEqual(keys, nextKeys))
+      return;
+    const nextSet = new Set(nextKeys);
+    for (const key of keys)
+      if (!nextSet.has(key))
+        signals.delete(key);
+    for (const key of nextKeys)
+      if (!signals.has(key))
+        addSignal(key);
+    keys = nextKeys;
+    node.flags |= FLAG_RELINK;
+  };
+  function buildValue() {
+    syncKeys(readSource());
+    const record = {};
+    for (const key of keys) {
+      try {
+        const v = signals.get(key)?.get();
+        if (v !== undefined)
+          record[key] = v;
+      } catch (e) {
+        if (!(e instanceof UnsetSignalValueError))
+          throw e;
+      }
+    }
+    return record;
+  }
   const node = {
-    fn: () => delegated.get(),
-    value: undefined,
+    fn: buildValue,
+    value: options?.initial ?? {},
     flags: FLAG_DIRTY,
     sources: null,
     sourcesTail: null,
     sinks: null,
     sinksTail: null,
-    equals: options?.equals ?? DEFAULT_EQUALITY,
+    equals: DEEP_EQUALITY,
     error: undefined
   };
-  const get = () => {
+  const ensureFresh = () => {
+    refreshComposite(node, buildValue, true);
+  };
+  syncKeys(untrack(readSource));
+  node.flags = FLAG_DIRTY;
+  const derived = readonlyFacade(() => {
     if (activeSink)
       link(node, activeSink);
-    refresh(node);
-    if (node.error)
-      throw node.error;
+    ensureFresh();
     return node.value;
-  };
-  const set = (next) => {
-    if (settingSlots.has(node))
-      throw new Error("[Slot] Circular delegation detected in set()");
-    settingSlots.add(node);
-    try {
-      if (isSlot(delegated))
-        return void delegated.set(next);
-      if ("set" in delegated && typeof delegated.set === "function") {
-        validateSignalValue(TYPE_SLOT, next, guard);
-        delegated.set(next);
-      } else {
-        throw new ReadonlySignalError(TYPE_SLOT);
-      }
-    } finally {
-      settingSlots.delete(node);
-    }
-  };
-  const replace = (next) => {
-    validateSignalValue(TYPE_SLOT, next, isSignalOrDescriptor);
-    delegated = next;
-    node.flags |= FLAG_DIRTY;
-    for (let e = node.sinks;e; e = e.nextSink)
-      propagate(e.sink);
-    if (batchDepth === 0)
-      flush();
-  };
-  return {
-    [Symbol.toStringTag]: TYPE_SLOT,
-    configurable: true,
-    enumerable: true,
-    get,
-    set,
-    replace,
-    current: () => delegated
-  };
+  }, () => {
+    if (activeSink)
+      link(node, activeSink);
+    ensureFresh();
+    return keys.values();
+  }, (key) => {
+    ensureFresh();
+    return signals.get(key);
+  });
+  const asyncSource = task && getAsyncSource(task);
+  if (asyncSource)
+    registerAsyncSource(derived, asyncSource);
+  return derived;
 }
-function isSlot(value) {
-  return isSignalOfType(value, TYPE_SLOT);
+function readonlyFacade(read, readKeys, readByKey) {
+  const store = {
+    [Symbol.toStringTag]: TYPE_STORE,
+    [Symbol.isConcatSpreadable]: false,
+    *[Symbol.iterator]() {
+      for (const key of readKeys()) {
+        const signal = readByKey(key);
+        if (signal)
+          yield [key, signal];
+      }
+    },
+    keys: readKeys,
+    byKey(key) {
+      return readByKey(key);
+    },
+    get: read
+  };
+  return new Proxy(store, storeProxyHandler);
+}
+function isStore(value) {
+  return isSignalOfType(value, TYPE_STORE);
+}
+function isMutableStore(value) {
+  return isStore(value) && typeof value.add === "function";
 }
 export {
   valueString,
   untrack,
   unown,
   match,
-  isTask,
   isStore,
-  isState,
   isSlot,
   isSignalOfType,
   isSignal,
-  isSensor,
   isRecord,
-  isObjectOfType,
+  isPending,
+  isMutableStore,
   isMutableSignal,
-  isMemo,
+  isMutableList,
   isList,
   isFunction,
-  isEqual,
-  isComputed,
-  isCollection,
   isAsyncFunction,
+  deriveStore,
+  deriveSignal,
+  deriveList,
   createTask,
   createStore,
   createState,
@@ -1845,13 +1916,11 @@ export {
   createSignal,
   createSensor,
   createScope,
-  createMutableSignal,
   createMemo,
   createList,
   createEffect,
-  createComputed,
-  createCollection,
   batch,
+  abort,
   UnsetSignalValueError,
   SKIP_EQUALITY,
   RequiredOwnerError,

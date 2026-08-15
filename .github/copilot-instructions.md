@@ -84,7 +84,7 @@ Cause & Effect is a reactive state management library for JavaScript and TypeScr
 - Lazy evaluation: memos only recompute when accessed and dirty
 - `trimSources()` removes stale edges after recomputation
 - `unlink()` calls `source.stop()` when the last sink disconnects (auto-cleanup)
-- Tree-shaking is a hard constraint: the sync-only core (`createState`, `createMemo`, `createEffect`) must stay under 4096 B gzipped. An import of one construction path must not pull in the others.
+- Tree-shaking is a hard constraint: the sync-only core (`createState`, `createMemo`, `createEffect`) must stay under 3072 B gzipped. An import of one construction path must not pull in the others.
 
 ### API Design Principles
 - All signals created via factory functions (no class constructors)

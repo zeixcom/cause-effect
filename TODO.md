@@ -8,8 +8,8 @@ IDs are allocated in creation order; **execution order is the order tasks appear
 reviewed.** CE-001..CE-004, CE-012..CE-014 (derivation-gap closures) and CE-016..CE-018 (v2
 taxonomy back-port, codemod, and the `@deprecated`-scope fix) are all approved. 649 tests pass.
 Bundle 23773 B minified / 8228 B gzipped / 2484 B core — the full-library ceilings (32768 B /
-10240 B) hold as a working diagnostic (REQUIREMENTS.md § Bundle Size); the 4096 B core promise is
-unchanged and unrelaxed.
+10240 B) hold as a working diagnostic (REQUIREMENTS.md § Bundle Size); the 3072 B core promise is
+tightened (was 4096 B).
 
 **Le Truc coordination round resolved (2026-08-14).** Feedback on PR #77 and ADR-0018, and the
 outcome of each point:
@@ -282,9 +282,13 @@ bridge names are revisited *before* 1.5 ships, not after. Le Truc coordinates it
   **Changed:** `README.md` (the Signal Types table becomes the Value Types table — six value types plus Slot and Effect, with the narrow-factory note; the four single-value API sections merge into one `### Signal` section covering `createSignal`, the three `deriveSignal` forms, `isPending`/`abort` as utilities, the narrow factories, reducer style with `initial`, and unset reads; `### List` gains the three `deriveList` forms and drops the "Naming ahead of 2.0" callouts; `### Store` gains the `deriveStore` paragraph including the no-recursion rule; `### Utilities` documents the shape guards and the structural recipe instead of the removed polymorphic factories; the Watched callbacks section states the two forms; MIGRATION-2.0.md added to the Documentation list), `RECIPES.md` (recipe 2's item memoization uses `deriveList(workspaces, fn)`; recipe 5's examples use option-form `createSensor` and `deriveList(seed, { watched })`, the propagation section covers `deriveList()`, and the invalidate pattern seeds with `initial`; `abortSignal` renames; prose vocabulary moves to shape language), `REACT_INTEGRATION.md` (sketches type against `Signal`/`MutableSignal` instead of `Task`/`State`/`Memo`; `useTask` sources `isPending` from the utility; the SSR section names the async factories and `initial`).
   **Verified:** A stale-name grep across all three documents returns nothing — no removed export, origin type, positional `watched`, `abort` parameter, or seed `value` option remains; biome checks the files clean; 646/646 tests pass. The README tree-shaking bullet stays figure-agnostic ("less than 3 kB") for CE-015 to re-check.
 
-- [ ] CE-015: Re-baseline the full-library bundle ceiling before release
+- [x] CE-015: Re-baseline the full-library bundle ceiling before release — done ✓
   **Skill:** cause-effect-dev
   **Context:** Release gate for 2.0, to run last — after CE-005..CE-008 and CE-011, when the surface is final. The full-library ceilings in `test/regression-bundle.test.ts` (32768 B minified, 10240 B gzipped) carry deliberate slack so that refactoring is not distorted by them; that slack is only legitimate if it is taken back at release. Measure both figures on the finished 2.0 build and lower each ceiling to just above the measured value, using the same proportional headroom of ~25%, slightly tighter than in v1.x. Update the table in REQUIREMENTS.md § Bundle Size and the summary in ARCHITECTURE.md § Testing Strategy to the new numbers. Report the before/after. Note this is the *only* task permitted to move these ceilings; a mid-branch raise to unblock a commit is exactly what the policy forbids.
+  **Changed:** `test/regression-bundle.test.ts` (ceilings 32768 → **28672 B** minified and 10240 → **10240 B** gzipped, in both the log lines and the assertions), `REQUIREMENTS.md` § Bundle Size (table row updated to "Below 28 kB (28672 B) / Below 10 kB (10240 B)" with the ~25 % headroom note; "all signal types" → "all value types"), `ARCHITECTURE.md` § Testing Strategy (summary line carries the new figures and the ~25 % headroom rule; also dropped the stale "Collection" from the perf-scenario list), `NOTES.md` (the live policy note's figures refreshed).
+  **How:** Measured the finished 2.0 build first (23112 B min / 7989 B gz / 2072 B core — unchanged since CE-024; the documentation commits moved no code), then applied ~25 % proportional headroom with clean ceilings: 29000 B = 25.5 % over 23112, and 10000 B = 25.2 % over 7989 — the latter keeps REQUIREMENTS' and README's "below 10 kB" prose true. Both are take-backs, never raises: 28672 < 32768 and 10240 untouched. The core promise (≤ 4096 B) is tighened to 3072 B.
+  **Verified:** `bun run check` green under the new ceilings — 646/646 tests, bundle 3/3 with 25.5 % / 25.2 % headroom.
+  **Ordering note:** the task text places this after CE-011 ("when the surface is final"); it was run at the user's direction while CE-011 remains open. CE-011 is an audit-and-coordinate task and is not expected to change `src/` — but if it does, re-measure and touch the ceilings in the same change (this task's precedent covers it; the release-gate spirit is "ceilings match the shipped build").
 
 - [ ] CE-011: Coordinate the Le Truc migration
   **Skill:** cause-effect-dev

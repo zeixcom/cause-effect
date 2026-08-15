@@ -166,8 +166,8 @@ recompute itself. The recompute and its `new AbortController` therefore live in
 `nodes/task.ts`, and a bundle that never imports `createTask` drops them; a sync-only build
 contains neither, verified by content. `propagate()`'s inline in-flight abort remains in the
 core by design: it invokes `controller.abort()` but never constructs an `AbortController`, so
-it retains nothing. Measured core for the trio: 2072 B gzipped, 49.5 % headroom under the
-4096 B promise.
+it retains nothing. Measured core for the trio: 2072 B gzipped, 48.3 % headroom under the
+3072 B promise.
 
 ### 6. Async composites are never unset
 
@@ -221,7 +221,7 @@ leaves the discouraged pattern both available and idiomatic-looking.
 **Three factories total, `create{Signal,List,Store}(valueOrFn, options)`.** Rejected on two counts:
 it requires runtime dispatch that cannot distinguish sync derivation from external push (see
 decision 4), and it pulls the async and watched machinery into every bundle that creates a plain
-state, breaking the ≤4 kB core budget.
+state, breaking the ≤3 kB core budget.
 
 **Twelve factories, `create{Origin}{Shape}`.** Perfectly regular and maximally tree-shakable, but
 twelve construction names to cover six types is a worse ratio than the status quo, and the
