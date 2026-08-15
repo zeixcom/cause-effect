@@ -205,6 +205,47 @@ this one. On this branch, CE-021 is now gated only on CE-025 and CE-026 landing 
   **Reviewed by architect ✓** — consistency review confirmed against `index.ts`; no code changes,
   docs only. Unblocks CE-021.
 
+- [ ] CE-030: Mark the origin-specific types and guards `@deprecated` ahead of their v2.0 removal
+  **Skill:** cause-effect-dev
+  **Context:** Found in a v1.5 ↔ v2.0 public-API cross-check (2026-08-16), run before the 1.5.0
+  publish. `v2/shape-exploration`'s `index.ts` exports none of `State`, `isState`, `Memo`, `isMemo`,
+  `Task`, `isTask`, `Sensor`, `isSensor`, `SensorCallback`, `SensorOptions`, `isComputed`, or
+  `ComputedOptions` — MIGRATION-2.0.md's "Origin guards" section already documents the removal
+  ("no mechanical replacement... usually the shape guards (`isSignal`, `isMutableSignal`) or a
+  plain property check"), but none of these twelve symbols carry an `@deprecated` JSDoc marker in
+  `release/1.5.0` today (`grep -rn '@deprecated' src/` finds none). This is the same silent-break
+  hazard CE-016/CE-025 exist to prevent for `List`/`Store`, just for full removal instead of a
+  meaning flip — a consumer using `isState`/`Task` etc. today gets no warning before 2.0 deletes
+  them. Add `@deprecated` JSDoc to each (`src/nodes/state.ts`: `State`, `isState`;
+  `src/nodes/memo.ts`: `Memo`, `isMemo`; `src/nodes/task.ts`: `Task`, `isTask`;
+  `src/nodes/sensor.ts`: `Sensor`, `isSensor`, `SensorCallback`, `SensorOptions`; `src/signal.ts`:
+  `isComputed`; `src/graph.ts`: `ComputedOptions`), pointing at `isSignal`/`isMutableSignal` or a
+  plain property check per MIGRATION-2.0.md's own guidance, and linking `MIGRATION-2.0.md`'s
+  "Origin guards" section. **Also decide:** MIGRATION-2.0.md says `createComputed` and
+  `createMutableSignal` need "no action until 2.0" because they're "subsumed... no action needed
+  until 2.0" — but `createSignal`/`deriveSignal` already exist in 1.x today (CE-006 landed them on
+  `v2/shape-exploration`, not yet back-ported to 1.5), so the same born-deprecated-hazard argument
+  applies once a 1.x replacement exists. If `createSignal`'s dispatch semantics are considered a
+  1.5-compatible bridge, deprecate `createComputed`/`createMutableSignal` here too; otherwise leave
+  the MIGRATION-2.0.md text as the documented decision and note why in this task's handoff. No
+  runtime behavior changes — JSDoc only. Blocks npm publish of 1.5.0.
+
+- [ ] CE-031: Mark `Collection`'s auxiliary callback/options types `@deprecated`
+  **Skill:** cause-effect-dev
+  **Context:** Found in the same cross-check as CE-030 (2026-08-16). `Collection`, `isCollection`,
+  `createCollection`, and `.deriveCollection()` are already `@deprecated` (CE-016/CE-026), but six
+  supporting types in `src/nodes/collection.ts` are not: `CollectionCallback`, `CollectionChanges`,
+  `CollectionOptions`, `CollectionSource`, `DeriveCollectionCallback`, `DeriveCollectionOptions`.
+  None of the six exist in `v2/shape-exploration`'s `index.ts` — `list.ts` there exports
+  `ListCallback`, `ListChanges`, and `ListSource` instead (per CE-022's landed renames), and
+  `DeriveListOptions` alone covers what `DeriveCollectionOptions`/`DeriveListOptions` split between
+  them in 1.5. `CollectionSource` → `ListSource` is already flagged in MIGRATION-2.0.md's "What the
+  codemod cannot decide" section as a manual rename, but the type itself carries no `@deprecated`
+  marker pointing there. Add `@deprecated` JSDoc to all six, naming the 2.0 successor where one
+  exists (`CollectionSource` → `ListSource`) and noting "removed in v2.0, folded into `deriveList`'s
+  own options/callback shape" for the rest. No runtime behavior changes — JSDoc only. Blocks npm
+  publish of 1.5.0.
+
 - [x] CE-021: Prepare and tag the 1.5.0 release — done, pending publish ⏳
   **Skill:** changelog-keeper
   **Context:** The v2-side gate is satisfied — see the Go decision note above (ADR-0018 ✅
@@ -217,6 +258,11 @@ this one. On this branch, CE-021 is now gated only on CE-025 and CE-026 landing 
   plan note above); the performance-baseline re-point against the published release, required for
   this minor bump per `../cause-effect-dev/workflows/update-perf-baseline.md` step 1, which needs
   the version live on npm first.
+  **Blocked on CE-030 and CE-031** (found 2026-08-16, after this task closed): a v1.5 ↔ v2.0
+  public-API cross-check found twelve origin-specific types/guards and six `Collection` auxiliary
+  types that v2.0 removes without any `@deprecated` marker in 1.5 today. Both are JSDoc-only,
+  non-breaking, and belong in the 1.5.0 release that ships before the removal — do not publish
+  until they land.
 
 ---
 
