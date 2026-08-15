@@ -305,7 +305,7 @@ this one. On this branch, CE-021 is now gated only on CE-025 and CE-026 landing 
   is a pure backward-compatible widening. Superseded by **CE-033**, which does the actual bridge
   work; this task's `MIGRATION-2.0.md` edit is rewritten there. `NOTES.md` entry deleted.
 
-- [x] CE-033: Back-port `ListSource`/`ListCallback`/`ListChanges`/`PerItemCallback` bridge names — done, pending review ⏳
+- [x] CE-033: Back-port `ListSource`/`ListCallback`/`ListChanges`/`PerItemCallback` bridge names — reviewed ✓
   **Skill:** cause-effect-dev
   **Context:** Reverses CE-031's initial "accept the rename at 2.0" call for the five `Collection`
   auxiliary types that block on `CollectionOptions` alone (see CE-031's Review note above for the
@@ -381,6 +381,30 @@ this one. On this branch, CE-021 is now gated only on CE-025 and CE-026 landing 
   CE-032's figures, confirming the predicted zero bundle-size delta. `types/` regenerated from a
   clean `tsc --project tsconfig.build.json`; diff matches the four new exports exactly, nothing
   unexpected.
+  **Review:** Approved ✓. Read the full diff, independently re-ran `bun run check` (reproduces
+  exactly: 658/658, tsc clean, 24060 B/8299 B/2481 B core). `deriveList`'s own signature, plus
+  every internal caller (`deriveCollection`, `collectionFacade`, `keyedAdapter`, `MutableList`'s
+  `.deriveCollection()` in `list.ts`), is fully migrated off the deprecated names — confirmed by
+  reading, not assumed from the summary. The `DeriveCollectionOptions` fold (inline duplication
+  of the 2-field shape rather than a `Pick<>` derivation) is the right call: simpler, matches how
+  v2 actually flattens it, and avoids coupling the deprecated type's definition to the live one's
+  internals.
+  **Codemod cross-check requested by the user:** No — `v2/shape-exploration`'s
+  `tools/codemod-v2.ts` does **not** have these four renames. `git show
+  v2/shape-exploration:tools/codemod-v2.ts` shows a `RENAMES` map with only the original four
+  entries (`List`/`isList`/`Collection`/`isCollection`); `git log` on that path shows it was last
+  touched by CE-022 ("take the vocabulary reductions"), before CE-025/CE-032/CE-033 existed. This
+  isn't a CE-033 defect — the two branches have run concurrently since `git merge-base
+  release/1.5.0 v2/shape-exploration` (commit `25351de`), and CE-022 trimmed that copy to only
+  what `v2/shape-exploration`'s own task list needed. But it does mean the two branches now carry
+  **diverging copies of the same file**, and whichever branch 2.0 actually ships from needs the
+  superset (all of `release/1.5.0`'s renames plus anything `v2/shape-exploration`-specific) before
+  publishing the 2.0 codemod. Not blocking 1.5.0 — `release/1.5.0`'s copy is complete for what
+  1.5.0 ships. Flagging for whoever runs the eventual branch integration (likely resolves for free
+  in a normal merge of `release/1.5.0` forward, but worth a deliberate check rather than assuming
+  git resolves it silently correctly, since the two copies now differ in *content*, not just
+  commit history — a merge could pick either side depending on which changed the surrounding
+  lines). No task filed — this is a pre-2.0-release checklist item, not 1.5.0 work.
 
 - [x] CE-032: Back-port `deriveSignal` and deprecate `createComputed`/`createMutableSignal` — reviewed ✓
   **Skill:** cause-effect-dev
@@ -469,14 +493,13 @@ this one. On this branch, CE-021 is now gated only on CE-025 and CE-026 landing 
   plan note above); the performance-baseline re-point against the published release, required for
   this minor bump per `../cause-effect-dev/workflows/update-perf-baseline.md` step 1, which needs
   the version live on npm first.
-  **CE-030 and CE-032 landed and reviewed (2026-08-16); CE-031 landed and reviewed but reopened
-  a follow-up, CE-033** — CE-031's initial "accept the rename at 2.0" call for five `Collection`
-  auxiliary types was revised same-day after pushback; CE-033 now does the actual bridge-name
-  work those five need. **Blocks npm publish on CE-033**, alongside the still-open follow-up:
-  `CHANGELOG.md` now has a `## [Unreleased]` section above `## 1.5.0` again (CE-032's entries,
-  and CE-033 will add more) — fold it into `## 1.5.0` (there is no actual 1.5.1 here, just
-  release-prep work that landed after this task's own changelog rename) before publishing, or
-  this task's own "rename `[Unreleased]` to the version" step will need re-running.
+  **CE-030, CE-031, CE-032, and CE-033 all landed and reviewed (2026-08-16)** — the v1.5 ↔ v2.0
+  public-API cross-check that opened them, and CE-031's same-day reopened follow-up, are both
+  closed. Nothing further blocks npm publish from the API side. **Still open before publishing:**
+  `CHANGELOG.md` has a `## [Unreleased]` section above `## 1.5.0` (CE-032's and CE-033's entries)
+  — fold it into `## 1.5.0` (there is no actual 1.5.1 here, just release-prep work that landed
+  after this task's own changelog rename) before publishing, or this task's own "rename
+  `[Unreleased]` to the version" step will need re-running. Handed to changelog-keeper.
 
 ---
 
