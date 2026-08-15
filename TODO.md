@@ -205,16 +205,18 @@ this one. On this branch, CE-021 is now gated only on CE-025 and CE-026 landing 
   **Reviewed by architect ✓** — consistency review confirmed against `index.ts`; no code changes,
   docs only. Unblocks CE-021.
 
-- [ ] CE-021: ⚠️ Prepare and tag the 1.5.0 release — gated
+- [x] CE-021: Prepare and tag the 1.5.0 release — done, pending publish ⏳
   **Skill:** changelog-keeper
   **Context:** The v2-side gate is satisfied — see the Go decision note above (ADR-0018 ✅
-  Accepted 2026-08-15). Depends on CE-025, CE-026, and CE-029 — Le Truc round 2 endorses PR #78 for
-  merge *with* the CE-025/CE-026 additions while the release is still in draft. Follow the
-  skill's `<preparing_a_release>` steps: rename
-  `## [Unreleased]` to `## 1.5.0`, bump `version` in `package.json` and the `@version` tag in
-  `index.ts`, then re-point the performance baseline at the published release — required for this
-  minor bump, per `../cause-effect-dev/workflows/update-perf-baseline.md`. Coordinate the actual
-  npm publish with Le Truc's 2.5 release per the Branch plan note above.
+  Accepted 2026-08-15). CE-025, CE-026, and CE-029 all landed and reviewed.
+  **Changed:** `CHANGELOG.md` (`## [Unreleased]` renamed to `## 1.5.0`), `package.json` (`version`
+  1.4.1 → 1.5.0), `index.ts` (`@version` tag 1.4.1 → 1.5.0).
+  **Verified:** `bun run check` green — 644/644 tests, `tsc --noEmit` clean, bundle 23851 B min /
+  8220 B gz / 2478 B core, all under ceiling.
+  **Remaining, not automated:** npm publish (coordinate with Le Truc's 2.5 release per the Branch
+  plan note above); the performance-baseline re-point against the published release, required for
+  this minor bump per `../cause-effect-dev/workflows/update-perf-baseline.md` step 1, which needs
+  the version live on npm first.
 
 ---
 
