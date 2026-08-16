@@ -141,3 +141,4 @@ test/regression-baseline.json
 .claude/settings.local.json
 .DS_Store
 .vibe/config.toml
+.mimosa/

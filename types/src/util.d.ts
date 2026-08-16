@@ -5,7 +5,7 @@ declare function isSyncFunction<T extends unknown & {
 }>(fn: unknown): fn is (...args: unknown[]) => T;
 /**
  * @deprecated Use `isSignalOfType()` for signal type guards.
- * This function allocates two strings per call and will be removed in a future release.
+ * This function allocates two strings per call. Removal is planned for v2.0.
  */
 declare function isObjectOfType<T>(value: unknown, type: string): value is T;
 declare function isSignalOfType<T>(value: unknown, type: string): value is T;

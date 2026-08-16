@@ -20,6 +20,8 @@ For development work on the library itself, use the `cause-effect-dev` skill ins
 **`createEffect` must be inside an owner.** Always wrap effect creation in `createScope` or nest it inside another effect.
 
 **Never guess API shapes or behaviors.** The answers are in `references/`. If the embedded knowledge is insufficient, check the library's README or GUIDE — do not invent behavior.
+
+**Prefer deriving over writing imperatively.** When a signal's value should track another signal or an async source, use `deriveStore`, `deriveList`, `createMemo`, or `createTask` rather than an effect that calls `.set()`/`.update()` on a target signal. `deriveStore(async (prev, abort) => …, { initial })` and `deriveList(source, itemCallback)` cover the common case of filling a Store or List from an async or another signal directly. See `deriving_vs_writing` in references/signal-types.md.
 </essential_principles>
 
 <intake>

@@ -208,6 +208,8 @@ createEffect(() => console.log('User:', user.get())) // watch the full object
 
 Access a property with `.byKey()`, or directly as `user.name` through the Proxy. Iterate with the reactive `.keys()` method to observe structural changes. Add and remove properties with `.add(key, value)` and `.remove(key)`.
 
+> **Naming ahead of 2.0:** the mutable store type is also exported as `MutableStore` — the name it keeps in 2.0, where `Store` becomes the readonly base (today's `DerivedStore`). `isMutableStore()` is the matching guard; unlike the tag-based `isStore()`, it rejects a derived store. See [MIGRATION-2.0.md](MIGRATION-2.0.md).
+
 ### List
 
 A reactive array with individually reactive items and stable keys. Each item becomes its own signal and keeps its identity through sorting and reordering.
@@ -242,6 +244,8 @@ const users = createList(
 ```
 
 To rebuild a list from inside a reactive handler, use `.set()` or `.update()` rather than a remove-then-add loop, which throws `EffectConvergenceError`. See [Rebuilding a List from a reactive handler](RECIPES.md#3-rebuilding-a-list-from-a-reactive-handler).
+
+> **Naming ahead of 2.0:** the mutable list type is also exported as `MutableList` — the name it keeps in 2.0, where `List` becomes the readonly base (today's `Collection`). `isMutableList()` is the matching guard. See [MIGRATION-2.0.md](MIGRATION-2.0.md).
 
 ### Collection
 
@@ -293,6 +297,8 @@ const processed = users
   .deriveCollection(user => ({ ...user, active: user.lastLogin > threshold }))
   .deriveCollection(user => user.active ? `Active: ${user.name}` : `Inactive: ${user.name}`)
 ```
+
+> **Naming ahead of 2.0:** the `Collection` type is deprecated as of 1.5.0 — use `DerivedList`, the type `deriveList()` returns, and the `isDerivedList()` guard. `createCollection(watched, options)` is deprecated in favor of `deriveList(seed, { watched, … })`. In 2.0, the readonly base is named `List`. See [MIGRATION-2.0.md](MIGRATION-2.0.md).
 
 ### Slot
 
@@ -393,6 +399,8 @@ An `ok` or `err` handler may return a `Promise`, but must not write signal state
 ### Utilities
 
 Polymorphic factories (`createSignal`, `createMutableSignal`, `createComputed`) and type predicates (`isSignal`, `isMutableSignal`, `isComputed`) serve generic and library-author code. See [Utilities for generic code](GUIDE.md#utilities-for-generic-code).
+
+> **Naming ahead of 2.0:** `createSignal`'s shape sniffing (array → `List`, record → `Store`, function → `Memo`/`Task`) is removed with no replacement export, and `createComputed`/`createMutableSignal` are subsumed by `deriveSignal`/`createSignal`. See [MIGRATION-2.0.md](MIGRATION-2.0.md).
 
 ## Advanced Usage
 

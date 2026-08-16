@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import {
+	abort,
 	createComputed,
+	createEffect,
 	createList,
 	createMemo,
 	createMutableSignal,
@@ -10,6 +12,8 @@ import {
 	createState,
 	createStore,
 	createTask,
+	deriveSignal,
+	InvalidCallbackError,
 	InvalidSignalValueError,
 	isComputed,
 	isList,
@@ -26,6 +30,7 @@ import {
 	type State,
 	type Store,
 	type Task,
+	UnsetSignalValueError,
 } from '../index.ts'
 
 /* === Tests === */
@@ -58,6 +63,100 @@ describe('createComputed', () => {
 		)
 		expect(isMemo(result)).toBe(true) // misclassified before invocation, as documented
 		expect(() => result.get()).toThrow(PromiseValueError)
+	})
+})
+
+describe('deriveSignal', () => {
+	test('sync function derives a Memo, returned as Signal', () => {
+		const count = createState(2)
+		const doubled = deriveSignal(() => count.get() * 2)
+		expect(isMemo(doubled)).toBe(true)
+		expect(doubled.get()).toBe(4)
+
+		const typedResult: Signal<number> = doubled
+		expect(typedResult).toBeDefined()
+	})
+
+	test('async function derives a Task, returned as Signal', () => {
+		const cleanup = createScope(() => {
+			const result = deriveSignal(async () => 'hello', { initial: '' })
+			expect(isTask(result)).toBe(true)
+
+			const typedResult: Signal<string> = result
+			expect(typedResult).toBeDefined()
+		})
+		cleanup()
+	})
+
+	test('async function initial is optional, unlike deriveList/deriveStore', () => {
+		const cleanup = createScope(() => {
+			const result = deriveSignal(async () => 'hello')
+			expect(() => result.get()).toThrow(UnsetSignalValueError)
+		})
+		cleanup()
+	})
+
+	test('seed value with watched derives a Sensor, returned as Signal', () => {
+		const cleanup = createScope(() => {
+			let push: (next: number) => void = () => {}
+			const result = deriveSignal(0, {
+				watched: set => {
+					push = set
+					return () => {}
+				},
+			})
+			const seen: number[] = []
+			createEffect(() => {
+				seen.push(result.get())
+			})
+			push(1)
+			expect(seen).toEqual([0, 1])
+
+			const typedResult: Signal<number> = result
+			expect(typedResult).toBeDefined()
+		})
+		cleanup()
+	})
+
+	test('throws InvalidCallbackError when the seed form omits watched', () => {
+		expect(() =>
+			// biome-ignore lint/suspicious/noExplicitAny: testing invalid input
+			deriveSignal(0, {} as any),
+		).toThrow(InvalidCallbackError)
+	})
+
+	test('sync/async forms accept the same watched(invalidate) lifecycle as createMemo/createTask', () => {
+		const cleanup = createScope(() => {
+			let invalidate: () => void = () => {}
+			let calls = 0
+			const result = deriveSignal(
+				() => {
+					calls++
+					return calls
+				},
+				{
+					watched: inv => {
+						invalidate = inv
+						return () => {}
+					},
+				},
+			)
+			createEffect(() => {
+				result.get()
+			})
+			expect(calls).toBe(1)
+			invalidate()
+			expect(calls).toBe(2)
+		})
+		cleanup()
+	})
+
+	test('interoperates with isPending/abort like a Task built with createTask', () => {
+		const cleanup = createScope(() => {
+			const result = deriveSignal(async () => 'hello', { initial: '' })
+			expect(() => abort(result)).not.toThrow()
+		})
+		cleanup()
 	})
 })
 

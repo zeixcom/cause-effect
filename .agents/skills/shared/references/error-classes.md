@@ -32,7 +32,7 @@ All error classes are defined in `src/errors.ts` for library development.
 | `NullishSignalValueError` | Signal value is `null` or `undefined` |
 | `InvalidSignalValueError` | Value fails the `guard` predicate |
 | `InvalidCallbackError` | A required callback argument is not a function |
-| `DuplicateKeyError` | List/Collection key collision on insert |
+| `DuplicateKeyError` | List/DerivedList key collision on insert |
 | `UnsetSignalValueError` | Reading a Sensor or Task before it has produced its first value |
 | `ReadonlySignalError` | Attempting to write to a read-only signal |
 | `RequiredOwnerError` | `createEffect` called outside an owner (scope or parent effect) |
@@ -73,8 +73,8 @@ errors like passing `undefined` or a non-function value by mistake.
 </InvalidCallbackError>
 
 <DuplicateKeyError>
-Thrown when inserting an item into a List or Collection whose key already exists. Keys must
-be unique within a given List or Collection.
+Thrown when inserting an item into a List or DerivedList whose key already exists. Keys must
+be unique within a given List or DerivedList.
 
 **Fix:** use the collection's update or set method to change an existing entry rather than
 inserting a new one with the same key.

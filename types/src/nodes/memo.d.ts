@@ -3,6 +3,11 @@ import { type ComputedOptions, type MemoCallback } from '../graph';
  * A derived reactive computation that caches its result.
  * Automatically tracks dependencies and recomputes when they change.
  *
+ * @deprecated `Memo` is removed in v2.0 with no mechanical replacement — origin is no longer
+ * part of the consumption contract. Use `isSignal`/`isMutableSignal` or a plain property check
+ * instead of matching on this type. See [MIGRATION-2.0.md](../../MIGRATION-2.0.md) § Origin
+ * guards and [ADR-0018](../../adr/0018-shape-indexed-signal-types.md).
+ *
  * @template T - The type of value computed by the memo
  */
 type Memo<T extends {}> = {
@@ -53,6 +58,10 @@ declare function createMemo<T extends {}>(fn: (prev: T) => T, options: ComputedO
 declare function createMemo<T extends {}>(fn: MemoCallback<T>, options?: ComputedOptions<T>): Memo<T>;
 /**
  * Checks if a value is a Memo signal.
+ *
+ * @deprecated Removed in v2.0 with no mechanical replacement — use `isSignal`/`isMutableSignal`
+ * or a plain property check instead. See [MIGRATION-2.0.md](../../MIGRATION-2.0.md) § Origin
+ * guards.
  *
  * @since 0.18.0
  * @param value - The value to check

@@ -1,19 +1,18 @@
 /**
  * @name Cause & Effect
- * @version 1.4.1
+ * @version 1.5.0
  * @author Esther Brunner
  */
 export { CircularDependencyError, DuplicateKeyError, EffectConvergenceError, type Guard, InvalidCallbackError, InvalidSignalValueError, InvalidStoreMutationError, NullishSignalValueError, PromiseValueError, ReadonlySignalError, RequiredOwnerError, UnsetSignalValueError, } from './src/errors';
-/** @deprecated Use `DEEP_EQUALITY` instead. */
-export { batch, type Cleanup, type ComputedOptions, createScope, DEEP_EQUALITY, DEFAULT_EQUALITY, type EffectCallback, isEqual, type MaybeCleanup, type MemoCallback, type ScopeOptions, type Signal, type SignalOptions, SKIP_EQUALITY, type TaskCallback, unown, untrack, } from './src/graph';
-export { type Collection, type CollectionCallback, type CollectionChanges, type CollectionOptions, createCollection, type DeriveCollectionCallback, isCollection, } from './src/nodes/collection';
+export { abort, batch, type Cleanup, type ComputedOptions, createScope, DEEP_EQUALITY, DEFAULT_EQUALITY, type EffectCallback, isEqual, isPending, type MaybeCleanup, type MemoCallback, type ScopeOptions, type Signal, type SignalOptions, SKIP_EQUALITY, type TaskCallback, unown, untrack, } from './src/graph';
+export { type Collection, type CollectionCallback, type CollectionChanges, type CollectionOptions, type CollectionSource, createCollection, type DeriveCollectionCallback, type DeriveCollectionOptions, type DerivedList, type DeriveListOptions, deriveList, isCollection, isDerivedList, type ListCallback, type ListChanges, type ListSource, type PerItemCallback, } from './src/nodes/collection';
 export { createEffect, type MatchHandlers, type MaybePromise, match, type SingleMatchHandlers, } from './src/nodes/effect';
-export { createList, isList, type KeyConfig, type List, type ListOptions, } from './src/nodes/list';
+export { createList, isList, isMutableList, type KeyConfig, type List, type ListOptions, type MutableList, } from './src/nodes/list';
 export { createMemo, isMemo, type Memo } from './src/nodes/memo';
 export { createSensor, isSensor, type Sensor, type SensorCallback, type SensorOptions, } from './src/nodes/sensor';
 export { createSlot, isSlot, type Slot, type SlotDescriptor, } from './src/nodes/slot';
 export { createState, isState, type State, type UpdateCallback, } from './src/nodes/state';
-export { createStore, isStore, type Store, type StoreOptions, } from './src/nodes/store';
+export { createStore, type DerivedStore, type DeriveStoreOptions, deriveStore, isMutableStore, isStore, type MutableStore, type Store, type StoreCallback, type StoreOptions, } from './src/nodes/store';
 export { createTask, isTask, type Task } from './src/nodes/task';
-export { createComputed, createMutableSignal, createSignal, isComputed, isMutableSignal, isSignal, type MutableSignal, } from './src/signal';
+export { createComputed, createMutableSignal, createSignal, type DeriveSignalOptions, deriveSignal, isComputed, isMutableSignal, isSignal, type MutableSignal, } from './src/signal';
 export { isAsyncFunction, isFunction, isObjectOfType, isRecord, isSignalOfType, valueString, } from './src/util';

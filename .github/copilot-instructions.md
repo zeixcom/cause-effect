@@ -20,9 +20,9 @@ Cause & Effect is a reactive state management library for JavaScript and TypeScr
 - **Sensor** (`createSensor`): Read-only source for external input. Activates when watched. Use `SKIP_EQUALITY` when the reference stays the same and internal state changes.
 - **Memo** (`createMemo`): Synchronous computed with memoization. Supports a reducer form and an optional `watched(invalidate)` callback
 - **Task** (`createTask`): Asynchronous computed. Cancels through an AbortController. Supports an optional `watched(invalidate)` callback
-- **Store** (`createStore`): Proxy-based reactive object with a per-property State, Store, or List signal
-- **List** (`createList`): Reactive array with stable keys and a per-item State signal
-- **Collection** (`createCollection`): Keyed items with per-item memoization. Either externally driven with a watched lifecycle, or derived from a List or a Collection. Not a reactive `Map`
+- **Store** (`createStore`): Proxy-based reactive object with a per-property State, Store, or List signal. Also exported as `MutableStore` — the name it keeps in 2.0, where `Store` is repurposed as the readonly base. `Store`/`isStore` are `@deprecated` since 1.5.0 in favor of `MutableStore`/`isMutableStore`. See `MIGRATION-2.0.md`.
+- **List** (`createList`): Reactive array with stable keys and a per-item State signal. Also exported as `MutableList` — the name it keeps in 2.0, where `List` is repurposed as the readonly base. `List`/`isList` are `@deprecated` since 1.5.0 in favor of `MutableList`/`isMutableList`.
+- **Collection** (`createCollection`): Keyed items with per-item memoization. Either externally driven with a watched lifecycle, or derived from a List or a Collection. Not a reactive `Map`. `createCollection`, `Collection`/`isCollection`, and `.deriveCollection()` are all `@deprecated` since 1.5.0 — use `deriveList(seed, { watched })` / `deriveList(source, itemFn)`, which return `DerivedList`/`isDerivedList` (the 2.0 name is `List`).
 - **Slot** (`createSlot`): Forwarding layer to a swappable backing signal, for integration layers such as property descriptors and custom elements. Not an event bus, and has no `update()`
 - **Effect** (`createEffect`): Terminal sink that runs side effects. Runs synchronously
 
@@ -35,9 +35,9 @@ Cause & Effect is a reactive state management library for JavaScript and TypeScr
 - `src/nodes/memo.ts` - createMemo, isMemo, Memo type
 - `src/nodes/task.ts` - createTask, isTask, Task type
 - `src/nodes/effect.ts` - createEffect, match, MatchHandlers type
-- `src/nodes/store.ts` - createStore, isStore, Store type, diff, isEqual
-- `src/nodes/list.ts` - createList, isList, List type
-- `src/nodes/collection.ts` - createCollection, isCollection, Collection type, deriveCollection (internal)
+- `src/nodes/store.ts` - createStore, deriveStore, MutableStore/isMutableStore, Store/isStore (deprecated), DerivedStore, diff, isEqual
+- `src/nodes/list.ts` - createList, MutableList/isMutableList, List/isList (deprecated)
+- `src/nodes/collection.ts` - deriveList, DerivedList/isDerivedList, createCollection/Collection/isCollection/deriveCollection (all deprecated)
 - `src/nodes/slot.ts` - createSlot, isSlot, Slot type
 - `src/signal.ts` - Polymorphic factories (createSignal, createMutableSignal, createComputed) and type predicates (isSignal, isMutableSignal, isComputed)
 - `src/util.ts` - Utility functions and type checks
@@ -53,14 +53,14 @@ Cause & Effect is a reactive state management library for JavaScript and TypeScr
 - JSDoc comments for all public APIs
 
 ### Naming Conventions
-- Factory functions: `create*` (e.g., `createState`, `createMemo`, `createEffect`, `createStore`, `createList`, `createCollection`, `createSensor`, `createSlot`)
-- Type predicates: `is*` (e.g., `isState`, `isMemo`, `isStore`, `isList`, `isCollection`, `isSensor`, `isSlot`)
+- Factory functions: `create*` for sources (e.g., `createState`, `createStore`, `createList`, `createSensor`, `createSlot`), `derive*` for the read-only forms (`deriveStore`, `deriveList`)
+- Type predicates: `is*` (e.g., `isState`, `isMemo`, `isMutableStore`, `isMutableList`, `isDerivedList`, `isSensor`, `isSlot`). `isStore`, `isList`, `isCollection` are `@deprecated` 1.x aliases.
 - Type constants: `TYPE_*` for internal type tags
 - Callback types: `*Callback` suffix (MemoCallback, TaskCallback, EffectCallback, SensorCallback, CollectionCallback, DeriveCollectionCallback)
 - Private variables: use descriptive names, no underscore prefix
 
 ### Error Handling
-- Error classes defined in `src/errors.ts`: CircularDependencyError, NullishSignalValueError, InvalidSignalValueError, InvalidCallbackError, RequiredOwnerError, UnsetSignalValueError
+- Error classes defined in `src/errors.ts`: CircularDependencyError, DuplicateKeyError, EffectConvergenceError, InvalidCallbackError, InvalidSignalValueError, InvalidStoreMutationError, NullishSignalValueError, PromiseValueError, ReadonlySignalError, RequiredOwnerError, UnsetSignalValueError
 - `validateSignalValue()` and `validateCallback()` for input validation at public API boundaries
 - Optional `guard` function in SignalOptions for runtime type checking
 - AbortSignal for cancellation in async Tasks
@@ -143,7 +143,8 @@ const userData = createTask(async (prev, abort) => {
   return response.json()
 })
 
-// Collection derived from a List
+// Collection derived from a List — prefer deriveList(source, itemFn) over the
+// deprecated .deriveCollection() method shown here (same behavior, current name)
 const numbers = createList([1, 2, 3])
 const doubledItems = numbers.deriveCollection((n: number) => n * 2)
 // Async form: annotate both parameters — overload resolution picks the sync
@@ -199,7 +200,7 @@ function createSignal<T extends {}>(value: T): Signal<T>
 // Type predicates for runtime checks
 if (isState(value)) value.set(newValue)
 if (isMemo(value)) console.log(value.get())
-if (isStore(value)) value.name.set('Bob')
+if (isMutableStore(value)) value.name.set('Bob') // isStore also matches, but is deprecated and matches a DerivedStore too
 
 // Guards for runtime type validation
 const count = createState(0, {

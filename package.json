@@ -1,6 +1,6 @@
 {
 	"name": "@zeix/cause-effect",
-	"version": "1.4.1",
+	"version": "1.5.0",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/zeixcom/cause-effect"
@@ -31,6 +31,7 @@
 		"@zeix/cause-effect-stable": "npm:@zeix/cause-effect@1.4.1",
 		"mitata": "^1.0.34",
 		"random": "^5.4.1",
+		"ts-morph": "^28.0.0",
 		"typescript": "^6.0.3"
 	},
 	"peerDependencies": {
