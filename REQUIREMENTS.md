@@ -51,6 +51,8 @@ An imperative write from inside an effect creates a dependency the graph cannot 
 
 A developer reaches for this pattern when the library offers no derivation for the shape they need. The corrective is therefore an API in which no such gap exists, and in which a derived signal has no setter to reach for. Writing *outward* — to the DOM, the network, or storage — remains what an effect is for.
 
+[ADR-0019](adr/0019-signal-writes-in-effects-throw-at-runtime.md) proposes enforcing this boundary at runtime — a public mutator called synchronously during an effect body would throw `EffectWriteError` — but it is not accepted. Parked pending a more targeted design; see the ADR's Status section.
+
 ### Minimal Surface, Maximum Coverage
 Signal types are indexed by the **shape** of the data and by whether the consumer may write. They are not indexed by origin. How a signal came to hold its value is a property of its construction, not of its consumption contract.
 
