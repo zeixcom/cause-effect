@@ -467,7 +467,6 @@ function collectionFacade<T extends {}, S extends Signal<T>>(
  * `Signal<U[]>` is keyed on read — see `keyedAdapter`. This is what lets an asynchronous
  * array (`Task<U[]>`) become a keyed collection without an intermediate effect.
  *
- * @since 0.18.0
  * @param source - The source to derive from: a List, a Collection, or any `Signal<U[]>`
  * @param callback - Transformation function applied to each item
  * @param options - Key generation and item equality. Applies only to an unkeyed source.

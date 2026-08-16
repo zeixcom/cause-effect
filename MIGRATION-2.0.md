@@ -74,12 +74,10 @@ narrow it to `DerivedList<T>` today — or do nothing, and let it become the v2 
 the 2.0 boundary. Either is safe; leaving it `MutableList` is merely more permissive than
 necessary.
 
-**`.deriveCollection(fn)` methods.** Deprecated as of 1.5.0. Both forms are **removed in
-2.0** — the method on `MutableList`/`DerivedList` and the module-level `deriveCollection`
-(which 1.5.0 already unexports) — folded into the top-level `deriveList(source, itemFn)`.
-A chain `users.deriveCollection(f)` becomes `deriveList(users, f)` — mechanically findable,
-but the codemod deliberately leaves methods alone so your pipelines stay diffable. Migrate
-by hand when you adopt the other v2 renames.
+**`.deriveCollection(fn)` methods.** Deprecated as of 1.5.0, **removed in 2.0** — folded into
+the top-level `deriveList(source, itemFn)`. A chain `users.deriveCollection(f)` becomes
+`deriveList(users, f)` — mechanically findable, but the codemod deliberately leaves methods
+alone so your pipelines stay diffable. Migrate by hand when you adopt the other v2 renames.
 
 **`DeriveCollectionOptions<T>`.** Folds into `deriveList`'s own `DeriveListOptions<T>` in 2.0 —
 no separate name survives, so it is the one 1.5 auxiliary type in this area with no bridge name.
