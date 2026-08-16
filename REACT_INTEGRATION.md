@@ -123,15 +123,15 @@ function useSignalProp<T extends {}>(value: T): State<T> {
 
 ```tsx
 import { useSignal } from './use-signal'
-import type { MutableList, State } from '@zeix/cause-effect'
+import type { MutableList, MutableSignal } from '@zeix/cause-effect'
 import type { ReactNode } from 'react'
 
-function Each<T extends {}>({
+function Each<T extends {}, S extends MutableSignal<T> = MutableSignal<T>>({
   list,
   children,
 }: {
-  list: MutableList<T>
-  children: (signal: State<T>, key: string) => ReactNode
+  list: MutableList<T, S>
+  children: (signal: S, key: string) => ReactNode
 }) {
   const keys = useSignal(/* subscribe to list structural changes */)
   return <>{keys.map(key => children(list.byKey(key), key))}</>

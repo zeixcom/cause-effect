@@ -93,7 +93,7 @@ Use a `List` to manage structural integrity (adding or removing items). `List` p
 ### Example
 
 ```typescript
-import { createList, createMemo, createEffect, batch } from '@zeix/cause-effect';
+import { createList, createMemo, createEffect, deriveList, batch } from '@zeix/cause-effect';
 
 // 1. Define a complex nested list structure using a stable key
 const workspaces = createList([
@@ -101,10 +101,9 @@ const workspaces = createList([
   { id: 'w2', name: 'Design', members: ['Charlie'], active: false }
 ], { keyConfig: w => w.id });
 
-// 2. Item-level memoization via deriveCollection (deprecated since 1.5.0 —
-// prefer deriveList(workspaces, itemFn), same behavior, current name)
+// 2. Item-level memoization via deriveList
 // This function only re-evaluates for the specific workspace that has been updated
-const activeMemberCount = workspaces.deriveCollection(workspace => {
+const activeMemberCount = deriveList(workspaces, workspace => {
   return workspace.active ? workspace.members.length : 0;
 });
 
@@ -257,7 +256,7 @@ An event listener, a WebSocket, or a `MutationObserver` should exist only while 
 ### Example
 
 ```js
-import { createSensor, createCollection, createEffect } from '@zeix/cause-effect'
+import { createSensor, deriveList, createEffect } from '@zeix/cause-effect'
 
 // Sensor: track external input
 const windowSize = createSensor((set) => {
@@ -267,13 +266,15 @@ const windowSize = createSensor((set) => {
   return () => window.removeEventListener('resize', update)
 })
 
-// Collection: receive external data (createCollection is deprecated since 1.5.0 —
-// prefer deriveList(seed, { watched, keyConfig }), same behavior, current name)
-const feed = createCollection((applyChanges) => {
-  const es = new EventSource('/feed')
-  es.onmessage = (e) => applyChanges(JSON.parse(e.data))
-  return () => es.close()
-}, { keyConfig: item => item.id })
+// List: receive external data via an external-push origin
+const feed = deriveList([], {
+  keyConfig: item => item.id,
+  watched: (apply) => {
+    const es = new EventSource('/feed')
+    es.onmessage = (e) => apply({ add: [JSON.parse(e.data)] })
+    return () => es.close()
+  },
+})
 
 // Resources are created only when the effect runs
 const cleanup = createEffect(() => {
@@ -285,9 +286,9 @@ const cleanup = createEffect(() => {
 cleanup()
 ```
 
-### Propagation through `deriveCollection()` (deprecated — `deriveList()` propagates the same way)
+### Propagation through `deriveList()`
 
-When an effect reads a derived collection, the `watched` callback on the source List, Store, or Collection activates automatically, through any number of chained levels. Mutating the source does not tear the resource down. When the last effect disposes, cleanup cascades upstream through every intermediate node.
+When an effect reads a derived list, the `watched` callback on the source List or Store activates automatically, through any number of chained levels. Mutating the source does not tear the resource down. When the last effect disposes, cleanup cascades upstream through every intermediate node.
 
 ### Activation timing: conditional reads delay it
 

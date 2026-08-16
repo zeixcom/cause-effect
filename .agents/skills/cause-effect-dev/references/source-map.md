@@ -32,7 +32,8 @@ Each signal type lives in its own file under `src/nodes/`:
 | Store | `src/nodes/store.ts` | `createStore()` | `isMutableStore()` |
 | DerivedStore | `src/nodes/store.ts` | `deriveStore()` | `isStore()` (tag-based, matches both) |
 | List | `src/nodes/list.ts` | `createList()` | `isMutableList()` |
-| DerivedList | `src/nodes/collection.ts` | `deriveList()` | `isDerivedList()` |
+| DerivedList | `src/nodes/collection.ts` | `deriveList()`, `createCollection()` (`@deprecated`) | `isDerivedList()`, `isCollection()` (`@deprecated`) |
+| Signal (any origin) | `src/signal.ts` | `deriveSignal()`, `createSignal()`; `createComputed()`/`createMutableSignal()` (`@deprecated`) | `isSignal()`, `isMutableSignal()`; `isComputed()` (`@deprecated`) |
 
 `match()` and `MatchHandlers` live in `src/nodes/effect.ts` alongside `createEffect`.
 </signal_source_files>

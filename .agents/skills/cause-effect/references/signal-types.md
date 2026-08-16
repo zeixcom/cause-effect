@@ -200,6 +200,29 @@ const liveOrders = deriveList<Order>([], {
 ```
 </DerivedList>
 
+<Signal>
+**What it is:** A read-only signal derived from any origin — one factory that dispatches on
+`input` instead of picking Memo, Task, or Sensor by hand.
+
+**Use when:**
+- The origin (sync computation, async computation, or external push) is decided by what you pass in, not known ahead of time
+- You want the return type to stay `Signal<T>` regardless of origin, so calling code doesn't branch on Memo vs Task vs Sensor
+
+**Key facts:**
+- `deriveSignal(fn)` — a sync function derives a `Memo`
+- `deriveSignal(fn, options)` — an async function derives a `Task`; pass `initial` to seed the value read before the first resolution
+- `deriveSignal(seed, { watched })` — a seed value with a `watched` callback derives a `Sensor`
+- Forward-looking bridge name for the deprecated `createComputed` ahead of v2.0
+
+```typescript
+const userId = createState(1)
+const user = deriveSignal(async (_prev, abort) => {
+  const res = await fetch(`/api/users/${userId.get()}`, { signal: abort })
+  return res.json()
+}, { initial: fallbackUser })
+```
+</Signal>
+
 </signal_catalog>
 
 <decision_guide>
@@ -222,6 +245,7 @@ const liveOrders = deriveList<Order>([], {
 - Group related reactive values on an object → **Store**
 - Maintain a keyed sequence you write to directly → **List**
 - Maintain a keyed sequence that is computed or externally pushed, and must stay read-only → **DerivedList**
+- The origin (sync, async, or external push) is decided by what you pass in, not known ahead of time → **Signal** (via `deriveSignal`)
 </choose_by_purpose>
 
 <direct_comparisons>

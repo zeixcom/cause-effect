@@ -46,9 +46,11 @@ A computation can track dependencies without owning cleanups, and vice versa. Th
 <flag_semantics>
 Propagation is driven by bitmask flags defined in `src/graph.ts`. Read that file and `ARCHITECTURE.md` for the full semantics. Key flags:
 
+- `FLAG_CLEAN` (`0`) — node's value is up to date
 - `FLAG_DIRTY` — node's value is stale and must recompute
 - `FLAG_CHECK` — node may be stale; check sources before deciding whether to recompute
-- `FLAG_NOTIFIED` — node has already been scheduled in the current flush
+- `FLAG_RUNNING` — node is currently recomputing; re-entry throws `CircularDependencyError`
+- `FLAG_RELINK` — node's dependency structure may have changed; re-establish edges on next refresh
 
 `FLAG_CHECK` is how `equals` suppresses subtrees: when a Memo recomputes to the same value, downstream nodes are marked `FLAG_CHECK` instead of `FLAG_DIRTY`, and they skip recomputation if their sources have not actually changed.
 </flag_semantics>

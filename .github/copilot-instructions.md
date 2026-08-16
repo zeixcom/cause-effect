@@ -60,7 +60,7 @@ Cause & Effect is a reactive state management library for JavaScript and TypeScr
 - Private variables: use descriptive names, no underscore prefix
 
 ### Error Handling
-- Error classes defined in `src/errors.ts`: CircularDependencyError, NullishSignalValueError, InvalidSignalValueError, InvalidCallbackError, RequiredOwnerError, UnsetSignalValueError
+- Error classes defined in `src/errors.ts`: CircularDependencyError, DuplicateKeyError, EffectConvergenceError, InvalidCallbackError, InvalidSignalValueError, InvalidStoreMutationError, NullishSignalValueError, PromiseValueError, ReadonlySignalError, RequiredOwnerError, UnsetSignalValueError
 - `validateSignalValue()` and `validateCallback()` for input validation at public API boundaries
 - Optional `guard` function in SignalOptions for runtime type checking
 - AbortSignal for cancellation in async Tasks
