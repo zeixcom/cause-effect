@@ -2,11 +2,9 @@
 
 ## Status
 
-📝 Proposed — target v2.0. No commitment to ship.
+✅ Accepted — 2026-08-15, for v2.0.
 
-Amends [ADR-0001](0001-reactive-task-stale-detection.md) (scope of `isPending`). Supersedes no
-existing ADR: the mechanisms in ADR-0010, ADR-0014, ADR-0015, and ADR-0017 are reused unchanged.
-The taxonomy this ADR replaces lives in `REQUIREMENTS.md`, not in an ADR.
+Amends [ADR-0001](0001-reactive-task-stale-detection.md) (scope of `isPending`).
 
 ## Context
 
@@ -47,7 +45,7 @@ Two further observations motivate collapsing the type set rather than only filli
 
 Both pairs are already a mutability distinction wearing the costume of a type distinction. The
 vocabulary for the distinction also already exists: `Signal<T>` and `MutableSignal<T>` in
-`src/signal.ts`.
+`src/nodes/signal.ts`.
 
 ## Decision
 
@@ -134,8 +132,17 @@ it. Its signature depends on the input kind:
 | function | `() => Cleanup` | External event invalidates the derivation |
 
 The `emit` argument is shape-appropriate: `emit(value: T)` for `Signal`,
-`emit(changes: CollectionChanges<T>)` for `List` (today's `CollectionCallback`), and
-`emit(patch: Partial<T>)` for `Store`.
+`emit(changes: ListChanges<T>)` for `List`, and `emit(patch: Partial<T>)` for `Store`.
+
+The two `watched` signatures are expressed in the type surface as overload-narrowed option
+types keyed on the input kind — `DeriveSignalOptions.watched` carries the invalidation form
+for function inputs, and the seed-input signatures spell the `emit` form as an inline
+intersection. This complements the runtime argument above rather than contradicting it:
+that argument rules out dispatching *on `watched`*, while the overloads key on the input
+kind, which is exactly what `isAsyncFunction`/`isFunction` already dispatch on. A single
+union-typed option was tried during implementation and rejected — a union of the two
+callback shapes breaks contextual typing of inline callbacks (the parameter degrades to
+implicit `any`).
 
 ### 5. The core four survive as narrow entry points
 
@@ -152,6 +159,16 @@ No equivalent split is made for `List` and `Store`. A composite already pulls `S
 `Memo` for the structural node, and the structural diff; the marginal cost of the async and
 watched paths on top of that baseline does not justify four more factory names per shape.
 
+This property is delivered literally, not just as a byte count: a task node carries a
+`recompute` function assigned by `createTask` — a shared module-level reference, not a per-node
+closure — and `refresh()` dispatches on its presence, holding no reference to the task
+recompute itself. The recompute and its `new AbortController` therefore live in
+`nodes/task.ts`, and a bundle that never imports `createTask` drops them; a sync-only build
+contains neither, verified by content. `propagate()`'s inline in-flight abort remains in the
+core by design: it invokes `controller.abort()` but never constructs an `AbortController`, so
+it retains nothing. Measured core for the trio: 2072 B gzipped, 48.3 % headroom under the
+3072 B promise.
+
 ### 6. Async composites are never unset
 
 `deriveList` and `deriveStore` with an async input require `options.initial`. `length`, `at()`,
@@ -166,16 +183,7 @@ optional escape from it.
 
 Each key of a derived composite gets its own `Memo` that reads the source and selects its own
 slice. Children are *derived*, not written. Child-signal identity is preserved by key, which is
-what makes this the same outcome the discouraged effect produces by hand — but with the dependency
-edge visible to the graph.
-
-An earlier draft of this ADR specified the opposite: a memoized recompute whose result is applied
-through the diff in `list.set()` and `store.set()`. That is not implementable. Driving
-`inner.set(source.get())` from a recompute writes to child signals mid-recompute, which calls
-`propagate()` and then `flush()` while the graph is still running — the re-entrancy the flush guard
-exists to prevent. Wrapping it in `batch()` defers the flush but still leaves writes inside a
-tracked recompute. `deriveCollection` already used the per-slice mechanism before this ADR; the
-draft simply mis-described it.
+what makes this the same outcome the discouraged effect produces by hand — but with the dependency edge visible to the graph.
 
 Per-slice `equals` does the work the diff was meant to do: a slice whose value did not change stops
 propagation, so an unchanged property or item does not re-run its readers.
@@ -213,7 +221,7 @@ leaves the discouraged pattern both available and idiomatic-looking.
 **Three factories total, `create{Signal,List,Store}(valueOrFn, options)`.** Rejected on two counts:
 it requires runtime dispatch that cannot distinguish sync derivation from external push (see
 decision 4), and it pulls the async and watched machinery into every bundle that creates a plain
-state, breaking the ≤4 kB core budget.
+state, breaking the ≤3 kB core budget.
 
 **Twelve factories, `create{Origin}{Shape}`.** Perfectly regular and maximally tree-shakable, but
 twelve construction names to cover six types is a worse ratio than the status quo, and the
@@ -241,6 +249,22 @@ anywhere — `List` (mutable today) aliases `MutableSequence`, `Collection` (rea
 `Sequence` (Kotlin, C#, F#, LINQ) is *lazy and single-pass*, contradicting the stable, repeatable
 per-item identity that defines the type — the one guarantee a misinformed prior would erode.
 
+**Keep `Signal` as the umbrella; name the single-value shape `State`/`MutableState`.** Decided
+against on 2026-08-15, after the branch had landed (see `V2_REFACTORING_ANALYSIS.md` §2, §7).
+Zero meaning flips for `isSignal` — the umbrella predicate would keep its exact meaning — and
+`createState` already exists as the narrow factory, so the migration would have been bridgeable
+the way the `List` flip was. Rejected on three counts. The flip moves rather than disappears:
+`isState` would survive as the single-value shape guard and *widen* silently, from "a
+`createState` output" to "any single-value signal" — and `isState` is the guard Le Truc actually
+uses, so the removal this ADR chose (an auditable compile error) is safer than a silent widening.
+"State" re-imports the mutable-origin connotation the collapse exists to delete — the 1.x
+vocabulary defines a State as "a mutable Source that holds a value directly", which a derived
+single-value signal is not. And `deriveSignal`/`createSignal` as the flagship names recruit the
+dominant training-set prior (Solid's `createSignal`, Preact and Angular's `signal()`), which is
+this ADR's own thesis about why prose cannot correct misuse. The residual cost — `isSignal` and
+`isMutableSignal` narrow with no bridge — is contained by explicit migration warnings, codemod
+flagging, and the structural `.get()` recipe for the umbrella question.
+
 ## Consequences
 
 **Positive**
@@ -261,8 +285,24 @@ per-item identity that defines the type — the one guarantee a misinformed prio
 - `List<T>` currently means the mutable type. Under this ADR it means the readonly base, so code
   that types a variable `List<T>` and calls `.add()` breaks at the type level in unchanged code —
   the most error-prone part of the migration. The break is staged, not silent: a 1.x release
-  back-ports `MutableList` and the shape guards with `@deprecated` markers on the old meanings
-  (CE-016), and a codemod plus migration recipe rewrites the annotations (CE-017).
+  back-ports `MutableList` and the shape guards with `@deprecated` markers on the old meanings, and a codemod plus migration recipe rewrites the annotations.
+- `Store<T>` has the same flip with the same structure — today it is the mutable type, under this
+  ADR the readonly base (`createStore` returns `MutableStore`) — and originally shared the List
+  treatment in every way except the important one: no bridge. The first draft of these
+  consequences omitted it entirely; Le Truc's round-2 review of the 1.5 draft caught the
+  omission. A 1.x release back-ports `MutableStore`/`isMutableStore` with `@deprecated` markers
+  and codemod rules, mirroring the `List` treatment.
+- `isSignal` and `isMutableSignal` keep their names but narrow their predicates: `isSignal`
+  matched all nine 1.x types plus `Slot` and now matches only the single-value shape;
+  `isMutableSignal` matched every mutable type and now matches only the mutable single-value
+  shape. This is the one break with no containment of any kind — no 1.5 bridge is possible (the
+  1.x `Signal<T>` is the umbrella union, so back-porting the name would itself flip it), the
+  codemod has nothing to rewrite (the identifier is unchanged; only its predicate narrows), and
+  code guarding an `unknown` compiles and runs while silently taking the non-signal branch for
+  composites. `MIGRATION-2.0.md` warns about it explicitly and the codemod flags the call sites
+  for manual audit. For "is this any reactive value at all", the structural check
+  `typeof x?.get === 'function'` is the recipe — it also accepts descriptor-like objects a tag
+  check never did.
 - `createSignal` currently sniffs shape (array → `List`, record → `Store`). It becomes
   shape-specific, and the coercion is removed with **no replacement export**. A shape-sniffing
   façade hides the shape decision, which is the v1-ism this ADR deletes everywhere else. Le

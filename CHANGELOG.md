@@ -1,5 +1,37 @@
 # Changelog
 
+## 1.5.0
+
+### Added
+
+- **`deriveStore(input, options?)`**: New factory deriving a read-only keyed record from a sync function, an async function (`options.initial` required), or a seed record with `options.watched`. Per-property granularity matches `createStore`; exposes no setters. New exported types `DerivedStore<T>`, `DeriveStoreOptions<T>`, `StoreCallback<T>`.
+- **`deriveList(input, options?)`**: New factory creating a read-only keyed list (`DerivedList<T>`) from a sync computation, an async computation (`options.initial` required), an external push (seed array + `options.watched`), or per-item derivation from any `ListSource`. New exported type `DeriveListOptions<T>`.
+- **`deriveList` accepts any `Signal<T[]>` source**: Unkeyed array sources — a `Memo`, `Task`, `State`, or `Slot` — are keyed on read via `keyedAdapter`, with item identity stable across recomputes. New `options` parameter (`keyConfig`, `itemEquals`); `ListSource<T>` (formerly `CollectionSource<T>`) widens the source type to include `Signal<T[]>`.
+- **`isPending(signal)` / `abort(signal)`**: New graph-level utilities for any signal with an asynchronous origin, including a `deriveList`/`deriveStore` backed by a `Task`. `isPending` is reactive; both are no-ops on signals without an async origin.
+- **`deriveSignal(input, options?)`**: New factory creating a single-value signal from a sync function, an async function, or an external push (seed value + `options.watched`), mirroring `deriveList`/`deriveStore`. Returns `Signal<T>`; unlike those, `options.initial` stays optional — an early read before the first resolution throws `UnsetSignalValueError`. New exported type `DeriveSignalOptions<T>`.
+- **`MutableList<T>` / `isMutableList(x)`, `DerivedList<T>` / `isDerivedList(x)`, `MutableStore<T>` / `isMutableStore(x)`**: Non-deprecated bridge names ahead of the v2.0 taxonomy for `List`/`isList`, `Collection`/`isCollection`, and `Store`/`isStore` — same types and behavior today. `isMutableStore(x)` additionally requires the write capability, so it rejects a `DerivedStore`.
+- **`ListSource<T>` / `ListCallback<T>` / `ListChanges<T>` / `PerItemCallback<T, U>`**: Non-deprecated bridge names for `CollectionSource` / `CollectionCallback` / `CollectionChanges` / `DeriveCollectionCallback`. Terminal 2.0 vocabulary — no further rename at the 2.0 boundary.
+- **`tools/codemod-v2.ts`**: New ts-morph codemod rewriting consumer code to the v2.0 bridge names (`List` → `MutableList`, `createCollection` → `deriveList`, …; full mapping in `MIGRATION-2.0.md`). Exact identifier matches only; `--module` scopes which import declarations are rewritten; renamed `isList`/`isStore` call sites are flagged for manual review.
+- **`MIGRATION-2.0.md`**: New guide to the v2.0 shape-indexed taxonomy ([ADR-0018](adr/0018-shape-indexed-signal-types.md)) — the bridge-name table, how to run the codemod, and what it cannot decide automatically.
+
+### Deprecated
+
+All symbols below are removed in v2.0; `List` and `Store` are repurposed as readonly base types, so keeping those names silently changes meaning. See `MIGRATION-2.0.md`.
+
+| Deprecated | Use instead |
+| --- | --- |
+| `List<T>` / `isList(x)` | `MutableList<T>` / `isMutableList(x)` |
+| `Collection<T>` / `isCollection(x)` | `DerivedList<T>` / `isDerivedList(x)` |
+| `Store<T>` / `isStore(x)` | `MutableStore<T>` / `isMutableStore(x)` — `isMutableStore` additionally requires the write capability, so it rejects a `DerivedStore` |
+| `.deriveCollection(fn)` | `deriveList(source, fn)` |
+| `createCollection(watched, options?)` | `deriveList(seed, { watched, ... })` — the `value` option becomes the seed |
+| `createComputed(fn, options?)` | `deriveSignal(fn, options?)` — `options.value` becomes `options.initial` |
+| `createMutableSignal(value)` | `createSignal(value)` — wider: also accepts a function or an existing signal |
+| `CollectionSource<T>` / `CollectionCallback<T>` / `CollectionChanges<T>` / `DeriveCollectionCallback<T, U>` | `ListSource<T>` / `ListCallback<T>` / `ListChanges<T>` / `PerItemCallback<T, U>` |
+| `DeriveCollectionOptions<T>` | `DeriveListOptions<T>` |
+| `CollectionOptions<T, S>` | None — folded into `DeriveListOptions<T>` |
+| `State<T>` / `isState(x)`, `Memo<T>` / `isMemo(x)`, `Task<T>` / `isTask(x)`, `Sensor<T>` / `isSensor(x)`, `SensorCallback<T>` / `SensorOptions<T>`, `isComputed(x)` | No mechanical replacement — use `isSignal(x)` / `isMutableSignal(x)` or a plain property check (`ComputedOptions<T>` is unaffected) |
+
 ## 1.4.1
 
 ### Fixed

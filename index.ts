@@ -1,6 +1,6 @@
 /**
  * @name Cause & Effect
- * @version 1.4.1
+ * @version 1.5.0
  * @author Esther Brunner
  */
 
@@ -53,6 +53,10 @@ export {
 	deriveList,
 	isCollection,
 	isDerivedList,
+	type ListCallback,
+	type ListChanges,
+	type ListSource,
+	type PerItemCallback,
 } from './src/nodes/collection'
 export {
 	createEffect,
@@ -95,7 +99,9 @@ export {
 	type DerivedStore,
 	type DeriveStoreOptions,
 	deriveStore,
+	isMutableStore,
 	isStore,
+	type MutableStore,
 	type Store,
 	type StoreCallback,
 	type StoreOptions,
@@ -105,6 +111,8 @@ export {
 	createComputed,
 	createMutableSignal,
 	createSignal,
+	type DeriveSignalOptions,
+	deriveSignal,
 	isComputed,
 	isMutableSignal,
 	isSignal,

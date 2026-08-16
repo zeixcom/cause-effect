@@ -13,7 +13,7 @@ Five node shapes are used internally. Source files are authoritative — these a
 | `EffectNode` | Sink + owner — runs side effects, owns child effects/scopes | `src/nodes/effect.ts` |
 | `Scope` | Owner only — groups cleanup registrations, no reactive tracking | `src/graph.ts` |
 
-`Slot`, `Store`, `List`, and `Collection` are built on top of `MemoNode<T>` internally.
+`Slot`, `Store`, `List`, and `DerivedList` (deprecated alias `Collection`) are built on top of `MemoNode<T>` internally.
 </node_shapes>
 
 <global_pointers>
@@ -46,9 +46,11 @@ A computation can track dependencies without owning cleanups, and vice versa. Th
 <flag_semantics>
 Propagation is driven by bitmask flags defined in `src/graph.ts`. Read that file and `ARCHITECTURE.md` for the full semantics. Key flags:
 
+- `FLAG_CLEAN` (`0`) — node's value is up to date
 - `FLAG_DIRTY` — node's value is stale and must recompute
 - `FLAG_CHECK` — node may be stale; check sources before deciding whether to recompute
-- `FLAG_NOTIFIED` — node has already been scheduled in the current flush
+- `FLAG_RUNNING` — node is currently recomputing; re-entry throws `CircularDependencyError`
+- `FLAG_RELINK` — node's dependency structure may have changed; re-establish edges on next refresh
 
 `FLAG_CHECK` is how `equals` suppresses subtrees: when a Memo recomputes to the same value, downstream nodes are marked `FLAG_CHECK` instead of `FLAG_DIRTY`, and they skip recomputation if their sources have not actually changed.
 </flag_semantics>

@@ -1,20 +1,38 @@
 import { describe, expect, test } from 'bun:test'
 import {
 	type Collection,
+	type CollectionCallback,
+	type CollectionChanges,
+	type CollectionSource,
 	createCollection,
+	createEffect,
 	createList,
+	createScope,
 	createState,
+	createStore,
+	type DeriveCollectionCallback,
 	type DerivedList,
 	deriveList,
+	deriveStore,
 	isCollection,
 	isDerivedList,
 	isList,
 	isMutableList,
+	isMutableStore,
+	isStore,
 	type List,
+	type ListCallback,
+	type ListChanges,
+	type ListSource,
 	type MutableList,
+	type MutableStore,
+	type PerItemCallback,
+	type Store,
 } from '../index.ts'
 
 /* === Tests === */
+
+type Config = { debug: boolean; level?: number }
 
 describe('MutableList — the v2 name of the mutable List type', () => {
 	test('createList satisfies both the new and the deprecated name', () => {
@@ -86,5 +104,79 @@ describe('guards preserve the tag-based taxonomy', () => {
 		const derived = deriveList(() => [1])
 		expect(isMutableList(list) && !isMutableList(derived)).toBe(true)
 		expect(isDerivedList(derived) && !isDerivedList(list)).toBe(true)
+	})
+})
+
+describe('ListSource/ListCallback/ListChanges/PerItemCallback — terminal 2.0 names, bridged early', () => {
+	test('ListSource round-trips through the deprecated CollectionSource alias', () => {
+		const source: ListSource<number> = createList([1, 2])
+		const asDeprecated: CollectionSource<number> = source
+		const roundTrip: ListSource<number> = asDeprecated
+		expect(deriveList(roundTrip, n => n * 2).get()).toEqual([2, 4])
+	})
+
+	test('ListChanges round-trips through the deprecated CollectionChanges alias', () => {
+		const changes: ListChanges<number> = { add: [1, 2] }
+		const asDeprecated: CollectionChanges<number> = changes
+		const roundTrip: ListChanges<number> = asDeprecated
+		expect(roundTrip.add).toEqual([1, 2])
+	})
+
+	test('ListCallback round-trips through the deprecated CollectionCallback alias and drives deriveList', () => {
+		let push: ((changes: ListChanges<number>) => void) | undefined
+		const watched: ListCallback<number> = apply => {
+			push = apply
+			return () => {}
+		}
+		const asDeprecated: CollectionCallback<number> = watched
+		const roundTrip: ListCallback<number> = asDeprecated
+		const list = deriveList<number>([], { watched: roundTrip })
+		const dispose = createScope(() => {
+			createEffect(() => {
+				list.get()
+			})
+		})
+		push?.({ add: [1, 2, 3] })
+		expect(list.get()).toEqual([1, 2, 3])
+		dispose()
+	})
+
+	test('PerItemCallback round-trips through the deprecated DeriveCollectionCallback alias and drives deriveList', () => {
+		const source = createList([1, 2, 3])
+		const doubler: PerItemCallback<number, number> = (n: number) => n * 2
+		const asDeprecated: DeriveCollectionCallback<number, number> = doubler
+		const roundTrip: PerItemCallback<number, number> = asDeprecated
+		expect(deriveList(source, roundTrip).get()).toEqual([2, 4, 6])
+	})
+})
+
+describe('MutableStore — the v2 name of the mutable Store type', () => {
+	test('createStore satisfies both the new and the deprecated name', () => {
+		const store: MutableStore<Config> = createStore({ debug: false })
+		const asDeprecated: Store<Config> = store
+		const roundTrip: MutableStore<Config> = asDeprecated
+		expect(roundTrip.add('level', 3)).toBe('level')
+		expect(roundTrip.get()).toEqual({ debug: false, level: 3 })
+	})
+
+	test('isMutableStore matches a mutable store and narrows to its write methods', () => {
+		const store = createStore({ a: 1 })
+		expect(isMutableStore(store)).toBe(true)
+		if (isMutableStore(store)) expect(store.add('b', 2)).toBe('b')
+	})
+
+	test('isMutableStore rejects derived stores and non-stores', () => {
+		expect(isMutableStore(deriveStore(() => ({ a: 1 })))).toBe(false)
+		expect(isMutableStore(createState(1))).toBe(false)
+		expect(isMutableStore(createList([1]))).toBe(false)
+		expect(isMutableStore('store')).toBe(false)
+	})
+
+	test('isStore stays the tag-based guard, matching derived stores too', () => {
+		// MutableStore and DerivedStore share the 'Store' tag in 1.x — pinned here so
+		// the deprecation of isStore never quietly narrows its runtime behavior.
+		expect(isStore(createStore({ a: 1 }))).toBe(true)
+		expect(isStore(deriveStore(() => ({ a: 1 })))).toBe(true)
+		expect(isStore(createState(1))).toBe(false)
 	})
 })

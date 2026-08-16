@@ -18,11 +18,9 @@ import {
 	type MemoNode,
 	makeSubscribe,
 	propagate,
-	refresh,
 	refreshComposite,
 	registerAsyncSource,
 	type Signal,
-	type SinkNode,
 	TYPE_STORE,
 	untrack,
 } from '../graph'
@@ -55,13 +53,17 @@ type StoreOptions = {
 	watched?: () => Cleanup
 }
 
-type BaseStore<T extends UnknownRecord> = {
+type BaseMutableStore<T extends UnknownRecord> = {
 	readonly [Symbol.toStringTag]: 'Store'
 	readonly [Symbol.isConcatSpreadable]: false
 	[Symbol.iterator](): IterableIterator<
 		[
 			string,
-			State<T[keyof T] & {}> | Store<UnknownRecord> | MutableList<unknown & {}>,
+			(
+				| State<T[keyof T] & {}>
+				| MutableStore<UnknownRecord>
+				| MutableList<unknown & {}>
+			),
 		]
 	>
 	keys(): IterableIterator<string>
@@ -70,7 +72,7 @@ type BaseStore<T extends UnknownRecord> = {
 	): T[K] extends readonly (infer U extends {})[]
 		? MutableList<U>
 		: T[K] extends UnknownRecord
-			? Store<T[K]>
+			? MutableStore<T[K]>
 			: T[K] extends unknown & {}
 				? State<T[K] & {}>
 				: State<T[K] & {}> | undefined
@@ -83,20 +85,33 @@ type BaseStore<T extends UnknownRecord> = {
 
 /**
  * A reactive object with per-property reactivity.
- * Each property becomes a `State`, a nested `Store`, or a `List`, reachable through the proxy.
- * A write to one property re-runs only the effects that read that property.
+ * Each property becomes a `State`, a nested `MutableStore`, or a `List`, reachable through the
+ * proxy. A write to one property re-runs only the effects that read that property.
+ *
+ * The name this type carries in v2.0. `Store` is a deprecated alias of it.
  *
  * @template T - The plain-object type whose properties become reactive signals
  */
-type Store<T extends UnknownRecord> = BaseStore<T> & {
+type MutableStore<T extends UnknownRecord> = BaseMutableStore<T> & {
 	[K in keyof T]: T[K] extends readonly (infer U extends {})[]
 		? MutableList<U>
 		: T[K] extends UnknownRecord
-			? Store<T[K]>
+			? MutableStore<T[K]>
 			: T[K] extends unknown & {}
 				? State<T[K] & {}>
 				: State<T[K] & {}> | undefined
 }
+
+/**
+ * The mutable keyed-record type, under its v1 name.
+ *
+ * @deprecated `Store`'s current mutable meaning ends in v2.0 — use `MutableStore` (same type,
+ * same behavior today). In v2.0, `Store` is the readonly base, which is today's `DerivedStore`.
+ * See [ADR-0018](../../../adr/0018-shape-indexed-signal-types.md) and `MIGRATION-2.0.md`.
+ *
+ * @template T - The plain-object type whose properties become reactive signals
+ */
+type Store<T extends UnknownRecord> = MutableStore<T>
 
 /**
  * The read-only projection of a Store, returned by `deriveStore`.
@@ -231,7 +246,7 @@ function diffRecords<T extends UnknownRecord>(prev: T, next: T): DiffResult {
  * @since 0.15.0
  * @param value - Initial object value of the store
  * @param options - Optional configuration for watch lifecycle
- * @returns A Store with reactive properties
+ * @returns A MutableStore with reactive properties
  *
  * @example
  * ```ts
@@ -255,12 +270,14 @@ function diffRecords<T extends UnknownRecord>(prev: T, next: T): DiffResult {
 function createStore<T extends UnknownRecord>(
 	value: T,
 	options?: StoreOptions,
-): Store<T> {
+): MutableStore<T> {
 	validateSignalValue(TYPE_STORE, value, isRecord)
 
 	const signals = new Map<
 		string,
-		State<unknown & {}> | Store<UnknownRecord> | MutableList<unknown & {}>
+		| State<unknown & {}>
+		| MutableStore<UnknownRecord>
+		| MutableList<unknown & {}>
 	>()
 
 	// --- Internal helpers ---
@@ -284,11 +301,11 @@ function createStore<T extends UnknownRecord>(
 	const signalCategory = (
 		signal:
 			| State<unknown & {}>
-			| Store<UnknownRecord>
+			| MutableStore<UnknownRecord>
 			| MutableList<unknown & {}>,
 	): ShapeCategory => {
 		if (isMutableList(signal)) return 'list'
-		if (isStore(signal)) return 'store'
+		if (isMutableStore(signal)) return 'store'
 		return 'state'
 	}
 
@@ -367,7 +384,7 @@ function createStore<T extends UnknownRecord>(
 	for (const key of Object.keys(value)) addSignal(key, value[key])
 
 	// --- Store object ---
-	const store: BaseStore<T> = {
+	const store: BaseMutableStore<T> = {
 		[Symbol.toStringTag]: TYPE_STORE,
 		[Symbol.isConcatSpreadable]: false as const,
 
@@ -378,7 +395,7 @@ function createStore<T extends UnknownRecord>(
 					string,
 					(
 						| State<T[keyof T] & {}>
-						| Store<UnknownRecord>
+						| MutableStore<UnknownRecord>
 						| MutableList<unknown & {}>
 					),
 				]
@@ -394,7 +411,7 @@ function createStore<T extends UnknownRecord>(
 			return signals.get(key) as T[K] extends readonly (infer U extends {})[]
 				? MutableList<U>
 				: T[K] extends UnknownRecord
-					? Store<T[K]>
+					? MutableStore<T[K]>
 					: T[K] extends unknown & {}
 						? State<T[K] & {}>
 						: State<T[K] & {}> | undefined
@@ -447,7 +464,7 @@ function createStore<T extends UnknownRecord>(
 	return new Proxy(
 		store as unknown as ProxyTarget,
 		storeProxyHandler,
-	) as unknown as Store<T>
+	) as unknown as MutableStore<T>
 }
 
 /**
@@ -513,7 +530,7 @@ function deriveStore<T extends UnknownRecord>(
 		validateSignalValue(TYPE_STORE, input, isRecord)
 		const watched = options?.watched as StoreCallback<T>
 		validateCallback(TYPE_STORE, watched, isSyncFunction)
-		let inner: Store<T>
+		let inner: MutableStore<T>
 		const emit = (patch: Partial<T>): void => {
 			inner.update(prev => ({ ...prev, ...patch }))
 		}
@@ -678,7 +695,32 @@ function readonlyFacade<T extends UnknownRecord>(
 }
 
 /**
+ * Checks if a value is a mutable Store signal.
+ *
+ * The name this guard carries in v2.0. `isStore` is a deprecated alias of the tag check this
+ * builds on, widened by the write-capability requirement — so unlike `isStore`, a `DerivedStore`
+ * does not match.
+ *
+ * @since 1.5.0
+ * @param value - The value to check
+ * @returns True if the value is a mutable Store
+ */
+function isMutableStore<T extends UnknownRecord>(
+	value: unknown,
+): value is MutableStore<T> {
+	return (
+		isSignalOfType(value, TYPE_STORE) &&
+		typeof (value as Record<string, unknown>).add === 'function'
+	)
+}
+
+/**
  * Checks if a value is a Store signal.
+ *
+ * @deprecated `Store`'s current mutable meaning ends in v2.0 — use `isMutableStore` to require
+ * write access. This guard checks the shape tag only, so it matches the mutable store and the
+ * `DerivedStore` alike today; in v2.0 it narrows to the readonly base (today's `DerivedStore`).
+ * See [ADR-0018](../../../adr/0018-shape-indexed-signal-types.md) and `MIGRATION-2.0.md`.
  *
  * @since 0.15.0
  * @param value - The value to check
@@ -695,7 +737,9 @@ export {
 	type DerivedStore,
 	type DeriveStoreOptions,
 	deriveStore,
+	isMutableStore,
 	isStore,
+	type MutableStore,
 	type Store,
 	type StoreCallback,
 	type StoreOptions,

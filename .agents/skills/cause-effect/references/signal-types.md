@@ -151,6 +151,9 @@ user.name = 'Bob'   // only effects reading `user.name` re-run
 - You need to react to structural changes (items added, removed, reordered) as well as value changes
 
 **Key facts:**
+- `createList()` is unaffected by the naming change below — it still creates the same writable type
+- Annotate the type as `MutableList<T>`, not `List<T>` (bridge name for the deprecated `List<T>`; `List` is reused for the readonly base in v2.0 — the old name silently changes meaning rather than erroring)
+- Use `isMutableList()`, not `isList()`, for the type guard (bridge name for the deprecated `isList(x)`)
 - Items are identified by a stable key; keys survive sorting and reordering
 - `byKey()`, `at()`, `keyAt()`, and `indexOfKey()` are direct lookups — they **do not create graph edges**
 - To react to structural changes, read `get()`, `keys()`, or `length` instead
@@ -167,25 +170,58 @@ todos.remove('t2')
 ```
 </List>
 
-<Collection>
-**What it is:** A keyed reactive collection — a reactive Map.
+<DerivedList>
+**What it is:** A read-only keyed reactive sequence — same lookup surface as List (`at`, `byKey`, `keyAt`, `indexOfKey`, `keys`, `length`, iteration), no mutators. Not a Map — order and stable item identity work exactly like List; the only difference from List is that a DerivedList cannot be written to directly.
 
 **Use when:**
-- Items are identified by key and order is not meaningful or variable
-- You need fast key-based lookup with reactive tracking on the key set and individual entries
+- The set of items is computed from another signal, or pushed in from outside the graph, and callers must not write to it
+- You need per-item memoization: a change to one item does not invalidate the others
 - Use cases: entity caches, normalised data stores, lookup tables
 
 **Key facts:**
-- `createCollection` creates a collection from an initial set of entries
-- `deriveCollection` creates a collection derived from another reactive source
-- Same tracking rules as List: `byKey()` does not create graph edges; read `get()`, `keys()`, or `length` to subscribe to structural changes
+- `deriveList(seed, { watched })` creates a DerivedList driven by an external source (bridge name for the deprecated `createCollection`)
+- `deriveList(source, itemCallback)` derives a DerivedList from a List, Store, or plain array signal, one item at a time (bridge name for the deprecated `.deriveCollection()` method form)
+- `isDerivedList()` narrows to this type (bridge name for the deprecated `isCollection()`)
+- Same tracking rules as List: `byKey()`, `at()`, `keyAt()`, `indexOfKey()` do not create graph edges; read `get()`, `keys()`, or `length` to subscribe to structural changes
 
 ```typescript
-const users = createCollection<string, User>(
-  existingUsers.map(u => [u.id, u])
-)
+const users = createList<User>([], { keyConfig: u => u.id })
+const summaries = deriveList(users, user => `${user.name} <${user.email}>`)
 ```
-</Collection>
+
+```typescript
+const liveOrders = deriveList<Order>([], {
+  watched: apply => {
+    const ws = new WebSocket('/orders')
+    ws.onmessage = e => apply(JSON.parse(e.data)) // { add?, change?, remove? }
+    return () => ws.close()
+  }
+})
+```
+</DerivedList>
+
+<Signal>
+**What it is:** A read-only signal derived from any origin — one factory that dispatches on
+`input` instead of picking Memo, Task, or Sensor by hand.
+
+**Use when:**
+- The origin (sync computation, async computation, or external push) is decided by what you pass in, not known ahead of time
+- You want the return type to stay `Signal<T>` regardless of origin, so calling code doesn't branch on Memo vs Task vs Sensor
+
+**Key facts:**
+- `deriveSignal(fn)` — a sync function derives a `Memo`
+- `deriveSignal(fn, options)` — an async function derives a `Task`; pass `initial` to seed the value read before the first resolution
+- `deriveSignal(seed, { watched })` — a seed value with a `watched` callback derives a `Sensor`
+- Forward-looking bridge name for the deprecated `createComputed` ahead of v2.0
+
+```typescript
+const userId = createState(1)
+const user = deriveSignal(async (_prev, abort) => {
+  const res = await fetch(`/api/users/${userId.get()}`, { signal: abort })
+  return res.json()
+}, { initial: fallbackUser })
+```
+</Signal>
 
 </signal_catalog>
 
@@ -207,8 +243,9 @@ const users = createCollection<string, User>(
 - Run a side effect when something changes → **Effect**
 - Expose a reactive value as an object property → **Slot**
 - Group related reactive values on an object → **Store**
-- Maintain an ordered list of keyed items → **List**
-- Maintain an unordered map of keyed items → **Collection**
+- Maintain a keyed sequence you write to directly → **List**
+- Maintain a keyed sequence that is computed or externally pushed, and must stay read-only → **DerivedList**
+- The origin (sync, async, or external push) is decided by what you pass in, not known ahead of time → **Signal** (via `deriveSignal`)
 </choose_by_purpose>
 
 <direct_comparisons>
@@ -225,11 +262,11 @@ Use `Memo` for synchronous derivations. Use `Task` when derivation requires `awa
 **State vs Store**
 Use `State` for a single primitive or object that is always replaced wholesale. Use `Store` for an object whose individual properties are read and updated independently — Store gives you field-level reactivity.
 
-**List vs Collection**
-Both are keyed. Use `List` when order is significant (rendering order, ranking, sorting). Use `Collection` when items are looked up by key and order is not meaningful.
+**List vs DerivedList**
+Both are keyed sequences with the same lookup surface and preserve order. The distinction is mutability, not order: use `List` when the caller writes items directly with `.add()`/`.remove()`/`.replace()`. Use `DerivedList` when the sequence is computed from another signal or pushed in from outside the graph, and no caller should write to it.
 
-**List / Collection vs Store**
-Use `Store` for a fixed set of named properties on a single object. Use `List` or `Collection` for a dynamic number of items with uniform shape.
+**List / DerivedList vs Store**
+Use `Store` for a fixed set of named properties on a single object. Use `List` or `DerivedList` for a dynamic number of items with uniform shape.
 
 </direct_comparisons>
 
@@ -294,6 +331,26 @@ batch(() => {
 })
 ```
 </coalescing_updates>
+
+<deriving_vs_writing>
+Prefer deriving a signal from its source over writing it imperatively from an effect. `deriveStore` and `deriveList` accept an async input directly, which covers the case that otherwise tempts an effect-driven write:
+
+```typescript
+// Avoid: an effect copying one signal's value into another
+const user = createTask(async () => fetchUser(id.get()))
+const profile = createStore({ name: '', email: '' })
+createEffect(() => profile.set(user.get()))
+```
+
+```typescript
+// Prefer: derive the target directly
+const profile = deriveStore(async (prev, abort) => fetchUser(id.get()), {
+  initial: { name: '', email: '' }
+})
+```
+
+The derived form keeps the dependency edge explicit and needs no owner. Reach for an effect-driven write only when nothing in the library derives the shape you need — for example, to synchronise with something outside the graph entirely (DOM, `localStorage`, an imperative library).
+</deriving_vs_writing>
 
 <reading_without_subscribing>
 Use `untrack` to read a signal's current value without creating a dependency edge:

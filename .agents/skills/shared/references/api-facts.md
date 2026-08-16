@@ -194,8 +194,10 @@ non-obvious-behaviors.md for details on conditional reads.
 | `createState(value)` | No | `State<T>` | Source — never recomputes |
 | `createSensor(setup)` | No | `Sensor<T>` | Source — set by external callback |
 | `createSlot(signal)` | No | `Slot<T>` | Forwarding — delegates to backing signal |
-| `createStore(value)` | No | `Store<T>` | Source — proxy-based |
-| `createList(items, options?)` | No | `List<T>` | Source — keyed array |
-| `createCollection(entries, options?)` | No | `Collection<K, V>` | Source — keyed map |
-| `deriveCollection(source, callback)` | No | `Collection<K, V>` | Derived — from another reactive source |
+| `createStore(value)` | No | `MutableStore<T>` | Source — proxy-based |
+| `deriveStore(fn)` | No | `DerivedStore<T>` | Derived — sync per-property, or async with `{ initial }` |
+| `deriveStore(seed, { watched })` | No | `DerivedStore<T>` | Source — external push, read-only |
+| `createList(items, options?)` | No | `MutableList<T>` | Source — keyed sequence |
+| `deriveList(seed, { watched })` | No | `DerivedList<T>` | Source — external push, read-only |
+| `deriveList(source, itemCallback)` | No | `DerivedList<T>` | Derived — per-item from another signal |
 </lifecycle_summary>

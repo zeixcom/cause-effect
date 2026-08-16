@@ -123,20 +123,22 @@ function useSignalProp<T extends {}>(value: T): State<T> {
 
 ```tsx
 import { useSignal } from './use-signal'
-import type { List, State } from '@zeix/cause-effect'
+import type { MutableList, MutableSignal } from '@zeix/cause-effect'
 import type { ReactNode } from 'react'
 
-function Each<T extends {}>({
+function Each<T extends {}, S extends MutableSignal<T> = MutableSignal<T>>({
   list,
   children,
 }: {
-  list: List<T>
-  children: (signal: State<T>, key: string) => ReactNode
+  list: MutableList<T, S>
+  children: (signal: S, key: string) => ReactNode
 }) {
   const keys = useSignal(/* subscribe to list structural changes */)
   return <>{keys.map(key => children(list.byKey(key), key))}</>
 }
 ```
+
+`MutableList` is the 1.5+ bridge name for today's `List` — used here rather than `List` because `Each` only reads the list, and the plain `List` name is repurposed as the readonly base in 2.0. See [MIGRATION-2.0.md](MIGRATION-2.0.md).
 
 Usage:
 

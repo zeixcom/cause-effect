@@ -396,6 +396,8 @@ user.name.set('Bob') // triggers it
 
 Each property becomes its own signal. Nested objects become nested stores. This is more granular than `createState({ ... })`, which would treat the whole object as a single value.
 
+> **Naming ahead of 2.0:** the mutable store type is also exported as `MutableStore` — the name it keeps in 2.0, where `Store` becomes the readonly base (today's `DerivedStore`). `isMutableStore()` is the matching guard; unlike the tag-based `isStore()`, it rejects a derived store. See [MIGRATION-2.0.md](MIGRATION-2.0.md).
+
 ### List: reactive arrays with stable keys
 
 Frameworks use `key` props (React), `:key` bindings (Vue), or `track` expressions (Angular) to maintain item identity during re-renders. In Cause & Effect, `createList()` bakes stable keys into the data structure itself:
@@ -419,6 +421,8 @@ Each item is its own signal. Sorting reorders keys without destroying signals or
 
 Write through `.replace()` rather than `byKey().set()` — see [List](README.md#list) for why.
 
+> **Naming ahead of 2.0:** the mutable list type is also exported as `MutableList` — the name it keeps in 2.0, where `List` becomes the readonly base (today's `Collection`). `isMutableList()` is the matching guard. See [MIGRATION-2.0.md](MIGRATION-2.0.md).
+
 ### Collection: derived arrays with item-level memoization
 
 A Collection is a set of keyed items with per-item memoization, so a change to one item does not invalidate the others.
@@ -434,6 +438,8 @@ const display = todos.deriveCollection(todo => ({
 When one item changes, only its derived signal recomputes. Structural changes are tracked separately from value changes, so adding an item does not re-derive the rest.
 
 A Collection can also be externally-driven: `createCollection()` takes a start callback and applies incoming data as granular add, change, and remove operations rather than replacing the array. See the [Collection API](README.md#collection) for both forms, async mapping, and chaining.
+
+> **Naming ahead of 2.0:** `.deriveCollection()` and `createCollection()` are deprecated as of 1.5.0 — use the top-level `deriveList(source, itemFn)` and `deriveList(seed, { watched, … })` instead. `Collection` itself is deprecated in favor of `DerivedList`, the type `deriveList()` returns. See [MIGRATION-2.0.md](MIGRATION-2.0.md).
 
 ### Sensor: lazy external input
 
@@ -486,8 +492,8 @@ Framework code rarely needs these. They matter when you write a layer that accep
 import { createSignal } from '@zeix/cause-effect'
 
 createSignal(0)                          // → State<number>
-createSignal([1, 2, 3])                  // → List<number>
-createSignal({ x: 0 })                   // → Store<{ x: number }>
+createSignal([1, 2, 3])                  // → MutableList<number>
+createSignal({ x: 0 })                   // → MutableStore<{ x: number }>
 createSignal(() => x.get() * 2)          // → Memo<number>
 createSignal(async (_, s) =>
   fetch('/api', { signal: s }).then(r => r.json()))  // → Task<Response>
@@ -495,7 +501,9 @@ createSignal(async (_, s) =>
 
 A value that is already a signal is returned unchanged, which makes the function safe to call on caller-supplied input.
 
-**`createMutableSignal(value)`** is the same, restricted to `State`, `Store`, and `List`. It throws `InvalidSignalValueError` for a function or a read-only signal.
+> **Naming ahead of 2.0:** this shape sniffing is removed with no replacement export — `createSignal` becomes single-value only. See [MIGRATION-2.0.md](MIGRATION-2.0.md).
+
+**`createMutableSignal(value)`** is the same, restricted to `State`, `MutableStore`, and `MutableList`. It throws `InvalidSignalValueError` for a function or a read-only signal.
 
 **`createComputed(callback, options?)`** creates a `Memo` or a `Task`, by detecting whether the callback is async:
 
@@ -512,7 +520,7 @@ The split is decided from the callback itself, before it runs. A callback that o
 | Predicate | True for |
 |---|---|
 | `isSignal(value)` | Any signal (all 9 types) |
-| `isMutableSignal(value)` | `State`, `Store`, `List` — signals with `.set()` and `.update()` |
+| `isMutableSignal(value)` | `State`, `MutableStore`, `MutableList` — signals with `.set()` and `.update()` |
 | `isComputed(value)` | `Memo`, `Task` — derived signals |
 
 `MutableSignal<T>` is the TypeScript type matching `isMutableSignal`. Use it as a parameter type in generic code that accepts any writable signal.
