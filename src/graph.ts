@@ -1,6 +1,7 @@
 import {
 	CircularDependencyError,
 	EffectConvergenceError,
+	EffectWriteError,
 	type Guard,
 	PromiseValueError,
 } from './errors'
@@ -227,6 +228,7 @@ let activeOwner: OwnerNode | null = null
 const queuedEffects: EffectNode[] = []
 let batchDepth = 0
 let flushing = false
+let trustedWriteDepth = 0
 
 /* === Utility Functions === */
 
@@ -426,6 +428,40 @@ function trimSources(node: SinkNode): void {
 	while (source) source = unlink(source)
 	if (tail) tail.nextSource = null
 	else node.sources = null
+}
+
+/* === Write Guard === */
+
+/**
+ * Runs `fn` with the effect-write guard suspended, for writes the library itself
+ * performs while an effect is active: external input entering the graph through
+ * `emit` is not an effect writing inward, though its activation may run inside
+ * an effect's read. Nestable. See ADR-0019.
+ */
+function trustedWrite<T>(fn: () => T): T {
+	trustedWriteDepth++
+	try {
+		return fn()
+	} finally {
+		trustedWriteDepth--
+	}
+}
+
+/**
+ * Throws when a public mutator is called during an effect body: effects write
+ * outward — to the DOM, the network, or storage — never inward into the graph.
+ * Writes inside memo/task recompute are outside this guard's scope, and writes
+ * in effect cleanups and asynchronous continuations escape it, since `activeSink`
+ * is not set for those. `untrack()` nulls `activeSink` and therefore bypasses
+ * the check; it is the deliberate escape hatch. See ADR-0019.
+ */
+function assertWriteAllowed(where: string): void {
+	if (
+		trustedWriteDepth === 0 &&
+		activeSink !== null &&
+		!('value' in activeSink)
+	)
+		throw new EffectWriteError(where)
 }
 
 /* === Propagation === */
@@ -890,6 +926,7 @@ export {
 	abort,
 	activeOwner,
 	activeSink,
+	assertWriteAllowed,
 	batch,
 	batchDepth,
 	type Cleanup,
@@ -937,6 +974,7 @@ export {
 	TYPE_SLOT,
 	TYPE_STORE,
 	trimSources,
+	trustedWrite,
 	unlink,
 	unown,
 	untrack,

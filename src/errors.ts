@@ -164,6 +164,23 @@ class DuplicateKeyError extends Error {
 }
 
 /**
+ * Error thrown when a public mutator is called during an effect body.
+ */
+class EffectWriteError extends Error {
+	/**
+	 * Constructs a new EffectWriteError.
+	 *
+	 * @param where - The mutator that was called.
+	 */
+	constructor(where: string) {
+		super(
+			`[${where}] Cannot write to a signal during an effect — derive the value or write it outside the effect; wrap the write in untrack() only for deliberate feedback loops`,
+		)
+		this.name = 'EffectWriteError'
+	}
+}
+
+/**
  * Error thrown when a Store property is assigned, deleted, or defined directly via the proxy.
  */
 class InvalidStoreMutationError extends TypeError {
@@ -222,6 +239,7 @@ export {
 	CircularDependencyError,
 	DuplicateKeyError,
 	EffectConvergenceError,
+	EffectWriteError,
 	type Guard,
 	InvalidCallbackError,
 	InvalidSignalValueError,

@@ -7,6 +7,7 @@ import {
 } from '../errors'
 import {
 	activeSink,
+	assertWriteAllowed,
 	batch,
 	batchDepth,
 	type Cleanup,
@@ -23,6 +24,7 @@ import {
 	registerAsyncSource,
 	SKIP_EQUALITY,
 	TYPE_LIST,
+	trustedWrite,
 	untrack,
 } from '../graph'
 import {
@@ -811,64 +813,66 @@ function createExternalList<T extends {}, S extends Signal<T> = Signal<T>>(
 		if (!add?.length && !change?.length && !remove?.length) return
 		let structural = false
 
-		batch(() => {
-			// Additions — validate the whole batch (including duplicates within
-			// the batch itself) before mutating any state. Mirrors List.splice():
-			// staging first means a duplicate anywhere in the batch leaves
-			// signals/keys/itemToKey untouched, instead of committing earlier
-			// items and then throwing with node.flags/propagate() never run.
-			if (add) {
-				const staged = new Map<string, T>()
-				for (const item of add) {
-					const key = generateKey(item)
-					// Reject duplicate keys up front — matches List.add / Store.add.
-					// An overwrite would orphan the sinks of the existing child signal.
-					if (signals.has(key) || staged.has(key))
-						throw new DuplicateKeyError('deriveList', key, item)
-					staged.set(key, item)
-				}
-				for (const [key, item] of staged) {
-					signals.set(key, itemFactory(item))
-					itemToKey.set(item, key)
-					if (!keys.includes(key)) keys.push(key)
-					structural = true
-				}
-			}
-
-			// Changes — only for a writable item signal
-			if (change) {
-				for (const item of change) {
-					const key = resolveKey(item)
-					if (!key) continue
-					const signal = signals.get(key)
-					if (signal && isMutableItem(signal)) {
-						// Update reverse map: remove old reference, add new.
-						// untrack prevents the read from leaking an edge into
-						// the caller's effect when emit is called inside one.
-						itemToKey.delete(untrack(() => signal.get()))
-						signal.set(item)
+		trustedWrite(() =>
+			batch(() => {
+				// Additions — validate the whole batch (including duplicates within
+				// the batch itself) before mutating any state. Mirrors List.splice():
+				// staging first means a duplicate anywhere in the batch leaves
+				// signals/keys/itemToKey untouched, instead of committing earlier
+				// items and then throwing with node.flags/propagate() never run.
+				if (add) {
+					const staged = new Map<string, T>()
+					for (const item of add) {
+						const key = generateKey(item)
+						// Reject duplicate keys up front — matches List.add / Store.add.
+						// An overwrite would orphan the sinks of the existing child signal.
+						if (signals.has(key) || staged.has(key))
+							throw new DuplicateKeyError('deriveList', key, item)
+						staged.set(key, item)
+					}
+					for (const [key, item] of staged) {
+						signals.set(key, itemFactory(item))
 						itemToKey.set(item, key)
+						if (!keys.includes(key)) keys.push(key)
+						structural = true
 					}
 				}
-			}
 
-			// Removals
-			if (remove) {
-				for (const item of remove) {
-					const key = resolveKey(item)
-					if (!key) continue
-					itemToKey.delete(item)
-					signals.delete(key)
-					const index = keys.indexOf(key)
-					if (index !== -1) keys.splice(index, 1)
-					structural = true
+				// Changes — only for a writable item signal
+				if (change) {
+					for (const item of change) {
+						const key = resolveKey(item)
+						if (!key) continue
+						const signal = signals.get(key)
+						if (signal && isMutableItem(signal)) {
+							// Update reverse map: remove old reference, add new.
+							// untrack prevents the read from leaking an edge into
+							// the caller's effect when emit is called inside one.
+							itemToKey.delete(untrack(() => signal.get()))
+							signal.set(item)
+							itemToKey.set(item, key)
+						}
+					}
 				}
-			}
 
-			// Mark DIRTY so next get() rebuilds; propagate to sinks
-			node.flags = FLAG_DIRTY | (structural ? FLAG_RELINK : 0)
-			for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
-		})
+				// Removals
+				if (remove) {
+					for (const item of remove) {
+						const key = resolveKey(item)
+						if (!key) continue
+						itemToKey.delete(item)
+						signals.delete(key)
+						const index = keys.indexOf(key)
+						if (index !== -1) keys.splice(index, 1)
+						structural = true
+					}
+				}
+
+				// Mark DIRTY so next get() rebuilds; propagate to sinks
+				node.flags = FLAG_DIRTY | (structural ? FLAG_RELINK : 0)
+				for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
+			}),
+		)
 	}
 
 	const subscribe = makeSubscribe(node, () => watched(onChanges))
@@ -1159,6 +1163,7 @@ function createList<
 		},
 
 		set(next: T[]) {
+			assertWriteAllowed(`${TYPE_LIST}.set`)
 			// Use cached value if clean, recompute if dirty. untrack prevents
 			// buildValue's child .get() calls from leaking edges into whatever
 			// effect is currently active (which would cause over-broad re-runs).
@@ -1181,6 +1186,7 @@ function createList<
 		},
 
 		update(fn: (prev: T[]) => T[]) {
+			assertWriteAllowed(`${TYPE_LIST}.update`)
 			list.set(fn(untrack(() => list.get())))
 		},
 
@@ -1211,6 +1217,7 @@ function createList<
 		},
 
 		add(value: T) {
+			assertWriteAllowed(`${TYPE_LIST}.add`)
 			const key = generateKey(value)
 			if (signals.has(key)) throw new DuplicateKeyError(TYPE_LIST, key, value)
 			keys.push(key)
@@ -1223,6 +1230,7 @@ function createList<
 		},
 
 		remove(keyOrIndex: string | number) {
+			assertWriteAllowed(`${TYPE_LIST}.remove`)
 			const key = typeof keyOrIndex === 'number' ? keys[keyOrIndex] : keyOrIndex
 			if (key === undefined) return
 			const ok = signals.delete(key)
@@ -1237,6 +1245,7 @@ function createList<
 		},
 
 		replace(key: string, value: T) {
+			assertWriteAllowed(`${TYPE_LIST}.replace`)
 			const signal = signals.get(key)
 			if (!signal) return
 			validateSignalValue(`${TYPE_LIST} item for key "${key}"`, value)
@@ -1260,6 +1269,7 @@ function createList<
 		},
 
 		sort(compareFn?: (a: T, b: T) => number) {
+			assertWriteAllowed(`${TYPE_LIST}.sort`)
 			const entries: [string, T][] = []
 			untrack(() => {
 				for (const key of keys) {
@@ -1284,6 +1294,7 @@ function createList<
 		},
 
 		splice(start: number, deleteCount?: number, ...items: T[]) {
+			assertWriteAllowed(`${TYPE_LIST}.splice`)
 			const length = keys.length
 			const actualStart =
 				start < 0 ? Math.max(0, length + start) : Math.min(start, length)

@@ -33,7 +33,15 @@ type Signal<T extends {}> = {
  * @template T - The type of value held by the signal
  */
 type MutableSignal<T extends {}> = Signal<T> & {
+	/**
+	 * Writes a value. Throws `EffectWriteError` when called during an effect
+	 * body — effects write outward, never inward. See ADR-0019.
+	 */
 	set(value: T): void
+	/**
+	 * Writes the value returned by the callback. Throws `EffectWriteError`
+	 * when called during an effect body. See ADR-0019.
+	 */
 	update(callback: (value: T) => T): void
 }
 

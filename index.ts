@@ -8,6 +8,7 @@ export {
 	CircularDependencyError,
 	DuplicateKeyError,
 	EffectConvergenceError,
+	EffectWriteError,
 	type Guard,
 	InvalidCallbackError,
 	InvalidSignalValueError,

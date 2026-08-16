@@ -69,15 +69,17 @@ type SingleMatchHandlers<T extends {}> = {
  * The effect runs once on creation, then on every change to a tracked signal. Effects
  * run during the flush, after the batch merges the writes.
  *
- * An effect that writes to a signal it also depends on re-runs until the graph settles.
- * Its last run therefore reads the final values. A graph that never settles throws
- * `EffectConvergenceError` after a bounded number of flush passes. Two examples are an
- * unconditional self-increment, and two effects that write each other's dependencies.
+ * Effects write outward — to the DOM, the network, or storage — never inward into the
+ * graph: a public mutator (`set`, `update`, `add`, `remove`, `replace`, `sort`,
+ * `splice`, `Slot.set`) called during an effect body throws `EffectWriteError`. The
+ * guard is synchronous-only — writes in asynchronous continuations and in cleanup
+ * callbacks escape it — and `untrack()` suspends it for deliberate feedback loops.
+ * See ADR-0019.
  *
  * @since 0.1.0
  * @param fn - The effect function that can track dependencies and register cleanup callbacks
  * @returns A cleanup function that can be called to dispose of the effect
- * @throws EffectConvergenceError If effects keep re-triggering each other without settling
+ * @throws EffectWriteError If a public mutator is called during the effect body
  *
  * @example
  * ```ts
@@ -144,9 +146,11 @@ function createEffect(fn: EffectCallback): Cleanup {
  *
  * **Async handlers are for external side effects only.** Use them for DOM mutations,
  * analytics, logging, and any fire-and-forget API call whose result does not drive
- * reactive state. Do not call `.set()` on a signal inside an async handler. Use a `Task`
- * instead: it receives an `AbortSignal`, cancels on re-run, and composes with the `nil`
- * and `err` branches.
+ * reactive state. Do not call a signal mutator inside a handler. The synchronous part
+ * of a handler body runs in the effect's scope and throws `EffectWriteError`
+ * (ADR-0019); a write after the first `await` escapes the guard but hides the same
+ * invisible dependency. Use a `Task` instead: it receives an `AbortSignal`, cancels
+ * on re-run, and composes with the `nil` and `err` branches.
  *
  * A rejection from an async handler always routes to `err`. This includes a rejection
  * from a stale run that a newer signal value already superseded. The library cannot
@@ -175,9 +179,11 @@ function match<T extends {}>(
  *
  * **Async handlers are for external side effects only.** Use them for DOM mutations,
  * analytics, logging, and any fire-and-forget API call whose result does not drive
- * reactive state. Do not call `.set()` on a signal inside an async handler. Use `createTask`
- * instead: it receives an `AbortSignal`, cancels on re-run, and composes with the `nil`
- * and `err` branches.
+ * reactive state. Do not call a signal mutator inside a handler. The synchronous part
+ * of a handler body runs in the effect's scope and throws `EffectWriteError`
+ * (ADR-0019); a write after the first `await` escapes the guard but hides the same
+ * invisible dependency. Use `createTask` instead: it receives an `AbortSignal`, cancels
+ * on re-run, and composes with the `nil` and `err` branches.
  *
  * A rejection from an async handler always routes to `err`. This includes a rejection
  * from a stale run that a newer signal value already superseded. The library cannot

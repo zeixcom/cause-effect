@@ -7,6 +7,7 @@ import {
 	createState,
 	createTask,
 	EffectConvergenceError,
+	EffectWriteError,
 	match,
 	RequiredOwnerError,
 } from '../index.ts'
@@ -50,15 +51,13 @@ describe('createEffect', () => {
 		}
 	})
 
-	test('should handle state updates inside effects', () => {
+	test('a state write inside an effect throws (ADR-0019, see effect-write.test.ts)', () => {
 		const count = createState(0)
-		let effectCount = 0
-		createEffect(() => {
-			effectCount++
-			if (count.get() === 0) count.set(1)
-		})
-		expect(count.get()).toBe(1)
-		expect(effectCount).toBe(2)
+		expect(() =>
+			createEffect(() => {
+				if (count.get() === 0) count.set(1)
+			}),
+		).toThrow(EffectWriteError)
 	})
 
 	describe('Cleanup', () => {
@@ -430,85 +429,44 @@ describe('createEffect', () => {
 		})
 	})
 
-	describe('Convergence', () => {
-		test('should re-run a clamping effect so it observes the final value', () => {
-			const source = createState(0)
-			const seen: number[] = []
-			createEffect(() => {
-				const v = source.get()
-				seen.push(v)
-				if (v > 10) source.set(10)
-			})
-			source.set(15)
-			expect(source.get()).toBe(10)
-			expect(seen).toEqual([0, 15, 10])
-		})
-
-		test('should converge a clamping effect inside batch', () => {
-			const source = createState(0)
-			const seen: number[] = []
-			createEffect(() => {
-				const v = source.get()
-				seen.push(v)
-				if (v > 10) source.set(10)
-			})
-			batch(() => {
-				source.set(20)
-			})
-			expect(source.get()).toBe(10)
-			expect(seen).toEqual([0, 20, 10])
-		})
-
-		test('should throw EffectConvergenceError for an unconditional self-write via set()', () => {
-			const source = createState(0)
-			createEffect(() => {
-				if (source.get() > 0) source.set(source.get() + 1)
-			})
-			let caught: unknown
-			try {
-				source.set(1)
-			} catch (err) {
-				caught = err
-			}
-			expect(caught).toBeInstanceOf(EffectConvergenceError)
-			expect((caught as Error).message).toContain('did not settle')
-		})
-
-		test('should throw EffectConvergenceError for a runaway effect at creation', () => {
-			const source = createState(0)
+	// ADR-0019: a public mutator called synchronously during an effect body now
+	// throws EffectWriteError instead of converging or diverging — see
+	// test/effect-write.test.ts for the guard's full coverage. What follows
+	// covers what the pass bound still backstops: self-writes reachable only
+	// through paths the guard does not observe (effect cleanups, trusted
+	// `emit`), per ADR-0019 decision 5.
+	describe('Convergence (backstop for paths the write guard does not cover)', () => {
+		test('a converging self-write is unreachable via set() — it throws EffectWriteError instead', () => {
+			const source = createState(15)
 			expect(() =>
 				createEffect(() => {
-					source.set(source.get() + 1)
+					const v = source.get()
+					if (v > 10) source.set(10)
 				}),
-			).toThrow(EffectConvergenceError)
+			).toThrow(EffectWriteError)
 		})
 
-		test('should throw EffectConvergenceError for mutual effect writes', () => {
+		test('a runaway effect via mutual cleanup writes still throws EffectConvergenceError', () => {
+			// Cleanup writes escape the guard (activeSink is unset by the time
+			// cleanup runs), so a diverging cleanup loop still needs the pass
+			// bound as backstop. Fresh reads inside cleanup (not a stale
+			// closure) reproduce unbounded ping-pong growth, same as the
+			// pre-ADR-0019 in-body mutual-write pattern.
 			const a = createState(0)
 			const b = createState(0)
-			expect(() => {
-				createEffect(() => {
+			createEffect(() => {
+				a.get()
+				return () => {
 					b.set(a.get() + 1)
-				})
-				createEffect(() => {
+				}
+			})
+			createEffect(() => {
+				b.get()
+				return () => {
 					a.set(b.get() + 1)
-				})
-			}).toThrow(EffectConvergenceError)
-		})
-
-		test('should still run healthy siblings when another effect fails to converge', () => {
-			const source = createState(0)
-			let siblingRuns = 0
-			createEffect(() => {
-				if (source.get() > 0) source.set(source.get() + 1)
+				}
 			})
-			createEffect(() => {
-				source.get()
-				siblingRuns++
-			})
-			expect(siblingRuns).toBe(1)
-			expect(() => source.set(1)).toThrow(EffectConvergenceError)
-			expect(siblingRuns).toBeGreaterThan(1)
+			expect(() => a.set(1)).toThrow(EffectConvergenceError)
 		})
 
 		test('should recover after a convergence error', () => {
@@ -517,11 +475,21 @@ describe('createEffect', () => {
 			createEffect(() => {
 				seen.push(source.get())
 			})
-			const runaway = createState(0)
+			const a = createState(0)
+			const b = createState(0)
 			createEffect(() => {
-				if (runaway.get() > 0) runaway.set(runaway.get() + 1)
+				a.get()
+				return () => {
+					b.set(a.get() + 1)
+				}
 			})
-			expect(() => runaway.set(1)).toThrow(EffectConvergenceError)
+			createEffect(() => {
+				b.get()
+				return () => {
+					a.set(b.get() + 1)
+				}
+			})
+			expect(() => a.set(1)).toThrow(EffectConvergenceError)
 
 			// The queue was cleared; unrelated signals keep working normally
 			source.set(5)

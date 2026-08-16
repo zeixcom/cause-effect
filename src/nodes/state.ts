@@ -1,6 +1,7 @@
 import { validateCallback, validateSignalValue } from '../errors'
 import {
 	activeSink,
+	assertWriteAllowed,
 	DEFAULT_EQUALITY,
 	link,
 	type SignalOptions,
@@ -72,10 +73,12 @@ function createState<T extends {}>(
 			return node.value
 		},
 		set(next: T): void {
+			assertWriteAllowed(`${TYPE_SIGNAL}.set`)
 			validateSignalValue(WHERE, next, node.guard)
 			setState(node, next)
 		},
 		update(fn: UpdateCallback<T>): void {
+			assertWriteAllowed(`${TYPE_SIGNAL}.update`)
 			validateCallback(WHERE, fn)
 			const next = fn(node.value)
 			validateSignalValue(WHERE, next, node.guard)

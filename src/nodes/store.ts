@@ -7,6 +7,7 @@ import {
 } from '../errors'
 import {
 	activeSink,
+	assertWriteAllowed,
 	batch,
 	batchDepth,
 	type Cleanup,
@@ -22,6 +23,7 @@ import {
 	refreshComposite,
 	registerAsyncSource,
 	TYPE_STORE,
+	trustedWrite,
 	untrack,
 } from '../graph'
 import {
@@ -415,6 +417,7 @@ function createStore<T extends UnknownRecord>(
 		},
 
 		set(next: T) {
+			assertWriteAllowed(`${TYPE_STORE}.set`)
 			// Use cached value if clean, recompute if dirty. untrack prevents
 			// buildValue's child .get() calls from leaking edges into whatever
 			// effect is currently active (which would cause over-broad re-runs).
@@ -429,10 +432,12 @@ function createStore<T extends UnknownRecord>(
 		},
 
 		update(fn: (prev: T) => T) {
+			assertWriteAllowed(`${TYPE_STORE}.update`)
 			store.set(fn(untrack(() => store.get())))
 		},
 
 		add<K extends keyof T & string>(key: K, value: T[K]) {
+			assertWriteAllowed(`${TYPE_STORE}.add`)
 			if (signals.has(key)) throw new DuplicateKeyError(TYPE_STORE, key, value)
 			addSignal(key, value)
 			node.flags |= FLAG_DIRTY | FLAG_RELINK
@@ -442,6 +447,7 @@ function createStore<T extends UnknownRecord>(
 		},
 
 		remove(key: string) {
+			assertWriteAllowed(`${TYPE_STORE}.remove`)
 			const ok = signals.delete(key)
 			if (ok) {
 				node.flags |= FLAG_DIRTY | FLAG_RELINK
@@ -523,7 +529,7 @@ function deriveStore<T extends UnknownRecord>(
 		validateCallback(TYPE_STORE, watched, isSyncFunction)
 		let inner: MutableStore<T>
 		const emit = (patch: Partial<T>): void => {
-			inner.update(prev => ({ ...prev, ...patch }))
+			trustedWrite(() => inner.update(prev => ({ ...prev, ...patch })))
 		}
 		inner = createStore(input as T, { watched: () => watched(emit) })
 		return readonlyFacade(

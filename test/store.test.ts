@@ -628,56 +628,61 @@ describe('Store', () => {
 
 	describe('set re-subscription leak', () => {
 		// store.set builds the prev value via buildValue() without untrack.
-		// When set() is called inside an effect, child .get() calls leak edges
-		// from each child State directly to that effect — causing over-broad
-		// re-runs on unrelated child mutations.
-		test('effect calling store.set should not over-subscribe to child signals', () => {
+		// If set() is called inside a sink's tracking scope, child .get() calls
+		// would leak edges from each child State directly to that sink — causing
+		// over-broad re-runs on unrelated child mutations. ADR-0019 moved this
+		// sink from an effect to a memo (effect bodies now throw EffectWriteError
+		// before the call is even reached) — memo bodies are outside the write
+		// guard's scope (ADR-0019 §3), same underlying `set()` code path.
+		test('a memo calling store.set should not over-subscribe to child signals', () => {
 			const store = createStore<{ a: number; b: number }>({ a: 1, b: 1 })
 			let setRuns = 0
-			// This effect calls store.set — if edges leak, mutating `b` below
-			// will re-run it even though the effect never reads `b` directly.
-			const dispose = createScope(() => {
-				createEffect(() => {
-					setRuns++
-					// Replace the whole store value; `set` rebuilds prev internally.
-					if (setRuns === 1) {
-						store.set({ a: 1, b: 1 })
-					}
-				})
+			const probe = createMemo(() => {
+				setRuns++
+				// Replace the whole store value; `set` rebuilds prev internally.
+				if (setRuns === 1) store.set({ a: 1, b: 1 })
+				return setRuns
 			})
+			probe.get()
 			expect(setRuns).toBe(1)
 
-			// Mutating only `b` should NOT re-run the set-effect, because the
-			// effect only writes; it does not read `b`.
+			// Mutating only `b` should NOT dirty the set-memo, because it
+			// only writes; it does not read `b`.
 			store.b.set(99)
+			probe.get()
 			expect(setRuns).toBe(1)
-
-			dispose()
 		})
 	})
 
 	describe('update re-subscription leak', () => {
-		// store.update calls store.get() (tracked) then store.set(). The
-		// tracked get() leaks an effect->store edge; the subsequent set()
-		// propagates through it, re-running the effect once during setup
-		// (transient leak). After the fix, update reads the current value
-		// untracked, matching State.update (which reads node.value directly).
-		test('effect calling store.update should not transiently re-run', () => {
+		// store.update calls store.get() then store.set() — the read must be
+		// untracked, matching State.update (which reads node.value directly),
+		// or it leaks a sink->store edge. ADR-0019 moved this sink from an
+		// effect to a memo (effect bodies now throw EffectWriteError before
+		// the call is reached) — memo bodies are outside the write guard's
+		// scope (ADR-0019 §3), same underlying `update()` code path.
+		test('a memo calling store.update should not leak an edge to the store', () => {
 			const store = createStore<{ name: string; age: number }>({
 				name: 'Alice',
 				age: 30,
 			})
 			const trigger = createState(0)
 			let runs = 0
-			createEffect((): undefined => {
+			const probe = createMemo(() => {
 				trigger.get()
 				runs++
 				if (runs === 1) store.update(prev => ({ ...prev, age: 31 }))
+				return runs
 			})
+			probe.get()
 
-			// Without the fix, runs is 2 here (transient re-run).
 			expect(runs).toBe(1)
 			expect(store.age.get()).toBe(31)
+
+			// A leaked edge would dirty the memo on the next unrelated store write.
+			store.age.set(32)
+			probe.get()
+			expect(runs).toBe(1)
 		})
 	})
 

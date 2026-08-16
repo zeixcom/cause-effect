@@ -12,6 +12,7 @@ import {
 	type StateNode,
 	setState,
 	TYPE_SIGNAL,
+	trustedWrite,
 } from '../graph'
 import { isSyncFunction } from '../util'
 import type { Signal } from './signal'
@@ -100,7 +101,7 @@ function createSensor<T extends {}>(
 				if (!node.sinks)
 					node.stop = watched((next: T): void => {
 						validateSignalValue(WHERE, next, node.guard)
-						setState(node, next)
+						trustedWrite(() => setState(node, next))
 					})
 				link(node, activeSink)
 			}

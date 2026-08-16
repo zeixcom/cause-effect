@@ -1,6 +1,7 @@
 import { ReadonlySignalError, validateSignalValue } from '../errors'
 import {
 	activeSink,
+	assertWriteAllowed,
 	batchDepth,
 	DEFAULT_EQUALITY,
 	FLAG_DIRTY,
@@ -52,7 +53,7 @@ type Slot<T extends {}> = {
 	enumerable: true
 	/** Reads the current value from the delegated signal, tracking dependencies. */
 	get(): T
-	/** Writes a value to the delegated signal. Throws `ReadonlySignalError` if the delegated signal is read-only. */
+	/** Writes a value to the delegated signal. Throws `ReadonlySignalError` if the delegated signal is read-only, and `EffectWriteError` when called during an effect body (ADR-0019). */
 	set(next: T): void
 	/** Swaps the backing signal and invalidates every downstream sink. Narrowing (`U extends T`) is allowed. */
 	replace<U extends T>(next: Signal<U> | SlotDescriptor<U>): void
@@ -127,6 +128,7 @@ function createSlot<T extends {}>(
 	}
 
 	const set = (next: T): void => {
+		assertWriteAllowed(`${TYPE_SLOT}.set`)
 		// Cycle guard: if this slot's node is already in the middle of a set()
 		// call (mutual delegation A -> B -> A), the chain has no terminal
 		// writable signal. Throw a descriptive error instead of stack-overflowing.

@@ -24,6 +24,7 @@ import {
 	type TaskNode,
 	TYPE_SIGNAL,
 	trimSources,
+	trustedWrite,
 } from '../graph'
 import { isAsyncFunction } from '../util'
 import type { Signal } from './signal'
@@ -59,14 +60,14 @@ function recomputeTask(node: TaskNode<unknown & {}>): void {
 		// so subsequent reads report the SAME error instead of a spurious
 		// CircularDependencyError on the stuck RUNNING flag.
 		node.flags = FLAG_CLEAN
-		setState(node.pendingNode, false)
+		trustedWrite(() => setState(node.pendingNode, false))
 		return
 	} finally {
 		swapActiveSink(prevWatcher)
 		trimSources(node)
 	}
 
-	setState(node.pendingNode, true)
+	trustedWrite(() => setState(node.pendingNode, true))
 
 	promise.then(
 		next => {
@@ -79,7 +80,7 @@ function recomputeTask(node: TaskNode<unknown & {}>): void {
 					node.error = undefined
 					for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
 				}
-				setState(node.pendingNode, false)
+				trustedWrite(() => setState(node.pendingNode, false))
 			})
 		},
 		(err: unknown) => {
@@ -97,7 +98,7 @@ function recomputeTask(node: TaskNode<unknown & {}>): void {
 					node.error = error
 					for (let e = node.sinks; e; e = e.nextSink) propagate(e.sink)
 				}
-				setState(node.pendingNode, false)
+				trustedWrite(() => setState(node.pendingNode, false))
 			})
 		},
 	)
@@ -222,7 +223,7 @@ function createTask<T extends {}>(
 		abort(): void {
 			node.controller?.abort()
 			node.controller = undefined
-			setState(node.pendingNode, false)
+			trustedWrite(() => setState(node.pendingNode, false))
 		},
 	})
 

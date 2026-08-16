@@ -377,19 +377,22 @@ describe('List', () => {
 			expect(signalBefore).toBe(signalAfter)
 		})
 
-		test('replace() inside an effect does not cause the effect to re-run', () => {
+		test('replace() inside a memo body does not link the item signal (ADR-0019 §3: memo bodies are outside the write guard)', () => {
 			const list = createList(['a', 'b', 'c'])
 			// biome-ignore lint/style/noNonNullAssertion: index is within bounds
 			const key = list.keyAt(0)!
-			let effectCount = 0
-			createEffect((): undefined => {
-				effectCount++
-				list.replace(key, 'A')
+			let runs = 0
+			const probe = createMemo(() => {
+				runs++
+				if (runs === 1) list.replace(key, 'A')
+				return runs
 			})
-			expect(effectCount).toBe(1) // ran once on creation
+			probe.get()
+			expect(runs).toBe(1) // ran once
 			expect(list.byKey(key)?.get()).toBe('A')
-			// replace() must NOT have linked the item signal to this effect
-			expect(effectCount).toBe(1)
+			// replace() must NOT have linked the item signal to this memo
+			probe.get()
+			expect(runs).toBe(1)
 		})
 	})
 
@@ -1033,82 +1036,106 @@ describe('List', () => {
 		//      leaked edge and re-runs the effect once during setup; after
 		//      that re-run trimSources removes the edges.
 
-		test('sort() inside an effect does not leak item-signal edges', () => {
+		// ADR-0019: a mutator called from an effect body now throws
+		// EffectWriteError before any edge could leak, so these leak-guard
+		// tests moved their sink from an effect to a memo — memo bodies are
+		// outside the write guard's scope (ADR-0019 §3), same underlying
+		// mutator code path. `recomputeMemo` unconditionally clears the dirty
+		// flag at the end of a run (no self re-mark preserving, unlike
+		// effects), so a leaked edge cannot be observed as a transient re-run
+		// during setup — only as a persistent one: read the memo, mutate an
+		// item externally, and confirm the memo does NOT recompute again.
+
+		test('sort() inside a memo body does not leak item-signal edges', () => {
 			const list = createList([3, 1, 2])
 			const trigger = createState(0)
 			let runs = 0
-			createEffect((): undefined => {
+			const probe = createMemo(() => {
 				trigger.get()
 				runs++
 				if (runs === 1) list.sort()
+				return runs
 			})
+			probe.get()
 
 			expect(runs).toBe(1)
 
-			// Mutating an item value must NOT re-run the effect — it only
+			// Mutating an item value must NOT dirty the memo — it only
 			// ever read `trigger`, not the list. (persistent leak, mode a)
 			// biome-ignore lint/style/noNonNullAssertion: default key
 			list.byKey('0')!.set(99)
+			probe.get()
 			expect(runs).toBe(1)
 		})
 
-		test('splice() inside an effect does not leak item-signal edges', () => {
+		test('splice() inside a memo body does not leak item-signal edges', () => {
 			const list = createList([1, 2, 3, 4])
 			const trigger = createState(0)
 			let runs = 0
-			createEffect((): undefined => {
+			const probe = createMemo(() => {
 				trigger.get()
 				runs++
 				if (runs === 1) list.splice(1, 2) // reads keys '1','2'
+				return runs
 			})
+			probe.get()
 
 			expect(runs).toBe(1)
 
-			// (persistent leak, mode a) — surviving items must not re-run
+			// (persistent leak, mode a) — surviving items must not dirty the memo
 			// biome-ignore lint/style/noNonNullAssertion: default key
 			list.byKey('0')!.set(99)
+			probe.get()
 			expect(runs).toBe(1)
 		})
 
-		test('update() inside an effect does not transiently re-run', () => {
+		test('update() inside a memo body does not leak item-signal edges', () => {
 			// list.update calls list.get() (tracked) then list.set(). The
-			// tracked get() leaks an effect->list edge; the subsequent set()
-			// propagates through it, re-running the effect once during setup
-			// (transient leak, mode b).
+			// tracked get() would leak a memo->list edge if the read weren't
+			// isolated correctly.
 			const list = createList([1, 2, 3])
 			const trigger = createState(0)
 			let runs = 0
-			createEffect((): undefined => {
+			const probe = createMemo(() => {
 				trigger.get()
 				runs++
 				if (runs === 1) list.update(arr => [...arr, 4])
+				return runs
 			})
+			probe.get()
 
-			// Without the fix, runs is 2 here (transient re-run).
+			expect(runs).toBe(1)
+
+			// biome-ignore lint/style/noNonNullAssertion: default key
+			list.byKey('0')!.set(99)
+			probe.get()
 			expect(runs).toBe(1)
 		})
 
-		test('set() inside an effect does not leak item-signal edges (dirty node)', () => {
+		test('set() inside a memo body does not leak item-signal edges (dirty node)', () => {
 			// A prior add() marks the node DIRTY, so set() takes the
 			// buildValue() path — reading each item signal tracked and
-			// leaking edges directly into the effect.
+			// leaking edges directly into the memo.
 			const list = createList([1, 2, 3])
 			const trigger = createState(0)
 			let runs = 0
-			createEffect((): undefined => {
+			const probe = createMemo(() => {
 				trigger.get()
 				runs++
 				if (runs === 1) {
 					list.add(4) // marks node DIRTY
 					list.set([1, 2, 3, 4])
 				}
+				return runs
 			})
+			probe.get()
 
 			expect(runs).toBe(1)
 
 			// (persistent leak, mode a)
 			// biome-ignore lint/style/noNonNullAssertion: default key
 			list.byKey('0')!.set(99)
+			probe.get()
 			expect(runs).toBe(1)
 		})
 	})
