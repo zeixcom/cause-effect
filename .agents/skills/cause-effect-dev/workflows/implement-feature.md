@@ -9,6 +9,8 @@
 
 Read `REQUIREMENTS.md`. Verify the feature is in scope — the signal type set is complete and new types are explicitly out of scope. If the request would add a new signal type, stop and explain this constraint.
 
+If the feature fills one signal from another — a composite populated from an async source, or from another composite — read `adr/0018-shape-indexed-signal-types.md` first. Extend `deriveStore`/`deriveList`'s derivation paths rather than adding a mechanism that requires an effect to write the result with `.set()`/`.update()`.
+
 ## Step 2: Locate relevant source
 
 Use references/source-map.md to identify:

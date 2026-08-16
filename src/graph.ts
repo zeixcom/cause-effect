@@ -270,13 +270,17 @@ const DEFAULT_EQUALITY = <T extends {}>(a: T, b: T): boolean => a === b
  */
 const SKIP_EQUALITY = (_a?: unknown, _b?: unknown): boolean => false
 
+// The cycle-guard set is allocated lazily, at the first object comparison:
+// most comparisons end at the primitive checks above, and this is the default
+// equality for every List item and Store property write, so an eager WeakSet
+// would dominate those hot paths.
 const deepEqual = (a: unknown, b: unknown): boolean =>
-	deepEqualInner(a, b, new WeakSet())
+	deepEqualInner(a, b, undefined)
 
 const deepEqualInner = (
 	a: unknown,
 	b: unknown,
-	seen: WeakSet<object>,
+	seen: WeakSet<object> | undefined,
 ): boolean => {
 	if (Object.is(a, b)) return true
 	if (typeof a !== typeof b) return false
@@ -288,7 +292,8 @@ const deepEqualInner = (
 	// ever visited" — the entry is removed once this call returns, so an
 	// object reached twice via different (non-cyclic) paths is still compared
 	// independently each time, not aliased away by an earlier, unrelated pair.
-	if (seen.has(a as object)) return true
+	if (seen?.has(a as object)) return true
+	seen ??= new WeakSet()
 	seen.add(a as object)
 
 	try {

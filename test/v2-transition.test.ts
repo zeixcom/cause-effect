@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import {
+	createEffect,
 	createList,
+	createScope,
 	createState,
 	createStore,
 	deriveList,
@@ -12,9 +14,13 @@ import {
 	isSignal,
 	isStore,
 	type List,
+	type ListCallback,
+	type ListChanges,
+	type ListSource,
 	type MutableList,
 	type MutableSignal,
 	type MutableStore,
+	type PerItemCallback,
 	type Signal,
 } from '../index.ts'
 
@@ -102,5 +108,35 @@ describe('Signal — readonly base and mutable extension share one tag', () => {
 	test('isMutableSignal matches only the mutable single-value shape', () => {
 		expect(isMutableSignal(createState(1))).toBe(true)
 		expect(isMutableSignal(createList([1]))).toBe(false)
+	})
+})
+
+describe('ListSource/ListCallback/ListChanges/PerItemCallback — terminal 2.0 names', () => {
+	test('ListSource drives the per-item form of deriveList', () => {
+		const source: ListSource<number> = createList([1, 2])
+		expect(deriveList(source, n => n * 2).get()).toEqual([2, 4])
+	})
+
+	test('ListChanges and ListCallback drive the external-push form of deriveList', () => {
+		let push: ((changes: ListChanges<number>) => void) | undefined
+		const watched: ListCallback<number> = apply => {
+			push = apply
+			return () => {}
+		}
+		const list = deriveList<number>([], { watched })
+		const dispose = createScope(() => {
+			createEffect(() => {
+				list.get()
+			})
+		})
+		push?.({ add: [1, 2, 3] })
+		expect(list.get()).toEqual([1, 2, 3])
+		dispose()
+	})
+
+	test('PerItemCallback drives the per-item form of deriveList', () => {
+		const source = createList([1, 2, 3])
+		const doubler: PerItemCallback<number, number> = (n: number) => n * 2
+		expect(deriveList(source, doubler).get()).toEqual([2, 4, 6])
 	})
 })

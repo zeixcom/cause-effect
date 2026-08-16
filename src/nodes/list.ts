@@ -1411,6 +1411,7 @@ export {
 	type ListOptions,
 	type ListSource,
 	type MutableList,
+	type PerItemCallback,
 	TYPE_LIST,
 	type UnknownRecord,
 }

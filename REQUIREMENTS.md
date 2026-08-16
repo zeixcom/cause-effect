@@ -4,8 +4,10 @@ This document captures the vision, audience, constraints, and boundaries of the 
 
 > **Signal taxonomy is in transition.** v1.x ships nine signal types indexed by shape *and* origin.
 > The target described below is the shape-indexed taxonomy of
-> [ADR-0018](adr/0018-shape-indexed-signal-types.md), planned for v2.0 and not yet committed.
-> Where the two differ, the v1.x API is named explicitly.
+> [ADR-0018](adr/0018-shape-indexed-signal-types.md), accepted for v2.0. Its construction API
+> (`createSignal`, `createComputed`, `createMutableSignal`, `deriveSignal`) already ships in 1.5.0
+> as a bridge; only the removal of the v1.x origin names (`createState`, `isState`, etc.) is
+> deferred to v2.0. Where the two differ, the v1.x API is named explicitly.
 
 ## Vision
 

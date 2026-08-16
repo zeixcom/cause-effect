@@ -109,6 +109,15 @@ type DeriveListOptions<T extends {}, S extends Signal<T> = Signal<T>> = ItemSign
     watched?: ListCallback<T>;
 };
 /**
+ * Transformation callback for the per-item derivation, either sync or async.
+ * A sync callback produces a `Signal<T>` per item. An async callback produces an
+ * asynchronously derived `Signal<T>` per item, which cancels when the source item changes.
+ *
+ * @template T - The type of derived items
+ * @template U - The type of source items
+ */
+type PerItemCallback<T extends {}, U extends {}> = ((sourceValue: U) => T) | ((sourceValue: U, abortSignal: AbortSignal) => Promise<T>);
+/**
  * Granular mutation descriptor passed to the `emit` callback inside a `ListCallback`.
  *
  * @template T - The type of items in the sequence
@@ -220,4 +229,4 @@ declare function isList<T extends {}, S extends Signal<T> = Signal<T>>(value: un
  * @returns True if the value is a mutable List
  */
 declare function isMutableList<T extends {}, S extends MutableSignal<T> = MutableSignal<T>>(value: unknown): value is MutableList<T, S>;
-export { createList, type DeriveListOptions, type DiffResult, deriveList, diffArrays, getKeyGenerator, isList, isMutableList, type KeyConfig, keysEqual, type List, type ListCallback, type ListChanges, type ListOptions, type ListSource, type MutableList, TYPE_LIST, type UnknownRecord, };
+export { createList, type DeriveListOptions, type DiffResult, deriveList, diffArrays, getKeyGenerator, isList, isMutableList, type KeyConfig, keysEqual, type List, type ListCallback, type ListChanges, type ListOptions, type ListSource, type MutableList, type PerItemCallback, TYPE_LIST, type UnknownRecord, };

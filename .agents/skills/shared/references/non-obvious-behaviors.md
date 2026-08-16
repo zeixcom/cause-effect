@@ -99,21 +99,22 @@ recomputation entirely without running their callbacks.
 
 <watched_stable_through_mutations>
 **`watched` stays active through structural mutations.** The `watched` callback on a List or
-Collection source is called once when the first downstream effect subscribes, and `unwatched`
-is called when the last downstream effect unsubscribes. Structural mutations (adding items,
-removing items, updating values) do not call `unwatched` then `watched` again — the callback
-remains active for the lifetime of the subscription.
+DerivedList source is called once when the first downstream effect subscribes, and its
+returned cleanup runs when the last downstream effect unsubscribes. Structural mutations
+(adding items, removing items, updating values) do not restart that lifecycle.
 
 ```typescript
-const list = createList(
-  () => startPolling(),   // watched:   called once when first effect subscribes
-  () => stopPolling(),    // unwatched: called once when last effect unsubscribes
-)
+const list = createList<Item>([], {
+  watched: () => {
+    startPolling()          // called once when the first effect subscribes
+    return () => stopPolling()  // called once when the last effect unsubscribes
+  }
+})
 
-// These mutations do NOT restart the watched/unwatched cycle.
+// These mutations do NOT restart the watched lifecycle.
 // The data source stays open as long as at least one effect is subscribed.
-list.push({ id: '1', name: 'Item 1' })  // watched is NOT called again
-list.delete('1')                         // watched is NOT called again
+list.add({ id: '1', name: 'Item 1' })  // watched is NOT called again
+list.remove('1')                        // watched is NOT called again
 ```
 </watched_stable_through_mutations>
 
@@ -262,9 +263,9 @@ collection contents inside a reactive handler, rather than a manual remove-then-
 effect body. Any signal read performed inside a handler becomes a tracked dependency of that
 effect, exactly as if the read happened outside `match()`.
 
-This includes reads with no `.get()` in sight: `List`/`Collection` accessor methods
+This includes reads with no `.get()` in sight: `List`/`DerivedList` accessor methods
 (`.keys()`, `.at()`, `.byKey()`, `.length`, iteration) all call `subscribe()` internally, so
-using them inside a handler links the collection into the effect's dependencies even though
+using them inside a handler links the sequence into the effect's dependencies even though
 no `.get()` was written.
 
 ```typescript

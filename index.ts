@@ -58,6 +58,7 @@ export {
 	type ListOptions,
 	type ListSource,
 	type MutableList,
+	type PerItemCallback,
 } from './src/nodes/list'
 export { createMemo } from './src/nodes/memo'
 export { createSensor } from './src/nodes/sensor'
