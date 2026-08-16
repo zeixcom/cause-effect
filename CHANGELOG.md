@@ -32,6 +32,10 @@ All symbols below are removed in v2.0; `List` and `Store` are repurposed as read
 | `CollectionOptions<T, S>` | None — folded into `DeriveListOptions<T>` |
 | `State<T>` / `isState(x)`, `Memo<T>` / `isMemo(x)`, `Task<T>` / `isTask(x)`, `Sensor<T>` / `isSensor(x)`, `SensorCallback<T>` / `SensorOptions<T>`, `isComputed(x)` | No mechanical replacement — use `isSignal(x)` / `isMutableSignal(x)` or a plain property check (`ComputedOptions<T>` is unaffected) |
 
+### Fixed
+
+- **`DEEP_EQUALITY` allocated a `WeakSet` on every comparison, dominating primitive-heavy hot paths** (`src/graph.ts`): `deepEqual()` constructed the cycle-guard `WeakSet` eagerly, before any inspection of its arguments — so every List item write, `Store` property write, and derived-collection item comparison paid for a `WeakSet` construction even when both sides were primitives that return at `Object.is` or the typeof checks. Profiling the `List.replace()` item-to-subscriber path attributed roughly a quarter of total time to `WeakSet` allocation alone. Now the guard set is allocated lazily, at the first comparison that actually recurses into objects; primitive comparisons allocate nothing. Guard semantics are unchanged (ADR-0016 path-scoped cycle detection), and the performance-regression margin on the `listReplace` scenario drops from the 1.20x limit to ~0.7x.
+
 ## 1.4.1
 
 ### Fixed
