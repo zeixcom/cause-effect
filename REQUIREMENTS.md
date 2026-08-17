@@ -2,16 +2,14 @@
 
 This document captures the vision, audience, constraints, and boundaries of the library. It survives version bumps. It guides the decision about what belongs in the library.
 
-> **Signal taxonomy is in transition.** v1.x ships nine signal types indexed by shape *and* origin.
-> The target described below is the shape-indexed taxonomy of
-> [ADR-0018](adr/0018-shape-indexed-signal-types.md), accepted for v2.0 and amended by the
-> ADR-0018 Revision: the narrow single-value shape is named `Cell`/`MutableCell`, while
-> `Signal`/`MutableSignal` return to their v1.x umbrella meaning — matching `Cell`, `List`, or
-> `Store` structurally, not by tag. Construction API for the pre-Revision narrow names
-> (`createSignal`, `createComputed`, `createMutableSignal`, `deriveSignal`) already shipped in
-> 1.5.0 as a bridge; the corrected umbrella `isSignal`/`isMutableSignal` meaning was backported
-> in 1.5.1. Only the removal of the v1.x origin names (`createState`, `isState`, etc.) is
-> deferred to v2.0. Where the two differ, the v1.x API is named explicitly.
+> **Signal taxonomy: shipped for v2.0.** [ADR-0018](adr/0018-shape-indexed-signal-types.md)
+> (✅ Accepted) is implemented on branch `v2/shape-exploration` (`2.0.0-next.1`, unreleased):
+> the narrow single-value shape is named `Cell`/`MutableCell`, while `Signal`/`MutableSignal`
+> return to their umbrella meaning, matching `Cell`, `List`, or `Store` structurally, not by
+> tag. 1.5.0 shipped the pre-Revision bridge names (`createSignal`, `createComputed`,
+> `createMutableSignal`, `deriveSignal`) ahead of the breaking rename; the corrected umbrella
+> `isSignal`/`isMutableSignal` meaning is decided for a 1.5.x back-port, not yet published —
+> see `TODO.md` CE-017. See `MIGRATION-2.0.md` for the full bridge-name mapping.
 
 ## Vision
 

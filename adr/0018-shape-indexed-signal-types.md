@@ -2,7 +2,7 @@
 
 ## Status
 
-🔄 Proposed — 2026-08-17, for v2.0. No release has shipped under this or any prior wording — branch `v2/shape-exploration` is `2.0.0-next.1`, unreleased.
+✅ Accepted — 2026-08-17 (implementation on branch `v2/shape-exploration`; revision of the same date renamed the narrow shape to `Cell` and restored the umbrella `Signal` — see `MIGRATION-2.0.md` "Second flip"). No release has shipped under this or any prior wording — branch `v2/shape-exploration` is `2.0.0-next.1`, unreleased.
 
 Amends [ADR-0001](0001-reactive-task-stale-detection.md) (scope of `isPending`).
 
