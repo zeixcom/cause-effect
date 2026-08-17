@@ -31,7 +31,7 @@ const WHERE = 'deriveComputed'
  * The shape this factory returns is `Cell<T>` — the single-value, readonly member of the
  * shape-indexed value-type set. See ADR-0018.
  *
- * @since 0.18.0
+ * @since 2.0.0
  * @template T - The type of value computed by the memo
  * @param fn - The computation function that receives the previous value
  * @param options - Optional configuration for the memo

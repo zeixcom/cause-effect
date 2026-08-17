@@ -68,7 +68,7 @@ type Signal<T extends {}> = {
  * `createList` and `createStore` for those shapes, and `deriveCell` for any
  * derivation. See ADR-0018.
  *
- * @since 0.9.6
+ * @since 2.0.0
  * @template T - The type of value stored in the cell
  * @param value - The initial value
  * @param options - Optional configuration for the cell

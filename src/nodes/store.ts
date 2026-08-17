@@ -690,7 +690,7 @@ function readonlyFacade<T extends UnknownRecord>(
  * Checks if a value is a Store signal — the readonly base, matching both the mutable and
  * readonly keyed-record shapes. Use `isMutableStore` to also require write access.
  *
- * @since 0.15.0
+ * @since 2.0.0
  * @param value - The value to check
  * @returns True if the value is a Store
  */
@@ -701,7 +701,7 @@ function isStore<T extends UnknownRecord>(value: unknown): value is Store<T> {
 /**
  * Checks if a value is a mutable Store signal.
  *
- * @since 2.0.0
+ * @since 1.5.0
  * @param value - The value to check
  * @returns True if the value is a mutable Store
  */
