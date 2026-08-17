@@ -4,7 +4,7 @@ This document provides a high-level overview of the reactive signal graph engine
 
 ## Overview
 
-The engine maintains a directed acyclic graph (DAG) of signal nodes connected by edges. Nodes are either **sources** (produce values) or **sinks** (consume values); some types (Memo, Task, Store, List, Collection) are both. Edges are created and destroyed automatically as computations run, ensuring the graph always reflects true runtime dependencies.
+The engine maintains a directed acyclic graph (DAG) of signal nodes connected by edges. Nodes are either **sources** (produce values) or **sinks** (consume values); some types (a derived `Cell`'s `MemoNode`/`TaskNode` internals, `Store`, `List`) are both. Edges are created and destroyed automatically as computations run, ensuring the graph always reflects true runtime dependencies.
 
 The design optimizes for three properties:
 
@@ -24,8 +24,8 @@ The design optimizes for three properties:
 | Two-Level Flagging | [ADR-0012](adr/0012-two-level-flagging-dirty-and-check.md) | `DIRTY` for direct sinks, `CHECK` for transitive sinks to minimize work |
 | FLAG_RELINK | [ADR-0010](adr/0010-flag-relink-mechanism-for-structural-reactivity.md) | Structural change flag for composite signals, invisible to core propagation |
 | Two-Path Access | [ADR-0014](adr/0014-two-path-access-pattern-for-composite-signals.md) | Fast path (untracked rebuild) vs tracked path (edge re-establishment) for composites |
-| Composite Lookups | [ADR-0015](adr/0015-composite-lookup-methods-track-structural-changes.md) | List/Collection lookups track structural changes; Store.byKey stays untracked (granularity preserved) |
-| Shape-Indexed Types | [ADR-0018](adr/0018-shape-indexed-signal-types.md) | 📝 Proposed for v2.0. Types indexed by shape and mutability; origin moves to construction |
+| Composite Lookups | [ADR-0015](adr/0015-composite-lookup-methods-track-structural-changes.md) | `List` lookups track structural changes; `Store.byKey` stays untracked (granularity preserved) |
+| Shape-Indexed Types | [ADR-0018](adr/0018-shape-indexed-signal-types.md) | Implemented on `v2/shape-exploration`; ADR Status flip to Accepted pending (CE-017). Types indexed by shape and mutability; origin moves to construction |
 
 ## Node Structure
 
@@ -141,68 +141,62 @@ A node marked `CHECK` that turns out to have unchanged dependencies never recomp
 
 `deepEqual()` walks arrays and records, compares `Date` by `getTime()` and `RegExp` by `source` plus `flags`, and carries a `WeakSet` cycle guard scoped to the current recursion path. The entry is removed in a `finally` block as each call returns, so an object reached twice through different non-cyclic paths is still compared independently. See [ADR-0016](adr/0016-path-scoped-cycle-detection-in-deep-equality.md).
 
-`isEqual` is a deprecated alias of `DEEP_EQUALITY`.
+`isEqual`, the deprecated 1.x alias of `DEEP_EQUALITY`, is removed in 2.0 — no longer exported.
 
 ## Signal Types
 
-All signal types are defined in `src/nodes/`. Each exports a factory function (e.g., `createState`, `createMemo`) and the corresponding node type.
-
-| Type | Node | Role | Key Behavior |
-|------|------|------|--------------|
-| **State** | `StateNode<T>` | Source | Mutable value container; `get()`/`set()`/`update()` |
-| **Sensor** | `StateNode<T>` | Source | Read-only external input; lazy `watched` callback lifecycle |
-| **Memo** | `MemoNode<T>` | Source + Sink | Sync derived computation; lazy evaluation; optional `watched` invalidation |
-| **Task** | `TaskNode<T>` | Source + Sink | Async derived computation; aborts in-flight on dependency change; `isPending()` |
-| **Effect** | `EffectNode` | Sink | Side-effecting computation; runs immediately; auto-cleanup |
-| **Slot** | `MemoNode<T>` | Source + Sink | Stable reactive source delegating to swappable backing signal |
-| **Store** | `MemoNode<Record>` | Source + Sink | Reactive object; each property is a signal; structural reactivity |
-| **List** | `MemoNode<T[]>` | Source + Sink | Reactive array; stable keys; per-item reactivity; structural diffing |
-| **Collection** | `MemoNode<T[]>` | Source + Sink | Two patterns: `createCollection(watched)` (external) and `deriveCollection(source, fn)` (internal) |
-
-Composite signals (Store, List, Collection, deriveCollection) use the [FLAG_RELINK](adr/0010-flag-relink-mechanism-for-structural-reactivity.md) + [two-path access](adr/0014-two-path-access-pattern-for-composite-signals.md) pattern for structural reactivity.
-
-### Target Taxonomy (v2.0, proposed)
-
-The table above indexes types by shape *and* origin, which leaves four cells of the
-shape × origin matrix empty — most consequentially, no keyed sequence or keyed record can be
-derived from an asynchronous source. [ADR-0018](adr/0018-shape-indexed-signal-types.md) proposes
-indexing types by **shape and mutability only**, moving origin to the construction site.
+All signal types are defined in `src/nodes/`. Per [ADR-0018](adr/0018-shape-indexed-signal-types.md),
+types are indexed by **shape and mutability only**; origin (how a signal's value came to
+exist — mutable source, sync derivation, async derivation, external push) moves to the
+construction verb and is invisible to the consumption contract.
 
 | Type | Node | Shape | Writable |
 |------|------|-------|----------|
-| `Cell<T>` / `MutableCell<T>` | `StateNode` \| `MemoNode` \| `TaskNode` | Single value | No / Yes |
+| `Cell<T>` / `MutableCell<T>` | `StateNode<T>` \| `MemoNode<T>` \| `TaskNode<T>` | Single value | No / Yes |
 | `List<T, S>` / `MutableList<T, S>` | `MemoNode<T[]>` | Keyed sequence | No / Yes |
 | `Store<T>` / `MutableStore<T>` | `MemoNode<Record>` | Keyed record | No / Yes |
 
-`State`, `Memo`, `Task`, `Sensor`, and `Collection` survive only as construction verbs.
-`Symbol.toStringTag` carries the shape (`'Cell' | 'List' | 'Store'`), not the origin.
-`Effect` and `Slot` are orthogonal to shape and unaffected.
+`Symbol.toStringTag` carries the shape (`'Cell' | 'List' | 'Store'`), not the origin — a
+`Cell` built by a mutable source, a sync derivation, an async derivation, or an external push
+are all just `Cell<T>` to a consumer. `Signal<T>` / `MutableSignal<T>` are the umbrella above
+the three shapes, matched structurally by `.get()` (or `.get()`/`.set()`), not by tag.
 
-`Signal<T>` / `MutableSignal<T>` are the umbrella shape above the three tagged rows above —
-matched structurally by `.get()` (or `.get()`/`.set()`), not by `Symbol.toStringTag`. See the
-ADR-0018 Revision.
+Two further types are orthogonal to shape:
+
+| Type | Node | Role | Key Behavior |
+|------|------|------|--------------|
+| **Effect** | `EffectNode` | Sink | Side-effecting computation; runs immediately; auto-cleanup |
+| **Slot** | `MemoNode<T>` | Source + Sink | Stable reactive source delegating to swappable backing signal |
+
+`State`, `Memo`, `Task`, `Sensor`, and `Collection` survive only as construction verbs and
+internal node/module names (`src/nodes/{state,memo,task,sensor}.ts`) — none are exported as
+public types. This collapses the prior nine-type taxonomy, which indexed by shape *and*
+origin and left the async→composite cells of that matrix empty (most consequentially: no
+keyed sequence or keyed record could be derived from an asynchronous source). See ADR-0018
+for the full rationale.
 
 Construction splits on the two verbs `create*` (→ mutable) and `derive*` (→ readonly), with
-`derive*` dispatching on its input: `isAsyncFunction` selects the Task path, any other function the
-Memo path, a non-function the external-push path (which requires `options.watched`). `watched` is
-an option and never a callback position, because a synchronous derivation callback and an
-external-push callback are both plain arity-≤1 sync functions and neither can be called to
-disambiguate — a derivation must stay lazy, a `watched` callback must run on subscribe.
+`derive*` dispatching on its input: `isAsyncFunction` selects the Task-node path, any other
+function the Memo-node path, a non-function value the external-push path (which requires
+`options.watched`). `watched` is an option and never a callback position, because a
+synchronous derivation callback and an external-push callback are both plain arity-≤1 sync
+functions and neither can be called to disambiguate — a derivation must stay lazy, a
+`watched` callback must run on subscribe. `createState` and `deriveComputed` are narrow,
+single-origin entry points for the single-value shape, retained for tree-shaking; `deriveCell`
+dispatches to them, and to the internal-only `createTask`/`createSensor` for the async and
+external-push origins.
 
-No node-level change is required. A derived composite is a memoized recompute whose result is
-applied through the structural diff already implemented in `list.set()` and `store.set()`, so
-child-signal identity is preserved by key. The mechanisms in ADR-0010, ADR-0014, ADR-0015, and
-ADR-0017 carry over unchanged.
+Composite signals (`List`, `Store`) use the [FLAG_RELINK](adr/0010-flag-relink-mechanism-for-structural-reactivity.md) + [two-path access](adr/0014-two-path-access-pattern-for-composite-signals.md) pattern for structural reactivity. No node-level change was needed to derive them: a derived composite is a memoized recompute whose result is applied through the same structural diff `list.set()`/`store.set()` use for a mutable write, so child-signal identity is preserved by key. The mechanisms in ADR-0010, ADR-0014, ADR-0015, and ADR-0017 apply to every origin, not only the mutable one.
 
 ### Composite Lookup Methods
 
-**List and Collection** — `at()`, `byKey()`, `keyAt()`, `indexOfKey()`, and the `Symbol.iterator` create the same O(1) **structural-consumer** edge as `keys()`, `length`, and `get()` — via `subscribe()` (or `ensureFresh()` for `deriveCollection`, whose node can be stale from upstream tracked changes). Reading any of these inside an effect or memo re-runs it on structural change (key add/remove/reorder). The consumer edge is **independent** of the two-path pattern in ADR-0014, which governs *value-rebuild* edges (child signal → composite node); `subscribe()`→`link()` never triggers value-rebuild relinking. (The iterator edge is established lazily on first `.next()`, since these are generator methods.)
+**List** — `at()`, `byKey()`, `keyAt()`, `indexOfKey()`, and the `Symbol.iterator` create the same O(1) **structural-consumer** edge as `keys()`, `length`, and `get()` — via `subscribe()` (or `ensureFresh()` for a derived `List`, whose node can be stale from upstream tracked changes). Reading any of these inside an effect or memo re-runs it on structural change (key add/remove/reorder). The consumer edge is **independent** of the two-path pattern in ADR-0014, which governs *value-rebuild* edges (child signal → composite node); `subscribe()`→`link()` never triggers value-rebuild relinking. (The iterator edge is established lazily on first `.next()`, since these are generator methods.)
 
 **Store** — `byKey()` and the proxy property access (`store.prop`) deliberately do **not** create a structural edge. Store keys are statically known from `T`, and proxy reads are already granular: `store.name` returns the child `State`, whose `.get()` forms a *property-level* edge. Adding a structural edge on top would make every property read also subscribe to "any key added/removed," defeating per-property reactivity (Store's defining feature). The Store `Symbol.iterator` *does* track structure, like `store.keys()` and `store.get()` — it is a whole-store traversal, not a per-property read. See [ADR-0015](adr/0015-composite-lookup-methods-track-structural-changes.md) for the rationale behind this asymmetry.
 
 For a derived external-push Store (`deriveStore(seed, { watched })`), per-property reads create no structural *edge* (unchanged, ADR-0015) but they do activate the `watched` *lifecycle*: the facade links a dedicated anchor node that never propagates, so any observation form — structural or per-property — starts and keeps the lifecycle alive. Activation and tracking are separate concerns.
 
-Return types remain honest: `byKey(k): S | undefined` etc. on List/Collection (a runtime string may not be a present key). `Store.byKey` is non-nullable because Store keys are statically known from `T`.
+Return types remain honest: `byKey(k): S | undefined` on `List` (a runtime string may not be a present key). `Store.byKey` keeps the same `| undefined` today even though `Store`'s keys are statically known from `T` — narrowing that is [ADR-0019](adr/0019-value-shortcut-get-overload-for-list-and-store.md)'s proposed `get(key)` shortcut, not yet implemented.
 
 ## Key Decisions
 
@@ -210,9 +204,9 @@ Return types remain honest: `byKey(k): S | undefined` etc. on List/Collection (a
 |----------|--------|------------------------|-----------|
 | Sync callback returning a `Promise` in Memo/Slot | Throw `PromiseValueError` in `recomputeMemo()` (`graph.ts`) the first time a non-`async` callback's return value is thenable | (a) Auto-detect ahead of time in `isAsyncFunction` and reclassify as Task; (b) leave as silent, undocumented misclassification (status quo) | Reclassifying requires invoking the callback before the Memo/Task routing decision is made, which breaks Memo's lazy-evaluation contract and is unreliable for branchy functions. Morphing a live `MemoNode` into a `TaskNode` after callers already hold a `Memo<T>` would silently change `.get()` semantics (synchronous return vs. throws-until-resolved) with no compile-time signal — unsound. A single check at the existing `recomputeMemo()` choke point catches Memo, Slot, and `createComputed`/`createSignal` misuse uniformly, costs one `typeof` check per recompute, and only fires on code that was already broken (non-breaking, "Fixed" changelog category). |
 | Effects writing signals they depend on | Bounded convergence: `flush()` drains in passes over queue snapshots (Svelte-style), so self-writing effects re-run until settled and always observe final values; a graph that doesn't settle within 1000 passes throws `EffectConvergenceError`. `propagate()` preserves `FLAG_RUNNING` on effects and `flush()` skips mid-run effects, preventing re-entrant `runEffect` during creation-time writes | (a) Status quo (rejected: `runEffect` clobbered the effect's own dirty re-mark with `CLEAN`, so even converging clamp effects ended one run stale — rendering the pre-clamp value — and mutual effect writes looped until heap exhaustion with no guard); (b) per-effect run cap (rejected: cannot detect ping-pong between effects — each effect individually settles every pass); (c) raw queue-length cap (rejected: false-positives on wide graphs with many distinct dirty effects) | A pass cap is the only metric that is both sound and complete: a settled graph does exactly one pass regardless of effect count, while any non-converging cycle — self-loop, ping-pong, or longer — forces unbounded passes. Converging self-writes (clamping, write-once init) remain supported; non-settling graphs fail loudly at the triggering `set()` instead of silently diverging or hanging. |
-| Signal type taxonomy (v2.0, proposed) | Index types by shape (single / keyed sequence / keyed record) × mutability = 6 types, plus `Effect` and `Slot`. Origin moves to the construction verb: `create*` → mutable, `derive*` → readonly. Every shape becomes derivable from every origin. See [ADR-0018](adr/0018-shape-indexed-signal-types.md) | (a) Fill the empty matrix cells but keep 9 type names (rejected: leaves `.set()` reachable on derived values, so the discouraged pattern stays available and idiomatic-looking); (b) document the prohibition harder (rejected: a training-set prior is not answerable by prose — if `.set()` exists it will be called); (c) three factories total with full runtime dispatch (rejected: cannot distinguish sync derivation from external push, and pulls async + watched machinery into every bundle, breaking the ≤4 kB core budget); (d) twelve `create{Origin}{Shape}` factories (rejected: 12 construction names for 6 types is a worse ratio than the status quo) | Users write to state from effects because the derivation matrix has holes — `Task<T[]>` → keyed sequence and any source → `Store` have no derivation path at all, so the effect is the only door. Closing the holes and removing the setter from derived types are individually insufficient and jointly sufficient: the first makes the correct path exist, the second makes the incorrect one a compile error. Collapsing the taxonomy falls out for free, because `Sensor` is already a `State` without a setter and `Collection` is already a `List` without mutators — both are mutability distinctions wearing the costume of type distinctions |
-| `isPending` / `abort` placement (v2.0, proposed) | Free functions in the graph utilities, alongside `batch`, `untrack`, and `match` | (a) Methods on `Task`, as in v1.x (rejected: after the collapse this forces `AsyncSignal`/`AsyncList`/`AsyncStore` subtypes, restoring a 9-name taxonomy); (b) methods on the base `Cell<T>` (rejected: a closure per node on the synchronous hot path, paid by every `State`, for a capability most signals do not have) | Asynchrony is an origin, not a shape. Any of the three shapes can be derived asynchronously, so the accessor must be shape-agnostic. The `pendingNode: StateNode<boolean>` mechanism of ADR-0001 is unchanged — only the accessor moves and its domain widens. Consumers gain the ability to ask a derived `List` or `Store` whether it is still loading, which no v1.x API expresses |
-| Unset state of async composites (v2.0, proposed) | `options.initial` is required for `deriveList`/`deriveStore` with an async input. `deriveCell` keeps `UnsetSignalValueError` and gains `initial` as optional | (a) Throw like `Task` (rejected: `length` and `Symbol.iterator` throwing is a sharp edge, and every consumer would need `match()` merely to read a derived collection); (b) default silently to `[]` / `{}` (rejected: loading-empty becomes indistinguishable from resolved-empty at the point of use) | Requiring `initial` makes the composite never unset, so the whole lookup surface is total. `isPending()` carries the loading distinction instead of the value doing it. `deriveCell` keeps its current behaviour because `match()`'s `nil` branch depends on it |
+| Signal type taxonomy (v2.0) | Index types by shape (single / keyed sequence / keyed record) × mutability = 6 types, plus `Effect` and `Slot`. Origin moves to the construction verb: `create*` → mutable, `derive*` → readonly. Every shape becomes derivable from every origin. See [ADR-0018](adr/0018-shape-indexed-signal-types.md) | (a) Fill the empty matrix cells but keep 9 type names (rejected: leaves `.set()` reachable on derived values, so the discouraged pattern stays available and idiomatic-looking); (b) document the prohibition harder (rejected: a training-set prior is not answerable by prose — if `.set()` exists it will be called); (c) three factories total with full runtime dispatch (rejected: cannot distinguish sync derivation from external push, and pulls async + watched machinery into every bundle, breaking the ≤4 kB core budget); (d) twelve `create{Origin}{Shape}` factories (rejected: 12 construction names for 6 types is a worse ratio than the status quo) | Users write to state from effects because the derivation matrix has holes — `Task<T[]>` → keyed sequence and any source → `Store` have no derivation path at all, so the effect is the only door. Closing the holes and removing the setter from derived types are individually insufficient and jointly sufficient: the first makes the correct path exist, the second makes the incorrect one a compile error. Collapsing the taxonomy falls out for free, because `Sensor` is already a `State` without a setter and `Collection` is already a `List` without mutators — both are mutability distinctions wearing the costume of type distinctions |
+| `isPending` / `abort` placement (v2.0) | Free functions in the graph utilities, alongside `batch`, `untrack`, and `match` | (a) Methods on `Task`, as in v1.x (rejected: after the collapse this forces `AsyncSignal`/`AsyncList`/`AsyncStore` subtypes, restoring a 9-name taxonomy); (b) methods on the base `Cell<T>` (rejected: a closure per node on the synchronous hot path, paid by every `State`, for a capability most signals do not have) | Asynchrony is an origin, not a shape. Any of the three shapes can be derived asynchronously, so the accessor must be shape-agnostic. The `pendingNode: StateNode<boolean>` mechanism of ADR-0001 is unchanged — only the accessor moves and its domain widens. Consumers gain the ability to ask a derived `List` or `Store` whether it is still loading, which no v1.x API expresses |
+| Unset state of async composites (v2.0) | `options.initial` is required for `deriveList`/`deriveStore` with an async input. `deriveCell` keeps `UnsetSignalValueError` and gains `initial` as optional | (a) Throw like `Task` (rejected: `length` and `Symbol.iterator` throwing is a sharp edge, and every consumer would need `match()` merely to read a derived collection); (b) default silently to `[]` / `{}` (rejected: loading-empty becomes indistinguishable from resolved-empty at the point of use) | Requiring `initial` makes the composite never unset, so the whole lookup surface is total. `isPending()` carries the loading distinction instead of the value doing it. `deriveCell` keeps its current behaviour because `match()`'s `nil` branch depends on it |
 | Bundle-size limits during refactoring | Split the figure by role: the tree-shaken core budget is a hard promise; the full-library figures are a working diagnostic with deliberate slack, re-baselined from measurement at each release and explicitly not defended during a refactor | (a) Status quo — both absolute and hard (rejected: gzip and minified move in opposite directions under deduplication, so a hard gzip limit selects against consolidating duplicated code, which is the change that most improves the codebase); (b) ratchet against the last published release with a tolerance, as `regression-performance.test.ts` does (rejected for now: it makes every refactor's budget depend on release cadence, and the failure it would catch — accidental blowup — is already caught by a generous absolute ceiling); (c) raise the limits without changing their status (rejected: leaves the same trap one branch later) | The number was doing two incompatible jobs. As a *promise* it must be hard and must reflect what a consumer actually ships — which, given tree-shaking, is the core figure, not the full-library one. As a *regression detector* it must tolerate the byte-level noise that correct refactoring produces. Separating them lets the promise stay strict while the diagnostic stops distorting design. Re-baselining is a release gate, not a routine edit: lowering the ceiling toward measured usage at release keeps it meaningful, raising it mid-branch to unblock a commit does not |
 | Other 8 documented "non-obvious behaviors" (conditional reads delaying `watched`, `equals` suppressing subtrees, lazy `watched`/`unwatched` lifecycle stability, Task abort-on-change, Sensor/Task unset state, synchronous scope cleanup, `untrack` vs `watched` independence, `byKey().set()` vs `list.replace()`) | No code changes. Reframe as direct, predictable consequences of the dependency-tracking model in developer-facing docs rather than standalone gotchas | Changing `byKey().set()` to always propagate structurally (rejected: would force every item signal to carry a permanent edge to its list's structural node regardless of whether anything observes structurally, costing a `propagate()` traversal on every item write — conflicts with the "minimal work" performance constraint, and `list.replace()` already exists as the correct API for this case, pinned by `test/list.test.ts:261`) | Each behavior is either inherent to any correct fine-grained reactive graph (read-based edge creation, two-level dirty/check flagging, lazy lifecycle keyed on sink count) or an already-decided trade-off with a working escape hatch. The fix is conceptual, not code: a reader who understands the model shouldn't find these surprising. Serves REQUIREMENTS.md goal #2 (predictable mental model) without touching synchronous-path performance (goal #4). |
 
