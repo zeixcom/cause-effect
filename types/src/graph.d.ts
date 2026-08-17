@@ -58,11 +58,13 @@ type Edge = {
 type Cleanup = () => void;
 type MaybeCleanup = Cleanup | undefined | void;
 /**
- * Options for configuring signal behavior.
+ * Options for the single-value create family: `createState`/`createCell` and
+ * `createSlot`.
  *
- * @template T - The type of value in the signal
+ * @since 2.0.0
+ * @template T - The type of value in the cell
  */
-type SignalOptions<T extends {}> = {
+type CellOptions<T extends {}> = {
     /**
      * Optional type guard to validate values.
      * If provided, `set()` throws an error for an invalid value.
@@ -78,29 +80,29 @@ type SignalOptions<T extends {}> = {
 };
 /**
  * Setup callback for the external-push origin: the seed-input form of
- * `deriveSignal` and the `watched` option of `createSensor`. Runs when the
- * signal becomes watched and receives an `emit` function that pushes a new
- * value into the graph.
+ * `deriveCell`. Runs when the cell becomes watched and receives an `emit`
+ * function that pushes a new value into the graph.
  *
- * @template T - The type of value the signal holds
+ * @since 2.0.0
+ * @template T - The type of value the cell holds
  * @param emit - Pushes a new value and propagates the change to sinks
- * @returns A cleanup function that runs when the signal is no longer watched
+ * @returns A cleanup function that runs when the cell is no longer watched
  */
-type SignalCallback<T extends {}> = (emit: (next: T) => void) => Cleanup;
+type CellCallback<T extends {}> = (emit: (next: T) => void) => Cleanup;
 /**
- * Options for the single-value derive family: `deriveSignal` with a function
- * input, and the narrow factories `createMemo` and `createTask`. `initial`
- * seeds an async derivation (or the reducer pattern's starting value). See
- * ADR-0018.
+ * Options for the single-value derive family: `deriveCell` with a function
+ * input, and the narrow `deriveComputed`. `initial` seeds an async derivation
+ * (or the reducer pattern's starting value). See ADR-0018.
  *
- * The external-push form — `deriveSignal(seed, { watched })` and `createSensor` —
- * takes the same members but a `watched` of type `SignalCallback`; it is spelled
- * as an inline intersection at those signatures, because a union of the two
- * `watched` shapes here would break contextual typing of inline callbacks.
+ * The external-push form — `deriveCell(seed, { watched })` — takes the same
+ * members but a `watched` of type `CellCallback`; it is spelled as an inline
+ * intersection at that signature, because a union of the two `watched` shapes
+ * here would break contextual typing of inline callbacks.
  *
- * @template T - The type of value the signal holds
+ * @since 2.0.0
+ * @template T - The type of value the cell holds
  */
-type DeriveSignalOptions<T extends {}> = SignalOptions<T> & {
+type DeriveCellOptions<T extends {}> = CellOptions<T> & {
     /**
      * Initial value. For an async derivation, the optional escape from
      * `UnsetSignalValueError` before the first resolution. For the narrow
@@ -108,12 +110,12 @@ type DeriveSignalOptions<T extends {}> = SignalOptions<T> & {
      */
     initial?: T;
     /**
-     * An invalidation callback, as on `createMemo` and `createTask`: invoked
-     * when the signal is first watched by an effect, receives an `invalidate`
-     * function that marks the signal dirty, and must return a cleanup function
-     * that runs when the signal is no longer watched. This enables lazy
-     * resource activation for computations that also react to external events
-     * (e.g. DOM mutations, timers).
+     * An invalidation callback, as on `deriveComputed`: invoked when the cell
+     * is first watched by an effect, receives an `invalidate` function that
+     * marks the cell dirty, and must return a cleanup function that runs when
+     * the cell is no longer watched. This enables lazy resource activation for
+     * computations that also react to external events (e.g. DOM mutations,
+     * timers).
      */
     watched?: (invalidate: () => void) => Cleanup;
 };
@@ -387,4 +389,4 @@ declare function isPending(signal: unknown): boolean;
  * @param signal - Any signal
  */
 declare function abort(signal: unknown): void;
-export { abort, activeOwner, activeSink, batch, batchDepth, type Cleanup, createScope, DEEP_EQUALITY, DEFAULT_EQUALITY, type DeriveSignalOptions, type EffectCallback, type EffectNode, FLAG_CHECK, FLAG_CLEAN, FLAG_DIRTY, FLAG_RELINK, FLAG_RUNNING, flush, getAsyncSource, isPending, link, type MaybeCleanup, type MemoCallback, type MemoNode, makeSubscribe, type PendingSource, propagate, refresh, refreshComposite, registerAsyncSource, registerCleanup, runCleanup, runEffect, type Scope, type ScopeOptions, type SignalCallback, type SignalOptions, type SinkNode, SKIP_EQUALITY, type StateNode, scheduleEffect, setState, swapActiveSink, type TaskCallback, type TaskNode, TYPE_CELL, TYPE_LIST, TYPE_SLOT, TYPE_STORE, trimSources, unlink, unown, untrack, };
+export { abort, activeOwner, activeSink, batch, batchDepth, type CellCallback, type CellOptions, type Cleanup, createScope, DEEP_EQUALITY, DEFAULT_EQUALITY, type DeriveCellOptions, type EffectCallback, type EffectNode, FLAG_CHECK, FLAG_CLEAN, FLAG_DIRTY, FLAG_RELINK, FLAG_RUNNING, flush, getAsyncSource, isPending, link, type MaybeCleanup, type MemoCallback, type MemoNode, makeSubscribe, type PendingSource, propagate, refresh, refreshComposite, registerAsyncSource, registerCleanup, runCleanup, runEffect, type Scope, type ScopeOptions, type SinkNode, SKIP_EQUALITY, type StateNode, scheduleEffect, setState, swapActiveSink, type TaskCallback, type TaskNode, TYPE_CELL, TYPE_LIST, TYPE_SLOT, TYPE_STORE, trimSources, unlink, unown, untrack, };

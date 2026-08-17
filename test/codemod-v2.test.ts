@@ -176,18 +176,33 @@ describe('codemod-v2: single-value renames', () => {
 		expect(output).not.toContain('deriveSignal')
 	})
 
-	test('renames ComputedOptions/SensorOptions to DeriveSignalOptions and SensorCallback to SignalCallback', () => {
+	test('renames ComputedOptions/SensorOptions to DeriveCellOptions and SensorCallback to CellCallback', () => {
 		const { output } = migrateSource(
 			"import { type ComputedOptions, type SensorCallback, type SensorOptions } from '@zeix/cause-effect'\n" +
 				'const opts: ComputedOptions<number> = {}\n' +
 				'const watched: SensorCallback<number> = emit => () => {}\n' +
 				'const sensorOpts: SensorOptions<number> = {}\n',
 		)
-		expect(output).toContain('DeriveSignalOptions<number>')
-		expect(output).toContain('SignalCallback<number>')
+		expect(output).toContain('DeriveCellOptions<number>')
+		expect(output).toContain('CellCallback<number>')
 		expect(output).not.toContain('ComputedOptions')
 		expect(output).not.toContain('SensorOptions')
 		expect(output).not.toContain('SensorCallback')
+	})
+
+	test('renames the 1.5.0 bridge names DeriveSignalOptions/SignalOptions/SignalCallback to the final Cell-family names', () => {
+		const { output } = migrateSource(
+			"import { type DeriveSignalOptions, type SignalCallback, type SignalOptions } from '@zeix/cause-effect'\n" +
+				'const deriveOpts: DeriveSignalOptions<number> = {}\n' +
+				'const createOpts: SignalOptions<number> = {}\n' +
+				'const watched: SignalCallback<number> = emit => () => {}\n',
+		)
+		expect(output).toContain('const deriveOpts: DeriveCellOptions<number> = {}')
+		expect(output).toContain('const createOpts: CellOptions<number> = {}')
+		expect(output).toContain('const watched: CellCallback<number> = emit')
+		expect(output).not.toContain('DeriveSignalOptions')
+		expect(output).not.toContain('SignalOptions')
+		expect(output).not.toContain('SignalCallback')
 	})
 })
 

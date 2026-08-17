@@ -1,9 +1,9 @@
 import { validateCallback } from '../errors'
 import {
-	type DeriveSignalOptions,
+	type CellCallback,
+	type CellOptions,
+	type DeriveCellOptions,
 	type MemoCallback,
-	type SignalCallback,
-	type SignalOptions,
 	type TaskCallback,
 	TYPE_CELL,
 } from '../graph'
@@ -83,7 +83,7 @@ type Signal<T extends {}> = {
  */
 function createCell<T extends {}>(
 	value: T,
-	options?: SignalOptions<T>,
+	options?: CellOptions<T>,
 ): MutableCell<T> {
 	return createState(value, options)
 }
@@ -118,39 +118,39 @@ function createCell<T extends {}>(
  */
 function deriveCell<T extends {}>(
 	input: TaskCallback<T> | MemoCallback<T>,
-	options?: DeriveSignalOptions<T>,
+	options?: DeriveCellOptions<T>,
 ): Cell<T>
 function deriveCell<T extends {}>(
 	input: T,
-	options: SignalOptions<T> & { initial?: T } & {
-		watched: SignalCallback<T>
+	options: CellOptions<T> & { initial?: T } & {
+		watched: CellCallback<T>
 	},
 ): Cell<T>
 function deriveCell<T extends {}>(
 	input: MemoCallback<T> | TaskCallback<T> | T,
 	options?:
-		| DeriveSignalOptions<T>
-		| (SignalOptions<T> & { initial?: T; watched?: SignalCallback<T> }),
+		| DeriveCellOptions<T>
+		| (CellOptions<T> & { initial?: T; watched?: CellCallback<T> }),
 ): Cell<T> {
 	if (isFunction(input)) {
 		// The seed option is `initial` for the whole derive family; the narrow
 		// factories take the same options object verbatim.
 		return isAsyncFunction(input)
-			? createTask(input as TaskCallback<T>, options as DeriveSignalOptions<T>)
+			? createTask(input as TaskCallback<T>, options as DeriveCellOptions<T>)
 			: deriveComputed(
 					input as MemoCallback<T>,
-					options as DeriveSignalOptions<T>,
+					options as DeriveCellOptions<T>,
 				)
 	}
 
 	// External push: a seed value plus a watched lifecycle. The seed is the
 	// initial value — it overrides any explicit `initial` option.
-	const watched = options?.watched as SignalCallback<T> | undefined
+	const watched = options?.watched as CellCallback<T> | undefined
 	validateCallback('deriveCell', watched, isSyncFunction)
 	return createSensor({
 		...options,
 		initial: input,
-	} as SignalOptions<T> & { initial?: T } & { watched: SignalCallback<T> })
+	} as CellOptions<T> & { initial?: T } & { watched: CellCallback<T> })
 }
 
 /* === Guards === */

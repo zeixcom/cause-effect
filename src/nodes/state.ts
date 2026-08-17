@@ -1,9 +1,9 @@
 import { validateCallback, validateSignalValue } from '../errors'
 import {
 	activeSink,
+	type CellOptions,
 	DEFAULT_EQUALITY,
 	link,
-	type SignalOptions,
 	type StateNode,
 	setState,
 	TYPE_CELL,
@@ -53,7 +53,7 @@ const WHERE = 'createState'
  */
 function createState<T extends {}>(
 	value: T,
-	options?: SignalOptions<T>,
+	options?: CellOptions<T>,
 ): MutableCell<T> {
 	validateSignalValue(WHERE, value, options?.guard)
 

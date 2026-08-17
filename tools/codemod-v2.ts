@@ -34,8 +34,9 @@
  * | `createMemo(fn, o?)` / `createComputed(fn, o?)` | `deriveComputed(fn, o?)` |
  * | `createMutableSignal(v, o?)`  | `createCell(v, o?)`          |
  * | `deriveSignal(input, o?)`     | `deriveCell(input, o?)`      |
- * | `ComputedOptions<T>` / `SensorOptions<T>` | `DeriveSignalOptions<T>` |
- * | `SensorCallback<T>`           | `SignalCallback<T>`          |
+ * | `ComputedOptions<T>` / `SensorOptions<T>` / `DeriveSignalOptions<T>` | `DeriveCellOptions<T>` |
+ * | `SensorCallback<T>` / `SignalCallback<T>` | `CellCallback<T>` |
+ * | `SignalOptions<T>`           | `CellOptions<T>`             |
  *
  * Flagged for manual review, because no meaning-preserving rewrite exists:
  * `createSignal`, `createTask`, `createSensor`, the origin guards `isState`/
@@ -96,9 +97,13 @@ const RENAMES = new Map([
 	['createMutableSignal', 'createCell'],
 	['deriveSignal', 'deriveCell'],
 	// Derive-family options and callback unification
-	['ComputedOptions', 'DeriveSignalOptions'],
-	['SensorOptions', 'DeriveSignalOptions'],
-	['SensorCallback', 'SignalCallback'],
+	['ComputedOptions', 'DeriveCellOptions'],
+	['SensorOptions', 'DeriveCellOptions'],
+	['SensorCallback', 'CellCallback'],
+	// 1.5.0 bridge names for the Cell family's auxiliary types — removed in v2
+	['DeriveSignalOptions', 'DeriveCellOptions'],
+	['SignalOptions', 'CellOptions'],
+	['SignalCallback', 'CellCallback'], // branch-only name; never shipped in 1.x
 ])
 
 // Calls the codemod leaves as-is because no meaning-preserving rewrite exists.
@@ -265,8 +270,9 @@ function syncImports(file: SourceFile, module: string): void {
 		'createCell',
 		'deriveCell',
 		'deriveComputed',
-		'DeriveSignalOptions',
-		'SignalCallback',
+		'DeriveCellOptions',
+		'CellOptions',
+		'CellCallback',
 	]) {
 		if (!used.has(named)) continue
 		const existing = declaration

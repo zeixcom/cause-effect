@@ -4,7 +4,7 @@
  * @author Esther Brunner
  */
 export { CircularDependencyError, DuplicateKeyError, EffectConvergenceError, type Guard, InvalidCallbackError, InvalidSignalValueError, InvalidStoreMutationError, NullishSignalValueError, PromiseValueError, ReadonlySignalError, RequiredOwnerError, UnsetSignalValueError, } from './src/errors';
-export { abort, batch, type Cleanup, createScope, DEEP_EQUALITY, DEFAULT_EQUALITY, type DeriveSignalOptions, type EffectCallback, isPending, type MaybeCleanup, type MemoCallback, type ScopeOptions, type SignalCallback, type SignalOptions, SKIP_EQUALITY, type TaskCallback, unown, untrack, } from './src/graph';
+export { abort, batch, type CellCallback, type CellOptions, type Cleanup, createScope, DEEP_EQUALITY, DEFAULT_EQUALITY, type DeriveCellOptions, type EffectCallback, isPending, type MaybeCleanup, type MemoCallback, type ScopeOptions, SKIP_EQUALITY, type TaskCallback, unown, untrack, } from './src/graph';
 export { type Cell, createCell, deriveCell, isCell, isMutableCell, isMutableSignal, isSignal, type MutableCell, type Signal, } from './src/nodes/cell';
 export { createEffect, type MatchHandlers, type MaybePromise, match, type SingleMatchHandlers, } from './src/nodes/effect';
 export { createList, type DeriveListOptions, deriveList, isList, isMutableList, type KeyConfig, type List, type ListCallback, type ListChanges, type ListOptions, type ListSource, type MutableList, type PerItemCallback, } from './src/nodes/list';

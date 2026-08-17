@@ -1,4 +1,4 @@
-import { type DeriveSignalOptions, type TaskCallback } from '../graph';
+import { type DeriveCellOptions, type TaskCallback } from '../graph';
 import type { Cell } from './cell';
 /**
  * Creates an asynchronous reactive computation (colorless async).
@@ -43,8 +43,8 @@ import type { Cell } from './cell';
  * }
  * ```
  */
-declare function createTask<T extends {}>(fn: (prev: T, abortSignal: AbortSignal) => Promise<T>, options: DeriveSignalOptions<T> & {
+declare function createTask<T extends {}>(fn: (prev: T, abortSignal: AbortSignal) => Promise<T>, options: DeriveCellOptions<T> & {
     initial: T;
 }): Cell<T>;
-declare function createTask<T extends {}>(fn: TaskCallback<T>, options?: DeriveSignalOptions<T>): Cell<T>;
+declare function createTask<T extends {}>(fn: TaskCallback<T>, options?: DeriveCellOptions<T>): Cell<T>;
 export { createTask };

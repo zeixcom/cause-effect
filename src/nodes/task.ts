@@ -7,7 +7,7 @@ import {
 	batch,
 	batchDepth,
 	DEFAULT_EQUALITY,
-	type DeriveSignalOptions,
+	type DeriveCellOptions,
 	FLAG_CLEAN,
 	FLAG_DIRTY,
 	FLAG_RUNNING,
@@ -152,15 +152,15 @@ function recomputeTask(node: TaskNode<unknown & {}>): void {
  */
 function createTask<T extends {}>(
 	fn: (prev: T, abortSignal: AbortSignal) => Promise<T>,
-	options: DeriveSignalOptions<T> & { initial: T },
+	options: DeriveCellOptions<T> & { initial: T },
 ): Cell<T>
 function createTask<T extends {}>(
 	fn: TaskCallback<T>,
-	options?: DeriveSignalOptions<T>,
+	options?: DeriveCellOptions<T>,
 ): Cell<T>
 function createTask<T extends {}>(
 	fn: TaskCallback<T>,
-	options?: DeriveSignalOptions<T>,
+	options?: DeriveCellOptions<T>,
 ): Cell<T> {
 	validateCallback(WHERE, fn, isAsyncFunction)
 	if (options?.initial !== undefined)

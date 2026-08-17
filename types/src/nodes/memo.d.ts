@@ -1,4 +1,4 @@
-import { type DeriveSignalOptions, type MemoCallback } from '../graph';
+import { type DeriveCellOptions, type MemoCallback } from '../graph';
 import type { Cell } from './cell';
 /**
  * Creates a derived reactive computation that caches its result.
@@ -34,8 +34,8 @@ import type { Cell } from './cell';
  * const sum = deriveComputed((prev) => prev + count.get(), { initial: 0, equals: Object.is });
  * ```
  */
-declare function deriveComputed<T extends {}>(fn: (prev: T) => T, options: DeriveSignalOptions<T> & {
+declare function deriveComputed<T extends {}>(fn: (prev: T) => T, options: DeriveCellOptions<T> & {
     initial: T;
 }): Cell<T>;
-declare function deriveComputed<T extends {}>(fn: MemoCallback<T>, options?: DeriveSignalOptions<T>): Cell<T>;
+declare function deriveComputed<T extends {}>(fn: MemoCallback<T>, options?: DeriveCellOptions<T>): Cell<T>;
 export { deriveComputed };

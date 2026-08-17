@@ -6,7 +6,7 @@ import {
 import {
 	batchDepth,
 	DEFAULT_EQUALITY,
-	type DeriveSignalOptions,
+	type DeriveCellOptions,
 	FLAG_DIRTY,
 	flush,
 	type MemoCallback,
@@ -60,15 +60,15 @@ const WHERE = 'deriveComputed'
  */
 function deriveComputed<T extends {}>(
 	fn: (prev: T) => T,
-	options: DeriveSignalOptions<T> & { initial: T },
+	options: DeriveCellOptions<T> & { initial: T },
 ): Cell<T>
 function deriveComputed<T extends {}>(
 	fn: MemoCallback<T>,
-	options?: DeriveSignalOptions<T>,
+	options?: DeriveCellOptions<T>,
 ): Cell<T>
 function deriveComputed<T extends {}>(
 	fn: MemoCallback<T>,
-	options?: DeriveSignalOptions<T>,
+	options?: DeriveCellOptions<T>,
 ): Cell<T> {
 	validateCallback(WHERE, fn, isSyncFunction)
 	if (options?.initial !== undefined)

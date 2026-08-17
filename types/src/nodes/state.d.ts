@@ -1,4 +1,4 @@
-import { type SignalOptions } from '../graph';
+import { type CellOptions } from '../graph';
 import type { MutableCell } from './cell';
 /**
  * A callback function for states that updates a value based on the previous value.
@@ -34,5 +34,5 @@ type UpdateCallback<T extends {}> = (prev: T) => T;
  * });
  * ```
  */
-declare function createState<T extends {}>(value: T, options?: SignalOptions<T>): MutableCell<T>;
+declare function createState<T extends {}>(value: T, options?: CellOptions<T>): MutableCell<T>;
 export { createState, type UpdateCallback };

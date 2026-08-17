@@ -1,4 +1,4 @@
-import { type DeriveSignalOptions, type MemoCallback, type SignalCallback, type SignalOptions, type TaskCallback } from '../graph';
+import { type CellCallback, type CellOptions, type DeriveCellOptions, type MemoCallback, type TaskCallback } from '../graph';
 /**
  * A readable single-value shape, matching both the mutable and readonly single-value
  * signals. The tag is narrowed to the `'Cell'` literal, so no other shape is structurally
@@ -55,7 +55,7 @@ type Signal<T extends {}> = {
  * console.log(count.get()) // 1
  * ```
  */
-declare function createCell<T extends {}>(value: T, options?: SignalOptions<T>): MutableCell<T>;
+declare function createCell<T extends {}>(value: T, options?: CellOptions<T>): MutableCell<T>;
 /**
  * Create a read-only single-value cell from any origin.
  *
@@ -84,11 +84,11 @@ declare function createCell<T extends {}>(value: T, options?: SignalOptions<T>):
  * }, { initial: fallbackUser })
  * ```
  */
-declare function deriveCell<T extends {}>(input: TaskCallback<T> | MemoCallback<T>, options?: DeriveSignalOptions<T>): Cell<T>;
-declare function deriveCell<T extends {}>(input: T, options: SignalOptions<T> & {
+declare function deriveCell<T extends {}>(input: TaskCallback<T> | MemoCallback<T>, options?: DeriveCellOptions<T>): Cell<T>;
+declare function deriveCell<T extends {}>(input: T, options: CellOptions<T> & {
     initial?: T;
 } & {
-    watched: SignalCallback<T>;
+    watched: CellCallback<T>;
 }): Cell<T>;
 /**
  * Check whether a value is a Cell — the single-value shape, matching both the mutable

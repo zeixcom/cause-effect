@@ -1,4 +1,4 @@
-import { type SignalOptions } from '../graph';
+import { type CellOptions } from '../graph';
 import { type Signal } from './cell';
 /**
  * A descriptor for a derived reactive value with an optional setter.
@@ -57,7 +57,7 @@ type Slot<T extends {}> = {
  * @param options.guard - Type guard to validate values passed to `set()`.
  * @returns A `Slot<T>` object usable both as a property descriptor and as a reactive signal.
  */
-declare function createSlot<T extends {}>(initialSignal: Signal<T> | SlotDescriptor<T>, options?: SignalOptions<T>): Slot<T>;
+declare function createSlot<T extends {}>(initialSignal: Signal<T> | SlotDescriptor<T>, options?: CellOptions<T>): Slot<T>;
 /**
  * Checks if a value is a Slot signal.
  *

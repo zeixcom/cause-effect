@@ -1,4 +1,4 @@
-import { type SignalCallback, type SignalOptions } from '../graph';
+import { type CellCallback, type CellOptions } from '../graph';
 import type { Cell } from './cell';
 /**
  * Creates a sensor that tracks external input while it is watched.
@@ -52,9 +52,9 @@ import type { Cell } from './cell';
  * });
  * ```
  */
-declare function createSensor<T extends {}>(options: SignalOptions<T> & {
+declare function createSensor<T extends {}>(options: CellOptions<T> & {
     initial?: T;
 } & {
-    watched: SignalCallback<T>;
+    watched: CellCallback<T>;
 }): Cell<T>;
-export { createSensor, type SignalCallback };
+export { type CellCallback, createSensor };

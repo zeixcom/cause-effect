@@ -2,6 +2,7 @@ import { ReadonlySignalError, validateSignalValue } from '../errors'
 import {
 	activeSink,
 	batchDepth,
+	type CellOptions,
 	DEFAULT_EQUALITY,
 	FLAG_DIRTY,
 	flush,
@@ -9,7 +10,6 @@ import {
 	type MemoNode,
 	propagate,
 	refresh,
-	type SignalOptions,
 	type SinkNode,
 	TYPE_SLOT,
 } from '../graph'
@@ -100,7 +100,7 @@ function isSignalOrDescriptor<T extends {}>(
  */
 function createSlot<T extends {}>(
 	initialSignal: Signal<T> | SlotDescriptor<T>,
-	options?: SignalOptions<T>,
+	options?: CellOptions<T>,
 ): Slot<T> {
 	validateSignalValue(TYPE_SLOT, initialSignal, isSignalOrDescriptor)
 

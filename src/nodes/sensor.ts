@@ -5,10 +5,10 @@ import {
 } from '../errors'
 import {
 	activeSink,
+	type CellCallback,
+	type CellOptions,
 	DEFAULT_EQUALITY,
 	link,
-	type SignalCallback,
-	type SignalOptions,
 	type StateNode,
 	setState,
 	TYPE_CELL,
@@ -75,8 +75,8 @@ const WHERE = 'createSensor'
  * ```
  */
 function createSensor<T extends {}>(
-	options: SignalOptions<T> & { initial?: T } & {
-		watched: SignalCallback<T>
+	options: CellOptions<T> & { initial?: T } & {
+		watched: CellCallback<T>
 	},
 ): Cell<T> {
 	const watched = options.watched
@@ -110,4 +110,4 @@ function createSensor<T extends {}>(
 	}
 }
 
-export { createSensor, type SignalCallback }
+export { type CellCallback, createSensor }
