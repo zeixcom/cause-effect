@@ -117,8 +117,6 @@ Guards realign: `isCell`/`isMutableCell` replace `isSignal`/`isMutableSignal` (s
 
 Each key of a derived composite gets its own `Cell` that reads the source and selects its own slice. Children are *derived*, not written — same outcome as the discouraged hand-written effect, but with the dependency edge visible to the graph. Per-slice `equals` stops propagation for an unchanged property or item.
 
-**Slices resolve by key, never a cached index.** A consumer may hold a slice signal directly, so a cached key→index map can go stale after a reorder and return a different element under the same key. Any index cache must be revalidated against the source array inside the slice's own recompute.
-
 **Derived records do not recurse into nested values.** `createStore` nests because a *write* needs a target (`store.address.city.set(…)`); a derived record has no writes, so recursion has no target and would only be an unrequested read optimization. A caller wanting sub-path granularity composes `deriveStore`/`deriveList` on the property directly.
 
 The mechanisms in ADR-0010 (`FLAG_RELINK`), ADR-0014 (two-path access), ADR-0015 (structural lookup edges), and ADR-0017 (proxy write rejection) apply unchanged.
