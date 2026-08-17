@@ -56,17 +56,17 @@ logic and semantics, not line-level diffs — v2's source has diverged through t
   would silently change array/record sites now that `createCell` is narrow. `createSignal` is
   always flagged, never rewritten. Import syncing updated.
 
-- [ ] CE-029: Port the revised ADR-0018 and the ADR-0015 clarification
+- [x] CE-029: Port the revised ADR-0018 and the ADR-0015 clarification — done ✓
   **Skill:** adr-keeper
-  **Context:** Port two ADR changes from `v2/shape-exploration` into this branch. (1) Replace
-  `adr/0018-shape-indexed-signal-types.md` with the revised wording (v2 commit `30dc186`/
-  `e4408f6` lineage — take the file's current state on `v2/shape-exploration`), adapting only the
-  Status line: note that no *release* shipped the narrow-`Signal` vocabulary except the 1.5.0
-  bridge factory `deriveSignal`, deprecated in 1.5.1 in favor of `deriveCell` per the Revision
-  (`createSignal`'s shape dispatch is unrelated to the flip and remains until 2.0 removes it).
-  (2) Append the "Clarification (added 2026-08, external-push Stores)" section to
-  `adr/0015-composite-lookup-methods-track-structural-changes.md` verbatim from v2 commit
-  `c48171b` — the lifecycle-anchor explanation; it is shape-agnostic and applies to 1.x unchanged.
+  **Changed:** `adr/0018-shape-indexed-signal-types.md` (replaced with the Revision wording from
+  `v2/shape-exploration`; only the Status line adapted), `adr/0015-composite-lookup-methods-
+  track-structural-changes.md` (appended the "Clarification (added 2026-08, external-push
+  Stores)" section, verbatim from v2 `c48171b`).
+  **How:** ADR-0018's Status now records that the only *released* narrow-`Signal` vocabulary is
+  the 1.5.0 bridge factory `deriveSignal` (deprecated 1.5.1 in favor of `deriveCell`), and that
+  `createSignal`'s shape dispatch is unrelated to the flip. The Status-line reference to
+  MIGRATION-2.0.md's flip section resolves when CE-030 lands. ADR index unchanged (status stays
+  Accepted).
 
 - [ ] CE-030: Sync user-facing docs to the Cell bridge names and the fixes
   **Skill:** tech-writer
