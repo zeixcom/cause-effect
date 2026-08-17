@@ -380,11 +380,9 @@ function createList<
 	for (let i = 0; i < value.length; i++) {
 		const val = value[i]
 		if (val == null) throw new NullishSignalValueError(`${TYPE_LIST} item ${i}`)
-		let key = keys[i]
-		if (!key) {
-			key = generateKey(val)
-			keys[i] = key
-		}
+		const key = generateKey(val)
+		if (signals.has(key)) throw new DuplicateKeyError(TYPE_LIST, key, val)
+		keys[i] = key
 		signals.set(key, itemFactory(val))
 	}
 
@@ -584,18 +582,31 @@ function createList<
 			let hasAdd = false
 			let hasChange = false
 
+			// Stage the whole inserted batch — including duplicates within the batch
+			// and nullish items — before touching signals/keys, so an invalid splice
+			// leaves the list unchanged. Matches createCollection's onChanges staging.
+			const staged = new Set<string>()
+			let index = 0
 			for (const item of items) {
+				// Validate before generateKey: a content-based keyConfig reading a
+				// property of null/undefined would throw a bare TypeError otherwise.
+				validateSignalValue(`${TYPE_LIST} item ${actualStart + index}`, item)
+				index++
 				const key = generateKey(item)
 				if (key in remove) {
-					// Same key removed and re-inserted: route to change, not add+remove
+					// Same key removed and re-inserted: route to change, not add+remove.
+					// A second occurrence of the same key after this hits
+					// signals.has(key) — the removal has not been applied yet —
+					// and throws, which is correct.
 					delete remove[key]
 					change[key] = item
 					hasChange = true
-				} else if (signals.has(key)) {
+				} else if (signals.has(key) || staged.has(key)) {
 					throw new DuplicateKeyError(TYPE_LIST, key, item)
 				} else {
 					add[key] = item
 					hasAdd = true
+					staged.add(key)
 				}
 				newOrder.push(key)
 			}

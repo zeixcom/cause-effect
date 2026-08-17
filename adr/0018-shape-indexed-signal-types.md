@@ -2,104 +2,76 @@
 
 ## Status
 
-✅ Accepted — 2026-08-15, for v2.0.
+✅ Accepted — 2026-08-17 (implementation on branch `v2/shape-exploration`; revision of the same date renamed the narrow shape to `Cell` and restored the umbrella `Signal` — see `MIGRATION-2.0.md` "Second flip"). No release has shipped under this or any prior wording — branch `v2/shape-exploration` is `2.0.0-next.1`, unreleased.
+
+The only *released* narrow-`Signal` vocabulary is the 1.5.0 bridge factory `deriveSignal` and
+its options type, deprecated in 1.5.1 in favor of `deriveCell`/`DeriveCellOptions`.
+`createSignal`'s shape dispatch is unrelated to this flip and keeps its 1.x behavior until
+2.0 removes it.
 
 Amends [ADR-0001](0001-reactive-task-stale-detection.md) (scope of `isPending`).
 
 ## Context
 
-The library ships nine signal types. They are indexed by two independent axes at once — the
-**shape** of the data (single value, keyed sequence, keyed record) and the **origin** of the value
-(mutable source, sync derivation, async derivation, external push). Nine names cover that
-four-by-three matrix only partially:
+The library ships nine signal types, indexed by two axes at once — **shape** (single value, keyed sequence, keyed record) and **origin** (mutable source, sync derivation, async derivation, external push). Nine names cover that matrix only partially, and one cell is restricted:
+`deriveCollection` accepts only a `CollectionSource<U>`, so a `Task<U[]>` or `Memo<U[]>` cannot become a keyed sequence. The most common async pipeline — fetch an array, key it, render per item — has no derivation path.
 
-| | mutable source | derived sync | derived async | external push |
-|---|---|---|---|---|
-| **single value** | `State` | `Memo` | `Task` | `Sensor` |
-| **keyed sequence** | `List` | `deriveCollection` — source restricted to List/Collection | — | `Collection` |
-| **keyed record** | `Store` | — | — | — |
+The observed consequence: authors reach for the discouraged pattern of writing an async result into a mutable `Store` by hand in an effect. Documentation cannot fix this; it is the only door.
 
-Four cells are empty and one is restricted. The restriction matters most: `deriveCollection`
-accepts a `CollectionSource<U>`, so a `Task<U[]>` or `Memo<U[]>` cannot be turned into a keyed
-sequence. The most common asynchronous pipeline in application code — fetch an array, key it,
-render per item — therefore has no derivation path.
+Two further observations motivate collapsing the type set, not just filling the matrix:
 
-The observed consequence is that authors, and language models trained predominantly on libraries
-where imperative writes are the only mechanism, reach for the discouraged pattern:
+1. `Sensor` is a `State` with a lazy `watched` lifecycle and no setter — it reuses `StateNode`.
+2. `Collection` is a `List` without mutators — both are `MemoNode<T[]>` with the same lookup surface.
 
-```ts
-// Discouraged, but currently the only way to get a Store from a Task.
-const user = createTask(async () => fetchUser(id.get()))
-const store = createStore({ name: '', email: '' })
-createEffect(() => store.set(user.get()))
-```
-
-Documentation cannot fix this. The pattern is not a lapse in discipline; it is the only door.
-
-Two further observations motivate collapsing the type set rather than only filling the matrix:
-
-1. `Sensor` is a `State` with a lazy `watched` lifecycle and no setter. It reuses `StateNode`
-   outright.
-2. `Collection` is a `List` without mutators. Both are `MemoNode<T[]>` and expose the same lookup
-   surface (`at`, `byKey`, `keyAt`, `indexOfKey`, `keys`, `length`, iterator).
-
-Both pairs are already a mutability distinction wearing the costume of a type distinction. The
-vocabulary for the distinction also already exists: `Signal<T>` and `MutableSignal<T>` in
-`src/nodes/signal.ts`.
+Both pairs are a mutability distinction wearing the costume of a type distinction.
 
 ## Decision
 
 ### 1. Types are indexed by shape and mutability only
 
-Six value types, in three shapes, each with a readonly base and a mutable extension:
+Three shapes, each with a readonly base and a mutable extension, under one umbrella:
 
 ```ts
-Signal<T>            get()
-MutableSignal<T>     ⊃ Signal<T>      + set, update
+Signal<T>              get             // umbrella — structural, no tag of its own
 
-List<T, S>           ⊃ Signal<T[]>    + length, at, byKey, keyAt, indexOfKey, keys, [Symbol.iterator]
-MutableList<T, S>    ⊃ List<T, S>     + set, update, add, remove, replace, sort, splice
+Cell<T>                ⊃ Signal<T>     get
+MutableCell<T>         ⊃ Cell<T>       + set, update
 
-Store<T>             ⊃ Signal<T>      + keys, byKey, proxy reads
-MutableStore<T>      ⊃ Store<T>       + set, update, add, remove
+List<T, S>             ⊃ Signal<T[]>   + length, at, byKey, keyAt, indexOfKey, keys, [Symbol.iterator]
+MutableList<T, S>      ⊃ List<T, S>    + set, update, add, remove, replace, sort, splice
+
+Store<T>               ⊃ Signal<T>     + keys, byKey, proxy reads
+MutableStore<T>        ⊃ Store<T>      + set, update, add, remove
 ```
 
-`State`, `Memo`, `Task`, `Sensor`, and `Collection` cease to exist as type names. A consumer
-programs against the shape it needs and against whether it may write. How the value came to exist
-is not part of the consumption contract.
+`State`, `Memo`, `Task`, `Sensor`, and `Collection` cease to exist as type names. A consumer programs against the shape it needs and whether it may write; how the value came to exist is not part of the consumption contract.
 
-`Symbol.toStringTag` carries the shape — `'Signal' | 'List' | 'Store'` — not the origin.
+`Symbol.toStringTag` carries the shape as a literal — `'Cell' | 'List' | 'Store'`, not an optional `string` — so a `List` is never structurally assignable to `Cell<T>` merely by having `get()`.
+`Signal` carries no tag; membership is structural (`typeof x?.get === 'function'`), which is also the recipe for "is this any reactive value at all." This mirrors the TC39 Signals proposal, which namespaces `Signal.State`/`Signal.Computed` under `Signal` as an umbrella, not a primitive.
 
-`Effect` and `Slot` are unaffected. Both are orthogonal to shape: `Effect` is a terminal sink with
-no value, and `Slot` is an integration-layer abstraction over `{ get, set? }` that ignores all
-other methods of the signal bound to it.
+`Effect` and `Slot` are unaffected: `Effect` is a terminal sink with no value, `Slot` an integration-layer abstraction over `{ get, set? }` that ignores every other method.
 
 ### 2. `isPending` and `abort` become graph utilities
 
-`Task` exposes `isPending()` and `abort()` as methods. Keeping them as methods after the collapse
-would force `AsyncSignal`, `AsyncList`, and `AsyncStore` subtypes and restore a nine-name
-taxonomy. Adding them to the base `Signal<T>` costs a closure per node on the synchronous hot path.
-
-They become free functions alongside `batch`, `untrack`, and `match`:
+Keeping them as `Task` methods after the collapse would force `AsyncSignal`/`AsyncList`/`AsyncStore` subtypes and restore a nine-name taxonomy; adding them to base `Signal<T>` costs a closure per node on the synchronous hot path. They become free functions instead:
 
 ```ts
 isPending(signal): boolean   // reactive; false for a signal with no async origin
 abort(signal): void          // no-op for a signal with no async origin
 ```
 
-The internal `pendingNode: StateNode<boolean>` mechanism of ADR-0001 is unchanged; only the
-accessor moves and its domain widens. Consumers gain the ability to ask an asynchronously derived
-`List` or `Store` whether it is still loading, which no current API expresses.
+The internal `pendingNode: StateNode<boolean>` mechanism of ADR-0001 is unchanged; only the accessor moves and its domain widens to derived `List`/`Store`, which no current API expresses.
 
 ### 3. Factories are indexed by origin: `create*` and `derive*`
 
 ```
-create{Signal,List,Store}(value, options?)   → Mutable{Signal,List,Store}
-derive{Signal,List,Store}(input, options?)   → {Signal,List,Store}
+create{Cell,List,Store}(value, options?)   → Mutable{Cell,List,Store}
+derive{Cell,List,Store}(input, options?)   → {Cell,List,Store}
 ```
 
-`create*` takes a value and yields a writable signal. `derive*` yields a readonly signal and
-dispatches on `input`:
+`create*` takes a value and yields a writable signal.
+
+`derive*` yields a readonly signal and dispatches on `input`:
 
 | `input` | `options` | Origin | Replaces |
 |---|---|---|---|
@@ -108,217 +80,83 @@ dispatches on `input`:
 | seed value | `watched` required | external push | `createSensor`, `createCollection` |
 | source signal + item function | — | per-item derivation (List/Store only) | `deriveCollection(source, fn)` |
 
-`derive{List,Store}` additionally accept any `Signal<U[]>` or `Signal<U>` as a source, not only a
-`List` or `Collection`. This is the restriction whose removal closes the async-to-composite gap.
+`derive{List,Store}` accept any `Signal<U[]>`/`Signal<U>` as source, not only a `List`/`Collection` — this closes the async-to-composite gap that motivated the ADR.
 
 ### 4. `watched` is an option, never a callback position
 
-Sync derivation and external push cannot be distinguished at runtime. Both are plain, arity-≤1,
-synchronous functions — `(prev) => T` and `(apply) => Cleanup`. Neither can be called to find out
-which it is: a derivation callback must stay lazy, and a `watched` callback must run when the
-signal becomes observed. Opposite timing, no inspection available.
-
-Async derivation *is* distinguishable. `isAsyncFunction` (`src/util.ts:11`) compares the
-prototype against `AsyncFunction.prototype`, which is reliable for a native `async` function.
-A hand-rolled function returning a thenable is not detected and is caught at the existing
-`recomputeMemo()` choke point by `PromiseValueError`. That backstop is unchanged.
-
-`watched` therefore moves entirely into options, where `Memo`, `List`, and `Store` already accept
-it. Its signature depends on the input kind:
+Sync derivation and external push cannot be distinguished at runtime — both are plain,
+arity-≤1, synchronous functions with opposite timing and no way to inspect which is which. Async derivation *is* distinguishable (`isAsyncFunction`, `src/util.ts:11`). `watched` therefore lives entirely in options:
 
 | Input kind | `watched` signature | Meaning |
 |---|---|---|
 | seed value | `(emit) => Cleanup` | External source drives the value |
 | function | `() => Cleanup` | External event invalidates the derivation |
 
-The `emit` argument is shape-appropriate: `emit(value: T)` for `Signal`,
-`emit(changes: ListChanges<T>)` for `List`, and `emit(patch: Partial<T>)` for `Store`.
+`emit` is shape-appropriate: `emit(value: T)` for `Cell`, `emit(changes: ListChanges<T>)` for `List`, `emit(patch: Partial<T>)` for `Store`. The two signatures are expressed as overload-narrowed option types keyed on input kind, not a single union — a union breaks contextual typing of inline callbacks (the parameter degrades to implicit `any`).
 
-The two `watched` signatures are expressed in the type surface as overload-narrowed option
-types keyed on the input kind — `DeriveSignalOptions.watched` carries the invalidation form
-for function inputs, and the seed-input signatures spell the `emit` form as an inline
-intersection. This complements the runtime argument above rather than contradicting it:
-that argument rules out dispatching *on `watched`*, while the overloads key on the input
-kind, which is exactly what `isAsyncFunction`/`isFunction` already dispatch on. A single
-union-typed option was tried during implementation and rejected — a union of the two
-callback shapes breaks contextual typing of inline callbacks (the parameter degrades to
-implicit `any`).
+### 5. Two narrow entry points survive
 
-### 5. The core four survive as narrow entry points
+```
+createCell(value, options?)      → MutableCell<T>   (alias: createState)
+deriveComputed(fn)               → Cell<T>          (sync derivation only)
+deriveCell(input, options?)      → Cell<T>          (sync, async, or external push — general dispatcher)
+```
 
-A bundle that uses only `createState`, a synchronous derivation, and `createEffect` must not pull
-in `AbortController`, the task recompute path, or the watched lifecycle. `deriveSignal` handles
-all three origins and therefore pulls all three.
+A bundle using only `createState`, a sync derivation, and `createEffect` must not pull in `AbortController`, the task recompute path, or the watched lifecycle. `createTask` and `createSensor` are **dropped as public factories, not renamed**: the tree-shaking rationale doesn't hold for them — async derivation pulls the recompute/`AbortController` machinery regardless of which name constructs it, and `Sensor`'s external-push use case is rare enough not to warrant a dedicated name. Both origins remain reachable through `deriveCell`, which already imports that machinery for
+any non-sync input.
 
-`createState`, `createMemo`, `createTask`, and `createSensor` are retained as narrow,
-single-origin, tree-shakable factories. They return the collapsed types (`MutableSignal<T>`,
-`Signal<T>`) rather than distinct ones. `createSignal` and `deriveSignal` are façades that dispatch
-to them.
+No equivalent split is made for `List`/`Store`: a composite already pulls the structural node and per-item children, so the marginal cost of the async/watched paths doesn't justify four more factory names per shape.
 
-No equivalent split is made for `List` and `Store`. A composite already pulls `State` for children,
-`Memo` for the structural node, and the structural diff; the marginal cost of the async and
-watched paths on top of that baseline does not justify four more factory names per shape.
+Guards realign: `isCell`/`isMutableCell` replace `isSignal`/`isMutableSignal` (same tag-plus-`get()` check, now targeting `'Cell'`). `isList`/`isMutableList`/`isStore`/`isMutableStore` are unchanged in behavior, only in tag literal. The umbrella guards `isSignal`/`isMutableSignal` keep their v1.x meaning. They are structural checks like `typeof x?.get === 'function'`.
 
-This property is delivered literally, not just as a byte count: a task node carries a
-`recompute` function assigned by `createTask` — a shared module-level reference, not a per-node
-closure — and `refresh()` dispatches on its presence, holding no reference to the task
-recompute itself. The recompute and its `new AbortController` therefore live in
-`nodes/task.ts`, and a bundle that never imports `createTask` drops them; a sync-only build
-contains neither, verified by content. `propagate()`'s inline in-flight abort remains in the
-core by design: it invokes `controller.abort()` but never constructs an `AbortController`, so
-it retains nothing. Measured core for the trio: 2072 B gzipped, 48.3 % headroom under the
-3072 B promise.
+`errors.ts`'s `NullishSignalValueError`, `UnsetSignalValueError`, `ReadonlySignalError`, and `validateSignalValue` keep their `Signal`-scoped names, now correctly umbrella-scoped since each can fire for any shape.
 
 ### 6. Async composites are never unset
 
-`deriveList` and `deriveStore` with an async input require `options.initial`. `length`, `at()`,
-`byKey()`, and iteration therefore never throw, and no consumer needs `match()` merely to read a
-derived collection. `isPending()` distinguishes loading-empty from resolved-empty.
+`deriveList`/`deriveStore` with an async input require `options.initial`, so `length`, `at()`, `byKey()`, and iteration never throw and no consumer needs `match()` merely to read a derived collection. `isPending()` distinguishes loading-empty from resolved-empty.
 
-`deriveSignal` with an async input keeps the current `Task` behaviour — `UnsetSignalValueError`
-until first resolution, which `match()`'s `nil` branch depends on — and gains `initial` as an
-optional escape from it.
+`deriveCell` with an async input keeps the current `Task` behavior —
+`UnsetSignalValueError` until first resolution, which `match()`'s `nil` branch depends on — and gains `initial` as an optional escape from it.
 
 ### 7. Derived composites derive their slices; they do not write them
 
-Each key of a derived composite gets its own `Memo` that reads the source and selects its own
-slice. Children are *derived*, not written. Child-signal identity is preserved by key, which is
-what makes this the same outcome the discouraged effect produces by hand — but with the dependency edge visible to the graph.
+Each key of a derived composite gets its own `Cell` that reads the source and selects its own slice. Children are *derived*, not written — same outcome as the discouraged hand-written effect, but with the dependency edge visible to the graph. Per-slice `equals` stops propagation for an unchanged property or item.
 
-Per-slice `equals` does the work the diff was meant to do: a slice whose value did not change stops
-propagation, so an unchanged property or item does not re-run its readers.
+**Derived records do not recurse into nested values.** `createStore` nests because a *write* needs a target (`store.address.city.set(…)`); a derived record has no writes, so recursion has no target and would only be an unrequested read optimization. A caller wanting sub-path granularity composes `deriveStore`/`deriveList` on the property directly.
 
-**Slices resolve by key, never by a cached index.** A derived composite over an unkeyed source must
-map source elements to keys, and it is tempting to cache a key→index map and have each slice read
-`items[index]`. That is unsound: a consumer may hold a slice signal directly, so the slice can be
-refreshed through an edge that never passes through the composite's own rebuild, leaving the cached
-index stale after a reorder and returning a different element under the same key. Any index cache
-must be revalidated against the source array inside the slice's own recompute.
-
-**Derived records do not recurse into nested values.** `createStore` converts a nested record to a
-nested `Store` and a nested array to a `List` because a *write* needs a target: without nesting,
-`store.address.city.set(…)` has nowhere to land. A derived record has no writes, so recursion has
-no target — it would be purely a read optimization, guessing at a granularity the caller did not
-ask for and paying a node per nested key whether or not that granularity is used. A caller who
-wants sub-path granularity composes `deriveStore`/`deriveList` on the property and pays only there.
-Under decision 1 the two factories produce the same `Store` type, so this is a documented behavioural
-difference between construction paths, not a type difference.
-
-The mechanisms in ADR-0010 (`FLAG_RELINK`), ADR-0014 (two-path access), ADR-0015 (structural
-lookup edges — including its asymmetry: `byKey` and proxy reads create no structural edge, or
-per-property granularity is lost), and ADR-0017 (proxy write rejection) apply unchanged.
+The mechanisms in ADR-0010 (`FLAG_RELINK`), ADR-0014 (two-path access), ADR-0015 (structural lookup edges), and ADR-0017 (proxy write rejection) apply unchanged.
 
 ## Alternatives Considered
 
-**Fill the matrix, keep nine type names.** Closes the gap that forces effect-writes but leaves the
-vocabulary indexed by two axes and leaves `.set()` reachable on things that should not have it.
-Rejected: the derivation gap and the mutability leak reinforce each other, and closing only one
-leaves the discouraged pattern both available and idiomatic-looking.
-
-**Document the prohibition harder.** Rejected: a training-set prior is not answerable by prose. If
-`.set()` exists on a derived value, it will be called. The corrective is a compile error.
-
-**Three factories total, `create{Signal,List,Store}(valueOrFn, options)`.** Rejected on two counts:
-it requires runtime dispatch that cannot distinguish sync derivation from external push (see
-decision 4), and it pulls the async and watched machinery into every bundle that creates a plain
-state, breaking the ≤3 kB core budget.
-
-**Twelve factories, `create{Origin}{Shape}`.** Perfectly regular and maximally tree-shakable, but
-twelve construction names to cover six types is a worse ratio than the status quo, and the
-tree-shaking benefit is real only for the single-value shape — where decision 5 preserves it
-anyway.
-
-**`isPending`/`abort` on the base `Signal<T>`.** Rejected: a closure per node on the synchronous
-hot path, paid by every `State` in the graph, for a capability most signals do not have.
-
-**`Collection`/`MutableCollection` in place of the `List` flip** (Le Truc counter-proposal,
-coordination round 2026-08-14). `Collection` becomes the readonly base, `MutableCollection` the
-mutable extension, and `List` a deprecated alias of `MutableCollection` — both existing names
-keep compatible meanings, eliminating the flip entirely and enabling a staged,
-deprecation-driven migration. Rejected on vocabulary grounds: `CONTEXT.md` § Flagged Ambiguities
-documents that "Collection" is reconstructed by language models as a reactive `Map`, and this
-ADR's own position is that a training-set prior is not answerable by prose. Enshrining a
-flagged-weak name as the base of the sequence taxonomy for two majors trades a
-deprecation-warned, codemod-fixable break for a permanent vocabulary defect. The migration-safety
-concern is met instead by the 1.x back-port and codemod above, which Le Truc's feedback names as
-an acceptable alternative.
-
-**A fresh name: `Sequence`/`MutableSequence`.** The only structure with zero meaning flips
-anywhere — `List` (mutable today) aliases `MutableSequence`, `Collection` (readonly today) aliases
-`Sequence`, both keep their exact meanings. Rejected: the dominant training-set prior for
-`Sequence` (Kotlin, C#, F#, LINQ) is *lazy and single-pass*, contradicting the stable, repeatable
-per-item identity that defines the type — the one guarantee a misinformed prior would erode.
-
-**Keep `Signal` as the umbrella; name the single-value shape `State`/`MutableState`.** Decided
-against on 2026-08-15, after the branch had landed (see `V2_REFACTORING_ANALYSIS.md` §2, §7).
-Zero meaning flips for `isSignal` — the umbrella predicate would keep its exact meaning — and
-`createState` already exists as the narrow factory, so the migration would have been bridgeable
-the way the `List` flip was. Rejected on three counts. The flip moves rather than disappears:
-`isState` would survive as the single-value shape guard and *widen* silently, from "a
-`createState` output" to "any single-value signal" — and `isState` is the guard Le Truc actually
-uses, so the removal this ADR chose (an auditable compile error) is safer than a silent widening.
-"State" re-imports the mutable-origin connotation the collapse exists to delete — the 1.x
-vocabulary defines a State as "a mutable Source that holds a value directly", which a derived
-single-value signal is not. And `deriveSignal`/`createSignal` as the flagship names recruit the
-dominant training-set prior (Solid's `createSignal`, Preact and Angular's `signal()`), which is
-this ADR's own thesis about why prose cannot correct misuse. The residual cost — `isSignal` and
-`isMutableSignal` narrow with no bridge — is contained by explicit migration warnings, codemod
-flagging, and the structural `.get()` recipe for the umbrella question.
+- **Fill the matrix, keep nine type names.** Closes the derivation gap but leaves `.set()` reachable on things that shouldn't have it. Rejected — the gap and the mutability leak reinforce each other.
+- **Document the prohibition harder.** Rejected — a training-set prior isn't answerable by prose; the corrective needs to be a compile error.
+- **Three factories, `create{Cell,List,Store}(valueOrFn, options)`.** Rejected — can't distinguish sync derivation from external push at runtime, and pulls async/watched machinery into every plain `create*` call.
+- **Twelve factories, `create{Origin}{Shape}`.** Rejected — worse name-to-type ratio than the status quo; tree-shaking benefit only real for the single-value shape, which decision 5 already covers.
+- **`isPending`/`abort` on base `Signal<T>`.** Rejected — a closure per node on the hot path, paid by every signal for a capability most don't have.
+- **`Collection`/`MutableCollection` in place of the `List` flip.** Rejected on vocabulary grounds — `CONTEXT.md` flags `Collection` as reconstructed by LLMs as a reactive `Map`; a training-set prior isn't fixed by keeping the name.
+- **Fresh name `Sequence`/`MutableSequence`.** Rejected — dominant prior (Kotlin/C#/F#/LINQ) reads as lazy/single-pass, contradicting this type's stable per-item identity.
+- **Keep `Signal` as umbrella, name the single-value shape `State`.** Rejected — `State` re-imports the mutable-origin connotation the collapse exists to delete, and recruits the same Solid/Preact/Angular `signal()` prior this ADR is trying to avoid for the flagship name.
+- **`Atom` for the single-value shape (Jotai).** Rejected — evokes a *definition* consumed via a hook, not a live, immediately usable cell; `Cell` (Cellx and Starbeam precedent, spreadsheet metaphor) has the opposite risk profile — unfamiliarity, fixable with one line of docs, not a wrong mental model.
 
 ## Consequences
 
 **Positive**
 
-- Every shape can be derived from every origin. The empty cells are gone.
-- Nothing derived exposes `.set()`. The discouraged pattern becomes a compile error rather than a
-  style violation.
-- `Collection` and `Sensor` disappear as concepts. `Collection` in particular was confirmed a weak
-  name; it turns out to have been "readonly List" all along.
-- `isPending()` extends to composites, which is currently inexpressible.
-- The type surface a consumer reasons about drops from nine names to six, plus two orthogonal
-  primitives.
+- Every shape can be derived from every origin; the empty cells in the matrix are gone.
+- Nothing derived exposes `.set()` — the discouraged pattern becomes a compile error.
+- `Collection` and `Sensor` disappear as concepts.
+- `isPending()` extends to composites, currently inexpressible.
+- The type surface drops from nine names to six, plus two orthogonal primitives (`Effect`, `Slot`).
 
 **Negative**
 
-- Breaking. Every consumer that names `State`, `Memo`, `Task`, `Sensor`, or `Collection` as a type,
-  or calls `task.isPending()` as a method, must migrate. Le Truc requires coordinated release.
-- `List<T>` currently means the mutable type. Under this ADR it means the readonly base, so code
-  that types a variable `List<T>` and calls `.add()` breaks at the type level in unchanged code —
-  the most error-prone part of the migration. The break is staged, not silent: a 1.x release
-  back-ports `MutableList` and the shape guards with `@deprecated` markers on the old meanings, and a codemod plus migration recipe rewrites the annotations.
-- `Store<T>` has the same flip with the same structure — today it is the mutable type, under this
-  ADR the readonly base (`createStore` returns `MutableStore`) — and originally shared the List
-  treatment in every way except the important one: no bridge. The first draft of these
-  consequences omitted it entirely; Le Truc's round-2 review of the 1.5 draft caught the
-  omission. A 1.x release back-ports `MutableStore`/`isMutableStore` with `@deprecated` markers
-  and codemod rules, mirroring the `List` treatment.
-- `isSignal` and `isMutableSignal` keep their names but narrow their predicates: `isSignal`
-  matched all nine 1.x types plus `Slot` and now matches only the single-value shape;
-  `isMutableSignal` matched every mutable type and now matches only the mutable single-value
-  shape. This is the one break with no containment of any kind — no 1.5 bridge is possible (the
-  1.x `Signal<T>` is the umbrella union, so back-porting the name would itself flip it), the
-  codemod has nothing to rewrite (the identifier is unchanged; only its predicate narrows), and
-  code guarding an `unknown` compiles and runs while silently taking the non-signal branch for
-  composites. `MIGRATION-2.0.md` warns about it explicitly and the codemod flags the call sites
-  for manual audit. For "is this any reactive value at all", the structural check
-  `typeof x?.get === 'function'` is the recipe — it also accepts descriptor-like objects a tag
-  check never did.
-- `createSignal` currently sniffs shape (array → `List`, record → `Store`). It becomes
-  shape-specific, and the coercion is removed with **no replacement export**. A shape-sniffing
-  façade hides the shape decision, which is the v1-ism this ADR deletes everywhere else. Le
-  Truc's `src/` never calls `createSignal` — the exposure is its re-export surface, and Le Truc
-  ships its own coercion helper for downstream users in its 3.0 (three lines over
-  `createList`/`createStore`/`createState` and the exported `isRecord`). The migration notes
-  carry the recipe.
-- `createComputed` and `createMutableSignal` are subsumed by `deriveSignal` and `createSignal`.
-- The full-library bundle budget must be re-measured. Merging `Collection` into `List` offsets some
-  of the added surface, but the target is not guaranteed to hold.
-- `Slot<T>` remains shape-agnostic, so a slotted `List` is consumed as `Signal<T[]>` and loses
-  `at()` / `byKey()`. Deliberately out of scope: `Slot` abstracts over `{ get, set? }` and ignores
-  all other methods by design.
+- Breaking. Every consumer naming `State`, `Memo`, `Task`, `Sensor`, `Collection`, or calling `task.isPending()` as a method, must migrate.
+- `List<T>` and `Store<T>` flip meaning: today mutable, under this ADR the readonly base. Code that types a variable `List<T>`/`Store<T>` and calls `.add()`/`.set()` breaks at the type level in unchanged code. Mitigated by a 1.x back-port of `MutableList`/`MutableStore` and shape guards with `@deprecated` markers, plus a codemod.
+- `createSignal`'s current shape-sniffing (array → `List`, record → `Store`) is removed with no replacement export; callers needing that coercion write three lines against `createList`/`createStore`/`createState` and `isRecord`.
+- `createComputed`/`createMutableSignal` are subsumed by `deriveCell`/`createCell`.
+- The full-library bundle budget must be re-measured: `Collection` merging into `List` and the narrower public factory surface (two entry points instead of four) both push toward smaller, but the ≤3 kB core target is not yet re-verified against the renamed surface. Measured core for the create/derive/effect trio at time of writing: 2072 B gzipped, 48.3% headroom under budget.
+- `Slot<T>` stays shape-agnostic — a slotted `List` is consumed as `Signal<T[]>` and loses `at()`/`byKey()`. Deliberately out of scope.
 
 **Neutral**
 
-- Guards become shape-indexed: `isSignal`, `isList`, `isStore`, `isMutableSignal`, `isMutableList`,
-  `isMutableStore`. The origin guards `isState`, `isMemo`, `isTask`, `isSensor`, and `isCollection`
-  have no referent after the collapse and are removed. `isSignalOfType` remains the primitive.
+- Guards become shape-indexed: `isCell`, `isList`, `isStore`, `isMutableCell`, `isMutableList`, `isMutableStore`, targeting `'Cell'`/`'List'`/`'Store'` tags. The origin guards `isState`, `isMemo`, `isTask`, `isSensor`, `isCollection` have no referent after the collapse and are removed. `isSignalOfType` remains the shared primitive.

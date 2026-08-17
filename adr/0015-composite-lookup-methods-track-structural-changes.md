@@ -79,6 +79,24 @@ This extension was motivated by a correctness gap surfaced during review: the `b
 
 No internal `untrack` guard was needed (unlike the `deriveCollection` per-item `byKey` lookup, which suppresses a structural edge to keep per-item memos narrow): internal callers (`buildValue`, `applyChanges`, `syncKeys`) use `source.keys()` or direct map iteration, never the public `Symbol.iterator`.
 
+## Clarification (added 2026-08, external-push Stores)
+
+The "untracked for structure" decision above governs *graph edges*, not *lifecycle*. For a
+derived external-push Store — `deriveStore(seed, { watched })` — an effect that reads only
+`store.prop` or `store.byKey(k)` still activates the `watched` lifecycle: such a store has
+no other value source than the `emit` handed to `watched`, so without activation on
+property reads the store would stay frozen at its seed forever.
+
+The two concerns are separated by a **lifecycle anchor**: a source node that carries
+watcher edges but never holds or propagates a value. Any observation form — structural
+(`get()`/`keys()`/iterator) or per-property (`byKey`/proxy/`has`) — links the anchor,
+which starts `watched` on the first edge and stops it when the last edge detaches
+(reusing `unlink()`'s existing sink-count lifecycle, ADR-0011). The structural node is
+linked only by the whole-store accessors, exactly as before: a property read still
+creates no structural edge, so per-property granularity is preserved. Activation
+(lifecycle) and tracking (edges) are separate concerns; this clarification changes only
+the former.
+
 ## Related
 
 - Requirements: [Explicit Reactivity](REQUIREMENTS.md#explicit-reactivity), [Non-Nullable Types](REQUIREMENTS.md#non-nullable-types), [Minimal Surface, Maximum Coverage](REQUIREMENTS.md#minimal-surface-maximum-coverage)

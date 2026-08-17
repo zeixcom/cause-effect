@@ -1,6 +1,6 @@
 /**
  * @name Cause & Effect
- * @version 1.5.0
+ * @version 1.5.1
  * @author Esther Brunner
  */
 
@@ -108,10 +108,13 @@ export {
 } from './src/nodes/store'
 export { createTask, isTask, type Task } from './src/nodes/task'
 export {
+	createCell,
 	createComputed,
 	createMutableSignal,
 	createSignal,
+	type DeriveCellOptions,
 	type DeriveSignalOptions,
+	deriveCell,
 	deriveSignal,
 	isComputed,
 	isMutableSignal,

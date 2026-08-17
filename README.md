@@ -398,9 +398,9 @@ An `ok` or `err` handler may return a `Promise`, but must not write signal state
 
 ### Utilities
 
-Polymorphic factories (`createSignal`, `createMutableSignal`, `createComputed`) and type predicates (`isSignal`, `isMutableSignal`, `isComputed`) serve generic and library-author code. See [Utilities for generic code](GUIDE.md#utilities-for-generic-code).
+Polymorphic factories (`createSignal`, `createMutableSignal`, `createComputed`) and type predicates (`isSignal`, `isMutableSignal`, `isComputed`) serve generic and library-author code. Since 1.5.1 the same dispatch is available under the terminal v2 names: `createCell` (an alias of `createState`) for a single value, `deriveCell` for every single-value origin. See [Utilities for generic code](GUIDE.md#utilities-for-generic-code).
 
-> **Naming ahead of 2.0:** `createSignal`'s shape sniffing (array → `List`, record → `Store`, function → `Memo`/`Task`) is removed with no replacement export, and `createComputed`/`createMutableSignal` are subsumed by `deriveSignal`/`createSignal`. See [MIGRATION-2.0.md](MIGRATION-2.0.md).
+> **Naming ahead of 2.0:** `createSignal`'s shape sniffing (array → `List`, record → `Store`, function → `Memo`/`Task`) is removed with no replacement export, and `createComputed`/`createMutableSignal` are deprecated in favor of `deriveCell` and `createCell`/`createList`/`createStore`. See [MIGRATION-2.0.md](MIGRATION-2.0.md).
 
 ## Advanced Usage
 

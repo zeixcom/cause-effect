@@ -8,6 +8,7 @@ import {
 	createState,
 	createStore,
 	createTask,
+	DuplicateKeyError,
 	isList,
 	isMemo,
 	match,
@@ -476,6 +477,28 @@ describe('List', () => {
 			expect(list.byKey('x')).toBeDefined()
 			expect(list.byKey('x')?.get()).toEqual({ id: 'x', val: 99 })
 		})
+
+		test('splice rejects duplicate keys within the inserted batch', () => {
+			const list = createList([{ id: 1 }], {
+				keyConfig: item => `id-${item.id}`,
+			})
+			expect(() => list.splice(1, 0, { id: 7 }, { id: 7 })).toThrow(
+				DuplicateKeyError,
+			)
+			expect(list.length).toBe(1) // unchanged — atomic
+			expect(list.get()).toEqual([{ id: 1 }])
+		})
+
+		test('splice rejects a nullish inserted item without partial mutation', () => {
+			const list = createList([{ id: 1 }], {
+				keyConfig: item => `id-${item.id}`,
+			})
+			expect(() =>
+				list.splice(1, 0, { id: 2 }, undefined as unknown as { id: number }),
+			).toThrow(NullishSignalValueError)
+			expect(list.length).toBe(1)
+			expect(list.get()).toEqual([{ id: 1 }])
+		})
 	})
 
 	describe('length', () => {
@@ -552,6 +575,14 @@ describe('List', () => {
 			expect(list.keyAt(0)).toBe('item-0')
 			expect(list.keyAt(1)).toBe('item-1')
 			expect(list.keyAt(2)).toBe('item-2')
+		})
+
+		test('createList rejects duplicate keys in the initial value', () => {
+			expect(() =>
+				createList([{ id: 1 }, { id: 1 }], {
+					keyConfig: item => `id-${item.id}`,
+				}),
+			).toThrow(DuplicateKeyError)
 		})
 	})
 

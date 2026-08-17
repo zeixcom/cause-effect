@@ -238,5 +238,176 @@ describe('deriveStore', () => {
 			dispose()
 			expect(active).toBe(false)
 		})
+
+		test('activates watched for a property-only consumer', () => {
+			let push: ((patch: Partial<User>) => void) | undefined
+			const store = deriveStore({ name: 'Alice', email: 'a@x.com' } as User, {
+				watched: emit => {
+					push = emit
+					return () => {
+						push = undefined
+					}
+				},
+			})
+			const seen: string[] = []
+			const dispose = createScope(() => {
+				createEffect(() => {
+					seen.push(store.name?.get() ?? '')
+				})
+			})
+			expect(push).toBeDefined() // FAILS today — watched never started
+			push?.({ name: 'Bob' })
+			expect(seen.at(-1)).toBe('Bob') // FAILS today — store frozen at seed
+			dispose()
+		})
+
+		test('activates watched for a byKey-only consumer', () => {
+			let push: ((patch: Partial<User>) => void) | undefined
+			const store = deriveStore({ name: 'Alice', email: 'a@x.com' } as User, {
+				watched: emit => {
+					push = emit
+					return () => {
+						push = undefined
+					}
+				},
+			})
+			const seen: string[] = []
+			const dispose = createScope(() => {
+				createEffect(() => {
+					seen.push(store.byKey('name')?.get() ?? '')
+				})
+			})
+			expect(push).toBeDefined()
+			push?.({ name: 'Bob' })
+			expect(seen.at(-1)).toBe('Bob')
+			dispose()
+		})
+
+		test('stops the watched lifecycle when the last property observer goes away', () => {
+			let active = false
+			const store = deriveStore(
+				{ a: 1 },
+				{
+					watched: () => {
+						active = true
+						return () => {
+							active = false
+						}
+					},
+				},
+			)
+			const dispose = createScope(() => {
+				createEffect(() => {
+					store.a?.get()
+				})
+			})
+			expect(active).toBe(true)
+			dispose()
+			expect(active).toBe(false)
+		})
+
+		test('restarts watched after a full stop', () => {
+			let starts = 0
+			const store = deriveStore({ name: 'Alice', email: 'a@x.com' } as User, {
+				watched: () => {
+					starts++
+					return () => {}
+				},
+			})
+			const dispose1 = createScope(() => {
+				createEffect(() => {
+					store.name?.get()
+				})
+			})
+			expect(starts).toBe(1)
+			dispose1()
+			expect(starts).toBe(1)
+
+			const dispose2 = createScope(() => {
+				createEffect(() => {
+					store.name?.get()
+				})
+			})
+			expect(starts).toBe(2)
+			dispose2()
+		})
+
+		test('starts watched exactly once for mixed observers', () => {
+			let starts = 0
+			let stops = 0
+			const store = deriveStore({ name: 'Alice', email: 'a@x.com' } as User, {
+				watched: () => {
+					starts++
+					return () => {
+						stops++
+					}
+				},
+			})
+			const dispose1 = createScope(() => {
+				createEffect(() => {
+					store.get()
+				})
+			})
+			const dispose2 = createScope(() => {
+				createEffect(() => {
+					store.name?.get()
+				})
+			})
+			expect(starts).toBe(1)
+
+			dispose1()
+			expect(stops).toBe(0) // still active — one observer left
+
+			dispose2()
+			expect(stops).toBe(1)
+		})
+
+		test('keeps per-property granularity through the anchor', () => {
+			let push: ((patch: Partial<User>) => void) | undefined
+			const store = deriveStore({ name: 'Alice', email: 'a@x.com' } as User, {
+				watched: emit => {
+					push = emit
+					return () => {
+						push = undefined
+					}
+				},
+			})
+			const seen: string[] = []
+			const dispose = createScope(() => {
+				createEffect(() => {
+					seen.push(store.name?.get() ?? '')
+				})
+			})
+			expect(seen).toEqual(['Alice'])
+
+			// A patch to an unread property must NOT re-run the property effect.
+			push?.({ email: 'b@x.com' })
+			expect(seen).toEqual(['Alice'])
+
+			push?.({ name: 'Bob' })
+			expect(seen).toEqual(['Alice', 'Bob'])
+			dispose()
+		})
+
+		test('activates watched for the in operator', () => {
+			let push: ((patch: Partial<User>) => void) | undefined
+			const store = deriveStore({ name: 'Alice', email: 'a@x.com' } as User, {
+				watched: emit => {
+					push = emit
+					return () => {
+						push = undefined
+					}
+				},
+			})
+			let checks = 0
+			const dispose = createScope(() => {
+				createEffect(() => {
+					if ('name' in store) checks++
+				})
+			})
+			expect(push).toBeDefined()
+			expect(checks).toBe(1)
+			dispose()
+		})
 	})
 })

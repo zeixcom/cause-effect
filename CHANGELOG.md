@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.5.1
+
+### Fixed
+
+- **`deriveStore(seed, { watched })` never started its `watched` lifecycle under property-only reads, leaving the store frozen at its seed** (`src/nodes/store.ts`): Previously, only whole-store reads (`get()`, `keys()`, iteration) activated the external-push lifecycle; a consumer reading exclusively through `store.prop.get()`, `byKey()`, or `'prop' in store` activated nothing, so `watched` never ran — and an external-push Store has no value source other than `watched`'s `emit`, so it stayed at its seed forever. Now the facade links a dedicated lifecycle anchor from every observation form: a `SourceNode` that carries watcher edges but never holds or propagates a value. Activation still creates no structural edge, so per-property granularity is unchanged ([ADR-0015](adr/0015-composite-lookup-methods-track-structural-changes.md) clarification). Backported from `v2/shape-exploration` `c48171b`.
+- **`List` seeds and `splice()` validated duplicate keys and nullish items inconsistently, and a failing `splice()` could half-apply** (`src/nodes/list.ts`, `src/nodes/collection.ts`): Previously, `createList(value)` and the external-push seed of `deriveList` did not check for duplicate generated keys — the later item silently replaced the earlier one's signal while `keys` still listed the key twice, desynchronizing `length` and `get()` from the item signals. `splice()` validated nullish items only where `applyChanges()` happened to touch them: a content-based `keyConfig` threw a bare `TypeError` reading a property of `null`/`undefined`, duplicate keys *within* one inserted batch went undetected (the batch is applied after the loop, so `signals.has()` never saw the batch's own earlier keys), and an error surfacing mid-mutation left earlier insertions applied. Now the whole batch is staged and validated before anything mutates: nullish items fail `validateSignalValue` before `generateKey`, keys are checked against existing signals *and* the staged batch, an invalid `splice()` throws with the list unchanged, and seeds throw `DuplicateKeyError`. Backported from `v2/shape-exploration` `c48171b`.
+
+### Added
+
+- **`createCell(value, options?)`**: Alias of `createState` — the single-value mutable signal, value taken verbatim, no shape conversion. The terminal v2.0 name for the single-value shape under the [ADR-0018](adr/0018-shape-indexed-signal-types.md) Revision (`Cell` names the single-value shape; `Signal` stays the umbrella); carried into 2.0 unchanged. Backported from `v2/shape-exploration` `e4408f6`.
+- **`deriveCell(input, options?)` / `DeriveCellOptions<T>`**: Single-value derive factory with `createComputed`'s dispatch — sync function → `Memo`, async function → `Task` — plus the external-push form (seed value + `options.watched` → `Sensor`); returns `Signal<T>`, so origin is not part of the return type. `DeriveCellOptions` uses the `initial` vocabulary; `initial` stays optional and an early read before the first async resolution throws `UnsetSignalValueError`, exactly as `createTask` behaves. Terminal bridge for `createComputed`. Backported from `v2/shape-exploration` `e4408f6`.
+
+### Deprecated
+
+- **`deriveSignal(input, options?)` / `DeriveSignalOptions<T>`**: Shipped in 1.5.0, deprecated after one release in favor of `deriveCell`/`DeriveCellOptions` — a pure rename, same dispatch and options. The [ADR-0018](adr/0018-shape-indexed-signal-types.md) Revision settled that `Signal` is the umbrella and the single-value shape is `Cell`, so the 1.5.0 names carry a superseded meaning; both are removed in 2.0. This supersedes the 1.5.0 replacement pointers: `createComputed` migrates to `deriveCell` (not `deriveSignal`), and `createMutableSignal` migrates to `createCell`/`createList`/`createStore` by argument shape (not `createSignal`, which 2.0 removes). See `MIGRATION-2.0.md` "Second flip". Backported from `v2/shape-exploration` `e4408f6`.
+
+### Changed
+
+- **`tools/codemod-v2.ts` retargeted at the Cell bridge names**: `createComputed` → `deriveCell` with a literal `options.value` rewritten to `options.initial`; `deriveSignal` → `deriveCell` and `DeriveSignalOptions` → `DeriveCellOptions` as exact-identifier renames; `createMutableSignal(v)` rewritten by literal argument shape to `createCell`/`createList`/`createStore` — a blanket rename would silently change array and record call sites now that `createCell` is the narrow single-value factory. `createSignal(...)` call sites are always flagged, never rewritten (its shape dispatch is removed in 2.0 with no single replacement), and an async `createComputed` callback is flagged for the `Task` methods `.isPending()`/`.abort()` becoming the free functions `isPending(signal)`/`abort(signal)`.
+
 ## 1.5.0
 
 ### Added

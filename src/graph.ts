@@ -958,6 +958,7 @@ export {
 	type SignalOptions,
 	type SinkNode,
 	SKIP_EQUALITY,
+	type SourceNode,
 	type StateNode,
 	scheduleEffect,
 	setState,
