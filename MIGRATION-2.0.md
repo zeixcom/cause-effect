@@ -1,8 +1,9 @@
 # Migrating toward Cause & Effect 2.0
 
-> **Status:** v2.0 is not yet released and not yet committed ([ADR-0018](adr/0018-shape-indexed-signal-types.md)
-> is Proposed). This guide prepares consumer code ahead of the breaking release. All bridge
-> names are available since 1.5.0 and behave identically to the names they replace.
+> **Status:** v2.0 is not yet released ([ADR-0018](adr/0018-shape-indexed-signal-types.md) is
+> Accepted; implementation is complete on branch `v2/shape-exploration`). This guide describes
+> the final (Revision) names ahead of the breaking release. All bridge names are available
+> since 1.5.0 and behave identically to the names they replace.
 
 ## What changes in 2.0
 
@@ -27,12 +28,11 @@ names and the codemod below convert that silent flip into a staged, deprecation-
 | `isCollection(x)` | `isDerivedList(x)` | `isList(x)` | |
 | `createCollection(watched, options?)` | `deriveList(seed, { watched, … })` | `deriveList(seed, { watched, … })` | The `value` option becomes the seed argument; every other option carries over verbatim. Available since 1.5.0. |
 
-`createList`, `deriveList`, `deriveStore`, `createState`, `createMemo`, `createTask`,
-`Slot`, `Effect`, and `match` keep their names and behavior. `createSensor` keeps its
-name; in 2.0 its `watched` callback moves from the first argument into the options —
-`createSensor({ watched, value?, equals?, guard? })` (ADR-0018 §4: `watched` is an
-option, never a callback position, because a derivation callback and an external-push
-callback are indistinguishable at runtime).
+`createList`, `deriveList`, `deriveStore`, `createState`, `Slot`, `Effect`, and `match`
+keep their names and behavior. `createMemo` is renamed `deriveComputed`. `createTask` and
+`createSensor` are removed from the public API — both route through `deriveCell` instead
+(ADR-0018 §4: `watched` is an option, never a callback position, because a derivation
+callback and an external-push callback are indistinguishable at runtime).
 
 ## Smaller 2.0 renames (no bridge — they land at 2.0)
 
@@ -43,8 +43,8 @@ callback are indistinguishable at runtime).
 | `CollectionSource<T>` | `ListSource<T>` | A longer name — the codemod's exact-identifier rules will **not** catch it; rename by hand. |
 | `CollectionCallback<T>` | `ListCallback<T>` | Its argument is now named `emit` (was `apply`/`applyChanges`). |
 | `CollectionChanges<T>` | `ListChanges<T>` | |
-| `SensorCallback<T>` | `SignalCallback<T>` | Completes the `SignalCallback`/`ListCallback`/`StoreCallback` triple. Its argument is now named `emit` (was `set`). |
-| `ComputedOptions<T>` / `SensorOptions<T>` | `DeriveSignalOptions<T>` | One options type for the single-value derive family. The seed option is `initial`. |
+| `SensorCallback<T>` | `CellCallback<T>` | Completes the `CellCallback`/`ListCallback`/`StoreCallback` triple. Its argument is now named `emit` (was `set`). |
+| `ComputedOptions<T>` / `SensorOptions<T>` | `DeriveCellOptions<T>` | One options type for the single-value derive family. The seed option is `initial`. |
 | the `value` option | the `initial` option | On `createMemo`, `createTask`, `createSensor`, `deriveSignal`, `deriveList`, `deriveStore`. Positional arguments are unchanged: `value` for `create*`, `input` for `derive*`. |
 | an `AbortSignal` callback parameter named `abort` or `signal` | `abortSignal` | Renamed everywhere for one uniform name — callback parameters are positional, so call sites compile unchanged. |
 | `isEqual` | *(removed)* | Use `DEEP_EQUALITY`. |
@@ -156,12 +156,15 @@ The seed positional argument replaces `createSensor`'s optional `initial` option
 `deriveCell`'s external-push form the seed *is* the initial value, so there is no longer a way
 to construct a fully unset external-push cell through the public API.
 
-The codemod (`tools/codemod-v2.ts`) rewrites `createMemo`/`createComputed` to `deriveComputed`,
-`createMutableSignal` to `createCell`, and `deriveSignal` to `deriveCell` automatically. It
-flags `createSignal`, `createTask`, `createSensor`, and the origin guards for manual review —
-each needs the judgment call shown above, not a mechanical rename. It leaves `isSignal` and
-`isMutableSignal` untouched and unflagged, since their meaning is the same in 1.x and in the
-revised 2.0 — only the intermediate state on this branch differed.
+The codemod (`tools/codemod-v2.ts`) rewrites `createMemo` to `deriveComputed`, `createComputed`
+to `deriveCell` (a literal `options.value` becomes `options.initial`, and an async call site is
+flagged for the `.isPending()`/`.abort()` → free-function migration — `deriveComputed` is
+sync-only, so `createComputed`'s async form cannot land there), `createMutableSignal` to
+`createCell`, and `deriveSignal` to `deriveCell` automatically. It flags `createSignal`,
+`createTask`, `createSensor`, and the origin guards for manual review — each needs the
+judgment call shown above, not a mechanical rename. It leaves `isSignal` and `isMutableSignal`
+untouched and unflagged, since their meaning is the same in 1.x and in the revised 2.0 — only
+the intermediate state on this branch differed.
 
 ## Running the codemod
 
@@ -172,11 +175,10 @@ bun tools/codemod-v2.ts 'src/**/*.ts'   # or: bunx tsx tools/codemod-v2.ts …
 The codemod is **meaning-preserving**: every new name denotes exactly what the old name
 denotes in 1.x, so the output compiles and behaves identically before and after. It rewrites
 the renames in the table above (exact identifier match — your own `ListOptions`-style names
-and your own declarations named `List` are left alone) and syncs the imports. It also
-**flags** every `isSignal`/`isMutableSignal` call site for manual review — it cannot rewrite
-those, because the 2.0 meaning depends on what the argument can be (see the section above).
-Run your formatter afterwards; the rewritten `deriveList(...)` calls are syntactically valid
-but not formatted to taste.
+and your own declarations named `List` are left alone) and syncs the imports. It leaves
+`isSignal`/`isMutableSignal` untouched and unflagged — their meaning is the same in 1.x and
+in the revised 2.0 (see "Second flip" above). Run your formatter afterwards; the rewritten
+`deriveList(...)` calls are syntactically valid but not formatted to taste.
 
 ## What the codemod cannot decide
 
@@ -194,13 +196,14 @@ pipelines stay diffable. Migrate when you adopt the other v2 renames.
 
 **Origin guards.** `isState`, `isMemo`, `isTask`, `isSensor`, and `isComputed` have no
 mechanical replacement — they are removed because origin is no longer part of the consumption
-contract. Each use needs a decision: the shape guards (`isSignal`, `isList`, `isStore`) or a
-plain property check. **But read the `isSignal` section above first** — `isSignal` itself has
-changed meaning, so a mechanical `isState || isMemo → isSignal` rewrite is wrong whenever the
-value can be a composite. The codemod flags these call sites; audit them by hand.
+contract. Each use needs a decision: the shape guards (`isCell`, `isList`, `isStore`) or a
+plain property check. **But read "Second flip" above first** — `isSignal` is the umbrella
+again, so a mechanical `isState || isMemo → isSignal` rewrite is wrong whenever the value can
+be a `List` or `Store`; the narrow-shape equivalent is `isCell`. The codemod flags these call
+sites; audit them by hand.
 
-**`createComputed` and `createMutableSignal`.** Subsumed in 2.0 by `deriveSignal` and
-`createSignal`. Both remain available in 1.x; no action needed until 2.0.
+**`createComputed` and `createMutableSignal`.** Subsumed in 2.0 by `deriveCell` and
+`createCell`. Both remain available in 1.x; no action needed until 2.0.
 
 ## The `createSignal` shape coercion
 
@@ -221,4 +224,4 @@ const coerceSignal = (value: unknown) =>
 			: createState(value)
 ```
 
-The function forms of `createSignal` map to `deriveSignal(input, options?)` in 2.0.
+The function forms of `createSignal` map to `deriveCell(input, options?)` in 2.0.

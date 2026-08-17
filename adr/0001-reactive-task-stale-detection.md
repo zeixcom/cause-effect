@@ -4,6 +4,8 @@
 
 ✅ Accepted
 
+Amended by [ADR-0018](0018-shape-indexed-signal-types.md) (2026-08-17).
+
 ## Context
 
 When a Task source changes, the previous design caused effects to miss the pending state transition. The propagation mechanism sent only `FLAG_CHECK` to downstream effects, and `refresh(effectNode)` called `recomputeTask()` synchronously without triggering a value change. Effects saw no `FLAG_DIRTY` flag and silently became `FLAG_CLEAN` without running — the `stale` handler never fired.

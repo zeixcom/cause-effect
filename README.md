@@ -46,7 +46,7 @@ See [Choosing the Right Signal](GUIDE.md#choosing-the-right-signal) for the cons
 - **Explicit reactivity**: `.get()` calls track dependencies — the graph reflects the true dependency structure, with no hidden edges
 - **Non-nullable types**: All signals enforce `T extends {}`, excluding `null` and `undefined` at the type level — trust returned values without null checks
 - **Unified graph**: Composites (Store, List) and async derivations are first-class — every shape is derivable from every origin, and nothing derived exposes a setter
-- **Tree-shakable, zero dependencies**: The synchronous core (`createState`, `deriveComputed`, `createEffect`) is less than 3 kB gzipped; the full library is around 8 kB
+- **Tree-shakable, zero dependencies**: The synchronous core (`createState`, `deriveComputed`, `createEffect`) is less than 3 kB gzipped; the full library is 8036 B (~7.9 kB) gzipped
 
 ## Guarantees
 

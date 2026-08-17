@@ -6,10 +6,11 @@ This document captures the vision, audience, constraints, and boundaries of the 
 > (✅ Accepted) is implemented on branch `v2/shape-exploration` (`2.0.0-next.1`, unreleased):
 > the narrow single-value shape is named `Cell`/`MutableCell`, while `Signal`/`MutableSignal`
 > return to their umbrella meaning, matching `Cell`, `List`, or `Store` structurally, not by
-> tag. 1.5.0 shipped the pre-Revision bridge names (`createSignal`, `createComputed`,
-> `createMutableSignal`, `deriveSignal`) ahead of the breaking rename; the corrected umbrella
-> `isSignal`/`isMutableSignal` meaning is decided for a 1.5.x back-port, not yet published —
-> see `TODO.md` CE-017. See `MIGRATION-2.0.md` for the full bridge-name mapping.
+> tag — the same meaning `isSignal`/`isMutableSignal` already carried in 1.5.0, so no 1.x
+> back-port was needed there. 1.5.0 shipped the pre-Revision bridge names (`createSignal`,
+> `createComputed`, `createMutableSignal`, `deriveSignal`) ahead of the breaking rename; 1.5.1
+> adds the corrected `Cell` bridge names (`createCell`, `deriveCell`), not yet published. See
+> `MIGRATION-2.0.md` for the full bridge-name mapping.
 
 ## Vision
 
@@ -143,7 +144,7 @@ Two figures, doing two different jobs.
 | Usage | Role | Minified | Gzipped |
 |-------|------|----------|---------|
 | Core only (`createState`, `deriveComputed`, `createEffect`) | **Promise** — hard, never relaxed | — | Below 3 kB (3072 B) |
-| Full library (all value types + utilities) | **Diagnostic** — working ceiling, re-baselined per release (~25 % headroom) | Below 29 kB (28672 B) | Below 10 kB (10240 B) |
+| Full library (all value types + utilities) | **Diagnostic** — working ceiling, re-baselined per release (~25 % headroom) | Below 29 kB (29309 B) | Below 10 kB (10045 B) |
 
 **The core figure is the promise.** Because the library is tree-shakable, an application pays only for the construction paths it imports. What a typical consumer actually ships is the core figure, not the full-library one, so that is the number that carries the commitment in Success Criterion 6. It is a hard limit and is not relaxed for refactoring. If it regresses, do not raise it — correct the claim in `REQUIREMENTS.md` and `README.md` to the real figure and raise it with the Architect.
 

@@ -68,19 +68,15 @@ earlier phase's are done, unless a task says otherwise.
   clean, `biome check` clean. Bundle figures unaffected — `tools/` is not part of the shipped
   bundle.
 
-- [ ] CE-026: Merge 1.5.1's CHANGELOG entries into this branch's `[Unreleased]` section
+- [x] CE-026: Merge 1.5.1's CHANGELOG entries into this branch's `[Unreleased]` section — done ✓
   **Skill:** changelog-keeper
-  **Context:** CE-015 and CE-016's fixes (`deriveStore` watched-lifecycle activation, `List`
-  duplicate-key/atomicity hardening) already shipped to 1.x users in `v1.5.1` (backported from
-  this branch's `c48171b`, per `next`'s `CHANGELOG.md` `## 1.5.1` section, which cites this
-  branch by commit for both entries). This branch's `CHANGELOG.md` `[Unreleased]` → Fixed
-  section currently presents both as new in 2.0, with no note that 1.x users already received
-  them a release earlier. Annotate both entries (e.g. "Backported to 1.5.1.") so the eventual
-  2.0.0 CHANGELOG doesn't double-claim these as new fixes for 1.5.1 users, and so anyone diffing
-  1.5.1 → 2.0.0 isn't misled into re-verifying an already-shipped fix. Do not otherwise reorganize
-  `[Unreleased]` — CE-017 Step 1 owns the full audit/release-cut pass.
+  **Changed:** `CHANGELOG.md` (both `[Unreleased]` → Fixed entries for the `deriveStore`
+  watched-lifecycle fix and the `List` duplicate-key/atomicity hardening).
+  **How:** Appended "Backported to 1.5.1." to each entry, matching `next`'s `CHANGELOG.md`
+  `## 1.5.1` section, which cites this branch's `c48171b` by commit for both. No reorganization
+  of `[Unreleased]` — that's CE-017 Step 1, done alongside this (see below).
 
-- [ ] CE-017: Make the v2 branch releasable as 2.0.0
+- [x] CE-017: Make the v2 branch releasable as 2.0.0 — done ✓
   **Skill:** changelog-keeper (Step 1), adr-keeper (Step 2), tech-writer (Steps 3, 5), cause-effect-dev (Step 4)
   **Context:** Follow `plans/PLAN-v2-release-readiness.md`, with two corrections found during
   triage that the plan's author didn't have current information for:
@@ -104,6 +100,129 @@ earlier phase's are done, unless a task says otherwise.
   (current measurement: core 2080B — well under the untouchable 3072B hard limit; full-library
   7975B gz / 23225B min — re-baseline the diagnostic ceilings from this run, don't hand-edit
   the numbers in the plan text since they'll be stale by the time this runs after CE-015/CE-016).
+
+  **Step 1 (changelog-keeper) — done:** Audited `[Unreleased]` against
+  `git log v1.5.0..HEAD` and the current `index.ts` export diff against `v1.5.0`. Found three
+  gaps beyond the four this correction note already flagged (those were added in `c6637e7`,
+  confirmed present): (a) `List<T>`/`isList(x)` and `Store<T>`/`isStore(x)` being recycled from
+  the 1.5.0 mutable meaning to the 2.0 readonly-base meaning — the same class of silent-flip
+  hazard as the `Signal`→`Cell` entry already documents, but for List/Store it had no `[Unreleased]`
+  entry at all (only `MIGRATION-2.0.md` covered it); (b) `ComputedOptions`/`SensorOptions`/
+  `SensorCallback` folding into `DeriveCellOptions`/`CellCallback` — folded into the existing
+  `SignalOptions`/… rename entry rather than a new bullet; (c) CE-025's codemod fix
+  (`createComputed` → `deriveCell`, not `deriveComputed`) had no entry — added one under Fixed.
+  All three now in `CHANGELOG.md` `[Unreleased]`. Did **not** touch `[Unreleased]`'s heading or
+  reorganize sections, per the plan correction above.
+
+  **2026-08-17 architect re-audit of the remaining steps** (`git log`, `sed`/`grep` against
+  each named file, `bun run check`, `bun run build` + `bun test test/regression-bundle.test.ts`
+  for a fresh measurement):
+  - **Step 0 (back-port decision) — resolved, no action needed.** `main`'s 1.5.0 `isSignal`
+    (`git show v1.5.0:src/signal.ts`) was already the umbrella match (`SIGNAL_TYPES.has(tag)`)
+    — it was never narrowed. Only this branch's *intermediate* (pre-Revision) state had the
+    narrow meaning, and the same-day Revision reverted it before anything shipped. There is no
+    `isSignal`/`isMutableSignal` bug on `main` to back-port. Separately, `1.5.1` (the real
+    correctness back-port, CE-015/CE-016-equivalent + Cell bridge names + the CE-025 codemod
+    fix) is already prepared on `next` (`package.json` version bumped, `CHANGELOG.md` has a
+    `## 1.5.1` section) — not yet tagged or `npm publish`ed, which is out of this plan's scope
+    per its own last paragraph. `REQUIREMENTS.md`'s banner sentence framing this as a pending
+    "corrected umbrella `isSignal`/`isMutableSignal` meaning" back-port is therefore imprecise
+    (describes a fix that was never needed on `main`) — flagged in CE-028 below rather than
+    hand-edited here, since precise rewording is tech-writer's call.
+  - **Step 1 acceptance criterion ("`CHANGELOG.md` starts with `## 2.0.0`") — superseded, not
+    unmet.** The Step 1 correction above already established `[Unreleased]` stays as-is until
+    the maintainer's real release-cut; this criterion in the plan predates that correction.
+  - **Step 2 (ADR status hygiene) — half done.** `adr/0018-...md` Status is
+    `✅ Accepted — 2026-08-17 …` (confirmed, matches the plan's exact wording). `adr/0001-...md`
+    Status is still bare `✅ Accepted` — the required `Amended by [ADR-0018](...)` line was
+    never appended. **Gap → CE-027.**
+  - **Step 3 (MIGRATION-2.0.md) — not done.** `grep -n "createMemo\|deriveSignal\|createTask\|
+    createSensor\|createSignal" MIGRATION-2.0.md` still returns hits asserting current-v2 names
+    outside the two protected historical sections (confirmed lines ≈30-33, 48, 88-92, 159-161,
+    202-203, 224, plus the status banner at line 3 still says "ADR-0018 is Proposed"). One
+    addition beyond the plan's original 6-item list: line 159 ("codemod rewrites
+    `createMemo`/`createComputed` to `deriveComputed`") is now doubly wrong post-CE-025 —
+    `createComputed` rewrites to `deriveCell`, not `deriveComputed`. **Gap → CE-028.**
+  - **Step 4 (bundle re-baseline) — not done.** Fresh measurement this pass: core
+    **2080 B gz** (well under the untouchable 3072 B hard limit), full-library **23447 B min /
+    8036 B gz**. `test/regression-bundle.test.ts` ceilings are still the old 28672 B / 10240 B
+    (unchanged since before Phase 1), and `README.md:49`/`:140` still say "around 8 kB" instead
+    of a measured figure. **Gap → CE-029.**
+  - **Step 5 (REQUIREMENTS.md banner) — done.** No longer says "in transition"; already
+    rewritten in `8e26ce7`. Minor imprecision noted under Step 0 above, folded into CE-028.
+  - **Step 6 (final gates) — `bun run check` green** (tsc, biome, full suite, bundle
+    regression all pass as of this pass). CE-010 doesn't exist in the current `TODO.md` (it
+    belonged to the deleted pre-2026-08-17 file, recreated as this one) — nothing to check off.
+
+  **Closed 2026-08-17.** All three gaps landed: CE-027 (ADR-0001 amendment note), CE-028
+  (MIGRATION-2.0.md's 7 stale passages + the REQUIREMENTS.md `isSignal` framing), CE-029
+  (bundle ceilings re-baselined to 29309 B / 10045 B, README figure updated to the measured
+  8036 B). `bun run check` and `bun run regression` both green. The v2 branch is releasable
+  as 2.0.0 in every respect this plan gates; version bump, tagging, and `npm publish` remain
+  the maintainer's mechanics, out of scope per the plan. Phase 2 done — Phase 3 (CE-018,
+  CE-019) may start.
+
+- [x] CE-027: Add the ADR-0018 amendment note to ADR-0001's Status line — done ✓
+  **Skill:** adr-keeper
+  **Changed:** `adr/0001-reactive-task-stale-detection.md` (Status section, one line added).
+  **How:** Added `Amended by [ADR-0018](0018-shape-indexed-signal-types.md) (2026-08-17).`
+  directly below the existing `✅ Accepted` line, matching ADR-0018's own back-reference style
+  (`Amends [ADR-0001](0001-...)`). Context/Decision/Alternatives/Consequences/Related sections
+  untouched — ADRs are immutable once Accepted; this is a status-line cross-reference only, the
+  same class of edit the supersede workflow already permits on an Accepted ADR's status line.
+  No `adr-index.md` exists in this repo to update in parallel.
+
+- [x] CE-028: Fix the stale passages in MIGRATION-2.0.md — done ✓
+  **Skill:** tech-writer
+  **Changed:** `MIGRATION-2.0.md` (7 passages: status banner; "keep their names" paragraph;
+  smaller-renames table rows for `SensorCallback`/`ComputedOptions`/`SensorOptions`; the
+  Second-flip section's codemod-behavior sentence; the "Running the codemod"
+  `isSignal`/`isMutableSignal`-flagging sentence; the origin-guards `isSignal`→`isCell` swap;
+  the `createComputed`/`createMutableSignal` subsumption note and the file's final sentence),
+  `REQUIREMENTS.md` (transition banner, one sentence).
+  **How:** All six of the plan's Step 3 passages retargeted to the final (Revision) names —
+  `createMemo`→`deriveComputed`, `createComputed`/`createMutableSignal`→`deriveCell`/
+  `createCell`, `SensorCallback`→`CellCallback`, `ComputedOptions`/`SensorOptions`→
+  `DeriveCellOptions`, `createTask`/`createSensor` framed as removed-from-public-API (route
+  through `deriveCell`), status banner reflects ADR-0018 Accepted. Plus the CE-017-re-audit
+  addition: the Second-flip section's codemod sentence now says `createComputed` rewrites to
+  `deriveCell` (not `deriveComputed`, which is sync-only) — verified against
+  `tools/codemod-v2.ts`'s `RENAMES` map, the source of truth, not the plan text. The
+  `isSignal`-flagging sentence in "Running the codemod" was deleted (that flagging doesn't
+  exist — the codemod leaves `isSignal`/`isMutableSignal` untouched), which now agrees with
+  the Second-flip section's own description of the same behavior. `REQUIREMENTS.md`'s banner
+  no longer frames 1.5.1 as correcting an `isSignal` bug on `main` (verified `main` never had
+  one) — reworded to describe what 1.5.1 actually adds (the `Cell` bridge names).
+  **Check:** `git diff -U0 MIGRATION-2.0.md` — no hunk touches original lines 53-111 (the two
+  protected historical `isSignal` sections, CE-008/CE-009). Verification grep
+  (`createMemo\|deriveSignal\|createTask\|createSensor\|createSignal`) — every remaining hit
+  is either inside a protected historical section, a rename-table's left (old-name) column, or
+  a "before" code example; none assert a current v2 name. `bun run check` green (tsc, biome,
+  675 tests, bundle regression).
+
+- [x] CE-029: Re-baseline the full-library bundle ceilings and README figure — done ✓
+  **Skill:** cause-effect-dev
+  **Changed:** `test/regression-bundle.test.ts` (two ceilings + log strings + comments),
+  `REQUIREMENTS.md` § Bundle Size (table), `README.md:49` (full-library figure; `:140` only
+  has the core claim, unaffected — no second full-library mention existed).
+  **How:** Fresh measurement confirmed no drift from the 2026-08-17 figures quoted in this
+  task (CE-027/CE-028 were docs-only, as expected): core **2080 B gz** (well under the
+  untouchable 3072 B hard limit — no STOP condition), full-library **23447 B minified /
+  8036 B gzipped**. Set the two full-library ceilings to `ceil(measured × 1.25)`: minified
+  28672→**29309 B**, gzipped 10240→**10045 B** (the gzipped ceiling tightens even though the
+  minified one loosens — both are just `measured × 1.25`, and REQUIREMENTS.md is explicit
+  that they move independently, not in lockstep). Mirrored both into `REQUIREMENTS.md`'s
+  Bundle Size table (rounded kB display unchanged: 29 kB / 10 kB, since 29309 B ≈ 28.6 kB and
+  10045 B ≈ 9.8 kB both still round to the existing labels). `README.md:49`'s "around 8 kB"
+  replaced with the precise measured figure, "8036 B (~7.9 kB) gzipped".
+  **Check:** `bun run regression` green (9 performance scenarios + 3 bundle assertions).
+  `bun run check` green (tsc, biome, 675 tests, bundle regression).
+
+  **CE-017 closed — all three gap tasks (CE-027, CE-028, CE-029) landed.** Step 0 (resolved,
+  no back-port needed), Step 1 (changelog audit), Step 2 (ADR status hygiene, CE-027), Step 3
+  (MIGRATION-2.0.md, CE-028), Step 4 (this task), Step 5 (REQUIREMENTS.md banner), and Step 6
+  (`bun run check` green) are all satisfied. Phase 2 is done; Phase 3 (CE-018, CE-019) may
+  now start.
 
 ## Phase 3 — Agent docs and error surface (after Phase 2)
 
