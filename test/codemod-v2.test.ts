@@ -178,3 +178,89 @@ describe('codemod-v2: report', () => {
 		expect(report.needsManualReview.join('\n')).toContain('read-only positions')
 	})
 })
+
+describe('codemod-v2: single-value renames', () => {
+	test('renames deriveSignal to deriveCell and DeriveSignalOptions to DeriveCellOptions, including imports', () => {
+		const { output } = migrateSource(
+			"import { deriveSignal, type DeriveSignalOptions } from '@zeix/cause-effect'\n" +
+				'const user = deriveSignal(async () => fetchUser())\n' +
+				'const options: DeriveSignalOptions<string> = {}\n',
+		)
+		expect(output).toContain('const user = deriveCell(async () => fetchUser())')
+		expect(output).toContain('const options: DeriveCellOptions<string> = {}')
+		expect(output).toContain(
+			"deriveCell, type DeriveCellOptions } from '@zeix/cause-effect'",
+		)
+		expect(output).not.toContain('deriveSignal')
+		expect(output).not.toContain('DeriveSignalOptions')
+	})
+
+	test('renames createComputed to deriveCell and rewrites options.value to options.initial', () => {
+		const { output, report } = migrateSource(
+			"import { createComputed } from '@zeix/cause-effect'\n" +
+				'const user = createComputed(fetchUser, { value: fallbackUser, watched })\n',
+		)
+		expect(output).toContain(
+			'deriveCell(fetchUser, { initial: fallbackUser, watched })',
+		)
+		expect(report.renamed.createComputed).toBe(2) // import specifier + call site
+		expect(output).not.toContain('createComputed')
+	})
+
+	test('rewrites a shorthand value option', () => {
+		const { output } = migrateSource(
+			'const user = createComputed(fetchUser, { value })\n',
+		)
+		expect(output).toContain('deriveCell(fetchUser, { initial: value })')
+	})
+
+	test('flags createComputed with non-literal options', () => {
+		const { output, report } = migrateSource(
+			'const user = createComputed(fetchUser, options)\n',
+		)
+		expect(output).toContain('deriveCell(fetchUser, options)')
+		expect(report.needsManualReview.join('\n')).toContain(
+			'options.value to options.initial',
+		)
+	})
+
+	test('rewrites createMutableSignal by argument shape', () => {
+		const { output, report } = migrateSource(
+			"import { createMutableSignal } from '@zeix/cause-effect'\n" +
+				'const count = createMutableSignal(42)\n' +
+				"const name = createMutableSignal('Alice')\n" +
+				'const items = createMutableSignal([1, 2])\n' +
+				'const user = createMutableSignal({ name: "Alice" })\n',
+		)
+		expect(output).toContain('createCell(42)')
+		expect(output).toContain("createCell('Alice')")
+		expect(output).toContain('createList([1, 2])')
+		expect(output).toContain('createStore({ name: "Alice" })')
+		expect(output).not.toContain('createMutableSignal')
+		expect(report.createMutableSignalRewritten).toBe(4)
+	})
+
+	test('flags createMutableSignal with a non-literal argument', () => {
+		const { output, report } = migrateSource(
+			'const items = createMutableSignal(seed)\n',
+		)
+		expect(output).toContain('createMutableSignal(seed)')
+		expect(report.needsManualReview.join('\n')).toContain(
+			'argument is not a literal',
+		)
+	})
+
+	test('flags createSignal calls for manual review, never rewrites', () => {
+		const { output, report } = migrateSource(
+			"import { createSignal } from '@zeix/cause-effect'\n" +
+				'const items = createSignal(seed)\n',
+		)
+		expect(output).toContain('createSignal(seed)')
+		expect(output).toContain(
+			"import { createSignal } from '@zeix/cause-effect'",
+		)
+		expect(report.needsManualReview.join('\n')).toContain(
+			'createSignal() has no meaning-preserving 2.0 rewrite',
+		)
+	})
+})

@@ -7,6 +7,7 @@ import {
 	createScope,
 	createState,
 	createTask,
+	DuplicateKeyError,
 	deriveList,
 	isCollection,
 	type Signal,
@@ -402,6 +403,15 @@ describe('deriveList', () => {
 			push?.({ add: [3] })
 			expect(items.get()).toEqual([1, 2, 3])
 			dispose()
+		})
+
+		test('rejects duplicate keys in the seed', () => {
+			expect(() =>
+				deriveList([{ id: 1 }, { id: 1 }], {
+					keyConfig: item => `id-${item.id}`,
+					watched: () => () => {},
+				}),
+			).toThrow(DuplicateKeyError)
 		})
 	})
 

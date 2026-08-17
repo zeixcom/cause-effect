@@ -14,5 +14,5 @@ export { createSlot, isSlot, type Slot, type SlotDescriptor, } from './src/nodes
 export { createState, isState, type State, type UpdateCallback, } from './src/nodes/state';
 export { createStore, type DerivedStore, type DeriveStoreOptions, deriveStore, isMutableStore, isStore, type MutableStore, type Store, type StoreCallback, type StoreOptions, } from './src/nodes/store';
 export { createTask, isTask, type Task } from './src/nodes/task';
-export { createComputed, createMutableSignal, createSignal, type DeriveSignalOptions, deriveSignal, isComputed, isMutableSignal, isSignal, type MutableSignal, } from './src/signal';
+export { createCell, createComputed, createMutableSignal, createSignal, type DeriveCellOptions, type DeriveSignalOptions, deriveCell, deriveSignal, isComputed, isMutableSignal, isSignal, type MutableSignal, } from './src/signal';
 export { isAsyncFunction, isFunction, isObjectOfType, isRecord, isSignalOfType, valueString, } from './src/util';

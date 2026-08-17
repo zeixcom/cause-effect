@@ -501,15 +501,15 @@ createSignal(async (_, s) =>
 
 A value that is already a signal is returned unchanged, which makes the function safe to call on caller-supplied input.
 
-> **Naming ahead of 2.0:** this shape sniffing is removed with no replacement export — `createSignal` becomes single-value only. See [MIGRATION-2.0.md](MIGRATION-2.0.md).
+> **Naming ahead of 2.0:** this shape sniffing is removed with no replacement export. Single values construct through `createCell` (an alias of `createState`), arrays through `createList`, records through `createStore`. See [MIGRATION-2.0.md](MIGRATION-2.0.md).
 
-**`createMutableSignal(value)`** is the same, restricted to `State`, `MutableStore`, and `MutableList`. It throws `InvalidSignalValueError` for a function or a read-only signal.
+**`createMutableSignal(value)`** is the same, restricted to `State`, `MutableStore`, and `MutableList`. It throws `InvalidSignalValueError` for a function or a read-only signal. Deprecated in favor of `createCell`/`createList`/`createStore`, picked by argument shape.
 
-**`createComputed(callback, options?)`** creates a `Memo` or a `Task`, by detecting whether the callback is async:
+**`deriveCell(callback, options?)`** creates a `Memo` or a `Task`, by detecting whether the callback is async (`createComputed`, the original name, is deprecated):
 
 ```ts
-const doubled = createComputed(() => count.get() * 2)
-const data    = createComputed(async (_, signal) =>
+const doubled = deriveCell(() => count.get() * 2)
+const data    = deriveCell(async (_, signal) =>
   fetch(url.get(), { signal }).then(r => r.json()))
 ```
 
