@@ -12,9 +12,9 @@ describe('codemod-v2: exact-identifier renames', () => {
 				'if (isList(items)) console.log(items.length)\n',
 		)
 		expect(output).toBe(
-			"import { createList, isMutableList, type DerivedList, type MutableList, deriveList } from '@zeix/cause-effect'\n" +
+			"import { createList, isMutableList, type List, type MutableList, deriveList } from '@zeix/cause-effect'\n" +
 				'const items: MutableList<string> = createList([])\n' +
-				'const copy: DerivedList<string> = deriveList(() => [])\n' +
+				'const copy: List<string> = deriveList(() => [])\n' +
 				'if (isMutableList(items)) console.log(items.length)\n',
 		)
 	})
@@ -42,6 +42,33 @@ describe('codemod-v2: exact-identifier renames', () => {
 	})
 })
 
+describe('codemod-v2: readonly bridge renames', () => {
+	test('renames DerivedList to List, isDerivedList to isList, DerivedStore to Store', () => {
+		const { output } = migrateSource(
+			"import { type DerivedList, type DerivedStore, isDerivedList } from '@zeix/cause-effect'\n" +
+				'const rows: DerivedList<number> = deriveList(() => [])\n' +
+				'const user: DerivedStore<{ name: string }> = deriveStore(() => ({ name: "Alice" }))\n' +
+				'if (isDerivedList(rows)) console.log(rows.length)\n',
+		)
+		expect(output).toContain('const rows: List<number> = deriveList')
+		expect(output).toContain(
+			'const user: Store<{ name: string }> = deriveStore',
+		)
+		expect(output).toContain('if (isList(rows))')
+		expect(output).not.toContain('DerivedList')
+		expect(output).not.toContain('DerivedStore')
+		expect(output).not.toContain('isDerivedList')
+	})
+
+	test('the readonly bridge renames are not flagged — no meaning-flip risk', () => {
+		const { report } = migrateSource(
+			"import { type DerivedList } from '@zeix/cause-effect'\n" +
+				'const rows: DerivedList<number> = deriveList(() => [])\n',
+		)
+		expect(report.needsManualReview).toHaveLength(0)
+	})
+})
+
 describe('codemod-v2: Store renames', () => {
 	test('renames Store and isStore, including their imports', () => {
 		const { output } = migrateSource(
@@ -58,14 +85,11 @@ describe('codemod-v2: Store renames', () => {
 
 	test('leaves longer names that merely contain Store', () => {
 		const { output } = migrateSource(
-			"import { type DerivedStore, type StoreOptions } from '@zeix/cause-effect'\n" +
-				'const options: StoreOptions = {}\n' +
-				'const derived: DerivedStore<{ a: number }> = deriveStore(() => ({ a: 1 }))\n',
+			"import { type StoreOptions } from '@zeix/cause-effect'\n" +
+				'const options: StoreOptions = {}\n',
 		)
 		expect(output).toContain('StoreOptions = {}')
-		expect(output).toContain('DerivedStore<{ a: number }>')
 		expect(output).not.toContain('MutableStoreOptions')
-		expect(output).not.toContain('MutableDerivedStore')
 	})
 
 	test('flags isStore renames for manual review', () => {
@@ -74,7 +98,7 @@ describe('codemod-v2: Store renames', () => {
 				'const ok = isStore(value)\n',
 		)
 		expect(report.needsManualReview.join('\n')).toContain(
-			'isMutableStore rejects a DerivedStore',
+			'isMutableStore rejects a readonly Store',
 		)
 	})
 })
@@ -126,6 +150,47 @@ describe('codemod-v2: Collection auxiliary type renames', () => {
 	})
 })
 
+describe('codemod-v2: single-value renames', () => {
+	test('renames createMemo/createComputed to deriveComputed, createMutableSignal to createCell, deriveSignal to deriveCell', () => {
+		const { output } = migrateSource(
+			"import { createComputed, createMemo, createMutableSignal, deriveSignal } from '@zeix/cause-effect'\n" +
+				'const doubled = createMemo(() => count.get() * 2)\n' +
+				'const fallback = createComputed(() => count.get() * 2)\n' +
+				'const name = createMutableSignal("Alice")\n' +
+				'const user = deriveSignal(async () => fetchUser())\n',
+		)
+		expect(output).toContain(
+			'const doubled = deriveComputed(() => count.get() * 2)',
+		)
+		expect(output).toContain(
+			'const fallback = deriveComputed(() => count.get() * 2)',
+		)
+		expect(output).toContain('const name = createCell("Alice")')
+		expect(output).toContain('const user = deriveCell(async () => fetchUser())')
+		expect(output).toContain(
+			"import { deriveComputed, createCell, deriveCell } from '@zeix/cause-effect'",
+		)
+		expect(output).not.toContain('createMemo')
+		expect(output).not.toContain('createComputed')
+		expect(output).not.toContain('createMutableSignal')
+		expect(output).not.toContain('deriveSignal')
+	})
+
+	test('renames ComputedOptions/SensorOptions to DeriveSignalOptions and SensorCallback to SignalCallback', () => {
+		const { output } = migrateSource(
+			"import { type ComputedOptions, type SensorCallback, type SensorOptions } from '@zeix/cause-effect'\n" +
+				'const opts: ComputedOptions<number> = {}\n' +
+				'const watched: SensorCallback<number> = emit => () => {}\n' +
+				'const sensorOpts: SensorOptions<number> = {}\n',
+		)
+		expect(output).toContain('DeriveSignalOptions<number>')
+		expect(output).toContain('SignalCallback<number>')
+		expect(output).not.toContain('ComputedOptions')
+		expect(output).not.toContain('SensorOptions')
+		expect(output).not.toContain('SensorCallback')
+	})
+})
+
 describe('codemod-v2: createCollection rewrite', () => {
 	test('callback only becomes an empty seed', () => {
 		const { output, report } = migrateSource(
@@ -169,33 +234,99 @@ describe('codemod-v2: createCollection rewrite', () => {
 	})
 })
 
+describe('codemod-v2: flagged call sites', () => {
+	test('leaves createSignal untouched and flags it', () => {
+		const { output, report } = migrateSource(
+			"import { createSignal } from '@zeix/cause-effect'\n" +
+				'const count = createSignal(0)\n',
+			{ module: 'not-a-real-import' },
+		)
+		expect(output).toContain('const count = createSignal(0)')
+		expect(output).toContain(
+			"import { createSignal } from '@zeix/cause-effect'",
+		)
+		expect(report.needsManualReview.join('\n')).toContain(
+			'createSignal() has no single 2.0 rewrite',
+		)
+	})
+
+	test('flags createTask and createSensor for manual deriveCell migration', () => {
+		const { output, report } = migrateSource(
+			"import { createSensor, createTask } from '@zeix/cause-effect'\n" +
+				'const user = createTask(async () => fetchUser())\n' +
+				'const clock = createSensor(emit => { setup(); return cleanup })\n',
+			{ module: 'not-a-real-import' },
+		)
+		expect(output).toContain('const user = createTask(async () => fetchUser())')
+		expect(output).toContain('const clock = createSensor(emit =>')
+		expect(report.needsManualReview.join('\n')).toContain(
+			'deriveCell(asyncFn, { initial })',
+		)
+		expect(report.needsManualReview.join('\n')).toContain(
+			'deriveCell(seed, { watched })',
+		)
+	})
+
+	test('flags origin guards without rewriting them', () => {
+		const { output, report } = migrateSource(
+			"import { isComputed, isState } from '@zeix/cause-effect'\n" +
+				'if (isState(x)) read(x)\n' +
+				'if (isComputed(y)) read(y)\n',
+			{ module: 'not-a-real-import' },
+		)
+		expect(output).toContain('if (isState(x)) read(x)')
+		expect(output).toContain('if (isComputed(y)) read(y)')
+		expect(report.needsManualReview.join('\n')).toContain(
+			'origin guards are removed in 2.0',
+		)
+		expect(report.needsManualReview.join('\n')).toContain('isMutableCell')
+	})
+
+	test('flags a still-used type MutableSignal import without rewriting it', () => {
+		const { output, report } = migrateSource(
+			"import { createMutableSignal, type MutableSignal } from '@zeix/cause-effect'\n" +
+				'const s: MutableSignal<number> = createMutableSignal(1)\n',
+		)
+		expect(output).toContain('const s: MutableSignal<number> = createCell(1)')
+		expect(report.needsManualReview.join('\n')).toContain(
+			'type MutableSignal has no 2.0 export',
+		)
+	})
+
+	test('does not flag a locally declared MutableSignal that was never imported', () => {
+		const { output, report } = migrateSource(
+			'type MutableSignal<T> = { set(value: T): void }\n' +
+				'const s: MutableSignal<number> = { set(value) {} }\n',
+			{ module: 'not-a-real-import' },
+		)
+		expect(output).toContain('type MutableSignal<T> = { set(value: T): void }')
+		expect(report.needsManualReview.join('\n')).not.toContain('MutableSignal')
+	})
+})
+
 describe('codemod-v2: report', () => {
 	test('flags List renames for manual read-only review', () => {
 		const { report } = migrateSource(
 			"import { type List } from '@zeix/cause-effect'\n" +
 				'const a: List<string> = createList([])\n',
 		)
-		expect(report.needsManualReview.join('\n')).toContain('read-only positions')
+		expect(report.needsManualReview.join('\n')).toContain(
+			'positions that only read can stay List<T>',
+		)
 	})
 
-	test('flags isSignal and isMutableSignal call sites without rewriting them', () => {
+	test('leaves isSignal and isMutableSignal untouched and unflagged — the umbrella meaning survives', () => {
 		const { output, report } = migrateSource(
 			"import { isMutableSignal, isSignal } from '@zeix/cause-effect'\n" +
 				'if (isSignal(x)) read(x)\n' +
 				'if (isMutableSignal(y)) write(y)\n',
 			{ module: 'not-a-real-import' },
 		)
-		expect(output).toContain('if (isSignal(x)) read(x)')
-		expect(output).toContain('if (isMutableSignal(y)) write(y)')
-		expect(report.needsManualReview.join('\n')).toContain(
-			'2 isSignal()/isMutableSignal() call(s)',
+		expect(output).toBe(
+			"import { isMutableSignal, isSignal } from '@zeix/cause-effect'\n" +
+				'if (isSignal(x)) read(x)\n' +
+				'if (isMutableSignal(y)) write(y)\n',
 		)
-	})
-
-	test('does not flag isSignal when absent', () => {
-		const { report } = migrateSource('const a = 1\n', {
-			module: 'not-a-real-import',
-		})
-		expect(report.needsManualReview.join('\n')).not.toContain('isSignal()')
+		expect(report.needsManualReview).toHaveLength(0)
 	})
 })
