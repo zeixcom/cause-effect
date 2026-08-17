@@ -694,9 +694,12 @@ function createCollection<T extends {}, S extends Signal<T> = Signal<T>>(
 		error: undefined,
 	}
 
-	// Initialize signals for initial value
+	// Initialize signals for initial value. The duplicate check precedes every
+	// mutation — a rejected seed leaves signals, keys, and itemToKey untouched.
 	for (const item of value) {
 		const key = generateKey(item)
+		if (signals.has(key))
+			throw new DuplicateKeyError(TYPE_COLLECTION, key, item)
 		signals.set(key, itemFactory(item))
 		itemToKey.set(item, key)
 		keys.push(key)
