@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- **`Signal`/`MutableSignal` are the umbrella again; the narrow single-value shape is renamed `Cell`/`MutableCell`** (`src/nodes/cell.ts`, formerly `src/nodes/signal.ts`; `src/graph.ts`): This revises the 1.5.0 decision (ADR-0018) after the narrow-`Signal` naming proved confusable with the umbrella concept in practice. `Signal<T>`/`MutableSignal<T>` return to matching any signal shape (`Cell`, `List`, `Store`, structurally `Slot`) by `.get()`/`.set()` presence, as in 1.x; the narrow single-value type — same behavior as the 1.5.0 narrow `Signal` — is renamed `Cell<T>`/`MutableCell<T>`. `isSignal`/`isMutableSignal` flip back to the umbrella match accordingly; `isCell`/`isMutableCell` are new guards for the narrow shape. `createSignal`/`deriveSignal` are renamed `createCell`/`deriveCell`. **Migration:** code written against the 1.5.0 narrow `Signal` must rename `Signal`→`Cell`, `MutableSignal`→`MutableCell`, `createSignal`→`createCell`, `deriveSignal`→`deriveCell`, and any `isSignal`/`isMutableSignal` call site that relied on the narrow (single-value-only) match must switch to `isCell`/`isMutableCell` — the old names still compile but now match more broadly. See `MIGRATION-2.0.md`.
+- **`SignalOptions`/`DeriveSignalOptions`/`SignalCallback` renamed to `CellOptions`/`DeriveCellOptions`/`CellCallback`** (`src/graph.ts`): Follow-on renames completing the shape-indexed naming of the `Cell` family's auxiliary types, now that `Signal` no longer means the narrow shape. `CellOptions` is used by `createState`/`createCell`/`createSlot`; `DeriveCellOptions` and `CellCallback` by `deriveCell`/`deriveComputed`. Type-only renames, no runtime or bundle-size impact. **Migration:** rename these three type names at any import site.
+- **`createMemo` renamed to `deriveComputed`** (`src/nodes/memo.ts`): Aligns the sync-only narrow factory's name with the `derive*` family now that `Signal` is the umbrella again. Same signature and behavior. **Migration:** rename `createMemo` → `deriveComputed`; the `value` option was already `initial` as of the 1.5.0 rename and is unchanged here.
+
+### Removed
+
+- **`createTask` and `createSensor` are no longer exported from the package root** (`index.ts`): Both remain reachable through `deriveCell`'s async-function and external-push dispatch — `deriveCell(asyncFn, { initial? })` for what `createTask` did, `deriveCell(seed, { watched })` for what `createSensor` did. Their node-construction logic is unchanged internally; only the public factory names are removed, in favor of a single narrow derive entry point (`deriveCell`) plus `deriveComputed` for the sync case. **Migration:** replace `createTask(fn, options?)` with `deriveCell(fn, options?)` (an async `fn` routes to the same task-node path); replace `createSensor(watched, options?)` with `deriveCell(seed, { watched, ...options })`. See `MIGRATION-2.0.md` for worked examples of both.
+
 ## 1.5.0
 
 ### Added
