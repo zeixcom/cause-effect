@@ -2,13 +2,13 @@ import { describe, expect, test } from 'bun:test'
 import {
 	abort,
 	createEffect,
-	createMemo,
 	createScope,
 	createState,
-	createTask,
-	isMutableSignal,
+	deriveCell,
+	deriveComputed,
+	isCell,
+	isMutableCell,
 	isPending,
-	isSignal,
 	UnsetSignalValueError,
 } from '../index.ts'
 
@@ -19,9 +19,9 @@ const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 /* === Tests === */
 
 describe('Task', () => {
-	describe('createTask', () => {
+	describe('deriveCell', () => {
 		test('should resolve async computation', async () => {
-			const task = createTask(
+			const task = deriveCell(
 				async () => {
 					await wait(50)
 					return 42
@@ -33,13 +33,13 @@ describe('Task', () => {
 			expect(task.get()).toBe(42)
 		})
 
-		test('should have Symbol.toStringTag of "Signal"', () => {
-			const task = createTask(async () => 1, { initial: 0 })
-			expect(task[Symbol.toStringTag]).toBe('Signal')
+		test('should have Symbol.toStringTag of "Cell"', () => {
+			const task = deriveCell(async () => 1, { initial: 0 })
+			expect(task[Symbol.toStringTag]).toBe('Cell')
 		})
 
 		test('should throw UnsetSignalValueError before resolution with no initial value', () => {
-			const task = createTask(async () => {
+			const task = deriveCell(async () => {
 				await wait(50)
 				return 42
 			})
@@ -47,16 +47,16 @@ describe('Task', () => {
 		})
 	})
 
-	describe('isSignal', () => {
-		test('should identify task signals', () => {
-			expect(isSignal(createTask(async () => 1, { initial: 0 }))).toBe(true)
+	describe('isCell', () => {
+		test('should identify task cells', () => {
+			expect(isCell(deriveCell(async () => 1, { initial: 0 }))).toBe(true)
 		})
 
-		test('should return false for non-signal values', () => {
-			expect(isSignal(42)).toBe(false)
-			expect(isSignal(null)).toBe(false)
-			expect(isSignal({})).toBe(false)
-			expect(isMutableSignal(createTask(async () => 1, { initial: 0 }))).toBe(
+		test('should return false for non-cell values', () => {
+			expect(isCell(42)).toBe(false)
+			expect(isCell(null)).toBe(false)
+			expect(isCell({})).toBe(false)
+			expect(isMutableCell(deriveCell(async () => 1, { initial: 0 }))).toBe(
 				false,
 			)
 		})
@@ -64,7 +64,7 @@ describe('Task', () => {
 
 	describe('isPending', () => {
 		test('should return true while computation is in-flight', async () => {
-			const task = createTask(
+			const task = deriveCell(
 				async () => {
 					await wait(50)
 					return 42
@@ -79,7 +79,7 @@ describe('Task', () => {
 		})
 
 		test('should return false before first get()', () => {
-			const task = createTask(async () => 42, { initial: 0 })
+			const task = deriveCell(async () => 42, { initial: 0 })
 			expect(isPending(task)).toBe(false)
 		})
 	})
@@ -87,7 +87,7 @@ describe('Task', () => {
 	describe('abort', () => {
 		test('should abort the current computation', async () => {
 			let completed = false
-			const task = createTask(
+			const task = deriveCell(
 				async (_prev, signal) => {
 					await wait(50)
 					if (!signal.aborted) completed = true
@@ -106,14 +106,14 @@ describe('Task', () => {
 		test('should be a no-op when called on an idle task', () => {
 			// abort() on a task with no in-flight computation must not throw
 			// and must leave pending false.
-			const task = createTask(async () => 42, { initial: 0 })
+			const task = deriveCell(async () => 42, { initial: 0 })
 			expect(isPending(task)).toBe(false)
 			expect(() => abort(task)).not.toThrow()
 			expect(isPending(task)).toBe(false)
 		})
 
 		test('should allow re-fetch via get() after abort on an idle task', async () => {
-			const task = createTask(
+			const task = deriveCell(
 				async () => {
 					await wait(20)
 					return 99
@@ -130,7 +130,7 @@ describe('Task', () => {
 	describe('Dependency Tracking', () => {
 		test('should re-execute when dependencies change', async () => {
 			const source = createState(1)
-			const task = createTask(
+			const task = deriveCell(
 				async () => {
 					const val = source.get() // dependency tracked before await
 					await wait(50)
@@ -154,12 +154,12 @@ describe('Task', () => {
 
 		test('should work with downstream memos', async () => {
 			const status = createState('pending')
-			const task = createTask(async () => {
+			const task = deriveCell(async () => {
 				await wait(50)
 				status.set('success')
 				return 42
 			})
-			const derived = createMemo(() => {
+			const derived = deriveComputed(() => {
 				try {
 					return task.get() + 1
 				} catch {
@@ -174,21 +174,21 @@ describe('Task', () => {
 		})
 
 		test('should run tasks in parallel without waterfalls', async () => {
-			const a = createTask(
+			const a = deriveCell(
 				async () => {
 					await wait(80)
 					return 10
 				},
 				{ initial: 0 },
 			)
-			const b = createTask(
+			const b = deriveCell(
 				async () => {
 					await wait(80)
 					return 20
 				},
 				{ initial: 0 },
 			)
-			const sum = createMemo(() => a.get() + b.get(), { initial: 0 })
+			const sum = deriveComputed(() => a.get() + b.get(), { initial: 0 })
 			expect(sum.get()).toBe(0)
 			await wait(90)
 			expect(sum.get()).toBe(30)
@@ -199,7 +199,7 @@ describe('Task', () => {
 		test('should signal abort when dependency changes during computation', async () => {
 			const source = createState(1)
 			let wasAborted = false
-			const task = createTask(
+			const task = deriveCell(
 				async (_prev, signal) => {
 					const val = source.get()
 					await wait(100)
@@ -220,7 +220,7 @@ describe('Task', () => {
 		test('should coalesce multiple rapid changes into one recomputation', async () => {
 			const source = createState(1)
 			let computationCount = 0
-			const task = createTask(
+			const task = deriveCell(
 				async () => {
 					computationCount++
 					await wait(100)
@@ -244,7 +244,7 @@ describe('Task', () => {
 
 	describe('Error Handling', () => {
 		test('should propagate async errors on get()', async () => {
-			const task = createTask(
+			const task = deriveCell<number>(
 				async () => {
 					await wait(50)
 					throw new Error('async failure')
@@ -258,7 +258,7 @@ describe('Task', () => {
 
 		test('should recover from errors when dependency changes', async () => {
 			const source = createState(1)
-			const task = createTask(
+			const task = deriveCell(
 				async () => {
 					const value = source.get()
 					await wait(50)
@@ -290,7 +290,7 @@ describe('Task', () => {
 			// the second identical failure: the effect should NOT re-run a
 			// second time for the identical error.
 			const source = createState(1)
-			const task = createTask(
+			const task = deriveCell(
 				async () => {
 					const v = source.get()
 					await wait(20)
@@ -324,7 +324,7 @@ describe('Task', () => {
 			// (when not throwing), so consumers reading a separate sink still
 			// see stale-but-valid data.
 			const source = createState(1)
-			const task = createTask(
+			const task = deriveCell(
 				async () => {
 					const v = source.get()
 					await wait(20)
@@ -348,7 +348,7 @@ describe('Task', () => {
 
 	describe('options.value (prev)', () => {
 		test('should return initial value before resolution', () => {
-			const task = createTask(
+			const task = deriveCell(
 				async () => {
 					await wait(50)
 					return 42
@@ -360,11 +360,12 @@ describe('Task', () => {
 
 		test('should pass initial value as prev to first computation', async () => {
 			let receivedPrev: number | undefined
-			const task = createTask(
-				async prev => {
+			const task = deriveCell(
+				async (prev: number | undefined) => {
 					receivedPrev = prev
 					await wait(50)
-					return prev + 5
+					// biome-ignore lint/style/noNonNullAssertion: options.initial guarantees prev
+					return prev! + 5
 				},
 				{ initial: 10 },
 			)
@@ -378,12 +379,14 @@ describe('Task', () => {
 		test('should pass previous resolved value on recomputation', async () => {
 			const source = createState(1)
 			const receivedPrevs: number[] = []
-			const task = createTask(
-				async prev => {
+			const task = deriveCell(
+				async (prev: number | undefined) => {
 					const val = source.get() // dependency tracked before await
-					receivedPrevs.push(prev)
+					// biome-ignore lint/style/noNonNullAssertion: options.initial guarantees prev
+					receivedPrevs.push(prev!)
 					await wait(50)
-					return val + prev
+					// biome-ignore lint/style/noNonNullAssertion: options.initial guarantees prev
+					return val + prev!
 				},
 				{ initial: 0 },
 			)
@@ -406,7 +409,7 @@ describe('Task', () => {
 		test('should use custom equality to skip propagation after resolution', async () => {
 			const source = createState(1)
 			let effectCount = 0
-			const task = createTask(
+			const task = deriveCell(
 				async () => {
 					const val = source.get() // dependency tracked before await
 					await wait(50)
@@ -439,16 +442,18 @@ describe('Task', () => {
 	describe('options.guard', () => {
 		test('should validate initial value against guard', () => {
 			expect(() => {
-				createTask(async () => 42, {
+				deriveCell(async () => 42, {
 					// @ts-expect-error - Testing invalid input
 					initial: 'foo',
+					// biome-ignore lint/suspicious/noTsIgnore: Follow up
+					// @ts-ignore - Follow up of testing invalid input
 					guard: (v): v is number => typeof v === 'number',
 				})
 			}).toThrow('[createTask] Signal value "foo" is invalid')
 		})
 
 		test('should accept initial value that passes guard', () => {
-			const task = createTask(async () => 42, {
+			const task = deriveCell(async () => 42, {
 				initial: 10,
 				guard: (v): v is number => typeof v === 'number',
 			})
@@ -457,28 +462,31 @@ describe('Task', () => {
 	})
 
 	describe('Input Validation', () => {
-		test('should throw InvalidCallbackError for sync callback', () => {
-			expect(() => {
-				// @ts-expect-error - Testing invalid input
-				createTask((_a: unknown) => 42)
-			}).toThrow('[createTask] Callback (_a) => 42 is invalid')
+		test('a sync callback dispatches to the sync-derivation origin instead of throwing', () => {
+			// Unlike the standalone `createTask` this used to test, `deriveCell` dispatches
+			// on the callback's sync/async-ness rather than requiring async — a sync
+			// callback is valid input, routed to the sync-derivation origin.
+			const cell = deriveCell((_a: unknown) => 42)
+			expect(cell.get()).toBe(42)
 		})
 
-		test('should throw InvalidCallbackError for non-function callback', () => {
+		test('should throw InvalidCallbackError for a non-function, non-watched seed', () => {
+			// A non-function input is treated as an external-push seed, which requires
+			// `options.watched` — omitted here, so validation fails on the missing callback.
 			// @ts-expect-error - Testing invalid input
-			expect(() => createTask(null)).toThrow(
-				'[createTask] Callback null is invalid',
+			expect(() => deriveCell(null)).toThrow(
+				'[deriveCell] Callback undefined is invalid',
 			)
 			// @ts-expect-error - Testing invalid input
-			expect(() => createTask(42)).toThrow(
-				'[createTask] Callback 42 is invalid',
+			expect(() => deriveCell(42)).toThrow(
+				'[deriveCell] Callback undefined is invalid',
 			)
 		})
 
 		test('should throw NullishSignalValueError for null initial value', () => {
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
-				createTask(async () => 42, { initial: null })
+				deriveCell(async () => 42, { initial: null })
 			}).toThrow('[createTask] Signal value cannot be null or undefined')
 		})
 	})
@@ -491,7 +499,7 @@ describe('Task', () => {
 		// CircularDependencyError.
 		test('should not get stuck in FLAG_RUNNING after a synchronous throw', () => {
 			// Build a function whose prototype matches the async-function
-			// prototype (so isAsyncFunction returns true and createTask's
+			// prototype (so isAsyncFunction returns true and deriveCell's
 			// validation passes) but which throws synchronously. A real async
 			// function can never throw synchronously, so this is the only way
 			// to reach recomputeTask's catch path in practice.
@@ -502,7 +510,7 @@ describe('Task', () => {
 			Object.setPrototypeOf(boom, ASYNC_PROTO)
 			expect(Object.getPrototypeOf(boom)).toBe(ASYNC_PROTO)
 
-			const task = createTask(boom, { initial: 0 })
+			const task = deriveCell(boom, { initial: 0 })
 
 			// First read surfaces the real error
 			expect(() => task.get()).toThrow('sync boom')
@@ -531,7 +539,7 @@ describe('Task', () => {
 		test('should call watched on first effect access', () => {
 			let watchedCount = 0
 
-			const task = createTask(
+			const task = deriveCell(
 				async () => {
 					await wait(10)
 					return 1
@@ -560,7 +568,7 @@ describe('Task', () => {
 		test('should call cleanup when last effect stops watching', () => {
 			let cleanedUp = false
 
-			const task = createTask(
+			const task = deriveCell(
 				async () => {
 					await wait(10)
 					return 1
@@ -591,7 +599,7 @@ describe('Task', () => {
 			let computeCount = 0
 			let invalidate!: () => void
 
-			const task = createTask(
+			const task = deriveCell(
 				async () => {
 					computeCount++
 					await wait(10)
@@ -630,7 +638,7 @@ describe('Task', () => {
 			let wasAborted = false
 			let invalidate!: () => void
 
-			const task = createTask(
+			const task = deriveCell(
 				async (_prev, signal) => {
 					await wait(100)
 					if (signal.aborted) wasAborted = true

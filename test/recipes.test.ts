@@ -3,9 +3,9 @@ import {
 	batch,
 	createEffect,
 	createList,
-	createMemo,
 	createState,
 	createStore,
+	deriveComputed,
 	deriveList,
 } from '../index'
 
@@ -35,17 +35,17 @@ describe('Recipes', () => {
 		const currentStep = createState(1)
 		const totalSteps = 2
 
-		const isStep1Valid = createMemo(() => {
+		const isStep1Valid = deriveComputed(() => {
 			const data = step1Data.get()
 			return data.name.length > 0 && data.email.includes('@')
 		})
 
-		const isStep2Valid = createMemo(() => {
+		const isStep2Valid = deriveComputed(() => {
 			const data = step2Data.get()
 			return ['basic', 'pro'].includes(data.plan)
 		})
 
-		const wizardState = createMemo(() => {
+		const wizardState = deriveComputed(() => {
 			const step = currentStep.get()
 			const canProceed = step === 1 ? isStep1Valid.get() : isStep2Valid.get()
 			const isComplete = step === totalSteps && canProceed
@@ -145,7 +145,7 @@ describe('Recipes', () => {
 			})
 		}
 
-		const totalCount = createMemo(() =>
+		const totalCount = deriveComputed(() =>
 			activeMemberCount.get().reduce((sum, count) => sum + count, 0),
 		)
 

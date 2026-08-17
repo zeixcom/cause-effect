@@ -2,8 +2,8 @@ import { describe, expect, mock, test } from 'bun:test'
 import {
 	batch as batchNext,
 	createEffect as createEffectNext,
-	createMemo,
 	createState,
+	deriveComputed,
 } from '../index.ts'
 import { Counter, makeGraph, runGraph } from './util/dependency-graph'
 import type { Computed, ReactiveFramework } from './util/reactive-framework'
@@ -28,7 +28,7 @@ const v18: ReactiveFramework = {
 	},
 	// @ts-expect-error ReactiveFramework doesn't have non-nullable signals
 	computed: <T extends {}>(fn: () => T) => {
-		const c = createMemo(fn)
+		const c = deriveComputed(fn)
 		return { read: c.get }
 	},
 	effect: (fn: () => undefined) => {

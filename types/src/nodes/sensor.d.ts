@@ -1,11 +1,11 @@
 import { type SignalCallback, type SignalOptions } from '../graph';
-import type { Signal } from './signal';
+import type { Cell } from './cell';
 /**
  * Creates a sensor that tracks external input while it is watched.
  *
  * A sensor activates when an effect first reads it, and deactivates when it is no longer
  * watched. It therefore holds an external resource only while something reads its value.
- * The shape this factory returns is `Signal<T>` — the single-value, readonly member of the
+ * The shape this factory returns is `Cell<T>` — the single-value, readonly member of the
  * shape-indexed value-type set. See ADR-0018.
  *
  * @since 0.18.0
@@ -56,5 +56,5 @@ declare function createSensor<T extends {}>(options: SignalOptions<T> & {
     initial?: T;
 } & {
     watched: SignalCallback<T>;
-}): Signal<T>;
+}): Cell<T>;
 export { createSensor, type SignalCallback };

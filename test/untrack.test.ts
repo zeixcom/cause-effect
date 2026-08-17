@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import {
 	createEffect,
-	createMemo,
 	createScope,
 	createState,
+	deriveComputed,
 	untrack,
 } from '../index.ts'
 
@@ -38,7 +38,7 @@ describe('untrack', () => {
 	test('should not track dependencies in memos', () => {
 		const a = createState(1)
 		const b = createState(2)
-		const sum = createMemo(() => a.get() + untrack(() => b.get()))
+		const sum = deriveComputed(() => a.get() + untrack(() => b.get()))
 		expect(sum.get()).toBe(3)
 
 		// changing a should recompute

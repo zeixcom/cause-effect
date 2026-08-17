@@ -3,12 +3,11 @@ import {
 	batch,
 	createEffect,
 	createList,
-	createMemo,
-	createSensor,
 	createSlot,
 	createState,
 	createStore,
-	createTask,
+	deriveCell,
+	deriveComputed,
 	deriveList,
 	SKIP_EQUALITY,
 } from '../index.ts'
@@ -25,7 +24,7 @@ const framework: ReactiveFramework = {
 	},
 	// @ts-expect-error ReactiveFramework doesn't have non-nullable signals
 	computed: <T extends {}>(fn: () => T) => {
-		const c = createMemo(fn)
+		const c = deriveComputed(fn)
 		return { read: c.get }
 	},
 	effect: (fn: () => undefined) => {
@@ -391,7 +390,7 @@ group('Create 100 tasks', () => {
 	bench('cause-effect', () => {
 		const src = createState(0)
 		for (let i = 0; i < 100; i++) {
-			createTask(async () => src.get() + 1)
+			deriveCell(async () => src.get() + 1)
 		}
 	})
 })
@@ -400,7 +399,7 @@ group('Task: resolve propagation', () => {
 	const wait = () => new Promise<void>(r => setTimeout(r, 0))
 
 	const src = createState(1)
-	const task = createTask(async () => src.get() * 2, {
+	const task = deriveCell(async () => src.get() * 2, {
 		initial: 0,
 	})
 	createEffect(() => {
@@ -419,7 +418,7 @@ group('Task: resolve propagation', () => {
 group('Sensor: create + update (with equality)', () => {
 	bench('cause-effect', () => {
 		let setFn: (v: number) => void
-		const sensor = createSensor<number>({
+		const sensor = deriveCell<number>(0, {
 			watched: set => {
 				setFn = set
 				set(0)
@@ -440,13 +439,12 @@ group('Sensor: create + update (SKIP_EQUALITY)', () => {
 	bench('cause-effect', () => {
 		const obj = { x: 0 }
 		let setFn: (v: typeof obj) => void
-		const sensor = createSensor<typeof obj>({
+		const sensor = deriveCell<typeof obj>(obj, {
 			watched: set => {
 				setFn = set
 				set(obj)
 				return () => {}
 			},
-			initial: obj,
 			equals: SKIP_EQUALITY,
 		})
 		createEffect(() => {
@@ -497,7 +495,7 @@ group('List: set (diff) 50 items', () => {
 
 group('List: reactive propagation', () => {
 	const list = createList([1, 2, 3])
-	const memo = createMemo(() => list.get().reduce((a, b) => a + b, 0))
+	const memo = deriveComputed(() => list.get().reduce((a, b) => a + b, 0))
 	createEffect(() => {
 		memo.get()
 	})
@@ -768,12 +766,12 @@ group('Slot: replace with 10 subscribers', () => {
 group('Sensor: 10-sensor fan-in (1 effect)', () => {
 	// watched is called lazily on first subscription, so we collect setters via a Map
 	const setterMap = new Map<number, (v: number) => void>()
-	const sensors: ReturnType<typeof createSensor<number>>[] = []
+	const sensors: ReturnType<typeof deriveCell<number>>[] = []
 
 	for (let i = 0; i < 10; i++) {
 		const idx = i
 		sensors.push(
-			createSensor<number>({
+			deriveCell<number>(idx, {
 				watched: set => {
 					setterMap.set(idx, set)
 					set(idx)
@@ -797,7 +795,7 @@ group('Sensor: 10-sensor fan-in (1 effect)', () => {
 
 group('Sensor: 1 sensor → 10 effects fanout', () => {
 	let setter!: (v: number) => void
-	const sensor = createSensor<number>({
+	const sensor = deriveCell<number>(0, {
 		watched: set => {
 			setter = set
 			set(0)
@@ -823,7 +821,7 @@ group('Task: 10 tasks reading 1 state (fanout)', () => {
 
 	const src = createState(0)
 	const tasks = Array.from({ length: 10 }, () =>
-		createTask(async () => src.get() * 2, { initial: 0 }),
+		deriveCell(async () => src.get() * 2, { initial: 0 }),
 	)
 	for (const t of tasks) createEffect(() => void t.get())
 
@@ -838,10 +836,10 @@ group('Task: chain of 5 tasks', () => {
 	const wait = () => new Promise<void>(r => setTimeout(r, 0))
 
 	const src = createState(1)
-	let current = createTask(async () => src.get(), { initial: 0 })
+	let current = deriveCell(async () => src.get(), { initial: 0 })
 	for (let i = 0; i < 4; i++) {
 		const prev = current
-		current = createTask(async () => prev.get() + 1, { initial: 0 })
+		current = deriveCell(async () => prev.get() + 1, { initial: 0 })
 	}
 	createEffect(() => void current.get())
 

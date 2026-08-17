@@ -8,6 +8,23 @@ import type { ListChanges } from '../index.ts'
 
 type Api = typeof currentApi
 
+/**
+ * `stable` is an older published release, pinned via `@zeix/cause-effect-stable`, that may
+ * predate ADR-0018 Revision 2026-08-17's `createMemo` → `deriveComputed` rename. `current`
+ * only exports `deriveComputed`. This bridges the two so the same benchmark body drives
+ * both APIs regardless of which side of the rename each one is on.
+ */
+function derive<T extends {}>(f: Api, fn: () => T): { get(): T } {
+	const legacy = f as unknown as {
+		deriveComputed?: (fn: () => T) => { get(): T }
+		createMemo?: (fn: () => T) => { get(): T }
+	}
+	const factory = legacy.deriveComputed ?? legacy.createMemo
+	if (!factory)
+		throw new Error('neither deriveComputed nor createMemo is exported')
+	return factory(fn)
+}
+
 /* === Bundling ===
  *
  * Both sides are bundled from their own TypeScript source with identical
@@ -149,7 +166,7 @@ describe('Performance — primitive nodes', () => {
 			let cur: { get(): number } = head
 			for (let i = 0; i < 50; i++) {
 				const c = cur
-				cur = f.createMemo(() => c.get() + 1)
+				cur = derive(f, () => c.get() + 1)
 			}
 			f.createEffect(() => {
 				cur.get()
@@ -165,8 +182,8 @@ describe('Performance — primitive nodes', () => {
 		const setup = (f: Api) => () => {
 			const head = f.createState(0)
 			for (let i = 0; i < 50; i++) {
-				const c = f.createMemo(() => head.get() + i)
-				const c2 = f.createMemo(() => c.get() + 1)
+				const c = derive(f, () => head.get() + i)
+				const c2 = derive(f, () => c.get() + 1)
 				f.createEffect(() => {
 					c2.get()
 				})
@@ -182,9 +199,9 @@ describe('Performance — primitive nodes', () => {
 		const setup = (f: Api) => () => {
 			const head = f.createState(0)
 			const branches = Array.from({ length: 5 }, () =>
-				f.createMemo(() => head.get() + 1),
+				derive(f, () => head.get() + 1),
 			)
-			const sum = f.createMemo(() => branches.reduce((a, b) => a + b.get(), 0))
+			const sum = derive(f, () => branches.reduce((a, b) => a + b.get(), 0))
 			f.createEffect(() => {
 				sum.get()
 			})

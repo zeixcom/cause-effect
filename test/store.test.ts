@@ -1,13 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import {
 	createEffect,
-	createMemo,
 	createScope,
 	createState,
 	createStore,
+	deriveComputed,
 	InvalidStoreMutationError,
 	isList,
-	isMutableSignal,
+	isMutableCell,
 	isStore,
 } from '../index.ts'
 
@@ -71,7 +71,7 @@ describe('Store', () => {
 
 		test('should return false for non-store values', () => {
 			expect(isStore(createState(1))).toBe(false)
-			expect(isStore(createMemo(() => 1))).toBe(false)
+			expect(isStore(deriveComputed(() => 1))).toBe(false)
 			expect(isStore({})).toBe(false)
 			expect(isStore(null)).toBe(false)
 		})
@@ -467,9 +467,9 @@ describe('Store', () => {
 			expect(runs).toBe(2)
 		})
 
-		test('should work with createMemo', () => {
+		test('should work with deriveComputed', () => {
 			const user = createStore({ firstName: 'John', lastName: 'Doe' })
-			const fullName = createMemo(
+			const fullName = deriveComputed(
 				() => `${user.firstName.get()} ${user.lastName.get()}`,
 			)
 			expect(fullName.get()).toBe('John Doe')
@@ -478,9 +478,9 @@ describe('Store', () => {
 			expect(fullName.get()).toBe('Jane Doe')
 		})
 
-		test('should work with createMemo on nested stores', () => {
+		test('should work with deriveComputed on nested stores', () => {
 			const config = createStore({ ui: { theme: 'light' } })
-			const display = createMemo(() => `Theme: ${config.ui.theme.get()}`)
+			const display = deriveComputed(() => `Theme: ${config.ui.theme.get()}`)
 			expect(display.get()).toBe('Theme: light')
 
 			config.ui.theme.set('dark')
@@ -689,7 +689,7 @@ describe('Store', () => {
 		test('primitive-to-array type change produces a List child, not a State holding an array', () => {
 			type Shape = { count: number | number[] }
 			const store = createStore<Shape>({ count: 5 })
-			expect(isMutableSignal(store.count)).toBe(true)
+			expect(isMutableCell(store.count)).toBe(true)
 			expect(store.count.get()).toBe(5)
 
 			// Now change the shape to an array.
@@ -706,7 +706,7 @@ describe('Store', () => {
 			expect(isList(store.count)).toBe(true)
 
 			store.set({ count: 5 })
-			expect(isMutableSignal(store.count)).toBe(true)
+			expect(isMutableCell(store.count)).toBe(true)
 			expect(store.count.get()).toBe(5)
 		})
 	})
@@ -719,7 +719,7 @@ describe('Store', () => {
 				store.name = 'Bob'
 			}).toThrow(InvalidStoreMutationError)
 			// The State signal is not shadowed
-			expect(isMutableSignal(store.name)).toBe(true)
+			expect(isMutableCell(store.name)).toBe(true)
 			expect(store.name.get()).toBe('Alice')
 			// The reactive value is unchanged
 			expect(store.get()).toEqual({ name: 'Alice' })

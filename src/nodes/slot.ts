@@ -14,7 +14,7 @@ import {
 	TYPE_SLOT,
 } from '../graph'
 import { isSignalOfType } from '../util'
-import { isSignal, type Signal } from './signal'
+import { isSignal, type Signal } from './cell'
 
 /* === Types === */
 
@@ -39,7 +39,7 @@ type SlotDescriptor<T extends {}> = {
  * definition uses `get`, `set`, `configurable`, and `enumerable`. The slot object also
  * carries `replace()` and `current()` for control from an integration layer.
  *
- * Slots are not `MutableSignal`s: they are forwarding layers, not value owners.
+ * Slots are not `MutableCell`s: they are forwarding layers, not value owners.
  * `set()` delegates to the backing signal; `update()` is intentionally absent.
  *
  * @template T - The type of value held by the delegated signal.

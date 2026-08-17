@@ -22,11 +22,11 @@ import {
 	swapActiveSink,
 	type TaskCallback,
 	type TaskNode,
-	TYPE_SIGNAL,
+	TYPE_CELL,
 	trimSources,
 } from '../graph'
 import { isAsyncFunction } from '../util'
-import type { Signal } from './signal'
+import type { Cell } from './cell'
 
 const WHERE = 'createTask'
 
@@ -111,7 +111,7 @@ function recomputeTask(node: TaskNode<unknown & {}>): void {
  * Creates an asynchronous reactive computation (colorless async).
  * The computation automatically tracks dependencies and re-executes when they change.
  * Provides abort semantics - in-flight computations are aborted when dependencies change.
- * The shape this factory returns is `Signal<T>` — the single-value, readonly member of the
+ * The shape this factory returns is `Cell<T>` — the single-value, readonly member of the
  * shape-indexed value-type set. See ADR-0018.
  *
  * Pending state and abort control are graph utilities rather than methods on the returned
@@ -128,7 +128,7 @@ function recomputeTask(node: TaskNode<unknown & {}>): void {
  * @param options.watched - Optional callback invoked when the task is first watched by an effect.
  *   Receives an `invalidate` function to mark the task dirty and trigger re-execution.
  *   Must return a cleanup function called when no effects are watching.
- * @returns A Signal object with a get() method
+ * @returns A Cell object with a get() method
  *
  * @example
  * ```ts
@@ -153,15 +153,15 @@ function recomputeTask(node: TaskNode<unknown & {}>): void {
 function createTask<T extends {}>(
 	fn: (prev: T, abortSignal: AbortSignal) => Promise<T>,
 	options: DeriveSignalOptions<T> & { initial: T },
-): Signal<T>
+): Cell<T>
 function createTask<T extends {}>(
 	fn: TaskCallback<T>,
 	options?: DeriveSignalOptions<T>,
-): Signal<T>
+): Cell<T>
 function createTask<T extends {}>(
 	fn: TaskCallback<T>,
 	options?: DeriveSignalOptions<T>,
-): Signal<T> {
+): Cell<T> {
 	validateCallback(WHERE, fn, isAsyncFunction)
 	if (options?.initial !== undefined)
 		validateSignalValue(WHERE, options.initial, options?.guard)
@@ -203,8 +203,8 @@ function createTask<T extends {}>(
 
 	const pendingSubscribe = makeSubscribe(pendingNode)
 
-	const task: Signal<T> = {
-		[Symbol.toStringTag]: TYPE_SIGNAL,
+	const task: Cell<T> = {
+		[Symbol.toStringTag]: TYPE_CELL,
 		get(): T {
 			subscribe()
 			refresh(node as unknown as SinkNode)

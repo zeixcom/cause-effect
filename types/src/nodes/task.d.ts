@@ -1,10 +1,10 @@
 import { type DeriveSignalOptions, type TaskCallback } from '../graph';
-import type { Signal } from './signal';
+import type { Cell } from './cell';
 /**
  * Creates an asynchronous reactive computation (colorless async).
  * The computation automatically tracks dependencies and re-executes when they change.
  * Provides abort semantics - in-flight computations are aborted when dependencies change.
- * The shape this factory returns is `Signal<T>` — the single-value, readonly member of the
+ * The shape this factory returns is `Cell<T>` — the single-value, readonly member of the
  * shape-indexed value-type set. See ADR-0018.
  *
  * Pending state and abort control are graph utilities rather than methods on the returned
@@ -21,7 +21,7 @@ import type { Signal } from './signal';
  * @param options.watched - Optional callback invoked when the task is first watched by an effect.
  *   Receives an `invalidate` function to mark the task dirty and trigger re-execution.
  *   Must return a cleanup function called when no effects are watching.
- * @returns A Signal object with a get() method
+ * @returns A Cell object with a get() method
  *
  * @example
  * ```ts
@@ -45,6 +45,6 @@ import type { Signal } from './signal';
  */
 declare function createTask<T extends {}>(fn: (prev: T, abortSignal: AbortSignal) => Promise<T>, options: DeriveSignalOptions<T> & {
     initial: T;
-}): Signal<T>;
-declare function createTask<T extends {}>(fn: TaskCallback<T>, options?: DeriveSignalOptions<T>): Signal<T>;
+}): Cell<T>;
+declare function createTask<T extends {}>(fn: TaskCallback<T>, options?: DeriveSignalOptions<T>): Cell<T>;
 export { createTask };

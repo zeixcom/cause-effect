@@ -18,7 +18,7 @@ import {
 	scheduleEffect,
 	trimSources,
 } from '../graph'
-import type { Signal } from './signal'
+import type { Signal } from './cell'
 
 /* === Types === */
 

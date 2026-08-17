@@ -2,32 +2,32 @@ import { describe, expect, test } from 'bun:test'
 import {
 	batch,
 	createEffect,
-	createMemo,
 	createScope,
 	createState,
-	isMutableSignal,
-	isSignal,
+	deriveComputed,
+	isCell,
+	isMutableCell,
 	PromiseValueError,
 	UnsetSignalValueError,
 } from '../index.ts'
 
 /* === Tests === */
 
-describe('Memo', () => {
-	describe('createMemo', () => {
+describe('Computed', () => {
+	describe('deriveComputed', () => {
 		test('should compute a derived value', () => {
-			const derived = createMemo(() => 1 + 2)
+			const derived = deriveComputed(() => 1 + 2)
 			expect(derived.get()).toBe(3)
 		})
 
-		test('should have Symbol.toStringTag of "Signal"', () => {
-			const memo = createMemo(() => 0)
-			expect(memo[Symbol.toStringTag]).toBe('Signal')
+		test('should have Symbol.toStringTag of "Cell"', () => {
+			const memo = deriveComputed(() => 0)
+			expect(memo[Symbol.toStringTag]).toBe('Cell')
 		})
 
 		test('should evaluate lazily on first get()', () => {
 			let computed = false
-			const memo = createMemo(() => {
+			const memo = deriveComputed(() => {
 				computed = true
 				return 42
 			})
@@ -37,28 +37,28 @@ describe('Memo', () => {
 		})
 
 		test('should throw UnsetSignalValueError if callback returns undefined', () => {
-			const memo = createMemo(() => undefined as unknown as number)
+			const memo = deriveComputed(() => undefined as unknown as number)
 			expect(() => memo.get()).toThrow(UnsetSignalValueError)
 		})
 	})
 
-	describe('isSignal', () => {
-		test('should identify memo signals', () => {
-			expect(isSignal(createMemo(() => 0))).toBe(true)
+	describe('isCell', () => {
+		test('should identify memo cells', () => {
+			expect(isCell(deriveComputed(() => 0))).toBe(true)
 		})
 
-		test('should return false for non-signal values', () => {
-			expect(isSignal(42)).toBe(false)
-			expect(isSignal(null)).toBe(false)
-			expect(isSignal({})).toBe(false)
-			expect(isMutableSignal(createMemo(() => 0))).toBe(false)
+		test('should return false for non-cell values', () => {
+			expect(isCell(42)).toBe(false)
+			expect(isCell(null)).toBe(false)
+			expect(isCell({})).toBe(false)
+			expect(isMutableCell(deriveComputed(() => 0))).toBe(false)
 		})
 	})
 
 	describe('Dependency Tracking', () => {
 		test('should recompute when a dependency changes', () => {
 			const source = createState(42)
-			const derived = createMemo(() => source.get() + 1)
+			const derived = deriveComputed(() => source.get() + 1)
 			expect(derived.get()).toBe(43)
 			source.set(24)
 			expect(derived.get()).toBe(25)
@@ -66,9 +66,9 @@ describe('Memo', () => {
 
 		test('should track through a chain of memos', () => {
 			const x = createState(42)
-			const a = createMemo(() => x.get() + 1)
-			const b = createMemo(() => a.get() * 2)
-			const c = createMemo(() => b.get() + 1)
+			const a = deriveComputed(() => x.get() + 1)
+			const b = deriveComputed(() => a.get() * 2)
+			const c = deriveComputed(() => b.get() + 1)
 			expect(c.get()).toBe(87)
 			x.set(24)
 			expect(c.get()).toBe(51)
@@ -78,7 +78,7 @@ describe('Memo', () => {
 			const a = createState(3)
 			const b = createState(4)
 			let count = 0
-			const sum = createMemo(() => {
+			const sum = deriveComputed(() => {
 				count++
 				return a.get() + b.get()
 			})
@@ -95,11 +95,11 @@ describe('Memo', () => {
 		test('should skip downstream recomputation when result is unchanged', () => {
 			let count = 0
 			const x = createState('a')
-			const a = createMemo(() => {
+			const a = deriveComputed(() => {
 				x.get()
 				return 'foo'
 			})
-			const b = createMemo(() => {
+			const b = deriveComputed(() => {
 				count++
 				return a.get()
 			})
@@ -114,9 +114,9 @@ describe('Memo', () => {
 		test('should not propagate when intermediate result is unchanged', () => {
 			let count = 0
 			const x = createState(42)
-			const a = createMemo(() => x.get() % 2)
-			const b = createMemo(() => (a.get() ? 'odd' : 'even'))
-			const c = createMemo(() => {
+			const a = deriveComputed(() => x.get() % 2)
+			const b = deriveComputed(() => (a.get() ? 'odd' : 'even'))
+			const c = deriveComputed(() => {
 				count++
 				return `c: ${b.get()}`
 			})
@@ -133,9 +133,9 @@ describe('Memo', () => {
 		test('should compute each memo only once', () => {
 			let count = 0
 			const x = createState('a')
-			const a = createMemo(() => x.get())
-			const b = createMemo(() => x.get())
-			const c = createMemo(() => {
+			const a = deriveComputed(() => x.get())
+			const b = deriveComputed(() => x.get())
+			const c = deriveComputed(() => {
 				count++
 				return `${a.get()} ${b.get()}`
 			})
@@ -149,10 +149,10 @@ describe('Memo', () => {
 		test('should compute each memo only once with tail', () => {
 			let count = 0
 			const x = createState('a')
-			const a = createMemo(() => x.get())
-			const b = createMemo(() => x.get())
-			const c = createMemo(() => `${a.get()} ${b.get()}`)
-			const d = createMemo(() => {
+			const a = deriveComputed(() => x.get())
+			const b = deriveComputed(() => x.get())
+			const c = deriveComputed(() => `${a.get()} ${b.get()}`)
+			const d = deriveComputed(() => {
 				count++
 				return c.get()
 			})
@@ -166,9 +166,9 @@ describe('Memo', () => {
 		test('should drop X->B->X updates', () => {
 			let count = 0
 			const x = createState(2)
-			const a = createMemo(() => x.get() - 1)
-			const b = createMemo(() => x.get() + a.get())
-			const c = createMemo(() => {
+			const a = deriveComputed(() => x.get() - 1)
+			const b = deriveComputed(() => x.get() + a.get())
+			const c = deriveComputed(() => {
 				count++
 				return `c: ${b.get()}`
 			})
@@ -183,14 +183,14 @@ describe('Memo', () => {
 	describe('Error Handling', () => {
 		test('should detect and throw for circular dependencies', () => {
 			const a = createState(1)
-			const b = createMemo(() => c.get() + 1)
-			const c = createMemo((): number => b.get() + a.get())
-			expect(() => b.get()).toThrow('[Signal] Circular dependency detected')
+			const b = deriveComputed(() => c.get() + 1)
+			const c = deriveComputed((): number => b.get() + a.get())
+			expect(() => b.get()).toThrow('[Cell] Circular dependency detected')
 		})
 
 		test('should propagate errors from computation', () => {
 			const x = createState(0)
-			const a = createMemo(() => {
+			const a = deriveComputed(() => {
 				if (x.get() === 1) throw new Error('Computation failed')
 				return 1
 			})
@@ -200,18 +200,18 @@ describe('Memo', () => {
 		})
 
 		test('should throw PromiseValueError when the callback returns a Promise', () => {
-			const memo = createMemo((): Promise<number> => Promise.resolve(1))
+			const memo = deriveComputed((): Promise<number> => Promise.resolve(1))
 			expect(() => memo.get()).toThrow(PromiseValueError)
 		})
 
 		test('should allow downstream memos to recover from errors', () => {
 			const x = createState(0)
 			let errCount = 0
-			const a = createMemo(() => {
+			const a = deriveComputed(() => {
 				if (x.get() === 1) throw new Error('Computation failed')
 				return 1
 			})
-			const b = createMemo(() => {
+			const b = deriveComputed(() => {
 				try {
 					return `ok: ${a.get()}`
 				} catch (_e) {
@@ -233,7 +233,7 @@ describe('Memo', () => {
 	describe('options.value (prev)', () => {
 		test('should pass initial value as prev to first computation', () => {
 			let receivedPrev: number | undefined
-			const memo = createMemo(
+			const memo = deriveComputed(
 				prev => {
 					receivedPrev = prev
 					return prev + 1
@@ -246,7 +246,7 @@ describe('Memo', () => {
 
 		test('should pass undefined as prev when no initial value', () => {
 			let receivedPrev: unknown = 999
-			const memo = createMemo((prev: number | undefined) => {
+			const memo = deriveComputed((prev: number | undefined) => {
 				receivedPrev = prev
 				return 42
 			})
@@ -257,7 +257,7 @@ describe('Memo', () => {
 		test('should pass previous computed value on recomputation', () => {
 			const source = createState(5)
 			let receivedPrev: number | undefined
-			const memo = createMemo(
+			const memo = deriveComputed(
 				prev => {
 					receivedPrev = prev
 					return source.get() * 2
@@ -275,7 +275,7 @@ describe('Memo', () => {
 
 		test('should work as a reducer', () => {
 			const increment = createState(0)
-			const sum = createMemo(
+			const sum = deriveComputed(
 				prev => {
 					const inc = increment.get()
 					return inc === 0 ? prev : prev + inc
@@ -293,7 +293,7 @@ describe('Memo', () => {
 		test('should preserve prev value across errors', () => {
 			const shouldError = createState(false)
 			const counter = createState(1)
-			const memo = createMemo(
+			const memo = deriveComputed(
 				prev => {
 					if (shouldError.get()) throw new Error('fail')
 					return prev + counter.get()
@@ -318,11 +318,11 @@ describe('Memo', () => {
 		test('should use custom equality to skip propagation', () => {
 			const source = createState(1)
 			let downstream = 0
-			const memo = createMemo(() => ({ x: source.get() % 2 }), {
+			const memo = deriveComputed(() => ({ x: source.get() % 2 }), {
 				initial: { x: -1 },
 				equals: (a, b) => a.x === b.x,
 			})
-			const tail = createMemo(() => {
+			const tail = deriveComputed(() => {
 				downstream++
 				return memo.get()
 			})
@@ -343,15 +343,15 @@ describe('Memo', () => {
 	describe('options.guard', () => {
 		test('should validate initial value against guard', () => {
 			expect(() => {
-				createMemo(() => 42, {
+				deriveComputed(() => 42, {
 					initial: -1,
 					guard: (v): v is number => typeof v === 'number' && v >= 0,
 				})
-			}).toThrow('[createMemo] Signal value -1 is invalid')
+			}).toThrow('[deriveComputed] Signal value -1 is invalid')
 		})
 
 		test('should accept initial value that passes guard', () => {
-			const memo = createMemo(prev => prev + 1, {
+			const memo = deriveComputed(prev => prev + 1, {
 				initial: 0,
 				guard: (v): v is number => typeof v === 'number' && v >= 0,
 			})
@@ -362,28 +362,28 @@ describe('Memo', () => {
 	describe('Input Validation', () => {
 		test('should throw InvalidCallbackError for non-function callback', () => {
 			// @ts-expect-error - Testing invalid input
-			expect(() => createMemo(null)).toThrow(
-				'[createMemo] Callback null is invalid',
+			expect(() => deriveComputed(null)).toThrow(
+				'[deriveComputed] Callback null is invalid',
 			)
 			// @ts-expect-error - Testing invalid input
-			expect(() => createMemo(42)).toThrow(
-				'[createMemo] Callback 42 is invalid',
+			expect(() => deriveComputed(42)).toThrow(
+				'[deriveComputed] Callback 42 is invalid',
 			)
 			// @ts-expect-error - Testing invalid input
-			expect(() => createMemo('str')).toThrow(
-				'[createMemo] Callback "str" is invalid',
+			expect(() => deriveComputed('str')).toThrow(
+				'[deriveComputed] Callback "str" is invalid',
 			)
 		})
 
 		test('should throw InvalidCallbackError for async callback', () => {
-			expect(() => createMemo(async () => 42)).toThrow()
+			expect(() => deriveComputed(async () => 42)).toThrow()
 		})
 
 		test('should throw NullishSignalValueError for null initial value', () => {
 			expect(() => {
 				// @ts-expect-error - Testing invalid input
-				createMemo(() => 42, { initial: null })
-			}).toThrow('[createMemo] Signal value cannot be null or undefined')
+				deriveComputed(() => 42, { initial: null })
+			}).toThrow('[deriveComputed] Signal value cannot be null or undefined')
 		})
 	})
 
@@ -392,7 +392,7 @@ describe('Memo', () => {
 			let watchedCount = 0
 			const externalValue = 1
 
-			const memo = createMemo(() => externalValue, {
+			const memo = deriveComputed(() => externalValue, {
 				initial: 0,
 				watched: _invalidate => {
 					watchedCount++
@@ -416,7 +416,7 @@ describe('Memo', () => {
 			let cleanedUp = false
 			const externalValue = 1
 
-			const memo = createMemo(() => externalValue, {
+			const memo = deriveComputed(() => externalValue, {
 				initial: 0,
 				watched: _invalidate => {
 					return () => {
@@ -441,7 +441,7 @@ describe('Memo', () => {
 			let computeCount = 0
 			let invalidate!: () => void
 
-			const memo = createMemo(
+			const memo = deriveComputed(
 				() => {
 					computeCount++
 					return externalValue
@@ -477,7 +477,7 @@ describe('Memo', () => {
 			let externalValue = 1
 			let invalidate!: () => void
 
-			const memo = createMemo(() => externalValue, {
+			const memo = deriveComputed(() => externalValue, {
 				initial: 0,
 				watched: inv => {
 					invalidate = inv
@@ -508,7 +508,7 @@ describe('Memo', () => {
 			let watchedCount = 0
 			const externalValue = 1
 
-			const memo = createMemo(() => externalValue, {
+			const memo = deriveComputed(() => externalValue, {
 				initial: 0,
 				watched: _invalidate => {
 					watchedCount++
@@ -539,7 +539,7 @@ describe('Memo', () => {
 			let computeCount = 0
 			let invalidate!: () => void
 
-			const memo = createMemo(
+			const memo = deriveComputed(
 				() => {
 					computeCount++
 					return source.get() + externalValue

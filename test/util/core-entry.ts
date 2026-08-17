@@ -11,10 +11,10 @@
  * here: importing it would drag the async machinery in by construction and
  * weaken the check to a plain byte count.
  */
-import { createEffect, createMemo, createState } from '../../index.ts'
+import { createEffect, createState, deriveComputed } from '../../index.ts'
 
 const count = createState(0)
-const doubled = createMemo(() => count.get() * 2)
+const doubled = deriveComputed(() => count.get() * 2)
 
 createEffect(() => {
 	console.log(doubled.get())

@@ -1,13 +1,17 @@
 import { describe, expect, mock, test } from 'bun:test'
 import {
 	createEffect,
-	createMemo,
-	createSensor,
-	isMutableSignal,
-	isSignal,
+	deriveCell,
+	deriveComputed,
+	isCell,
+	isMutableCell,
 	SKIP_EQUALITY,
 	UnsetSignalValueError,
 } from '../index.ts'
+// `createSensor` is no longer public API (ADR-0018 §5) — `deriveCell(seed, { watched })`
+// dispatches to it internally. Tested here at the internal entry point because it still
+// exercises the optional-`initial` path that the public dispatcher's mandatory seed hides.
+import { createSensor } from '../src/nodes/sensor'
 
 /* === Utility Functions === */
 
@@ -17,9 +21,9 @@ const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
 describe('Sensor', () => {
 	describe('createSensor', () => {
-		test('should have Symbol.toStringTag of "Signal"', () => {
+		test('should have Symbol.toStringTag of "Cell"', () => {
 			const sensor = createSensor<number>({ watched: () => () => {} })
-			expect(sensor[Symbol.toStringTag]).toBe('Signal')
+			expect(sensor[Symbol.toStringTag]).toBe('Cell')
 		})
 
 		test('should throw UnsetSignalValueError when read outside an effect', () => {
@@ -54,19 +58,19 @@ describe('Sensor', () => {
 		})
 	})
 
-	describe('isSignal', () => {
-		test('should identify sensor signals', () => {
-			expect(isSignal(createSensor<number>({ watched: () => () => {} }))).toBe(
+	describe('isCell', () => {
+		test('should identify sensor cells', () => {
+			expect(isCell(createSensor<number>({ watched: () => () => {} }))).toBe(
 				true,
 			)
 		})
 
-		test('should return false for non-signal values', () => {
-			expect(isSignal(42)).toBe(false)
-			expect(isSignal(null)).toBe(false)
-			expect(isSignal({})).toBe(false)
+		test('should return false for non-cell values', () => {
+			expect(isCell(42)).toBe(false)
+			expect(isCell(null)).toBe(false)
+			expect(isCell({})).toBe(false)
 			expect(
-				isMutableSignal(createSensor<number>({ watched: () => () => {} })),
+				isMutableCell(createSensor<number>({ watched: () => () => {} })),
 			).toBe(false)
 		})
 	})
@@ -84,7 +88,7 @@ describe('Sensor', () => {
 				initial: 0,
 			})
 
-			const doubled = createMemo(() => sensor.get() * 2)
+			const doubled = deriveComputed(() => sensor.get() * 2)
 
 			let result = 0
 			createEffect(() => {
@@ -473,6 +477,25 @@ describe('Sensor', () => {
 				// @ts-expect-error - Testing invalid input
 				createSensor<number>({ watched: () => () => {}, initial: null })
 			}).toThrow('[createSensor] Signal value cannot be null or undefined')
+		})
+	})
+
+	describe('deriveCell(seed, { watched })', () => {
+		test('dispatches to the external-push origin, seed overriding options.initial', () => {
+			let started = false
+			const sensor = deriveCell<number>(42, {
+				watched: _set => {
+					started = true
+					return () => {}
+				},
+			})
+			expect(started).toBe(false)
+			let received: number | undefined
+			createEffect(() => {
+				received = sensor.get()
+			})
+			expect(started).toBe(true)
+			expect(received).toBe(42)
 		})
 	})
 })

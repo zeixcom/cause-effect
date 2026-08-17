@@ -2,10 +2,10 @@ import { describe, expect, test } from 'bun:test'
 import {
 	abort,
 	createEffect,
-	createMemo,
 	createScope,
 	createState,
-	createTask,
+	deriveCell,
+	deriveComputed,
 	deriveList,
 	deriveStore,
 	isPending,
@@ -20,7 +20,7 @@ const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 describe('isPending', () => {
 	test('reports false for a signal with no async origin', () => {
 		expect(isPending(createState(1))).toBe(false)
-		expect(isPending(createMemo(() => 1))).toBe(false)
+		expect(isPending(deriveComputed(() => 1))).toBe(false)
 		expect(isPending(deriveList(() => [1, 2]))).toBe(false)
 		expect(isPending(deriveStore(() => ({ a: 1 })))).toBe(false)
 	})
@@ -33,7 +33,7 @@ describe('isPending', () => {
 	})
 
 	test('reflects an asynchronous derivation while it is in flight', async () => {
-		const task = createTask(async () => {
+		const task = deriveCell(async () => {
 			await wait(10)
 			return 1
 		})
@@ -99,7 +99,7 @@ describe('isPending', () => {
 	})
 
 	test('is reactive inside an effect', async () => {
-		const task = createTask(async () => {
+		const task = deriveCell(async () => {
 			await wait(10)
 			return 1
 		})
@@ -127,14 +127,14 @@ describe('abort', () => {
 	test('is a no-op for a signal with no async origin', () => {
 		expect(() => {
 			abort(createState(1))
-			abort(createMemo(() => 1))
+			abort(deriveComputed(() => 1))
 			abort(deriveList(() => [1]))
 			abort(undefined)
 		}).not.toThrow()
 	})
 
 	test('cancels an in-flight Task', async () => {
-		const task = createTask(async () => {
+		const task = deriveCell(async () => {
 			await wait(20)
 			return 1
 		})

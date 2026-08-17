@@ -1,6 +1,6 @@
 import { type Cleanup, TYPE_STORE } from '../graph';
+import type { Cell, MutableCell } from './cell';
 import { type MutableList, type UnknownRecord } from './list';
-import type { MutableSignal, Signal } from './signal';
 /**
  * Configuration options for `createStore`.
  */
@@ -10,8 +10,8 @@ type StoreOptions = {
 };
 /**
  * A read-only reactive object with per-property reactivity, reachable through a proxy.
- * Each property is a `MutableSignal`, a nested `MutableStore`, or a `MutableList` on the
- * mutable extension `MutableStore`; a plain `Signal` when derived (`deriveStore`). There is
+ * Each property is a `MutableCell`, a nested `MutableStore`, or a `MutableList` on the
+ * mutable extension `MutableStore`; a plain `Cell` when derived (`deriveStore`). There is
  * no `set`, `update`, `add`, or `remove` on the base — a derived record is written only by
  * its derivation. See ADR-0018.
  *
@@ -20,17 +20,17 @@ type StoreOptions = {
 type BaseStore<T extends UnknownRecord> = {
     readonly [Symbol.toStringTag]: 'Store';
     readonly [Symbol.isConcatSpreadable]: false;
-    [Symbol.iterator](): IterableIterator<[string, Signal<T[keyof T] & {}>]>;
+    [Symbol.iterator](): IterableIterator<[string, Cell<T[keyof T] & {}>]>;
     keys(): IterableIterator<string>;
-    byKey<K extends keyof T & string>(key: K): Signal<T[K] & {}> | undefined;
+    byKey<K extends keyof T & string>(key: K): Cell<T[K] & {}> | undefined;
     get(): T;
 };
 type Store<T extends UnknownRecord> = BaseStore<T> & {
-    [K in keyof T]: Signal<T[K] & {}> | undefined;
+    [K in keyof T]: Cell<T[K] & {}> | undefined;
 };
 /**
  * A reactive object with per-property reactivity.
- * Each property becomes a `MutableSignal`, a nested `MutableStore`, or a `MutableList`,
+ * Each property becomes a `MutableCell`, a nested `MutableStore`, or a `MutableList`,
  * reachable through the proxy. A write to one property re-runs only the effects that read
  * that property.
  *
@@ -41,10 +41,10 @@ type BaseMutableStore<T extends UnknownRecord> = {
     readonly [Symbol.isConcatSpreadable]: false;
     [Symbol.iterator](): IterableIterator<[
         string,
-        (MutableSignal<T[keyof T] & {}> | MutableStore<UnknownRecord> | MutableList<unknown & {}>)
+        (MutableCell<T[keyof T] & {}> | MutableStore<UnknownRecord> | MutableList<unknown & {}>)
     ]>;
     keys(): IterableIterator<string>;
-    byKey<K extends keyof T & string>(key: K): T[K] extends readonly (infer U extends {})[] ? MutableList<U> : T[K] extends UnknownRecord ? MutableStore<T[K]> : T[K] extends unknown & {} ? MutableSignal<T[K] & {}> : MutableSignal<T[K] & {}> | undefined;
+    byKey<K extends keyof T & string>(key: K): T[K] extends readonly (infer U extends {})[] ? MutableList<U> : T[K] extends UnknownRecord ? MutableStore<T[K]> : T[K] extends unknown & {} ? MutableCell<T[K] & {}> : MutableCell<T[K] & {}> | undefined;
     get(): T;
     set(next: T): void;
     update(fn: (prev: T) => T): void;
@@ -52,7 +52,7 @@ type BaseMutableStore<T extends UnknownRecord> = {
     remove(key: string): void;
 };
 type MutableStore<T extends UnknownRecord> = BaseMutableStore<T> & {
-    [K in keyof T]: T[K] extends readonly (infer U extends {})[] ? MutableList<U> : T[K] extends UnknownRecord ? MutableStore<T[K]> : T[K] extends unknown & {} ? MutableSignal<T[K] & {}> : MutableSignal<T[K] & {}> | undefined;
+    [K in keyof T]: T[K] extends readonly (infer U extends {})[] ? MutableList<U> : T[K] extends UnknownRecord ? MutableStore<T[K]> : T[K] extends unknown & {} ? MutableCell<T[K] & {}> : MutableCell<T[K] & {}> | undefined;
 };
 /**
  * Setup callback for the external-push form of `deriveStore`.
@@ -74,7 +74,7 @@ type DeriveStoreOptions<T extends UnknownRecord> = {
 };
 /**
  * Creates a reactive store with deeply nested reactive properties.
- * Each property becomes its own signal. A primitive becomes a `MutableSignal`, an object
+ * Each property becomes its own signal. A primitive becomes a `MutableCell`, an object
  * becomes a nested `MutableStore`, and an array becomes a `MutableList`. The proxy exposes
  * each property directly.
  *
@@ -117,11 +117,11 @@ declare function createStore<T extends UnknownRecord>(value: T, options?: StoreO
  * | async function | `initial` required | Asynchronous derivation |
  * | record | `watched` required | External push |
  *
- * Each property is a `Signal` that reads the source itself, so a write to one property of
+ * Each property is a `Cell` that reads the source itself, so a write to one property of
  * the source re-runs only the effects that read that property — the same per-property
  * granularity `createStore` gives. Unlike `createStore`, nested records and arrays are
  * not recursively converted to nested `Store`s and `List`s; a nested property is a plain
- * `Signal` of the nested value. Call `deriveStore` or `deriveList` again on that property
+ * `Cell` of the nested value. Call `deriveStore` or `deriveList` again on that property
  * to go deeper.
  *
  * @since 1.5.0

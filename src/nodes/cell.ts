@@ -1,0 +1,228 @@
+import { validateCallback } from '../errors'
+import {
+	type DeriveSignalOptions,
+	type MemoCallback,
+	type SignalCallback,
+	type SignalOptions,
+	type TaskCallback,
+	TYPE_CELL,
+} from '../graph'
+import {
+	isAsyncFunction,
+	isFunction,
+	isSignalOfType,
+	isSyncFunction,
+} from '../util'
+import { deriveComputed } from './memo'
+import { createSensor } from './sensor'
+import { createState } from './state'
+import { createTask } from './task'
+
+/* === Types === */
+
+/**
+ * A readable single-value shape, matching both the mutable and readonly single-value
+ * signals. The tag is narrowed to the `'Cell'` literal, so no other shape is structurally
+ * assignable to `Cell` merely by carrying a `get()` method. See ADR-0018.
+ *
+ * @template T - The type of value held by the cell
+ */
+type Cell<T extends {}> = {
+	readonly [Symbol.toStringTag]?: 'Cell'
+	get(): T
+}
+
+/**
+ * A readable and writable single-value signal.
+ * The complete value-type set is `Cell`/`MutableCell`, `List`/`MutableList`, and
+ * `Store`/`MutableStore` — indexed by shape and mutability, not by origin. See ADR-0018.
+ *
+ * @template T - The type of value held by the signal
+ */
+type MutableCell<T extends {}> = Cell<T> & {
+	set(value: T): void
+	update(callback: (value: T) => T): void
+}
+
+/**
+ * The umbrella signal shape — any of `Cell`, `List`, or `Store`, matched structurally by
+ * `get()` alone, not by tag. This is the pre-ADR-0018 meaning of `Signal`, kept for code
+ * that genuinely wants to accept any shape. Use `Cell` when only the narrow single-value
+ * shape is meant. See ADR-0018.
+ *
+ * @template T - The type of value returned by get()
+ */
+type Signal<T extends {}> = {
+	readonly [Symbol.toStringTag]?: string
+	get(): T
+}
+
+/* === Factory Functions === */
+
+/**
+ * Create a mutable single-value cell from a plain value.
+ *
+ * `create*` yields the writable shape and takes the value verbatim — no shape
+ * sniffing. An array is held as an array value, not converted to a `MutableList`;
+ * a record is held as a record value, not converted to a `MutableStore`. Use
+ * `createList` and `createStore` for those shapes, and `deriveCell` for any
+ * derivation. See ADR-0018.
+ *
+ * @since 0.9.6
+ * @template T - The type of value stored in the cell
+ * @param value - The initial value
+ * @param options - Optional configuration for the cell
+ * @returns A MutableCell object with get(), set(), and update() methods
+ *
+ * @example
+ * ```ts
+ * const count = createCell(0)
+ * count.set(1)
+ * console.log(count.get()) // 1
+ * ```
+ */
+function createCell<T extends {}>(
+	value: T,
+	options?: SignalOptions<T>,
+): MutableCell<T> {
+	return createState(value, options)
+}
+
+/**
+ * Create a read-only single-value cell from any origin.
+ *
+ * The origin follows from `input`, so one factory covers every way a value can
+ * come to exist. A derived cell has no setter — writing to it is a compile
+ * error rather than a convention to remember.
+ *
+ * | `input` | `options` | Origin | Replaces |
+ * |---|---|---|---|
+ * | sync function | — | Synchronous derivation | `deriveComputed` |
+ * | async function | `initial` optional | Asynchronous derivation | — |
+ * | seed value | `watched` required | External push | — |
+ *
+ * @since 2.0.0
+ * @template T - The type of value the cell holds
+ * @param input - A computation function or a seed value
+ * @param options - Optional configuration
+ * @returns A Cell object with a get() method
+ *
+ * @example
+ * ```ts
+ * const userId = createCell(1)
+ * const user = deriveCell(async (_prev, abortSignal) => {
+ *   const response = await fetch(`/api/users/${userId.get()}`, { signal: abortSignal })
+ *   return response.json()
+ * }, { initial: fallbackUser })
+ * ```
+ */
+function deriveCell<T extends {}>(
+	input: TaskCallback<T> | MemoCallback<T>,
+	options?: DeriveSignalOptions<T>,
+): Cell<T>
+function deriveCell<T extends {}>(
+	input: T,
+	options: SignalOptions<T> & { initial?: T } & {
+		watched: SignalCallback<T>
+	},
+): Cell<T>
+function deriveCell<T extends {}>(
+	input: MemoCallback<T> | TaskCallback<T> | T,
+	options?:
+		| DeriveSignalOptions<T>
+		| (SignalOptions<T> & { initial?: T; watched?: SignalCallback<T> }),
+): Cell<T> {
+	if (isFunction(input)) {
+		// The seed option is `initial` for the whole derive family; the narrow
+		// factories take the same options object verbatim.
+		return isAsyncFunction(input)
+			? createTask(input as TaskCallback<T>, options as DeriveSignalOptions<T>)
+			: deriveComputed(
+					input as MemoCallback<T>,
+					options as DeriveSignalOptions<T>,
+				)
+	}
+
+	// External push: a seed value plus a watched lifecycle. The seed is the
+	// initial value — it overrides any explicit `initial` option.
+	const watched = options?.watched as SignalCallback<T> | undefined
+	validateCallback('deriveCell', watched, isSyncFunction)
+	return createSensor({
+		...options,
+		initial: input,
+	} as SignalOptions<T> & { initial?: T } & { watched: SignalCallback<T> })
+}
+
+/* === Guards === */
+
+/**
+ * Check whether a value is a Cell — the single-value shape, matching both the mutable
+ * and readonly single-value signals. Use `isMutableCell` to also require write access.
+ * `List` and `Store` are distinct shapes with their own guards. See ADR-0018.
+ *
+ * @since 2.0.0
+ * @param value - Value to check
+ * @returns True if value is a Cell, false otherwise
+ */
+function isCell<T extends {}>(value: unknown): value is Cell<T> {
+	return isSignalOfType(value, TYPE_CELL)
+}
+
+/**
+ * Check whether a value is a mutable Cell.
+ *
+ * @since 2.0.0
+ * @param value - Value to check
+ * @returns True if value is a mutable Cell, false otherwise
+ */
+function isMutableCell(value: unknown): value is MutableCell<unknown & {}> {
+	return (
+		isCell(value) &&
+		typeof (value as Record<string, unknown>).set === 'function'
+	)
+}
+
+/**
+ * Check whether a value is a Signal — the umbrella shape matched structurally by `get()`
+ * alone, covering `Cell`, `List`, and `Store` alike. Use `isCell`/`isList`/`isStore` to
+ * check a specific shape. See ADR-0018.
+ *
+ * @since 0.9.0
+ * @param value - Value to check
+ * @returns True if value is a Signal, false otherwise
+ */
+function isSignal<T extends {}>(value: unknown): value is Signal<T> {
+	return (
+		typeof (value as Record<string, unknown> | null | undefined)?.get ===
+		'function'
+	)
+}
+
+/**
+ * Check whether a value is a mutable Signal — the umbrella shape, matching a writable
+ * `Cell`, `List`, or `Store` alike.
+ *
+ * @since 0.15.2
+ * @param value - Value to check
+ * @returns True if value is a mutable Signal, false otherwise
+ */
+function isMutableSignal(
+	value: unknown,
+): value is Signal<unknown & {}> & { set(value: unknown & {}): void } {
+	return (
+		isSignal(value) &&
+		typeof (value as Record<string, unknown>).set === 'function'
+	)
+}
+
+export {
+	type Cell,
+	createCell,
+	deriveCell,
+	isCell,
+	isMutableCell,
+	isMutableSignal,
+	isSignal,
+	type MutableCell,
+	type Signal,
+}

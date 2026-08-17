@@ -2,10 +2,10 @@ import { describe, expect, mock, test } from 'bun:test'
 import {
 	batch,
 	createEffect,
-	createMemo,
 	createScope,
 	createState,
-	createTask,
+	deriveCell,
+	deriveComputed,
 	EffectConvergenceError,
 	match,
 	RequiredOwnerError,
@@ -148,7 +148,7 @@ describe('createEffect', () => {
 			let effectCount = 0
 
 			// Memo whose computed value does not change on invalidation
-			const memo = createMemo(() => 42, {
+			const memo = deriveComputed(() => 42, {
 				initial: 42,
 				watched: inv => {
 					invalidate = inv
@@ -179,7 +179,7 @@ describe('createEffect', () => {
 			let effectCount = 0
 			let externalValue = 1
 
-			const memo = createMemo(() => externalValue, {
+			const memo = deriveComputed(() => externalValue, {
 				initial: 0,
 				watched: inv => {
 					invalidate = inv
@@ -214,7 +214,7 @@ describe('createEffect', () => {
 			let externalValue = 3
 
 			// Custom equals: treat values as equal when they round to the same integer
-			const memo = createMemo(() => externalValue, {
+			const memo = deriveComputed(() => externalValue, {
 				initial: 0,
 				equals: (a, b) => Math.floor(a) === Math.floor(b),
 				watched: inv => {
@@ -249,7 +249,7 @@ describe('createEffect', () => {
 			let invalidate!: () => void
 			let effectCount = 0
 
-			const watchedMemo = createMemo(() => 42, {
+			const watchedMemo = deriveComputed(() => 42, {
 				initial: 42,
 				watched: inv => {
 					invalidate = inv
@@ -258,7 +258,7 @@ describe('createEffect', () => {
 			})
 
 			// Downstream memo that doubles the watched memo value
-			const doubled = createMemo(() => watchedMemo.get() * 2)
+			const doubled = deriveComputed(() => watchedMemo.get() * 2)
 
 			const dispose = createScope(() => {
 				createEffect(() => {
@@ -281,7 +281,7 @@ describe('createEffect', () => {
 			let invalidate!: () => void
 			let effectCount = 0
 
-			const memo = createMemo(() => 42, {
+			const memo = deriveComputed(() => 42, {
 				initial: 42,
 				watched: inv => {
 					invalidate = inv
@@ -313,7 +313,7 @@ describe('createEffect', () => {
 			let effectCount = 0
 			const state = createState(1)
 
-			const memo = createMemo(() => 42, {
+			const memo = deriveComputed(() => 42, {
 				initial: 42,
 				watched: inv => {
 					invalidate = inv
@@ -557,7 +557,7 @@ describe('match', () => {
 	})
 
 	test('should call nil handler when signals are unset', async () => {
-		const task = createTask(async () => {
+		const task = deriveCell(async () => {
 			await wait(50)
 			return 42
 		})
@@ -584,7 +584,7 @@ describe('match', () => {
 
 	test('should call err handler when signals throw', () => {
 		const a = createState(1)
-		const b = createMemo(() => {
+		const b = deriveComputed(() => {
 			if (a.get() > 5) throw new Error('Too high')
 			return a.get() * 2
 		})
@@ -619,7 +619,7 @@ describe('match', () => {
 
 		try {
 			const a = createState(1)
-			const b = createMemo(() => {
+			const b = deriveComputed(() => {
 				if (a.get() > 5) throw new Error('Too high')
 				return a.get() * 2
 			})
@@ -675,7 +675,7 @@ describe('match', () => {
 		})
 
 		test('should call nil handler when signal is unset', async () => {
-			const task = createTask(async () => {
+			const task = deriveCell(async () => {
 				await wait(50)
 				return 42
 			})
@@ -701,7 +701,7 @@ describe('match', () => {
 
 		test('should call err with unwrapped Error', () => {
 			const a = createState(1)
-			const b = createMemo(() => {
+			const b = deriveComputed(() => {
 				if (a.get() > 5) throw new Error('Too high')
 				return a.get() * 2
 			})
@@ -733,7 +733,7 @@ describe('match', () => {
 
 			try {
 				const a = createState(1)
-				const b = createMemo(() => {
+				const b = deriveComputed(() => {
 					if (a.get() > 5) throw new Error('Too high')
 					return a.get() * 2
 				})
@@ -747,11 +747,11 @@ describe('match', () => {
 	})
 
 	test('should resolve multiple async tasks without waterfalls', async () => {
-		const a = createTask(async () => {
+		const a = deriveCell(async () => {
 			await wait(20)
 			return 10
 		})
-		const b = createTask(async () => {
+		const b = deriveCell(async () => {
 			await wait(20)
 			return 20
 		})
@@ -778,7 +778,7 @@ describe('match', () => {
 		// recomputeTask() sets node.controller synchronously, so isPending() = true immediately
 		// after the first get() call that triggers recomputation.
 		test('should call stale on initial run when task has a seeded value and is computing', async () => {
-			const task = createTask(
+			const task = deriveCell(
 				async () => {
 					await wait(50)
 					return 99
@@ -811,7 +811,7 @@ describe('match', () => {
 
 		test('should call stale when another dependency changes while task is still pending', async () => {
 			const other = createState(0)
-			const task = createTask(
+			const task = deriveCell(
 				async () => {
 					await wait(100)
 					return 42
@@ -845,7 +845,7 @@ describe('match', () => {
 		})
 
 		test('should fall back to ok when stale handler is absent', async () => {
-			const task = createTask(
+			const task = deriveCell(
 				async () => {
 					await wait(50)
 					return 99
@@ -871,7 +871,7 @@ describe('match', () => {
 
 		test('should call stale for tuple overload when any task is re-computing', async () => {
 			const a = createState(10)
-			const task = createTask(
+			const task = deriveCell(
 				async () => {
 					await wait(50)
 					return 99
@@ -904,14 +904,14 @@ describe('match', () => {
 
 		test('nil takes precedence over stale', async () => {
 			// One task unresolved (no initial value → nil), one task with seeded value (stale)
-			const staleTask = createTask(
+			const staleTask = deriveCell(
 				async () => {
 					await wait(200)
 					return 42
 				},
 				{ initial: 0 },
 			)
-			const nilTask = createTask(async () => {
+			const nilTask = deriveCell(async () => {
 				await wait(200)
 				return 99
 			})
@@ -941,7 +941,7 @@ describe('match', () => {
 
 		test('should call stale on re-fetch after task has previously resolved', async () => {
 			const source = createState(1)
-			const task = createTask(
+			const task = deriveCell(
 				async () => {
 					const val = source.get()
 					await wait(50)
@@ -977,7 +977,7 @@ describe('match', () => {
 
 		test('should transition stale → ok when re-fetch resolves to same value', async () => {
 			const source = createState(1)
-			const task = createTask(
+			const task = deriveCell(
 				async () => {
 					source.get()
 					await wait(50)
@@ -1013,7 +1013,7 @@ describe('match', () => {
 		})
 
 		test('stale cleanup runs before next dispatch', async () => {
-			const task = createTask(
+			const task = deriveCell(
 				async () => {
 					await wait(50)
 					return 99
@@ -1230,7 +1230,7 @@ describe('match', () => {
 
 	describe('nil handler cleanup', () => {
 		test('cleanup returned by nil is called on re-run', () => {
-			const task = createTask(async () => {
+			const task = deriveCell(async () => {
 				return 42
 			})
 			let nilCount = 0

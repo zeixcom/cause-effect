@@ -3,14 +3,14 @@ import {
 	batch,
 	createEffect,
 	createList,
-	createMemo,
 	createScope,
 	createState,
 	createStore,
-	createTask,
+	deriveCell,
+	deriveComputed,
 	deriveList,
+	isCell,
 	isList,
-	isSignal,
 	match,
 	NullishSignalValueError,
 } from '../index.ts'
@@ -63,7 +63,7 @@ describe('List', () => {
 			expect(isList(42)).toBe(false)
 			expect(isList(null)).toBe(false)
 			expect(isList({})).toBe(false)
-			expect(isSignal(createList([1]))).toBe(false)
+			expect(isCell(createList([1]))).toBe(false)
 		})
 	})
 
@@ -602,7 +602,9 @@ describe('List', () => {
 
 		test('computed signals should react to list changes', () => {
 			const list = createList([1, 2, 3])
-			const sum = createMemo(() => list.get().reduce((acc, n) => acc + n, 0))
+			const sum = deriveComputed(() =>
+				list.get().reduce((acc, n) => acc + n, 0),
+			)
 
 			expect(sum.get()).toBe(6)
 			list.add(4)
@@ -978,7 +980,7 @@ describe('List', () => {
 
 			const derived = deriveList(list, (v: number) => v * 10)
 
-			const task = createTask(async () => {
+			const task = deriveCell(async () => {
 				await wait(10)
 				return 'done'
 			})
@@ -1152,9 +1154,13 @@ describe('List', () => {
 })
 
 test('Type Inference for custom createItem', () => {
-	// This test primarily checks compilation types but also runtime presence
+	// This test primarily checks compilation types but also runtime presence.
+	// The item factory's return type is bound to the umbrella `Signal<T>`, not the narrow
+	// `Cell<T>` — `createItem` is explicit, opt-in customization of the per-item signal
+	// shape, so a `Store`- or `List`-shaped item is legitimate here (ADR-0018/CE-011),
+	// unlike the accidental structural leak ADR-0018 Revision Problem 1 closes elsewhere.
 	type TodoItem = { id: string; text: string; done: boolean }
-	const list = createList([], {
+	const list = createList([] as TodoItem[], {
 		keyConfig: 'todo',
 		createItem: createStore<TodoItem>,
 	})

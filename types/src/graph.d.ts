@@ -154,7 +154,7 @@ type TaskCallback<T extends {}> = (prev: T | undefined, abortSignal: AbortSignal
  * @returns An optional cleanup function that runs before the next run and on disposal
  */
 type EffectCallback = () => MaybeCleanup;
-declare const TYPE_SIGNAL = "Signal";
+declare const TYPE_CELL = "Cell";
 declare const TYPE_LIST = "List";
 declare const TYPE_STORE = "Store";
 declare const TYPE_SLOT = "Slot";
@@ -387,4 +387,4 @@ declare function isPending(signal: unknown): boolean;
  * @param signal - Any signal
  */
 declare function abort(signal: unknown): void;
-export { abort, activeOwner, activeSink, batch, batchDepth, type Cleanup, createScope, DEEP_EQUALITY, DEFAULT_EQUALITY, type DeriveSignalOptions, type EffectCallback, type EffectNode, FLAG_CHECK, FLAG_CLEAN, FLAG_DIRTY, FLAG_RELINK, FLAG_RUNNING, flush, getAsyncSource, isPending, link, type MaybeCleanup, type MemoCallback, type MemoNode, makeSubscribe, type PendingSource, propagate, refresh, refreshComposite, registerAsyncSource, registerCleanup, runCleanup, runEffect, type Scope, type ScopeOptions, type SignalCallback, type SignalOptions, type SinkNode, SKIP_EQUALITY, type StateNode, scheduleEffect, setState, swapActiveSink, type TaskCallback, type TaskNode, TYPE_LIST, TYPE_SIGNAL, TYPE_SLOT, TYPE_STORE, trimSources, unlink, unown, untrack, };
+export { abort, activeOwner, activeSink, batch, batchDepth, type Cleanup, createScope, DEEP_EQUALITY, DEFAULT_EQUALITY, type DeriveSignalOptions, type EffectCallback, type EffectNode, FLAG_CHECK, FLAG_CLEAN, FLAG_DIRTY, FLAG_RELINK, FLAG_RUNNING, flush, getAsyncSource, isPending, link, type MaybeCleanup, type MemoCallback, type MemoNode, makeSubscribe, type PendingSource, propagate, refresh, refreshComposite, registerAsyncSource, registerCleanup, runCleanup, runEffect, type Scope, type ScopeOptions, type SignalCallback, type SignalOptions, type SinkNode, SKIP_EQUALITY, type StateNode, scheduleEffect, setState, swapActiveSink, type TaskCallback, type TaskNode, TYPE_CELL, TYPE_LIST, TYPE_SLOT, TYPE_STORE, trimSources, unlink, unown, untrack, };

@@ -31,8 +31,8 @@ import {
 	isSignalOfType,
 	isSyncFunction,
 } from '../util'
-import { createMemo } from './memo'
-import type { MutableSignal, Signal } from './signal'
+import type { Cell, MutableCell, Signal } from './cell'
+import { deriveComputed } from './memo'
 import { createState } from './state'
 import { createTask } from './task'
 
@@ -63,7 +63,10 @@ type KeyConfig<T> = string | ((item: T) => string | undefined)
  * push on the derive family), so they cannot extend one another.
  *
  * @template T - The type of items in the sequence
- * @template S - The item-signal type
+ * @template S - The item-signal type. Bound to the umbrella `Signal<T>`, not the narrow
+ *   `Cell<T>` — `createItem` is an explicit, opt-in customization point, so a `Store`- or
+ *   `List`-shaped item signal is legitimate here, unlike the accidental structural
+ *   assignability ADR-0018 Revision Problem 1 closes elsewhere. See ADR-0018 and CE-011.
  */
 type ItemSignalOptions<T extends {}, S extends Signal<T>> = {
 	/** Key generation strategy. A string prefix or a function `(item) => string | undefined`. Defaults to auto-increment. */
@@ -81,7 +84,7 @@ type ItemSignalOptions<T extends {}, S extends Signal<T>> = {
  */
 type ListOptions<
 	T extends {},
-	S extends MutableSignal<T> = MutableSignal<T>,
+	S extends Signal<T> & { set(value: T): void } = MutableCell<T>,
 > = ItemSignalOptions<T, S> & {
 	/** Lifecycle callback invoked when the list gains its first downstream subscriber. Must return a cleanup function. Stays active through structural mutations (add/remove/sort) — only the subscriber count matters. */
 	watched?: () => Cleanup
@@ -94,8 +97,15 @@ type ListOptions<
  * returns the mutable extension `MutableList<T,S>`, which is-a `List<T,S>`. See ADR-0018.
  *
  * @template T - The type of items in the sequence
+ * @template S - The item-signal type. Defaults to the readonly `Cell<T>`, not `MutableCell<T>`
+ *   — this is `List`'s own general default (used whenever the bare type is written directly,
+ *   e.g. `ListSource<T>`, `isList<T>()`), not a specific construction's. It has to be the
+ *   loosest covariant bound so a genuinely read-only List (`deriveList(fn)`, items built from
+ *   `deriveComputed`) still satisfies it. Construction sites that default items to a mutable
+ *   `MutableCell<T>` (`createExternalList`, `DeriveListOptions`) declare that default
+ *   themselves; it doesn't come from here. See CE-011.
  */
-type List<T extends {}, S extends Signal<T> = Signal<T>> = {
+type List<T extends {}, S extends Signal<T> = Cell<T>> = {
 	readonly [Symbol.toStringTag]: 'List'
 	readonly [Symbol.isConcatSpreadable]: true
 	[Symbol.iterator](): IterableIterator<S>
@@ -110,13 +120,13 @@ type List<T extends {}, S extends Signal<T> = Signal<T>> = {
 
 /**
  * A reactive ordered array with stable keys and per-item reactivity.
- * Each item is a `MutableSignal<T>`; structural changes (add/remove/sort) propagate reactively.
+ * Each item is a `MutableCell<T>`; structural changes (add/remove/sort) propagate reactively.
  *
  * @template T - The type of items in the list
  */
 type MutableList<
 	T extends {},
-	S extends MutableSignal<T> = MutableSignal<T>,
+	S extends Signal<T> & { set(value: T): void } = MutableCell<T>,
 > = List<T, S> & {
 	set(next: T[]): void
 	update(fn: (prev: T[]) => T[]): void
@@ -137,37 +147,39 @@ type MutableList<
  * A source `deriveList` can key and derive from.
  *
  * A `List` (mutable or readonly) is already keyed, and its stable keys are used directly.
- * Any other `Signal<T[]>` — a synchronous derivation, an asynchronous derivation, an external
+ * Any other `Cell<T[]>` — a synchronous derivation, an asynchronous derivation, an external
  * push, a `Slot` — is keyed on read by the adapter, which is what lets an asynchronous array
  * become a keyed sequence.
  *
  * @template T - The type of items in the source
  */
-type ListSource<T extends {}> = List<T> | Signal<T[]>
+type ListSource<T extends {}> = List<T> | Cell<T[]>
 
 /**
  * The minimal keyed interface the per-item derivation consumes from its source.
- * A `List` satisfies it directly; a plain `Signal<T[]>` is adapted to it.
+ * A `List` satisfies it directly; a plain `Cell<T[]>` is adapted to it.
  *
  * @template T - The type of items in the source
  */
 type KeyedSource<T extends {}> = {
 	keys(): IterableIterator<string>
-	byKey(key: string): Signal<T> | undefined
+	byKey(key: string): Cell<T> | undefined
 }
 
 /**
  * Configuration options for `deriveList`.
  *
- * `keyConfig` and `itemEquals` apply when the source is a plain `Signal<T[]>` or the input
+ * `keyConfig` and `itemEquals` apply when the source is a plain `Cell<T[]>` or the input
  * is a seed array; a `List` source carries its own keys and item equality already.
  *
  * @template T - The type of items in the derived sequence
- * @template S - The item-signal type of the external-push form; inferred from `createItem`
+ * @template S - The item-signal type of the external-push form; inferred from `createItem`.
+ *   Defaults to `MutableCell<T>`, matching `createState` — the item factory `createItem`
+ *   itself defaults to when omitted (see `createExternalList`).
  */
 type DeriveListOptions<
 	T extends {},
-	S extends Signal<T> = Signal<T>,
+	S extends Signal<T> = MutableCell<T>,
 > = ItemSignalOptions<T, S> & {
 	/** Initial items for an asynchronous derivation. Keeps the sequence readable before the first resolution. */
 	initial?: T[]
@@ -177,8 +189,8 @@ type DeriveListOptions<
 
 /**
  * Transformation callback for the per-item derivation, either sync or async.
- * A sync callback produces a `Signal<T>` per item. An async callback produces an
- * asynchronously derived `Signal<T>` per item, which cancels when the source item changes.
+ * A sync callback produces a `Cell<T>` per item. An async callback produces an
+ * asynchronously derived `Cell<T>` per item, which cancels when the source item changes.
  *
  * @template T - The type of derived items
  * @template U - The type of source items
@@ -207,7 +219,7 @@ type ListChanges<T> = {
  *
  * @template T - The type of items in the sequence
  */
-type ExternalListOptions<T extends {}, S extends Signal<T> = Signal<T>> = {
+type ExternalListOptions<T extends {}, S extends Signal<T> = MutableCell<T>> = {
 	/** Initial items. Defaults to `[]`. */
 	initial?: T[]
 	/** Key generation strategy. See `KeyConfig`. Defaults to auto-increment. */
@@ -384,7 +396,7 @@ function diffArrays<T extends {}>(
 }
 
 /**
- * Adapts a plain `Signal<T[]>` to the keyed interface the per-item derivation consumes.
+ * Adapts a plain `Cell<T[]>` to the keyed interface the per-item derivation consumes.
  *
  * The array is diffed against the previous read with the same `diffArrays` used by
  * `List.set()`, so keys stay stable across recomputes: a content-based `keyConfig`
@@ -400,12 +412,12 @@ function diffArrays<T extends {}>(
  * rather than propagating, so the sequence is empty until the source first settles.
  */
 function keyedAdapter<T extends {}>(
-	source: Signal<T[]>,
+	source: Cell<T[]>,
 	options?: DeriveListOptions<T>,
 ): KeyedSource<T> {
 	const [generateKey, contentBased] = getKeyGenerator(options?.keyConfig)
 	const itemEquals = options?.itemEquals ?? DEEP_EQUALITY
-	const signals = new Map<string, Signal<T>>()
+	const signals = new Map<string, Cell<T>>()
 	const indices = new Map<string, number>()
 	let keys: string[] = []
 	let prev: T[] = []
@@ -464,7 +476,7 @@ function keyedAdapter<T extends {}>(
 			if (!signal) {
 				// Reads the source rather than closing over a value, so the item
 				// signal is a real graph sink of the source and recomputes on change.
-				signal = createMemo(
+				signal = deriveComputed(
 					() => {
 						// Re-resolve the index against the array this recompute
 						// actually sees. A consumer may hold this signal directly, so
@@ -563,14 +575,14 @@ function listFacade<T extends {}, S extends Signal<T>>(
 /**
  * Creates a derived List from a source, with per-item memoization.
  * Module-private: `deriveList(source, itemFn)` is the public entry to this path.
- * A sync callback creates a Signal per item. An async callback creates an asynchronously
- * derived Signal per item. The node reads the source keys, so a structural change propagates.
+ * A sync callback creates a Cell per item. An async callback creates an asynchronously
+ * derived Cell per item. The node reads the source keys, so a structural change propagates.
  *
- * A `List` source is used directly, keeping its stable keys. Any other `Signal<U[]>` is keyed
+ * A `List` source is used directly, keeping its stable keys. Any other `Cell<U[]>` is keyed
  * on read — see `keyedAdapter`. This is what lets an asynchronously derived array become a
  * keyed sequence without an intermediate effect.
  *
- * @param source - The source to derive from: a List, or any `Signal<U[]>`
+ * @param source - The source to derive from: a List, or any `Cell<U[]>`
  * @param callback - Transformation function applied to each item
  * @param options - Key generation and item equality. Applies only to an unkeyed source.
  * @returns A List signal
@@ -595,13 +607,13 @@ function derivePerItem<T extends {}, U extends {}>(
 	if (callback) validateCallback('deriveList', callback)
 
 	// A List (mutable or readonly) is already keyed; anything else is adapted. The guard
-	// must come first, because it also satisfies the structural `Signal<U[]>` type.
+	// must come first, because it also satisfies the structural `Cell<U[]>` type.
 	const source: KeyedSource<U> = isList<U>(sourceInput)
 		? (sourceInput as KeyedSource<U>)
-		: keyedAdapter(sourceInput as Signal<U[]>, options)
+		: keyedAdapter(sourceInput as Cell<U[]>, options)
 
 	const isAsync = isAsyncFunction(callback)
-	const signals = new Map<string, Signal<T>>()
+	const signals = new Map<string, Cell<T>>()
 	let keys: string[] = []
 
 	const addSignal = (key: string): void => {
@@ -613,7 +625,7 @@ function derivePerItem<T extends {}, U extends {}>(
 		// through a read-only sequence.
 		if (!callback) {
 			const passthrough = untrack(() => source.byKey(key))
-			if (passthrough) signals.set(key, passthrough as unknown as Signal<T>)
+			if (passthrough) signals.set(key, passthrough as unknown as Cell<T>)
 			return
 		}
 
@@ -631,7 +643,7 @@ function derivePerItem<T extends {}, U extends {}>(
 						callback as (sourceValue: U, abortSignal: AbortSignal) => Promise<T>
 					)(sourceValue, abortSignal)
 				})
-			: createMemo(() => {
+			: deriveComputed(() => {
 					// Look up the item signal without a structural edge (byKey now
 					// tracks structure), then read its value tracked so the Memo
 					// depends on the item's value but not on structural changes.
@@ -643,7 +655,7 @@ function derivePerItem<T extends {}, U extends {}>(
 					return (callback as (sourceValue: U) => T)(sourceValue)
 				})
 
-		signals.set(key, signal as Signal<T>)
+		signals.set(key, signal as Cell<T>)
 	}
 
 	// Sync signals map with the given keys.
@@ -721,12 +733,14 @@ function derivePerItem<T extends {}, U extends {}>(
 		ensureFresh()
 	}
 
-	return listFacade<T, Signal<T>>(node, () => keys, signals, prepare, prepare)
+	return listFacade<T, Cell<T>>(node, () => keys, signals, prepare, prepare)
 }
 
 /**
- * Local capability check for a writable single-value item signal — narrower than
- * importing `isMutableSignal`, and it keeps the item-signal contract explicit.
+ * Local capability check for a writable item signal — narrower than importing
+ * `isMutableCell`/`isMutableSignal`, and it keeps the item-signal contract explicit.
+ * Structural, not tag-based: a custom `createItem` factory may return any `Signal`-shaped
+ * item (a `Cell`, but also a `Store` or `List`), not only the narrow single-value shape.
  */
 function isMutableItem<T extends {}>(
 	value: Signal<T>,
@@ -746,7 +760,7 @@ function isMutableItem<T extends {}>(
  * @param options.watched - Callback that runs when the sequence becomes watched. Receives the emit helper.
  * @returns A read-only List signal
  */
-function createExternalList<T extends {}, S extends Signal<T> = Signal<T>>(
+function createExternalList<T extends {}, S extends Signal<T> = MutableCell<T>>(
 	options: ExternalListOptions<T, S> & { watched: ListCallback<T> },
 ): List<T, S> {
 	const watched = options.watched
@@ -900,7 +914,7 @@ function createExternalList<T extends {}, S extends Signal<T> = Signal<T>>(
  * | sync function | — | Synchronous derivation |
  * | async function | `initial` required | Asynchronous derivation |
  * | array | `watched` required | External push |
- * | `Signal<U[]>` or `List` + item function | — | Per-item derivation |
+ * | `Cell<U[]>` or `List` + item function | — | Per-item derivation |
  *
  * @since 1.5.0
  * @param input - A computation, a seed array, or a source signal to derive per item from
@@ -930,7 +944,7 @@ function deriveList<T extends {}>(
 	input: (prev: T[], abortSignal: AbortSignal) => Promise<T[]>,
 	options: DeriveListOptions<T> & { initial: T[] },
 ): List<T>
-function deriveList<T extends {}, S extends Signal<T> = Signal<T>>(
+function deriveList<T extends {}, S extends Signal<T> = MutableCell<T>>(
 	input: T[],
 	options: DeriveListOptions<T, S> & { watched: ListCallback<T> },
 ): List<T, S>
@@ -947,7 +961,7 @@ function deriveList<T extends {}, U extends {}>(
 function deriveList<
 	T extends {},
 	U extends {},
-	S extends Signal<T> = Signal<T>,
+	S extends Signal<T> = MutableCell<T>,
 >(
 	input:
 		| (() => T[])
@@ -958,7 +972,7 @@ function deriveList<
 	maybeOptions?: DeriveListOptions<U>,
 ): List<T, S> {
 	// Per-item derivation: the second argument is the callback, not the options.
-	// S participates only in the external-push overload; here it defaults to Signal<T>.
+	// S participates only in the external-push overload; here it defaults to Cell<T>.
 	if (isFunction(itemOrOptions))
 		return derivePerItem(
 			input as ListSource<U>,
@@ -1000,9 +1014,14 @@ function deriveList<
 			{ initial: options?.initial ?? [] },
 		)
 		const derived = passthrough<T>(
-			task as Signal<T[]>,
+			task as Cell<T[]>,
 			undefined,
-			options as DeriveListOptions<T>,
+			// keyedAdapter/derivePerItem never read `options.createItem` on this path — the
+			// sync/async-fn-derivation origin always builds items via deriveComputed/createTask
+			// regardless of what a caller passes there — so the value doesn't need to satisfy
+			// DeriveListOptions's own (MutableCell-defaulted) createItem field, only the shape
+			// passthrough's signature declares. The double cast documents that gap explicitly.
+			options as unknown as DeriveListOptions<T>,
 		)
 		// The asynchrony lives in the internal asynchronous derivation, so `isPending(derived)`
 		// and `abort(derived)` resolve through it. See ADR-0018.
@@ -1013,24 +1032,32 @@ function deriveList<
 
 	// Synchronous derivation.
 	return passthrough<T>(
-		createMemo(input as () => T[]) as Signal<T[]>,
+		deriveComputed(input as () => T[]) as Cell<T[]>,
 		undefined,
-		options as DeriveListOptions<T>,
+		// See the async branch above: this path never reads options.createItem either.
+		options as unknown as DeriveListOptions<T>,
 	) as List<T, S>
 }
 
 /**
  * Creates a reactive list with stable keys and per-item reactivity.
  *
+ * `S`'s bound is the umbrella `Signal` (a custom `createItem` may return a `Store`- or
+ * `List`-shaped item, see ADR-0018/CE-011), not the narrow `Cell`. If the call sits in a
+ * contextual position without an explicit type argument — `const x: List<T> = createList([...])`
+ * — provide `T` explicitly (`createList<T>([...])`); TS's inference for a generic default
+ * can otherwise resolve `S` to the bound instead of `MutableCell<T>` when a wider contextual
+ * type is also in play, and only `List<T>`'s own default (not this call's) would apply.
+ *
  * @since 0.18.0
  * @param value - Initial array of items
  * @param options.keyConfig - Key generation strategy: string prefix or `(item) => string | undefined`. Defaults to auto-increment.
  * @param options.watched - Lifecycle callback that runs when the list becomes watched. Must return a cleanup function.
- * @returns A `MutableList` signal with reactive per-item `MutableSignal`s
+ * @returns A `MutableList` signal with reactive per-item `MutableCell`s
  */
 function createList<
 	T extends {},
-	S extends MutableSignal<T> = MutableSignal<T>,
+	S extends Signal<T> & { set(value: T): void } = MutableCell<T>,
 >(value: T[], options?: ListOptions<T, S>): MutableList<T, S> {
 	validateSignalValue(TYPE_LIST, value, Array.isArray)
 
@@ -1369,7 +1396,7 @@ function createList<
  * @param value - The value to check
  * @returns True if the value is a List
  */
-function isList<T extends {}, S extends Signal<T> = Signal<T>>(
+function isList<T extends {}, S extends Signal<T> = Cell<T>>(
 	value: unknown,
 ): value is List<T, S> {
 	return isSignalOfType(value, TYPE_LIST)
@@ -1384,7 +1411,7 @@ function isList<T extends {}, S extends Signal<T> = Signal<T>>(
  */
 function isMutableList<
 	T extends {},
-	S extends MutableSignal<T> = MutableSignal<T>,
+	S extends Signal<T> & { set(value: T): void } = MutableCell<T>,
 >(value: unknown): value is MutableList<T, S> {
 	return (
 		isList(value) &&

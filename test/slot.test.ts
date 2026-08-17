@@ -2,9 +2,9 @@ import { describe, expect, test } from 'bun:test'
 import {
 	batch,
 	createEffect,
-	createMemo,
 	createSlot,
 	createState,
+	deriveComputed,
 	isSlot,
 } from '../index.ts'
 import {
@@ -17,7 +17,7 @@ describe('Slot', () => {
 	test('should replace delegated signal and re-subscribe sinks', () => {
 		const local = createState(1)
 		const parent = createState(10)
-		const derived = createMemo(() => parent.get())
+		const derived = deriveComputed(() => parent.get())
 		const slot = createSlot(local)
 
 		const target = {}
@@ -59,7 +59,7 @@ describe('Slot', () => {
 
 	test('should throw on set when delegated signal is read-only', () => {
 		const source = createState(2)
-		const readonly = createMemo(() => source.get() * 2)
+		const readonly = deriveComputed(() => source.get() * 2)
 		const slot = createSlot(source)
 		const target = {}
 		Object.defineProperty(target, 'value', slot)
@@ -120,7 +120,7 @@ describe('Slot', () => {
 
 	test('should throw ReadonlySignalError when chain terminates in a read-only signal', () => {
 		const source = createState(2)
-		const readonly = createMemo(() => source.get() * 2)
+		const readonly = deriveComputed(() => source.get() * 2)
 		const inner = createSlot(readonly)
 		const outer = createSlot(inner)
 
@@ -210,7 +210,7 @@ describe('Slot', () => {
 
 		test('should propagate through Slot wrapping a Memo after consumer disconnect and reconnect', () => {
 			const state = createState(1)
-			const derived = createMemo(() => state.get() * 10)
+			const derived = deriveComputed(() => state.get() * 10)
 			const slot = createSlot(derived)
 
 			let runs = 0
@@ -313,7 +313,7 @@ describe('Slot', () => {
 
 		test('should return false for non-slots', () => {
 			expect(isSlot(createState(1))).toBe(false)
-			expect(isSlot(createMemo(() => 1))).toBe(false)
+			expect(isSlot(deriveComputed(() => 1))).toBe(false)
 			expect(isSlot(null)).toBe(false)
 			expect(isSlot(42)).toBe(false)
 			expect(isSlot({})).toBe(false)

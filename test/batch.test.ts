@@ -3,9 +3,9 @@ import {
 	batch,
 	createEffect,
 	createList,
-	createMemo,
 	createState,
 	createStore,
+	deriveComputed,
 } from '../index.ts'
 
 /* === Tests === */
@@ -31,7 +31,7 @@ describe('batch', () => {
 		const a = createState(3)
 		const b = createState(4)
 		const c = createState(5)
-		const sum = createMemo(() => a.get() + b.get() + c.get())
+		const sum = deriveComputed(() => a.get() + b.get() + c.get())
 		let result = 0
 		let count = 0
 		createEffect((): undefined => {

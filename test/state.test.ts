@@ -1,10 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import {
-	createEffect,
-	createState,
-	isMutableSignal,
-	isSignal,
-} from '../index.ts'
+import { createEffect, createState, isCell, isMutableCell } from '../index.ts'
 
 /* === Tests === */
 
@@ -22,22 +17,22 @@ describe('State', () => {
 			expect(createState({ a: 1 }).get()).toEqual({ a: 1 })
 		})
 
-		test('should have Symbol.toStringTag of "Signal"', () => {
+		test('should have Symbol.toStringTag of "Cell"', () => {
 			const state = createState(0)
-			expect(state[Symbol.toStringTag]).toBe('Signal')
+			expect(state[Symbol.toStringTag]).toBe('Cell')
 		})
 	})
 
-	describe('isMutableSignal', () => {
-		test('should identify state signals', () => {
-			expect(isMutableSignal(createState(0))).toBe(true)
+	describe('isMutableCell', () => {
+		test('should identify state cells', () => {
+			expect(isMutableCell(createState(0))).toBe(true)
 		})
 
 		test('should return false for non-state values', () => {
-			expect(isMutableSignal(42)).toBe(false)
-			expect(isMutableSignal(null)).toBe(false)
-			expect(isMutableSignal({})).toBe(false)
-			expect(isSignal(createState(0))).toBe(true)
+			expect(isMutableCell(42)).toBe(false)
+			expect(isMutableCell(null)).toBe(false)
+			expect(isMutableCell({})).toBe(false)
+			expect(isCell(createState(0))).toBe(true)
 		})
 	})
 

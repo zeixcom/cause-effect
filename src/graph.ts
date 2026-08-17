@@ -81,8 +81,8 @@ type Edge = {
 
 /* === Public API Types === */
 
-// `Signal` and `MutableSignal` — the single-value value types — live in
-// `nodes/signal.ts` alongside the façades and guards, matching the one-file-
+// `Cell` and `MutableCell` — the single-value value types — live in
+// `nodes/cell.ts` alongside the façades and guards, matching the one-file-
 // per-shape layout of `nodes/list.ts` and `nodes/store.ts`.
 
 /**
@@ -204,7 +204,7 @@ type EffectCallback = () => MaybeCleanup
 
 /* === Constants === */
 
-const TYPE_SIGNAL = 'Signal'
+const TYPE_CELL = 'Cell'
 const TYPE_LIST = 'List'
 const TYPE_STORE = 'Store'
 const TYPE_SLOT = 'Slot'
@@ -496,7 +496,7 @@ function recomputeMemo(node: MemoNode<unknown & {}>): void {
 	try {
 		const next = node.fn(node.value)
 		// fn misclassified as sync by isAsyncFunction (it checks the callback, not its return value)
-		if (next instanceof Promise) throw new PromiseValueError(TYPE_SIGNAL)
+		if (next instanceof Promise) throw new PromiseValueError(TYPE_CELL)
 		if (node.error || !node.equals(next, node.value)) {
 			node.value = next
 			node.error = undefined
@@ -547,7 +547,7 @@ function refresh(node: SinkNode): void {
 	}
 
 	if (node.flags & FLAG_RUNNING) {
-		throw new CircularDependencyError('value' in node ? TYPE_SIGNAL : 'Effect')
+		throw new CircularDependencyError('value' in node ? TYPE_CELL : 'Effect')
 	}
 
 	if (node.flags & FLAG_DIRTY) {
@@ -932,8 +932,8 @@ export {
 	swapActiveSink,
 	type TaskCallback,
 	type TaskNode,
+	TYPE_CELL,
 	TYPE_LIST,
-	TYPE_SIGNAL,
 	TYPE_SLOT,
 	TYPE_STORE,
 	trimSources,

@@ -15,12 +15,12 @@ import {
 	propagate,
 	refresh,
 	type SinkNode,
-	TYPE_SIGNAL,
+	TYPE_CELL,
 } from '../graph'
 import { isSyncFunction } from '../util'
-import type { Signal } from './signal'
+import type { Cell } from './cell'
 
-const WHERE = 'createMemo'
+const WHERE = 'deriveComputed'
 
 /* === Exported Functions === */
 
@@ -28,7 +28,7 @@ const WHERE = 'createMemo'
  * Creates a derived reactive computation that caches its result.
  * The computation automatically tracks dependencies and recomputes when they change.
  * Uses lazy evaluation - only computes when the value is accessed.
- * The shape this factory returns is `Signal<T>` — the single-value, readonly member of the
+ * The shape this factory returns is `Cell<T>` — the single-value, readonly member of the
  * shape-indexed value-type set. See ADR-0018.
  *
  * @since 0.18.0
@@ -41,12 +41,12 @@ const WHERE = 'createMemo'
  * @param options.watched - Optional callback invoked when the memo is first watched by an effect.
  *   Receives an `invalidate` function to mark the memo dirty and trigger recomputation.
  *   Must return a cleanup function called when no effects are watching.
- * @returns A Signal object with a get() method
+ * @returns A Cell object with a get() method
  *
  * @example
  * ```ts
  * const count = createState(0);
- * const doubled = createMemo(() => count.get() * 2);
+ * const doubled = deriveComputed(() => count.get() * 2);
  * console.log(doubled.get()); // 0
  * count.set(5);
  * console.log(doubled.get()); // 10
@@ -55,21 +55,21 @@ const WHERE = 'createMemo'
  * @example
  * ```ts
  * // Using previous value
- * const sum = createMemo((prev) => prev + count.get(), { initial: 0, equals: Object.is });
+ * const sum = deriveComputed((prev) => prev + count.get(), { initial: 0, equals: Object.is });
  * ```
  */
-function createMemo<T extends {}>(
+function deriveComputed<T extends {}>(
 	fn: (prev: T) => T,
 	options: DeriveSignalOptions<T> & { initial: T },
-): Signal<T>
-function createMemo<T extends {}>(
+): Cell<T>
+function deriveComputed<T extends {}>(
 	fn: MemoCallback<T>,
 	options?: DeriveSignalOptions<T>,
-): Signal<T>
-function createMemo<T extends {}>(
+): Cell<T>
+function deriveComputed<T extends {}>(
 	fn: MemoCallback<T>,
 	options?: DeriveSignalOptions<T>,
-): Signal<T> {
+): Cell<T> {
 	validateCallback(WHERE, fn, isSyncFunction)
 	if (options?.initial !== undefined)
 		validateSignalValue(WHERE, options.initial, options?.guard)
@@ -100,7 +100,7 @@ function createMemo<T extends {}>(
 	)
 
 	return {
-		[Symbol.toStringTag]: TYPE_SIGNAL,
+		[Symbol.toStringTag]: TYPE_CELL,
 		get() {
 			subscribe()
 			refresh(node as unknown as SinkNode)
@@ -111,4 +111,4 @@ function createMemo<T extends {}>(
 	}
 }
 
-export { createMemo }
+export { deriveComputed }

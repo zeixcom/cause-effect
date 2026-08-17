@@ -2,10 +2,10 @@ import { describe, expect, test } from 'bun:test'
 import {
 	createEffect,
 	createList,
-	createMemo,
 	createScope,
 	createState,
-	createTask,
+	deriveCell,
+	deriveComputed,
 	deriveList,
 	isList,
 	type ListChanges,
@@ -24,7 +24,7 @@ describe('per-item derivation from an unkeyed source', () => {
 	test('derives from a Memo<T[]>', () => {
 		const source = createState([1, 2, 3])
 		const doubled = deriveList(
-			createMemo(() => source.get()),
+			deriveComputed(() => source.get()),
 			(v: number) => v * 2,
 		)
 		expect(doubled.get()).toEqual([2, 4, 6])
@@ -107,7 +107,7 @@ describe('per-item derivation from an unkeyed source', () => {
 	})
 
 	test('reads an unresolved Task source as empty rather than throwing', async () => {
-		const source = createTask(async () => {
+		const source = deriveCell(async () => {
 			await wait(10)
 			return [1, 2, 3]
 		})
@@ -413,7 +413,7 @@ describe('deriveList', () => {
 		})
 
 		test('maps over a Task source', async () => {
-			const source = createTask(async () => {
+			const source = deriveCell(async () => {
 				await wait(10)
 				return [1, 2]
 			})

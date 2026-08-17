@@ -31,6 +31,7 @@ import {
 	isSignalOfType,
 	isSyncFunction,
 } from '../util'
+import type { Cell, MutableCell } from './cell'
 import {
 	createList,
 	type DiffResult,
@@ -39,8 +40,7 @@ import {
 	type MutableList,
 	type UnknownRecord,
 } from './list'
-import { createMemo } from './memo'
-import type { MutableSignal, Signal } from './signal'
+import { deriveComputed } from './memo'
 import { createState } from './state'
 import { createTask } from './task'
 
@@ -56,8 +56,8 @@ type StoreOptions = {
 
 /**
  * A read-only reactive object with per-property reactivity, reachable through a proxy.
- * Each property is a `MutableSignal`, a nested `MutableStore`, or a `MutableList` on the
- * mutable extension `MutableStore`; a plain `Signal` when derived (`deriveStore`). There is
+ * Each property is a `MutableCell`, a nested `MutableStore`, or a `MutableList` on the
+ * mutable extension `MutableStore`; a plain `Cell` when derived (`deriveStore`). There is
  * no `set`, `update`, `add`, or `remove` on the base — a derived record is written only by
  * its derivation. See ADR-0018.
  *
@@ -66,19 +66,19 @@ type StoreOptions = {
 type BaseStore<T extends UnknownRecord> = {
 	readonly [Symbol.toStringTag]: 'Store'
 	readonly [Symbol.isConcatSpreadable]: false
-	[Symbol.iterator](): IterableIterator<[string, Signal<T[keyof T] & {}>]>
+	[Symbol.iterator](): IterableIterator<[string, Cell<T[keyof T] & {}>]>
 	keys(): IterableIterator<string>
-	byKey<K extends keyof T & string>(key: K): Signal<T[K] & {}> | undefined
+	byKey<K extends keyof T & string>(key: K): Cell<T[K] & {}> | undefined
 	get(): T
 }
 
 type Store<T extends UnknownRecord> = BaseStore<T> & {
-	[K in keyof T]: Signal<T[K] & {}> | undefined
+	[K in keyof T]: Cell<T[K] & {}> | undefined
 }
 
 /**
  * A reactive object with per-property reactivity.
- * Each property becomes a `MutableSignal`, a nested `MutableStore`, or a `MutableList`,
+ * Each property becomes a `MutableCell`, a nested `MutableStore`, or a `MutableList`,
  * reachable through the proxy. A write to one property re-runs only the effects that read
  * that property.
  *
@@ -91,7 +91,7 @@ type BaseMutableStore<T extends UnknownRecord> = {
 		[
 			string,
 			(
-				| MutableSignal<T[keyof T] & {}>
+				| MutableCell<T[keyof T] & {}>
 				| MutableStore<UnknownRecord>
 				| MutableList<unknown & {}>
 			),
@@ -105,8 +105,8 @@ type BaseMutableStore<T extends UnknownRecord> = {
 		: T[K] extends UnknownRecord
 			? MutableStore<T[K]>
 			: T[K] extends unknown & {}
-				? MutableSignal<T[K] & {}>
-				: MutableSignal<T[K] & {}> | undefined
+				? MutableCell<T[K] & {}>
+				: MutableCell<T[K] & {}> | undefined
 	get(): T
 	set(next: T): void
 	update(fn: (prev: T) => T): void
@@ -120,8 +120,8 @@ type MutableStore<T extends UnknownRecord> = BaseMutableStore<T> & {
 		: T[K] extends UnknownRecord
 			? MutableStore<T[K]>
 			: T[K] extends unknown & {}
-				? MutableSignal<T[K] & {}>
-				: MutableSignal<T[K] & {}> | undefined
+				? MutableCell<T[K] & {}>
+				: MutableCell<T[K] & {}> | undefined
 }
 
 /**
@@ -230,7 +230,7 @@ function diffRecords<T extends UnknownRecord>(prev: T, next: T): DiffResult {
 
 /**
  * Creates a reactive store with deeply nested reactive properties.
- * Each property becomes its own signal. A primitive becomes a `MutableSignal`, an object
+ * Each property becomes its own signal. A primitive becomes a `MutableCell`, an object
  * becomes a nested `MutableStore`, and an array becomes a `MutableList`. The proxy exposes
  * each property directly.
  *
@@ -266,7 +266,7 @@ function createStore<T extends UnknownRecord>(
 
 	const signals = new Map<
 		string,
-		| MutableSignal<unknown & {}>
+		| MutableCell<unknown & {}>
 		| MutableStore<UnknownRecord>
 		| MutableList<unknown & {}>
 	>()
@@ -291,7 +291,7 @@ function createStore<T extends UnknownRecord>(
 	}
 	const signalCategory = (
 		signal:
-			| MutableSignal<unknown & {}>
+			| MutableCell<unknown & {}>
 			| MutableStore<UnknownRecord>
 			| MutableList<unknown & {}>,
 	): ShapeCategory => {
@@ -385,7 +385,7 @@ function createStore<T extends UnknownRecord>(
 				yield [key, signal] as [
 					string,
 					(
-						| MutableSignal<T[keyof T] & {}>
+						| MutableCell<T[keyof T] & {}>
 						| MutableStore<UnknownRecord>
 						| MutableList<unknown & {}>
 					),
@@ -404,8 +404,8 @@ function createStore<T extends UnknownRecord>(
 				: T[K] extends UnknownRecord
 					? MutableStore<T[K]>
 					: T[K] extends unknown & {}
-						? MutableSignal<T[K] & {}>
-						: MutableSignal<T[K] & {}> | undefined
+						? MutableCell<T[K] & {}>
+						: MutableCell<T[K] & {}> | undefined
 		},
 
 		get() {
@@ -472,11 +472,11 @@ function createStore<T extends UnknownRecord>(
  * | async function | `initial` required | Asynchronous derivation |
  * | record | `watched` required | External push |
  *
- * Each property is a `Signal` that reads the source itself, so a write to one property of
+ * Each property is a `Cell` that reads the source itself, so a write to one property of
  * the source re-runs only the effects that read that property — the same per-property
  * granularity `createStore` gives. Unlike `createStore`, nested records and arrays are
  * not recursively converted to nested `Store`s and `List`s; a nested property is a plain
- * `Signal` of the nested value. Call `deriveStore` or `deriveList` again on that property
+ * `Cell` of the nested value. Call `deriveStore` or `deriveList` again on that property
  * to go deeper.
  *
  * @since 1.5.0
@@ -529,7 +529,7 @@ function deriveStore<T extends UnknownRecord>(
 		return readonlyFacade(
 			() => inner.get(),
 			() => inner.keys(),
-			key => inner.byKey(key) as unknown as Signal<T[keyof T & string] & {}>,
+			key => inner.byKey(key) as unknown as Cell<T[keyof T & string] & {}>,
 		) as Store<T>
 	}
 
@@ -541,9 +541,9 @@ function deriveStore<T extends UnknownRecord>(
 				initial: (options?.initial ?? {}) as T,
 			})
 		: undefined
-	const source: Signal<T> =
-		(task as Signal<T> | undefined) ??
-		(createMemo(input as () => T) as Signal<T>)
+	const source: Cell<T> =
+		(task as Cell<T> | undefined) ??
+		(deriveComputed(input as () => T) as Cell<T>)
 
 	// An unresolved Task source has no properties yet — that is an empty record here,
 	// not an error. Any other read failure is the caller's problem.
@@ -556,7 +556,7 @@ function deriveStore<T extends UnknownRecord>(
 		}
 	}
 
-	const signals = new Map<string, Signal<unknown & {}>>()
+	const signals = new Map<string, Cell<unknown & {}>>()
 	let keys: string[] = []
 
 	// Each property reads the source itself rather than being written to, which is what
@@ -565,7 +565,7 @@ function deriveStore<T extends UnknownRecord>(
 	const addSignal = (key: string): void => {
 		signals.set(
 			key,
-			createMemo(() => readSource()[key] as unknown & {}, {
+			deriveComputed(() => readSource()[key] as unknown & {}, {
 				equals: DEEP_EQUALITY,
 			}),
 		)
@@ -639,7 +639,7 @@ function deriveStore<T extends UnknownRecord>(
 		// runs so the signals map reflects the current source. See ADR-0015.
 		key => {
 			ensureFresh()
-			return signals.get(key) as Signal<T[keyof T & string] & {}> | undefined
+			return signals.get(key) as Cell<T[keyof T & string] & {}> | undefined
 		},
 	) as Store<T>
 
@@ -658,7 +658,7 @@ function deriveStore<T extends UnknownRecord>(
 function readonlyFacade<T extends UnknownRecord>(
 	read: () => T,
 	readKeys: () => IterableIterator<string>,
-	readByKey: (key: string) => Signal<unknown & {}> | undefined,
+	readByKey: (key: string) => Cell<unknown & {}> | undefined,
 ): Store<T> {
 	const store: BaseStore<T> = {
 		[Symbol.toStringTag]: TYPE_STORE,
@@ -667,14 +667,14 @@ function readonlyFacade<T extends UnknownRecord>(
 		*[Symbol.iterator]() {
 			for (const key of readKeys()) {
 				const signal = readByKey(key)
-				if (signal) yield [key, signal] as [string, Signal<T[keyof T] & {}>]
+				if (signal) yield [key, signal] as [string, Cell<T[keyof T] & {}>]
 			}
 		},
 
 		keys: readKeys,
 
 		byKey<K extends keyof T & string>(key: K) {
-			return readByKey(key) as Signal<T[K] & {}> | undefined
+			return readByKey(key) as Cell<T[K] & {}> | undefined
 		},
 
 		get: read,

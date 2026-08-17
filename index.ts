@@ -39,6 +39,17 @@ export {
 	untrack,
 } from './src/graph'
 export {
+	type Cell,
+	createCell,
+	deriveCell,
+	isCell,
+	isMutableCell,
+	isMutableSignal,
+	isSignal,
+	type MutableCell,
+	type Signal,
+} from './src/nodes/cell'
+export {
 	createEffect,
 	type MatchHandlers,
 	type MaybePromise,
@@ -60,16 +71,7 @@ export {
 	type MutableList,
 	type PerItemCallback,
 } from './src/nodes/list'
-export { createMemo } from './src/nodes/memo'
-export { createSensor } from './src/nodes/sensor'
-export {
-	createSignal,
-	deriveSignal,
-	isMutableSignal,
-	isSignal,
-	type MutableSignal,
-	type Signal,
-} from './src/nodes/signal'
+export { deriveComputed } from './src/nodes/memo'
 export {
 	createSlot,
 	isSlot,
@@ -88,7 +90,6 @@ export {
 	type StoreCallback,
 	type StoreOptions,
 } from './src/nodes/store'
-export { createTask } from './src/nodes/task'
 export {
 	isAsyncFunction,
 	isFunction,

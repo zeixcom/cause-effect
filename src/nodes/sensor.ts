@@ -11,10 +11,10 @@ import {
 	type SignalOptions,
 	type StateNode,
 	setState,
-	TYPE_SIGNAL,
+	TYPE_CELL,
 } from '../graph'
 import { isSyncFunction } from '../util'
-import type { Signal } from './signal'
+import type { Cell } from './cell'
 
 /* === Types === */
 
@@ -27,7 +27,7 @@ const WHERE = 'createSensor'
  *
  * A sensor activates when an effect first reads it, and deactivates when it is no longer
  * watched. It therefore holds an external resource only while something reads its value.
- * The shape this factory returns is `Signal<T>` — the single-value, readonly member of the
+ * The shape this factory returns is `Cell<T>` — the single-value, readonly member of the
  * shape-indexed value-type set. See ADR-0018.
  *
  * @since 0.18.0
@@ -78,7 +78,7 @@ function createSensor<T extends {}>(
 	options: SignalOptions<T> & { initial?: T } & {
 		watched: SignalCallback<T>
 	},
-): Signal<T> {
+): Cell<T> {
 	const watched = options.watched
 	validateCallback(WHERE, watched, isSyncFunction)
 	if (options.initial !== undefined)
@@ -94,7 +94,7 @@ function createSensor<T extends {}>(
 	}
 
 	return {
-		[Symbol.toStringTag]: TYPE_SIGNAL,
+		[Symbol.toStringTag]: TYPE_CELL,
 		get(): T {
 			if (activeSink) {
 				if (!node.sinks)

@@ -3,12 +3,11 @@ import {
 	batch,
 	createEffect,
 	createList,
-	createMemo,
 	createScope,
-	createSensor,
 	createSlot,
 	createState,
-	createTask,
+	deriveCell,
+	deriveComputed,
 	deriveList,
 	match,
 } from '../index.ts'
@@ -134,7 +133,7 @@ describe('Guide: Keyed Collections', () => {
 			],
 			{ keyConfig: item => item.id },
 		)
-		const openCount = createMemo(
+		const openCount = deriveComputed(
 			() => todos.get().filter(item => !item.done).length,
 		)
 		expect(openCount.get()).toBe(1)
@@ -150,7 +149,7 @@ describe('Guide: Keyed Collections', () => {
 			],
 			{ keyConfig: item => item.id },
 		)
-		const openCount = createMemo(
+		const openCount = deriveComputed(
 			() => todos.get().filter(item => !item.done).length,
 		)
 		const visibleTitles = deriveList(todos, item =>
@@ -187,7 +186,7 @@ describe('Guide: Async Data Pipelines', () => {
 
 	test('task with seed value enters stale state on first match', async () => {
 		const query = createState('books')
-		const results = createTask<SearchResponse>(
+		const results = deriveCell<SearchResponse>(
 			async (_prev, abort) => {
 				await wait(50)
 				if (abort.aborted) return SEED
@@ -213,14 +212,14 @@ describe('Guide: Async Data Pipelines', () => {
 	})
 
 	test('derived memo reads seed value while task is pending', async () => {
-		const results = createTask<SearchResponse>(
+		const results = deriveCell<SearchResponse>(
 			async () => {
 				await wait(50)
 				return { items: [{ id: '1', title: 'test' }], total: 42 }
 			},
 			{ initial: SEED },
 		)
-		const totalPages = createMemo(() =>
+		const totalPages = deriveComputed(() =>
 			Math.max(1, Math.ceil(results.get().total / 20)),
 		)
 		results.get() // trigger computation
@@ -232,12 +231,12 @@ describe('Guide: Async Data Pipelines', () => {
 	test('batch prevents duplicate task run when query and page change together', async () => {
 		const query = createState('books')
 		const page = createState(1)
-		const requestKey = createMemo(() => ({
+		const requestKey = deriveComputed(() => ({
 			query: query.get().trim(),
 			page: page.get(),
 		}))
 		let runCount = 0
-		const results = createTask<SearchResponse>(
+		const results = deriveCell<SearchResponse>(
 			async (_prev, abort) => {
 				runCount++
 				const { query: q, page: p } = requestKey.get()
@@ -269,7 +268,7 @@ describe('Guide: Async Data Pipelines', () => {
 	test('AbortSignal is triggered when dependency changes before task completes', async () => {
 		const query = createState('books')
 		const aborted: string[] = []
-		const results = createTask<SearchResponse>(
+		const results = deriveCell<SearchResponse>(
 			async (_prev, signal) => {
 				const q = query.get()
 				await wait(80)
@@ -317,7 +316,7 @@ describe('Guide: Custom Elements and External Lifecycles', () => {
 		const dispose = createEffect(() => {
 			log.push(slot.get())
 		})
-		const controlled = createMemo(() => `status:${internalValue.get()}`)
+		const controlled = deriveComputed(() => `status:${internalValue.get()}`)
 		slot.replace(controlled)
 		expect(log).toEqual(['draft', 'status:draft'])
 		internalValue.set('published')
@@ -329,7 +328,7 @@ describe('Guide: Custom Elements and External Lifecycles', () => {
 		let started = false
 		let stopped = false
 		let push!: (v: boolean) => void
-		const sensor = createSensor<boolean>({
+		const sensor = deriveCell<boolean>(false, {
 			watched: set => {
 				started = true
 				push = set

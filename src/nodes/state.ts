@@ -6,9 +6,9 @@ import {
 	type SignalOptions,
 	type StateNode,
 	setState,
-	TYPE_SIGNAL,
+	TYPE_CELL,
 } from '../graph'
-import type { MutableSignal } from './signal'
+import type { MutableCell } from './cell'
 
 /* === Types === */
 
@@ -27,14 +27,14 @@ const WHERE = 'createState'
 
 /**
  * Creates a mutable reactive state container.
- * The shape this factory returns is `MutableSignal<T>` — the single-value, writable
+ * The shape this factory returns is `MutableCell<T>` — the single-value, writable
  * member of the shape-indexed value-type set. See ADR-0018.
  *
  * @since 0.9.0
  * @template T - The type of value stored in the state
  * @param value - The initial value
  * @param options - Optional configuration for the state
- * @returns A MutableSignal object with get() and set() methods
+ * @returns A MutableCell object with get() and set() methods
  *
  * @example
  * ```ts
@@ -54,7 +54,7 @@ const WHERE = 'createState'
 function createState<T extends {}>(
 	value: T,
 	options?: SignalOptions<T>,
-): MutableSignal<T> {
+): MutableCell<T> {
 	validateSignalValue(WHERE, value, options?.guard)
 
 	const node: StateNode<T> = {
@@ -66,7 +66,7 @@ function createState<T extends {}>(
 	}
 
 	return {
-		[Symbol.toStringTag]: TYPE_SIGNAL,
+		[Symbol.toStringTag]: TYPE_CELL,
 		get(): T {
 			if (activeSink) link(node, activeSink)
 			return node.value

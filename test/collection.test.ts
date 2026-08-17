@@ -3,13 +3,14 @@ import {
 	batch,
 	createEffect,
 	createList,
-	createMemo,
 	createScope,
 	createState,
 	createStore,
+	deriveComputed,
 	deriveList,
 	isList,
 	type ListChanges,
+	type MutableStore,
 } from '../index.ts'
 
 /* === Utility Functions === */
@@ -1016,7 +1017,7 @@ describe('Collection', () => {
 					(item: { amount: number; pricePerUnit: number }) =>
 						item.amount * item.pricePerUnit,
 				)
-				const priceTotal = createMemo(() =>
+				const priceTotal = deriveComputed(() =>
 					rowPrices.get().reduce((sum, v) => sum + v, 0),
 				)
 
@@ -1037,7 +1038,11 @@ describe('Collection', () => {
 })
 
 test('Type Inference for custom createItem', () => {
-	// This test primarily checks compilation types but also runtime presence
+	// This test primarily checks compilation types but also runtime presence.
+	// The item factory's return type is bound to the umbrella `Signal<T>`, not the narrow
+	// `Cell<T>` — `createItem` is explicit, opt-in customization of the per-item signal
+	// shape, so a `Store`- or `List`-shaped item is legitimate here (ADR-0018/CE-011),
+	// unlike the accidental structural leak ADR-0018 Revision Problem 1 closes elsewhere.
 	type TodoItem = { id: string; text: string; done: boolean }
 	const col = deriveList([] as TodoItem[], {
 		watched: () => () => {},
@@ -1045,7 +1050,7 @@ test('Type Inference for custom createItem', () => {
 		createItem: createStore<TodoItem>,
 	})
 
-	const byKey = col.byKey('todo0')
+	const byKey: MutableStore<TodoItem> | undefined = col.byKey('todo0')
 	// Runtime check
 	expect(byKey).toBeUndefined()
 
