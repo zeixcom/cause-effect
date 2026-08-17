@@ -44,6 +44,42 @@ earlier phase's are done, unless a task says otherwise.
 
 ## Phase 2 — Release readiness (after Phase 1 lands)
 
+- [x] CE-025: Forward-port 1.5.1's `createComputed` → `deriveCell` codemod mapping — reviewed ✓
+  **Skill:** cause-effect-dev
+  **Changed:** `tools/codemod-v2.ts` (`RENAMES` map: `createComputed` now targets `deriveCell`,
+  not `deriveComputed`; new `rewriteComputedOptions()` rewriting a literal `options.value` to
+  `options.initial`, wired into the call-expression dispatch loop alongside
+  `rewriteCreateCollection`; new `needsManualReview` hint when `createComputed` was renamed,
+  pointing async call sites at the free `isPending(signal)`/`abort(signal)`; top-of-file rename
+  table split into separate `createMemo`→`deriveComputed` and `createComputed`→`deriveCell` rows),
+  `test/codemod-v2.test.ts` (split the old combined `createMemo`/`createComputed` test; added
+  cases for the async-safe rename, the `.isPending()/.abort()` manual-review flag, the
+  `options.value`→`options.initial` rewrite incl. shorthand, non-literal options, and the
+  both-`value`-and-`initial` conflict).
+  **How:** `createComputed` supports async callbacks in 1.x (dispatches to `Task`), but
+  `deriveComputed` — this branch's sync-only narrow factory — throws on one
+  (`validateCallback(WHERE, fn, isSyncFunction)` in `src/nodes/memo.ts`), so the previous
+  `createComputed`→`deriveComputed` mapping silently produced code that throws at runtime for
+  any async call site. Ported the `next` branch's independent fix verbatim (mapping,
+  `rewriteComputedOptions`, and the manual-review hint) rather than re-deriving it, since `next`
+  already validated the approach against 1.x's actual `createComputed` dispatch. `createMemo`
+  stays mapped to `deriveComputed` — it only ever accepted sync callbacks in 1.x, so no bug there.
+  **Check:** `bun test` 687/687 (was 681/681 before this task's 6 new tests), `tsc --noEmit`
+  clean, `biome check` clean. Bundle figures unaffected — `tools/` is not part of the shipped
+  bundle.
+
+- [ ] CE-026: Merge 1.5.1's CHANGELOG entries into this branch's `[Unreleased]` section
+  **Skill:** changelog-keeper
+  **Context:** CE-015 and CE-016's fixes (`deriveStore` watched-lifecycle activation, `List`
+  duplicate-key/atomicity hardening) already shipped to 1.x users in `v1.5.1` (backported from
+  this branch's `c48171b`, per `next`'s `CHANGELOG.md` `## 1.5.1` section, which cites this
+  branch by commit for both entries). This branch's `CHANGELOG.md` `[Unreleased]` → Fixed
+  section currently presents both as new in 2.0, with no note that 1.x users already received
+  them a release earlier. Annotate both entries (e.g. "Backported to 1.5.1.") so the eventual
+  2.0.0 CHANGELOG doesn't double-claim these as new fixes for 1.5.1 users, and so anyone diffing
+  1.5.1 → 2.0.0 isn't misled into re-verifying an already-shipped fix. Do not otherwise reorganize
+  `[Unreleased]` — CE-017 Step 1 owns the full audit/release-cut pass.
+
 - [ ] CE-017: Make the v2 branch releasable as 2.0.0
   **Skill:** changelog-keeper (Step 1), adr-keeper (Step 2), tech-writer (Steps 3, 5), cause-effect-dev (Step 4)
   **Context:** Follow `plans/PLAN-v2-release-readiness.md`, with two corrections found during

@@ -151,19 +151,15 @@ describe('codemod-v2: Collection auxiliary type renames', () => {
 })
 
 describe('codemod-v2: single-value renames', () => {
-	test('renames createMemo/createComputed to deriveComputed, createMutableSignal to createCell, deriveSignal to deriveCell', () => {
+	test('renames createMemo to deriveComputed, createMutableSignal to createCell, deriveSignal to deriveCell', () => {
 		const { output } = migrateSource(
-			"import { createComputed, createMemo, createMutableSignal, deriveSignal } from '@zeix/cause-effect'\n" +
+			"import { createMemo, createMutableSignal, deriveSignal } from '@zeix/cause-effect'\n" +
 				'const doubled = createMemo(() => count.get() * 2)\n' +
-				'const fallback = createComputed(() => count.get() * 2)\n' +
 				'const name = createMutableSignal("Alice")\n' +
 				'const user = deriveSignal(async () => fetchUser())\n',
 		)
 		expect(output).toContain(
 			'const doubled = deriveComputed(() => count.get() * 2)',
-		)
-		expect(output).toContain(
-			'const fallback = deriveComputed(() => count.get() * 2)',
 		)
 		expect(output).toContain('const name = createCell("Alice")')
 		expect(output).toContain('const user = deriveCell(async () => fetchUser())')
@@ -171,9 +167,80 @@ describe('codemod-v2: single-value renames', () => {
 			"import { deriveComputed, createCell, deriveCell } from '@zeix/cause-effect'",
 		)
 		expect(output).not.toContain('createMemo')
-		expect(output).not.toContain('createComputed')
 		expect(output).not.toContain('createMutableSignal')
 		expect(output).not.toContain('deriveSignal')
+	})
+
+	test('renames createComputed to deriveCell, not deriveComputed — deriveComputed is sync-only and createComputed supports async', () => {
+		const { output, report } = migrateSource(
+			"import { createComputed } from '@zeix/cause-effect'\n" +
+				'const fallback = createComputed(() => count.get() * 2)\n' +
+				'const user = createComputed(async () => fetchUser())\n',
+		)
+		expect(output).toContain(
+			'const fallback = deriveCell(() => count.get() * 2)',
+		)
+		expect(output).toContain('const user = deriveCell(async () => fetchUser())')
+		expect(output).toContain("import { deriveCell } from '@zeix/cause-effect'")
+		expect(output).not.toContain('createComputed')
+		expect(report.renamed.createComputed).toBe(3) // import specifier + 2 call sites
+	})
+
+	test('flags async createComputed call sites for the .isPending()/.abort() migration', () => {
+		const { report } = migrateSource(
+			"import { createComputed } from '@zeix/cause-effect'\n" +
+				'const user = createComputed(async () => fetchUser())\n' +
+				'if (user.isPending()) console.log("loading")\n',
+		)
+		expect(
+			report.needsManualReview.some(hint =>
+				hint.includes(
+					'createComputed reference(s) renamed to deriveCell; an async callback returned a Task',
+				),
+			),
+		).toBe(true)
+	})
+
+	test('rewrites createComputed options.value to options.initial', () => {
+		const { output, report } = migrateSource(
+			"import { createComputed } from '@zeix/cause-effect'\n" +
+				'const user = createComputed(fetchUser, { value: fallbackUser, watched })\n',
+		)
+		expect(output).toContain(
+			'const user = deriveCell(fetchUser, { initial: fallbackUser, watched })',
+		)
+		expect(report.renamed.createComputed).toBe(2) // import specifier + call site
+	})
+
+	test('rewrites createComputed shorthand value option', () => {
+		const { output } = migrateSource(
+			'const user = createComputed(fetchUser, { value })\n',
+		)
+		expect(output).toContain(
+			'const user = deriveCell(fetchUser, { initial: value })',
+		)
+	})
+
+	test('flags createComputed with non-literal options', () => {
+		const { report } = migrateSource(
+			'const user = createComputed(fetchUser, options)\n',
+		)
+		expect(
+			report.needsManualReview.some(hint =>
+				hint.includes('non-literal options argument was left as-is'),
+			),
+		).toBe(true)
+	})
+
+	test('flags createComputed options with both value and initial', () => {
+		const { report } = migrateSource(
+			'const user = createComputed(fetchUser, { value, initial })\n',
+		)
+		expect(
+			report.needsManualReview.some(hint =>
+				hint.includes('contain both value and initial'),
+			),
+		).toBe(true)
 	})
 
 	test('renames ComputedOptions/SensorOptions to DeriveCellOptions and SensorCallback to CellCallback', () => {

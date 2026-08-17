@@ -31,7 +31,8 @@
  * | `CollectionCallback<T>`       | `ListCallback<T>`            |
  * | `CollectionChanges<T>`        | `ListChanges<T>`             |
  * | `DeriveCollectionCallback<T>` | `PerItemCallback<T>`         |
- * | `createMemo(fn, o?)` / `createComputed(fn, o?)` | `deriveComputed(fn, o?)` |
+ * | `createMemo(fn, o?)`          | `deriveComputed(fn, o?)`     |
+ * | `createComputed(fn, o?)`      | `deriveCell(fn, o?)` — `o.value` becomes `o.initial` |
  * | `createMutableSignal(v, o?)`  | `createCell(v, o?)`          |
  * | `deriveSignal(input, o?)`     | `deriveCell(input, o?)`      |
  * | `ComputedOptions<T>` / `SensorOptions<T>` / `DeriveSignalOptions<T>` | `DeriveCellOptions<T>` |
@@ -55,6 +56,7 @@ import {
 	type ImportDeclaration,
 	type ObjectLiteralExpression,
 	Project,
+	type PropertyAssignment,
 	type SourceFile,
 	SyntaxKind,
 } from 'ts-morph'
@@ -93,7 +95,7 @@ const RENAMES = new Map([
 	['DeriveCollectionCallback', 'PerItemCallback'],
 	// Single-value family
 	['createMemo', 'deriveComputed'],
-	['createComputed', 'deriveComputed'],
+	['createComputed', 'deriveCell'],
 	['createMutableSignal', 'createCell'],
 	['deriveSignal', 'deriveCell'],
 	// Derive-family options and callback unification
@@ -230,6 +232,48 @@ function rewriteCreateCollection(
 	report.createCollectionRewritten += 1
 }
 
+/**
+ * Rewrites `options.value` to `options.initial` on a `createComputed(fn, options)`
+ * call with a literal options object — the vocabulary change that accompanies the
+ * `createComputed` → `deriveCell` rename (`deriveCell`/`DeriveCellOptions` use
+ * `initial`, not `value`). Non-literal options are flagged; the callee itself is
+ * renamed by the identifier pass.
+ */
+function rewriteComputedOptions(
+	call: CallExpression,
+	report: MigrationReport,
+): void {
+	const options = call.getArguments()[1]
+	if (!options) return
+	if (options.getKind() !== SyntaxKind.ObjectLiteralExpression) {
+		report.needsManualReview.push(
+			`createComputed with a non-literal options argument was left as-is (${options.getText()}) — rename options.value to options.initial manually`,
+		)
+		return
+	}
+	const properties = (options as ObjectLiteralExpression).getProperties()
+	const nameOf = (property: (typeof properties)[number]) =>
+		(property as { getName?: () => string }).getName?.()
+	const valueProps = properties.filter(property => nameOf(property) === 'value')
+	if (!valueProps.length) return
+	if (properties.some(property => nameOf(property) === 'initial')) {
+		report.needsManualReview.push(
+			'createComputed options contain both value and initial — resolve manually',
+		)
+		return
+	}
+	for (const property of valueProps) {
+		if (property.getKind() === SyntaxKind.ShorthandPropertyAssignment) {
+			property.replaceWithText('initial: value')
+		} else {
+			const assignment = property as PropertyAssignment
+			assignment.replaceWithText(
+				`initial: ${assignment.getInitializer()?.getText()}`,
+			)
+		}
+	}
+}
+
 /** Syncs the named imports of matching declarations with the names the file now uses. */
 function syncImports(file: SourceFile, module: string): void {
 	const matching: ImportDeclaration[] = []
@@ -327,11 +371,10 @@ function migrateSource(
 		// A rewrite can remove nested calls from the tree; stale snapshots are skipped.
 		if (call.wasForgotten()) continue
 		const expression = call.getExpression()
-		if (
-			expression.getKind() === SyntaxKind.Identifier &&
-			expression.getText() === 'createCollection'
-		)
-			rewriteCreateCollection(call, report)
+		if (expression.getKind() !== SyntaxKind.Identifier) continue
+		const callee = expression.getText()
+		if (callee === 'createCollection') rewriteCreateCollection(call, report)
+		else if (callee === 'createComputed') rewriteComputedOptions(call, report)
 	}
 
 	let skippedOwnNames = 0
@@ -409,6 +452,15 @@ function migrateSource(
 	if (report.renamed.isStore)
 		report.needsManualReview.push(
 			`${report.renamed.isStore} isStore reference(s) renamed to isMutableStore; isMutableStore rejects a readonly Store (a deriveStore result, formerly DerivedStore), so verify no call site relied on isStore matching one`,
+		)
+
+	// `createComputed(asyncFn)` returned a `Task` carrying the deprecated
+	// `.isPending()`/`.abort()` methods; `deriveCell` returns `Signal<T>`, which
+	// has neither. The rename is meaning-preserving for the value, but those
+	// member calls stop compiling — enumerate them for the manual audit.
+	if (report.renamed.createComputed)
+		report.needsManualReview.push(
+			`${report.renamed.createComputed} createComputed reference(s) renamed to deriveCell; an async callback returned a Task with .isPending()/.abort() methods — switch those call sites to the free isPending(signal)/abort(signal)`,
 		)
 
 	syncImports(file, options.module ?? 'cause-effect')
