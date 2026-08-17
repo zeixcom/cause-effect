@@ -7,25 +7,28 @@ concept. The _Avoid_ list under each entry names disallowed synonyms.
 
 ## Construction Routing
 
-Value types are indexed by shape × mutability (`Signal`/`MutableSignal`, `List`/`MutableList`,
-`Store`/`MutableStore`), plus orthogonal `Effect` and `Slot`. Construction is indexed by origin:
+Value types are indexed by shape × mutability (`Cell`/`MutableCell`, `List`/`MutableList`,
+`Store`/`MutableStore`), plus orthogonal `Effect` and `Slot`. `Signal`/`MutableSignal` are the
+umbrella shape, matching `Cell`, `List`, or `Store` alike. Construction is indexed by origin:
 `create*` → mutable, `derive*` → readonly. Route by "you have Y, you want X → call Z":
 
 | You have | You want single value | You want keyed sequence | You want keyed record |
 |---|---|---|---|
-| Value you own | `createSignal(value)` | `createList(array)` | `createStore(record)` |
-| Other signals, sync | `deriveSignal(fn)` | `deriveList(fn)` | `deriveStore(fn)` |
-| Other signals, async | `deriveSignal(asyncFn)` | `deriveList(asyncFn, { initial })` | `deriveStore(asyncFn, { initial })` |
-| External source | `deriveSignal(seed, { watched })` | `deriveList(seed, { watched })` | `deriveStore(seed, { watched })` |
+| Value you own | `createCell(value)` | `createList(array)` | `createStore(record)` |
+| Other signals, sync | `deriveCell(fn)` | `deriveList(fn)` | `deriveStore(fn)` |
+| Other signals, async | `deriveCell(asyncFn)` | `deriveList(asyncFn, { initial })` | `deriveStore(asyncFn, { initial })` |
+| External source | `deriveCell(seed, { watched })` | `deriveList(seed, { watched })` | `deriveStore(seed, { watched })` |
 | Source array + item transform | — | `deriveList(source, itemFn)` | — |
 
 - Never write a derived value from inside an effect — derive it. Every cell above is reachable.
-- Narrow single-origin factories (`createState`, `createMemo`, `createTask`, `createSensor`) exist
-  for tree-shaking; `deriveSignal` dispatches to them.
+- Narrow single-origin factories (`createState`, `deriveComputed`) exist for tree-shaking;
+  `deriveCell` dispatches to them, and to the internal-only `createTask`/`createSensor` for the
+  async and external-push origins.
 - `watched` is always an option, never a callback position. Seed input → `(emit) => Cleanup`;
   function input → `(invalidate) => Cleanup`.
-- Guards: `isSignal` matches the single-value shape only — `List`, `Store`, `Slot` have their own.
-  "Anything reactive" → `typeof x?.get === 'function'`.
+- Guards: `isCell`/`isMutableCell` match the single-value shape only — `List`, `Store`, `Slot`
+  have their own. `isSignal`/`isMutableSignal` match the umbrella shape (`Cell`, `List`, or
+  `Store` alike). "Anything reactive" → `typeof x?.get === 'function'`.
 
 ## Available Skills
 

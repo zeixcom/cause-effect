@@ -28,7 +28,7 @@ JSDoc in `src/`.
 
 - **Active voice.** "The effect reads the signal" not "The signal is read by the effect."
   Passive voice is acceptable only when the actor is unknown or irrelevant.
-- **Present tense for facts and behavior.** "`createMemo()` recomputes when a dependency
+- **Present tense for facts and behavior.** "`deriveComputed()` recomputes when a dependency
   changes," not "will recompute" or "would recompute."
 - **Imperative mood for instructions.** "Read the source before writing" not "You should read
   the source before writing."

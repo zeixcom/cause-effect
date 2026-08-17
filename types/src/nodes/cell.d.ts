@@ -65,7 +65,7 @@ declare function createCell<T extends {}>(value: T, options?: CellOptions<T>): M
  *
  * | `input` | `options` | Origin | Replaces |
  * |---|---|---|---|
- * | sync function | — | Synchronous derivation | `deriveComputed` |
+ * | sync function | — | Synchronous derivation | `createMemo` |
  * | async function | `initial` optional | Asynchronous derivation | — |
  * | seed value | `watched` required | External push | — |
  *

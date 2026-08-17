@@ -76,7 +76,7 @@ the library.
 
 **Consistency checks:**
 - "The Familiar Core" table references current factory function names (`createState`,
-  `createMemo`, `createEffect`)
+  `deriveComputed`, `createEffect`)
 - "What Works Differently" sections describe current behavior accurately
 - "Beyond the Basics" signal type sections use current factory signatures and options
 - Code examples compile against current `index.ts`

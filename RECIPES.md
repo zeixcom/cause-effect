@@ -19,7 +19,7 @@ A common challenge in UI development is orchestrating a multi-step form or wizar
 ### Example
 
 ```typescript
-import { createState, createMemo, createStore } from '@zeix/cause-effect';
+import { createState, deriveComputed, createStore } from '@zeix/cause-effect';
 
 // 1. Individual step states encapsulated in Stores
 const step1Data = createStore({ name: '', email: '' });
@@ -30,18 +30,18 @@ const currentStep = createState(1);
 const totalSteps = 2;
 
 // 3. Step validation using derived Memos
-const isStep1Valid = createMemo(() => {
+const isStep1Valid = deriveComputed(() => {
   const data = step1Data.get();
   return data.name.length > 0 && data.email.includes('@');
 });
 
-const isStep2Valid = createMemo(() => {
+const isStep2Valid = deriveComputed(() => {
   const data = step2Data.get();
   return ['basic', 'pro'].includes(data.plan);
 });
 
 // 4. Overall Wizard State Machine computed declaratively
-const wizardState = createMemo(() => {
+const wizardState = deriveComputed(() => {
   const step = currentStep.get();
   
   // Conditionally track only the current step's validity
@@ -93,7 +93,7 @@ Use a `List` to manage structural integrity (adding or removing items). A `List`
 ### Example
 
 ```typescript
-import { createList, createMemo, createEffect, deriveList, batch } from '@zeix/cause-effect';
+import { createList, deriveComputed, createEffect, deriveList, batch } from '@zeix/cause-effect';
 
 // 1. Define a complex nested list structure using a stable key
 const workspaces = createList([
@@ -107,7 +107,7 @@ const activeMemberCount = deriveList(workspaces, workspace => {
   return workspace.active ? workspace.members.length : 0;
 });
 
-const totalCount = createMemo(() => 
+const totalCount = deriveComputed(() => 
   activeMemberCount.get().reduce((sum, count) => sum + count, 0)
 );
 
@@ -209,7 +209,7 @@ An `ok` or `err` handler needs to do asynchronous work. Handlers may return a `P
 Split the two cases:
 
 - **Fire-and-forget external work** — analytics, an IndexedDB write, a toast notification — belongs in an async handler. A cleanup function returned by the resolved `Promise` is registered and runs synchronously before the next re-run.
-- **Async work that drives reactive state** belongs in an async derivation (`deriveSignal(asyncFn)` or `createTask`). It receives an `AbortSignal`, cancels automatically when its dependencies change, and exposes pending, resolved, and error states that compose with `nil` and `err`.
+- **Async work that drives reactive state** belongs in an async derivation (`deriveCell(asyncFn)`). It receives an `AbortSignal`, cancels automatically when its dependencies change, and exposes pending, resolved, and error states that compose with `nil` and `err`.
 
 ### Example
 
@@ -223,7 +223,7 @@ createEffect(() => match(trigger, {
 }))
 
 // ✓ Do: derive the async value, read it in match()
-const result = createTask(async (_, abortSignal) =>
+const result = deriveCell(async (_, abortSignal) =>
   fetch('/api/data', { signal: abortSignal }).then(r => r.json()))
 
 createEffect(() => match(result, {
@@ -249,17 +249,17 @@ An event listener, a WebSocket, or a `MutationObserver` should exist only while 
 
 ### The Architecture
 
-The seed forms of `deriveSignal`, `deriveList`, and `deriveStore` — and `createSensor` — take a `watched` callback in their options. `Store` and `List` accept one as the `watched` option too. In every case the callback runs when an effect first reads the signal, and its returned cleanup runs when no effect watches it any more. A seed-form callback receives an `emit` function; a Store or List `watched` callback receives nothing.
+The seed forms of `deriveCell`, `deriveList`, and `deriveStore` — and the internal-only `createSensor`, reached through `deriveCell`'s dispatch — take a `watched` callback in their options. `Store` and `List` accept one as the `watched` option too. In every case the callback runs when an effect first reads the signal, and its returned cleanup runs when no effect watches it any more. A seed-form callback receives an `emit` function; a Store or List `watched` callback receives nothing.
 
 Derivations with a function input also accept `watched`, but their callback receives an `invalidate` function instead. This activates a derivation that must react to an external event as well as to its tracked dependencies.
 
 ### Example
 
 ```js
-import { createSensor, deriveList, createEffect } from '@zeix/cause-effect'
+import { deriveCell, deriveList, createEffect } from '@zeix/cause-effect'
 
-// Sensor: track external input
-const windowSize = createSensor({
+// External-push cell (Sensor origin): track external input
+const windowSize = deriveCell({ w: 0, h: 0 }, {
   watched: (emit) => {
     const update = () => emit({ w: innerWidth, h: innerHeight })
     update()
@@ -308,7 +308,7 @@ createEffect(() => {
 ### The `invalidate` pattern
 
 ```js
-const changes = createMemo((prev) => {
+const changes = deriveComputed((prev) => {
   const next = new Set(parent.querySelectorAll(selector))
   // ... diff prev vs next ...
   return { current: next, added, removed }

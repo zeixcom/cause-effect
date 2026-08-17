@@ -13,16 +13,33 @@ Value types are indexed by **shape** (single value, keyed sequence, keyed record
 property of construction. See Construction below.
 
 **Signal**:
-The single-value shape — one reactive value, read with `get()`. Created by `createSignal()`
-(mutable) or `deriveSignal()` and the narrow factories it dispatches to. `isSignal()` narrows
-to this shape; `List` and `Store` have their own guards.
-_Avoid_: observable, atom, ref, cell, reactive value, and the retired origin type names
-`State`, `Memo`, `Task`, `Sensor` (they survive only as narrow-factory names)
+The umbrella value-type shape — any value type readable with `get()`: **Cell**, **List**, or
+**Store** alike, matched structurally, not by tag. `isSignal()` narrows to this membership.
+Restored to its v1.x umbrella meaning; use **Cell** when only the narrow single-value shape
+is meant.
+_Avoid_: observable, ref, reactive value
 
 **MutableSignal**:
-The mutable extension of **Signal** — adds `set()` and `update()`. `isMutableSignal()` narrows
-to it. **Slot** is excluded by design; see Flagged Ambiguities.
+The umbrella's mutable counterpart — a writable **Cell**, **List**, or **Store** alike.
+`isMutableSignal()` narrows to it. Has no exported type; annotate as
+`Signal<T> & { set(value: T): void }`, or use the shape's mutable type
+(`MutableCell`/`MutableList`/`MutableStore`) directly. Distinct from **MutableCell**, the
+mutable extension of the narrow single-value shape.
 _Avoid_: writable signal, settable signal, source signal
+
+**Cell**:
+The single-value shape — one reactive value, read with `get()`. The tag is narrowed to the
+`'Cell'` literal, so no other shape is structurally assignable to `Cell` merely by carrying a
+`get()` method. Created by `createCell()` (mutable) or `createState()`, or by `deriveCell()`
+and the narrow factory it dispatches to, `deriveComputed()`. `isCell()` narrows to this shape;
+`List` and `Store` have their own guards.
+_Avoid_: observable, atom, ref, reactive value, and the retired origin type names `State`,
+`Memo`, `Task`, `Sensor` (they survive only as narrow-factory names)
+
+**MutableCell**:
+The mutable extension of **Cell** — adds `set()` and `update()`. `isMutableCell()` narrows to
+it. **Slot** is excluded by design; see Flagged Ambiguities.
+_Avoid_: writable cell, settable cell, source cell
 
 **List**:
 The keyed-sequence shape — an ordered array of items with stable keys and per-item
@@ -60,7 +77,7 @@ delegates to the backing Signal, and `replace()` swaps that Signal without break
 **Edge** connections. Created with `createSlot()`. Backed by a `MemoNode`.
 
 A Slot is **not** an event bus, a channel, or an emitter. It is also not a value owner, which
-is why it has no `update()` method and is excluded from **MutableSignal**.
+is why it has no `update()` method and is excluded from **MutableCell**.
 _Avoid_: event bus, channel, emitter, port, container, wrapper, holder, proxy
 
 ## Graph Roles
@@ -69,7 +86,9 @@ _Avoid_: event bus, channel, emitter, port, container, wrapper, holder, proxy
 The internal record that backs a value type. Composed from field mixins (`SourceFields`,
 `SinkFields`, `OwnerFields`, `AsyncFields`). Not public API — use **Node** in
 `ARCHITECTURE.md`, `AGENTS.md`, and code comments only.
-_Avoid_: cell, atom, vertex, object
+_Avoid_: atom, vertex, object, and "cell" as a synonym for this internal record — **Cell** is
+the public single-value type name (see Value Types); the two coexist because Node is
+internal-only prose and Cell is public API, not because "cell" is banned outright
 
 **Edge**:
 The connection from a **Source** to a **Sink**, stored as a doubly-linked list on both ends.
@@ -78,7 +97,7 @@ _Avoid_: link (as a noun), connection, subscription, arrow, reference
 
 **Source**:
 The graph role of a Node that supplies a value to others. Has `SourceFields`. A Source is not
-necessarily a leaf: a derived Signal, a Store, a List, and a Slot are each a Source **and** a
+necessarily a leaf: a derived Cell, a Store, a List, and a Slot are each a Source **and** a
 **Sink**.
 _Avoid_: producer, publisher, parent, input signal
 
@@ -153,14 +172,16 @@ type and picks the origin from its input. Route by "you have Y, you want X → c
 
 | You have | You want single value | You want keyed sequence | You want keyed record |
 |---|---|---|---|
-| A value you own | `createSignal(value)` | `createList(array)` | `createStore(record)` |
-| Other signals, sync | `deriveSignal(fn)` | `deriveList(fn)` | `deriveStore(fn)` |
-| Other signals, async | `deriveSignal(asyncFn)` | `deriveList(asyncFn, { initial })` | `deriveStore(asyncFn, { initial })` |
-| An external source | `deriveSignal(seed, { watched })` | `deriveList(seed, { watched })` | `deriveStore(seed, { watched })` |
+| A value you own | `createCell(value)` | `createList(array)` | `createStore(record)` |
+| Other signals, sync | `deriveCell(fn)` | `deriveList(fn)` | `deriveStore(fn)` |
+| Other signals, async | `deriveCell(asyncFn)` | `deriveList(asyncFn, { initial })` | `deriveStore(asyncFn, { initial })` |
+| An external source | `deriveCell(seed, { watched })` | `deriveList(seed, { watched })` | `deriveStore(seed, { watched })` |
 | A source array + item transform | — | `deriveList(source, itemFn)` | — |
 
-- The narrow factories `createState`, `createMemo`, `createTask`, and `createSensor` construct
-  the same shapes with one origin each. They exist for tree-shaking, not vocabulary.
+- The narrow factories `createState` and `deriveComputed` construct the same single-value
+  shape with one origin each (sync value, sync derivation). They exist for tree-shaking, not
+  vocabulary. `createTask` and `createSensor` are internal-only; `deriveCell` dispatches to
+  them for the async and external-push origins.
 - `watched` is an option, never a callback position. A seed input takes `(emit) => Cleanup`;
   a function input takes `(invalidate) => Cleanup`.
 - The before-first-computation option is `initial` on every factory. The first positional
@@ -186,12 +207,13 @@ _Avoid_: comparator, equality function, differ, comparison
 ## Relationships
 
 - A value type is backed by a **Node**; the Node is internal and the value type is public.
-- A **Node** acts as a **Source**, a **Sink**, or both. A `createSignal` result is a Source
-  only. An **Effect** is a Sink only. A derived Signal, a Store, a List, and a Slot are both.
+- A **Node** acts as a **Source**, a **Sink**, or both. A `createCell` result is a Source
+  only. An **Effect** is a Sink only. A derived Cell, a Store, a List, and a Slot are both.
 - A **Sink** reads a **Source**, which creates an **Edge**. That relationship is a
   **Dependency**.
-- A **MutableSignal** is a **Signal** with `set()` and `update()`. The same extension holds for
-  **MutableList** over **List** and **MutableStore** over **Store**.
+- A **MutableCell** is a **Cell** with `set()` and `update()`. The same extension holds for
+  **MutableList** over **List** and **MutableStore** over **Store** — and, at the umbrella
+  level, **MutableSignal** over **Signal**.
 - An **Owner** is an **Effect** or a **Scope**. It holds **Cleanup** functions and disposes its
   children.
 - A **Source** becomes **Watched** when an **Effect** depends on it, directly or transitively.
@@ -199,10 +221,13 @@ _Avoid_: comparator, equality function, differ, comparison
 - A **Batch** defers the **Flush**. Each **Flush** runs one or more **Pass** iterations.
 - A **Slot** delegates to a backing **Signal** and can `replace` it without breaking its
   **Edge** connections.
-- There is no umbrella noun for "anything with a `.get()`". Say **value types** for the six,
-  and name **Effect** and **Slot** separately. For "is this any reactive value at all", use
-  the structural check `typeof x?.get === 'function'` — it also accepts descriptor-like
-  objects a tag check never would.
+- **Signal** is the umbrella noun for "anything with a `.get()`", matched structurally by
+  `isSignal()` — not by tag. It covers **Cell**, **List**, and **Store** alike, and also
+  matches **Slot** (which has `get()`) structurally, though prose should name a Slot as a
+  Slot rather than folding it into "Signal". An **Effect** never satisfies the check and is
+  not a Signal. Say **value types** for the six shape × mutability variants
+  (`Cell`/`MutableCell`, `List`/`MutableList`, `Store`/`MutableStore`) when precision about
+  shape matters.
 
 ## Example Dialogue
 
@@ -213,8 +238,8 @@ _Avoid_: comparator, equality function, differ, comparison
 
 > **Dev:** "Can I use a **Slot** to broadcast events to several **Effect** instances?"
 > **Architect:** "No. A Slot is a forwarding layer to a swappable backing **Signal**, not an
-> event bus. It has no `emit()`. Use `createSignal` and write to it, or the external-push
-> form of `deriveSignal` if the events come from outside the graph."
+> event bus. It has no `emit()`. Use `createCell` and write to it, or the external-push
+> form of `deriveCell` if the events come from outside the graph."
 
 ## Flagged Ambiguities
 
@@ -223,15 +248,13 @@ without access to the source, reconstructed Slot as an event bus with `emit()`/`
 a rename is decided, every Slot mention in prose states what a Slot is not. A rename is under
 consideration for the next major version; no ADR is written yet.
 
-**Slot is not a MutableSignal** — a recurring source of confusion, because a Slot has `get()`
-and `set()` and therefore looks writable. It is excluded from `isMutableSignal()` deliberately:
-a Slot forwards, it does not own a value, and it has no `update()`. Do not describe a Slot as
-writable without also naming the exclusion.
-
-**`isSignal` matches one shape** — the guard name suggests "any signal", but it matches only
-the single-value shape. `List`, `Store`, and `Slot` have their own guards. Writers recovering a
-former umbrella meaning must use the structural `.get()` check instead, never widen the prose
-meaning of `isSignal`.
+**Slot is not a MutableCell** — a recurring source of confusion, because a Slot has `get()`
+and `set()` and therefore looks writable. It is excluded from `isMutableCell()` deliberately:
+`isMutableCell` requires the `Cell` tag, and a Slot carries the `Slot` tag instead. A Slot
+does satisfy `isMutableSignal()`, the umbrella guard, because that guard is structural — but
+that is the broad "any writable shape" sense, not a claim that a Slot owns a value. A Slot
+forwards, it does not own a value, and it has no `update()`. Do not describe a Slot as a
+MutableCell without also naming the exclusion.
 
 **Pass collides with Le Truc** — in Cause & Effect, **Pass** means one iteration of the
 **Flush** loop. In Le Truc's `CONTEXT.md`, **Pass** means live Signal sharing between component

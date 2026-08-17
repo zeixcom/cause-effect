@@ -107,11 +107,11 @@ React props are values passed on every render, not signals. To make a prop react
 
 ```ts
 import { useLayoutEffect, useMemo } from 'react'
-import { createSignal } from '@zeix/cause-effect'
-import type { MutableSignal } from '@zeix/cause-effect'
+import { createCell } from '@zeix/cause-effect'
+import type { MutableCell } from '@zeix/cause-effect'
 
-function useSignalProp<T extends {}>(value: T): MutableSignal<T> {
-  const signal = useMemo(() => createSignal(value), [])
+function useSignalProp<T extends {}>(value: T): MutableCell<T> {
+  const signal = useMemo(() => createCell(value), [])
   useLayoutEffect(() => { signal.set(value) }, [value])
   return signal
 }
@@ -173,7 +173,7 @@ The cleanup semantics from `match()` — cleanup runs before the next handler di
 useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 ```
 
-For an async derivation (`deriveSignal(asyncFn)`, `createTask`), the server snapshot should return the nil/pending state, or a pre-fetched value if one was provided via `initial`. React's streaming SSR handles async resolution through Suspense boundaries.
+For an async derivation (`deriveCell(asyncFn)`, internally Task), the server snapshot should return the nil/pending state, or a pre-fetched value if one was provided via `initial`. React's streaming SSR handles async resolution through Suspense boundaries.
 
 ## Package Shape
 

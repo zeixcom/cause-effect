@@ -25,7 +25,8 @@ type KeyConfig<T> = string | ((item: T) => string | undefined);
  * @template S - The item-signal type. Bound to the umbrella `Signal<T>`, not the narrow
  *   `Cell<T>` — `createItem` is an explicit, opt-in customization point, so a `Store`- or
  *   `List`-shaped item signal is legitimate here, unlike the accidental structural
- *   assignability ADR-0018 Revision Problem 1 closes elsewhere. See ADR-0018 and CE-011.
+ *   assignability ADR-0018 §1 closes elsewhere: a `List` is never structurally assignable to
+ *   `Cell<T>` merely by having `get()`. See ADR-0018 and CE-011.
  */
 type ItemSignalOptions<T extends {}, S extends Signal<T>> = {
     /** Key generation strategy. A string prefix or a function `(item) => string | undefined`. Defaults to auto-increment. */

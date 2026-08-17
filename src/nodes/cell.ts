@@ -97,7 +97,7 @@ function createCell<T extends {}>(
  *
  * | `input` | `options` | Origin | Replaces |
  * |---|---|---|---|
- * | sync function | — | Synchronous derivation | `deriveComputed` |
+ * | sync function | — | Synchronous derivation | `createMemo` |
  * | async function | `initial` optional | Asynchronous derivation | — |
  * | seed value | `watched` required | External push | — |
  *

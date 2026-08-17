@@ -39,8 +39,8 @@ For implementing tasks, use `cause-effect-dev` or `tech-writer`.
 
 - [x] CE-002: Brief task title — done, pending review ⏳
   **Skill:** cause-effect-dev
-  **Changed:** `src/nodes/memo.ts` (new `createMemo()` overload, lines 42–90)
-  **How:** Follows the same pattern as `createTask()` but synchronous.
+  **Changed:** `src/nodes/memo.ts` (new `deriveComputed()` overload, lines 42–90)
+  **How:** Follows the same pattern as `createTask()` (internal, reached via `deriveCell`) but synchronous.
   **Check:** Ergonomics of the new overload; consistent naming with existing API?
 
 - [x] CE-003: Brief task title — reviewed ✓

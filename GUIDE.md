@@ -9,16 +9,16 @@ The three building blocks map directly to what you already use:
 | Concept | React | Vue | Angular | Cause & Effect |
 |---------|-------|-----|---------|----------------|
 | Mutable state | `useState` | `ref()` | `signal()` | `createState()` |
-| Derived value | `useMemo` | `computed()` | `computed()` | `createMemo()` |
+| Derived value | `useMemo` | `computed()` | `computed()` | `deriveComputed()` |
 | Side effect | `useEffect` | `watchEffect()` | `effect()` | `createEffect()` |
 
 Here is how they work together:
 
 ```ts
-import { createState, createMemo, createEffect } from '@zeix/cause-effect'
+import { createState, deriveComputed, createEffect } from '@zeix/cause-effect'
 
 const count = createState(0)
-const doubled = createMemo(() => count.get() * 2)
+const doubled = deriveComputed(() => count.get() * 2)
 
 createEffect(() => {
   console.log(`${count.get()} doubled is ${doubled.get()}`)
@@ -52,11 +52,11 @@ create(set => ({
 }))
 ```
 
-`createTask()` and `match()` replace all of it:
+`deriveCell()` and `match()` replace all of it:
 
 ```ts
 const userId = createState(1)
-const user = createTask(async (_prev, abortSignal) => {
+const user = deriveCell(async (_prev, abortSignal) => {
   const res = await fetch(`/api/users/${userId.get()}`, { signal: abortSignal })
   return res.json()
 })
@@ -84,12 +84,12 @@ The sections below cover only what is specific to each library.
 | Redux Toolkit | Cause & Effect |
 |---|---|
 | State field in `createSlice` | `createState()` |
-| `createSelector` (Reselect) | `createMemo()` |
-| `createAsyncThunk` | `createTask()` |
+| `createSelector` (Reselect) | `deriveComputed()` |
+| `createAsyncThunk` | `deriveCell()` |
 | `createEntityAdapter` | `createList()` |
 | `pending` / `fulfilled` / `rejected` | `nil` / `ok` / `err` in `match()` |
 
-**Derived state.** Reselect's `createSelector` requires explicit input selectors to memoize derived values. `createMemo()` tracks dependencies by reading — any signal accessed inside the memo is a dependency. When the memo recomputes to the same value, propagation stops, without any selector discipline:
+**Derived state.** Reselect's `createSelector` requires explicit input selectors to memoize derived values. `deriveComputed()` tracks dependencies by reading — any signal accessed inside the memo is a dependency. When the memo recomputes to the same value, propagation stops, without any selector discipline:
 
 ```ts
 // Redux Toolkit: explicit input selectors
@@ -102,7 +102,7 @@ const selectFiltered = createSelector(
 
 ```ts
 // Cause & Effect: dependencies are tracked by reading
-const filtered = createMemo(() =>
+const filtered = deriveComputed(() =>
   items.get().filter(i => i.type === filter.get())
 )
 ```
@@ -122,11 +122,11 @@ todos.sort((a, b) => a.text.localeCompare(b.text)) // 't1' still points to the s
 | Zustand | Cause & Effect |
 |---|---|
 | `create(set => ({ ... }))` | `createState()` / `createStore()` |
-| Async function calling `set()` | `createTask()` |
+| Async function calling `set()` | `deriveCell()` |
 | Manual `loading` / `error` flags | `match(nil/err/stale/ok)` |
-| `subscribeWithSelector` | `createMemo()` |
+| `subscribeWithSelector` | `deriveComputed()` |
 
-Zustand has no async primitive at all. The state machine above is exactly what you write in the store, for every async call, with no `AbortSignal` anywhere. Most Zustand users add TanStack Query for server state precisely to avoid it. `createTask()` covers all async, not only HTTP.
+Zustand has no async primitive at all. The state machine above is exactly what you write in the store, for every async call, with no `AbortSignal` anywhere. Most Zustand users add TanStack Query for server state precisely to avoid it. `deriveCell()` covers all async, not only HTTP.
 
 ---
 
@@ -137,8 +137,8 @@ Jotai's mental model is closest to Cause & Effect: atoms are independent, compos
 | Jotai | Cause & Effect |
 |---|---|
 | `atom(value)` | `createState()` |
-| `atom(get => ...)` | `createMemo()` |
-| `atom(async (get) => ...)` | `createTask()` |
+| `atom(get => ...)` | `deriveComputed()` |
+| `atom(async (get) => ...)` | `deriveCell()` |
 | `atomFamily(key)` | `list.byKey(key)` |
 | Keys atom + `atomFamily` | `createList()` |
 | `loadable(atom)` | `match(nil/err/ok)` |
@@ -189,9 +189,9 @@ return <Profile user={data!} />  // ! required — TypeScript cannot narrow furt
 
 Inside `match()`'s `ok` handler the value is `User`, and no assertion is needed.
 
-**Where TanStack Query still wins.** For HTTP server state specifically — caching identical requests across components, background refetch intervals, tag-based cache invalidation, optimistic mutations, paginated and infinite queries — TanStack Query remains the better tool. The two compose well: feed query results into a `createState()` or `createSensor()`, and let Cause & Effect handle derived computation on top.
+**Where TanStack Query still wins.** For HTTP server state specifically — caching identical requests across components, background refetch intervals, tag-based cache invalidation, optimistic mutations, paginated and infinite queries — TanStack Query remains the better tool. The two compose well: feed query results into a `createState()` or a `deriveCell()` seeded external-push cell, and let Cause & Effect handle derived computation on top.
 
-**Where `createTask()` fills the gap.** TanStack Query is designed for fetch-based server state. For client-side async — IndexedDB reads, WebWorker results, WebSocket-derived values, or any async derivation that depends on other signals — `createTask()` provides the same `AbortSignal`, stale state, and type-safe routing, for any async operation in the graph.
+**Where `deriveCell()` fills the gap.** TanStack Query is designed for fetch-based server state. For client-side async — IndexedDB reads, WebWorker results, WebSocket-derived values, or any async derivation that depends on other signals — `deriveCell()` with an async function provides the same `AbortSignal`, stale state, and type-safe routing, for any async operation in the graph.
 
 ## What Works Differently
 
@@ -255,7 +255,7 @@ createEffect(() => {
 })
 ```
 
-If you need a value derived from itself (a running total, a counter), compute it with `createMemo()` instead of writing back into the signal an effect reads.
+If you need a value derived from itself (a running total, a counter), compute it with `deriveComputed()` instead of writing back into the signal an effect reads.
 
 ### Effects write outward, not inward
 
@@ -281,7 +281,7 @@ createEffect(() => {
 createEffect(() => {
   fullName.set(`${user.firstName.get()} ${user.lastName.get()}`)
 })
-const fullName = deriveSignal(() =>
+const fullName = deriveCell(() =>
   `${user.firstName.get()} ${user.lastName.get()}`,
 )
 ```
@@ -300,7 +300,7 @@ count.get() // type is number, guaranteed non-null
 
 This is a deliberate design decision. In frameworks, nullable state leads to defensive checks scattered across templates and hooks. Here, the type system prevents it.
 
-`createSensor()` and `createTask()` are the one exception: unlike `createState()`, they have no synthetic initial value, because there genuinely isn't one yet — no mouse position before the first `mousemove`, no response before the fetch resolves. Calling `.get()` before that first value arrives throws `UnsetSignalValueError` rather than returning `null`. `match()` is the idiomatic way to handle this — it routes to a `nil` branch instead of you writing `try`/`catch` around every read:
+The async origin of `deriveCell()` is the one exception: unlike `createState()`, it has no synthetic initial value unless you pass `initial`, because there genuinely isn't one yet — no response before the fetch resolves. Calling `.get()` before that first value arrives throws `UnsetSignalValueError` rather than returning `null`. `match()` is the idiomatic way to handle this — it routes to a `nil` branch instead of you writing `try`/`catch` around every read:
 
 ```ts
 createEffect(() => {
@@ -313,8 +313,8 @@ createEffect(() => {
 
 **What to do instead:**
 
-- For async results: use `createTask()` — a Task without reactive dependencies works like a Promise that resolves into the graph. Use `match()` to handle the pending state.
-- For external input that starts undefined: use `createSensor()` with its lazy `watched` callback, and `match()` to handle the unset state — or pass `initial` in its options if a sensible default exists.
+- For async results: use `deriveCell()` with an async function — a Task-origin cell without reactive dependencies works like a Promise that resolves into the graph. Use `match()` to handle the pending state.
+- For external input: use `deriveCell(seed, { watched })` with its lazy `watched` callback. The seed doubles as the initial value, so pick one that matches your `nil`/`ok` handling — `match()` still handles the case where a sensible default doesn't exist.
 - For optional state: use a discriminated union, an empty string, an empty array, `0`, or `false` — whatever the zero value for your type is:
 
 ```ts
@@ -381,10 +381,10 @@ point.set({ x: 0, y: 0 }) // no update — values are equal
 `equals` doesn't just gate this one signal — when a value is considered equal, propagation stops for its entire downstream subtree. Nothing further down recomputes or re-runs, even if it would have produced a different result. A memo that recomputes to a new object on every run would normally propagate every time (a fresh object is never `===` the old one) — `DEEP_EQUALITY` changes that, comparing by structure instead of reference:
 
 ```ts
-import { createState, createMemo, createEffect, DEEP_EQUALITY } from '@zeix/cause-effect'
+import { createState, deriveComputed, createEffect, DEEP_EQUALITY } from '@zeix/cause-effect'
 
 const source = createState({ x: 1, y: 2, z: 3 })
-const point = createMemo(
+const point = deriveComputed(
   () => ({ x: source.get().x, y: source.get().y }),
   { equals: DEEP_EQUALITY } // structural, not reference, comparison
 )
@@ -401,7 +401,7 @@ The primitives above cover what most reactive libraries provide. The following s
 
 ### Task: async derivations with cancellation
 
-In React, async data fetching needs `useEffect` plus cleanup plus state management, or a dedicated library. In Angular, you reach for RxJS and `switchMap`. In Cause & Effect, `createTask()` is a signal that happens to be async. [The async state machine](#the-async-state-machine-they-all-make-you-write) above shows the full pattern.
+In React, async data fetching needs `useEffect` plus cleanup plus state management, or a dedicated library. In Angular, you reach for RxJS and `switchMap`. In Cause & Effect, `deriveCell()` with an async function is a signal that happens to be async. [The async state machine](#the-async-state-machine-they-all-make-you-write) above shows the full pattern.
 
 `switchMap` is the closest analogue: both cancel the previous in-flight operation when a new input arrives. The difference is that a Task is a value you read, not a stream you subscribe to. Nothing downstream needs to know it was ever asynchronous.
 
@@ -475,12 +475,12 @@ The item function can itself be async; each item's computation then cancels when
 
 ### Sensor: lazy external input
 
-Frameworks typically manage event listeners inside component lifecycle hooks (`useEffect`, `onMounted`, `ngOnInit`). In Cause & Effect, `createSensor()` encapsulates external input with automatic resource management:
+Frameworks typically manage event listeners inside component lifecycle hooks (`useEffect`, `onMounted`, `ngOnInit`). In Cause & Effect, `deriveCell()` with a seed value and a `watched` option encapsulates external input with automatic resource management:
 
 ```ts
-import { createSensor, createEffect } from '@zeix/cause-effect'
+import { deriveCell, createEffect } from '@zeix/cause-effect'
 
-const windowSize = createSensor<{ w: number; h: number }>({
+const windowSize = deriveCell({ w: 0, h: 0 }, {
   watched: emit => {
     const update = () => emit({ w: innerWidth, h: innerHeight })
     update()
@@ -494,14 +494,14 @@ The `watched` callback runs lazily — only when an effect first reads the senso
 
 ### Slot: stable property delegation
 
-A Slot is a forwarding layer to a swappable backing signal, and it holds no value of its own. It has no `update()` method, and `isMutableSignal()` excludes it.
+A Slot is a forwarding layer to a swappable backing signal, and it holds no value of its own. It has no `update()` method, and `isMutableCell()` excludes it — though the broader, structural `isMutableSignal()` does match it.
 
 If you are building a component system, you often need to expose signals as object properties via `Object.defineProperty()`. The challenge arises when a property must switch its backing signal without breaking existing sinks. A property may switch from a local writable signal to a parent-controlled derived signal.
 
 `createSlot()` solves this. It provides a stable reactive source that delegates to a swappable backing signal. The slot object itself is a valid property descriptor:
 
 ```ts
-import { createState, createMemo, createSlot, createEffect } from '@zeix/cause-effect'
+import { createState, deriveComputed, createSlot, createEffect } from '@zeix/cause-effect'
 
 const local = createState('default')
 const slot = createSlot(local)
@@ -510,7 +510,7 @@ Object.defineProperty(element, 'label', slot)
 createEffect(() => console.log(element.label)) // logs: "default"
 
 // Parent provides a derived value — swap without breaking the effect
-const parentLabel = createMemo(() => `Parent: ${parentState.get()}`)
+const parentLabel = deriveComputed(() => `Parent: ${parentState.get()}`)
 slot.replace(parentLabel) // effect re-runs with new value
 ```
 
@@ -524,18 +524,19 @@ Framework code rarely needs these. They matter when you write a layer that accep
 
 | Predicate | True for |
 |---|---|
-| `isSignal(value)` | The single-value shape — `createSignal`, `deriveSignal`, `createState`, `createMemo`, `createTask`, `createSensor` outputs |
-| `isMutableSignal(value)` | The single-value shape with `.set()` / `.update()` |
+| `isCell(value)` | The single-value shape — `createCell`, `deriveCell`, `createState`, `deriveComputed` outputs |
+| `isMutableCell(value)` | The single-value shape with `.set()` / `.update()` |
 | `isList(value)` / `isMutableList(value)` | The keyed-sequence shape (`deriveList` / `createList`) |
 | `isStore(value)` / `isMutableStore(value)` | The keyed-record shape (`deriveStore` / `createStore`) |
 | `isSlot(value)` | A `Slot` |
+| `isSignal(value)` / `isMutableSignal(value)` | The umbrella shape — a `Cell`, `List`, or `Store` alike, matched structurally |
 
 Two facts about the guards prevent surprises:
 
-- `isSignal()` matches only the single-value shape. A `List`, a `Store`, and a `Slot` each have their own guard. Guarding a value that may be any of them? Check the shape you mean, in the order your code handles them.
-- For "is this any reactive value at all", do not reach for a guard. Use the structural check — `typeof x?.get === 'function'`. It accepts every signal shape and descriptor-like objects a tag check never would.
+- `isCell()` matches only the single-value shape. A `List`, a `Store`, and a `Slot` each have their own guard. Guarding a value that may be any specific shape? Check the shape you mean with the narrow guard, in the order your code handles them.
+- `isSignal()` is the umbrella check — structurally `typeof x?.get === 'function'`, the same test spelled out as a named guard. It matches `Cell`, `List`, and `Store` alike, and also a `Slot` or any other descriptor-like object with a `get()` method. Use it (or the equivalent inline structural check) for "is this any reactive value at all."
 
-`Signal<T>`, `List<T, S>`, and `Store<T>` are the TypeScript types behind the readonly guards; `MutableSignal<T>`, `MutableList<T, S>`, and `MutableStore<T>` behind the mutable ones. Use the readonly types as parameter types and accept anything derived. `isSignalOfType(value, type)` remains the primitive all guards are built on.
+`Cell<T>`, `List<T, S>`, and `Store<T>` are the TypeScript types behind the narrow readonly guards; `MutableCell<T>`, `MutableList<T, S>`, and `MutableStore<T>` behind the narrow mutable ones. `Signal<T>` is the umbrella type; `MutableSignal` has no exported type — annotate as `Signal<T> & { set(value: T): void }`. Use the readonly types as parameter types and accept anything derived. `isSignalOfType(value, type)` remains the primitive the narrow guards are built on.
 
 ## Choosing the Right Signal
 
@@ -543,15 +544,15 @@ Two questions decide the shape: what kind of data is it, and who produces it? Co
 
 | You have / you want | Single value | Keyed sequence | Keyed record |
 |---|---|---|---|
-| A value you own | `createSignal(value)` | `createList(array)` | `createStore(record)` |
-| Other signals (sync) | `deriveSignal(fn)` | `deriveList(fn)` | `deriveStore(fn)` |
-| Other signals (async) | `deriveSignal(asyncFn)` | `deriveList(asyncFn, { initial })` | `deriveStore(asyncFn, { initial })` |
-| An external source | `deriveSignal(seed, { watched })` | `deriveList(seed, { watched })` | `deriveStore(seed, { watched })` |
+| A value you own | `createCell(value)` | `createList(array)` | `createStore(record)` |
+| Other signals (sync) | `deriveCell(fn)` | `deriveList(fn)` | `deriveStore(fn)` |
+| Other signals (async) | `deriveCell(asyncFn)` | `deriveList(asyncFn, { initial })` | `deriveStore(asyncFn, { initial })` |
+| An external source | `deriveCell(seed, { watched })` | `deriveList(seed, { watched })` | `deriveStore(seed, { watched })` |
 | A source array + item transform | — | `deriveList(source, itemFn)` | — |
 
 Notes on the matrix:
 
 - The async forms for `List` and `Store` require `initial`, so a derived collection is never unset. `isPending(signal)` distinguishes loading-empty from resolved-empty. A derived single value stays unset until the first resolution unless you pass `initial` — `match()`'s `nil` branch depends on that.
-- The external-source forms take a seed value plus a `watched` lifecycle in options. The callback receives an `emit` function shaped for the target: `emit(value)` for a single value, `emit(changes)` for a list, `emit(patch)` for a store.
-- The narrow factories `createState`, `createMemo`, `createTask`, and `createSensor` construct the same shapes with a single origin each. They exist for tree-shaking — an import of one construction path must not pull in the others. `deriveSignal` dispatches to them internally.
+- The external-source forms take a seed value plus a `watched` lifecycle in options. The callback receives an `emit` function shaped for the target: `emit(value)` for a single value, `emit(changes)` for a list, `emit(patch)` for a store. For `Cell`, the seed doubles as the initial value — there is no unset external-push cell through `deriveCell()`.
+- The narrow factories `createState` and `deriveComputed` construct the same single-value shape with a single origin each. They exist for tree-shaking — an import of one construction path must not pull in the others. `deriveCell` dispatches to them internally, and to the internal-only `createTask`/`createSensor` for the async and external-push origins.
 - Do you need a *stable property position* that can swap its backing signal? Use `createSlot(existingSignal)` — integration layers, custom elements, property descriptors.

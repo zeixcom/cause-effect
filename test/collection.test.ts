@@ -1042,7 +1042,8 @@ test('Type Inference for custom createItem', () => {
 	// The item factory's return type is bound to the umbrella `Signal<T>`, not the narrow
 	// `Cell<T>` — `createItem` is explicit, opt-in customization of the per-item signal
 	// shape, so a `Store`- or `List`-shaped item is legitimate here (ADR-0018/CE-011),
-	// unlike the accidental structural leak ADR-0018 Revision Problem 1 closes elsewhere.
+	// unlike the accidental structural leak ADR-0018 §1 closes elsewhere: a `List` is never
+	// structurally assignable to `Cell<T>` merely by having `get()`.
 	type TodoItem = { id: string; text: string; done: boolean }
 	const col = deriveList([] as TodoItem[], {
 		watched: () => () => {},

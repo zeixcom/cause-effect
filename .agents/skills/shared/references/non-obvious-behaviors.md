@@ -77,7 +77,7 @@ upstream sources changed.
 const source = createState({ x: 1, y: 2 })
 
 // This memo compares by x only
-const xOnly = createMemo(
+const xOnly = deriveComputed(
   () => source.get().x,
   { equals: (a, b) => a === b }
 )
@@ -126,46 +126,47 @@ cancellable async operations will cause stale results to overwrite fresh ones.
 
 ```typescript
 // Wrong — fetch is not cancellable; stale response may arrive after a newer one
-const results = createTask(async () => {
+const results = deriveCell(async () => {
   return fetch(`/api/search?q=${query.get()}`).then(r => r.json())
 })
 
 // Correct — abort signal forwarded; stale requests are cancelled
-const results = createTask(async (prev, abortSignal) => {
-  return fetch(`/api/search?q=${query.get()}`, { signal }).then(r => r.json())
+const results = deriveCell(async (prev, abortSignal) => {
+  return fetch(`/api/search?q=${query.get()}`, { signal: abortSignal }).then(r => r.json())
 })
 ```
 </task_abort_on_dependency_change>
 
-<sensor_unset_before_first_value>
-**Reading an external-push signal or an async derivation before it has produced a value
-throws `UnsetSignalValueError`.** Unlike a created signal, these have no initial value — they
-are explicitly "unset" until the first value arrives.
+<async_cell_unset_before_first_value>
+**Reading an async derivation before it has produced a value throws `UnsetSignalValueError`
+unless `initial` is passed.** Unlike a created cell, `deriveCell(asyncFn)` has no synthetic
+initial value by default — it is explicitly "unset" until the first resolution. An
+external-push cell (`deriveCell(seed, { watched })`) does not have this problem: the seed
+argument always doubles as the initial value, so there is no unset external-push cell
+reachable through the public API.
 
-Guard against this with `match`, which provides a `nil` branch for the unset case:
+Guard against the async case with `match`, which provides a `nil` branch for the unset case:
 
 ```typescript
-const tick = createSensor<number>({
-  watched: emit => {
-    const id = setInterval(() => emit(Date.now()), 1000)
-    return () => clearInterval(id)
-  },
+const user = deriveCell(async (_prev, abortSignal) => {
+  const res = await fetch(`/api/users/${userId.get()}`, { signal: abortSignal })
+  return res.json()
 })
 
-// Wrong — throws UnsetSignalValueError on first run, before the interval fires
+// Wrong — throws UnsetSignalValueError on first run, before the fetch resolves
 createEffect(() => {
-  console.log(tick.get())
+  console.log(user.get())
 })
 
 // Correct — match handles the nil (unset) case explicitly
 createEffect(() => {
-  match(tick, {
-    ok:  timestamp => console.log('tick:', timestamp),
-    nil: () => console.log('waiting for first tick…'),
+  match(user, {
+    ok:  data => console.log('user:', data),
+    nil: () => console.log('loading…'),
   })
 })
 ```
-</sensor_unset_before_first_value>
+</async_cell_unset_before_first_value>
 
 <scope_cleanup_is_synchronous>
 **Scope and Effect cleanup runs synchronously when the returned `Cleanup` function is
@@ -175,7 +176,7 @@ children.
 </scope_cleanup_is_synchronous>
 
 <async_requires_async_syntax>
-**Async routing in `deriveSignal` requires the `async`/`await` keyword.**
+**Async routing in `deriveCell` requires the `async`/`await` keyword.**
 The library detects async callbacks by their function prototype
 (`Object.getPrototypeOf(fn) === async-function prototype`), not by their return value, because
 the routing decision is made before the callback ever runs. A *synchronous* function that
@@ -188,10 +189,11 @@ checks the computed value against `instanceof Promise`:
 ```typescript
 // WRONG — sync function returning a Promise becomes a sync derivation.
 // Throws PromiseValueError on first .get().
-const data = deriveSignal((): Promise<number> => fetch('/api').then(r => r.json()))
+const data = deriveCell((): Promise<number> => fetch('/api').then(r => r.json()))
 
-// Correct — async keyword makes isAsyncFunction return true, routing to createTask.
-const data = deriveSignal(async (): Promise<number> => {
+// Correct — async keyword makes isAsyncFunction return true, routing to the
+// internal-only createTask via deriveCell's dispatch.
+const data = deriveCell(async (): Promise<number> => {
   const r = await fetch('/api')
   return r.json()
 })
@@ -226,7 +228,7 @@ The bound also catches cycles *between* effects (A writes a state read by B, B w
 state read by A). The error surfaces synchronously from the `set()`/`batch()`/
 `createEffect()` call that triggered the runaway; other queued effects still run first.
 
-Self-writes remain an anti-pattern for expressing derived values — prefer `createMemo`.
+Self-writes remain an anti-pattern for expressing derived values — prefer `deriveComputed`.
 Reserve them for genuine feedback like clamping user input to a valid range.
 
 **Writing a tracked dependency and then reverting it within the same run still throws** —
@@ -314,7 +316,7 @@ type T = { get: string }
 const store = createStore<T>({ get: 'value' })
 
 store.get   // () => T  — the method, NOT the child signal
-store.byKey('get')  // MutableSignal<string> — the child signal via the escape hatch
+store.byKey('get')  // MutableCell<string> — the child signal via the escape hatch
 ```
 
 This is inherent to the proxy design and is not considered a bug: base methods are a small

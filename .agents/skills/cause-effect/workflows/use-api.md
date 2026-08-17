@@ -26,7 +26,7 @@ Skim ../shared/references/non-obvious-behaviors.md for anything that applies to 
 | List or DerivedList | direct-lookups-do-not-track |
 | Conditional rendering or `match` | conditional-reads-delay-watched |
 | Async data fetching | task-abort-on-dependency-change |
-| Sensor or Task before first value | sensor-unset-before-first-value |
+| Async derivation before first value | async-cell-unset-before-first-value |
 | Multiple state updates at once | ../shared/references/api-facts.md → `batch` |
 | Filling one signal from another | references/signal-types.md → `deriving_vs_writing` |
 
@@ -36,7 +36,7 @@ All public API is imported from the package root:
 
 ```typescript
 import {
-  createState, createSensor, createMemo, createTask,
+  createState, createCell, deriveCell, deriveComputed,
   createEffect, createScope, createSlot, createStore,
   createList, deriveList, deriveStore,
   batch, untrack, unown, match,

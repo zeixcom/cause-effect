@@ -75,31 +75,30 @@ createEffect(() => {
 
 <options>
 **`equals`**
-- Available on every single-value factory (`createSignal`, `createState`, `deriveSignal`, `createMemo`, `createTask`, `createSensor`); lists and stores take `itemEquals`
+- Available on every single-value factory (`createCell`, `createState`, `deriveCell`, `deriveComputed`); lists and stores take `itemEquals`
 - Default: strict equality (`===`)
 - When a new value is considered equal to the previous one, propagation stops —
   downstream nodes are not re-run
 - **`SKIP_EQUALITY`** — special sentinel value for `equals`; forces propagation on every
-  update regardless of value. Use with mutable-reference sensors where the reference
-  never changes but the contents do:
+  update regardless of value. Use with mutable-reference external-push cells where the
+  reference never changes but the contents do:
 
 ```typescript
-import { createSensor, SKIP_EQUALITY } from '@zeix/cause-effect'
+import { deriveCell, SKIP_EQUALITY } from '@zeix/cause-effect'
 
 const box = document.getElementById('box')!
-const element = createSensor<HTMLElement>({
+const element = deriveCell(box, { // same reference every time, so skip reference equality
   watched: emit => {
     const obs = new MutationObserver(() => emit(box))
     obs.observe(box, { attributes: true })
     return () => obs.disconnect()
   },
-  initial: box, // same reference every time, so skip reference equality
   equals: SKIP_EQUALITY,
 })
 ```
 
 **`guard`**
-- Available on `createState`, `createSensor`
+- Available on `createState` and `deriveCell`'s external-push form (internally `createSensor`)
 - A predicate `(value: unknown) => value is T`
 - Throws `InvalidSignalValueError` if a set value fails the predicate
 - Use to enforce runtime type safety at signal boundaries
@@ -117,7 +116,7 @@ const age = createState(0, {
 - `prev` is the previous computed value, enabling reducer-style patterns without external state:
 
 ```typescript
-const runningTotal = createMemo((prev: number | undefined) =>
+const runningTotal = deriveComputed((prev: number | undefined) =>
   (prev ?? 0) + newValue.get(), { initial: 0 })
 ```
 
@@ -127,7 +126,7 @@ const runningTotal = createMemo((prev: number | undefined) =>
 - Always forward it to any `fetch` or cancellable async operation:
 
 ```typescript
-const results = createTask(async (_prev, abortSignal) => {
+const results = deriveCell(async (_prev, abortSignal) => {
   const res = await fetch(`/api/search?q=${query.get()}`, { signal: abortSignal })
   return res.json()
 })
@@ -145,7 +144,7 @@ const results = createTask(async (_prev, abortSignal) => {
 - Is a forwarding layer, not a value owner — has no `update()` method
 
 ```typescript
-const nameState = createSignal('Alice')
+const nameState = createCell('Alice')
 const nameSlot = createSlot(nameState)
 Object.defineProperty(element, 'name', nameSlot)
 ```
@@ -198,10 +197,10 @@ non-obvious-behaviors.md for details on conditional reads.
 |---|---|---|---|
 | `createScope(fn, options?)` | No | `Cleanup` | No (fn runs once) |
 | `createEffect(fn)` | **Yes** | `Cleanup` | Yes |
-| `createSignal(value)` / `createState(value)` | No | `MutableSignal<T>` | Source — never recomputes |
-| `deriveSignal(fn)` / `createMemo(fn)` | No | `Signal<T>` | Lazily (on read) |
-| `deriveSignal(asyncFn)` / `createTask(fn)` | No | `Signal<T>` | Yes (async, with cancellation) |
-| `deriveSignal(seed, { watched })` / `createSensor(options)` | No | `Signal<T>` | Source — set by external push |
+| `createCell(value)` / `createState(value)` | No | `MutableCell<T>` | Source — never recomputes |
+| `deriveCell(fn)` / `deriveComputed(fn)` | No | `Cell<T>` | Lazily (on read) |
+| `deriveCell(asyncFn)` (internally `createTask`) | No | `Cell<T>` | Yes (async, with cancellation) |
+| `deriveCell(seed, { watched })` (internally `createSensor`) | No | `Cell<T>` | Source — set by external push |
 | `createList(items, options?)` | No | `MutableList<T>` | Source — keyed array |
 | `deriveList(...)` | No | `List<T>` | Yes — whole-array, per-item, or external push |
 | `createStore(value)` | No | `MutableStore<T>` | Source — proxy-based record |

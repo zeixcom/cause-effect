@@ -72,6 +72,97 @@ switch to the shape guard you mean. For "is this any reactive value at all?", th
 structural check `typeof x?.get === 'function'` is the recipe — it also accepts
 descriptor-like objects a tag check never did.
 
+## ⚠️ Second flip: `Signal` returns to the umbrella, narrow shape renamed to `Cell`
+
+ADR-0018 was revised after the section above shipped on this branch. The single-value shape
+first landed as a *narrowed* `Signal` (the section above); it has since been renamed to
+**`Cell`**, and **`Signal`/`MutableSignal` return to their v1.x umbrella meaning** — matching
+`Cell`, `List`, or `Store` alike, by structural `.get()` rather than by tag. If you have not
+adopted the narrow-`Signal` interlude described above, skip this section; it exists for anyone
+who wrote code against the intermediate state on this branch.
+
+| Intermediate (narrow `Signal`) | Current (2.0, revised) | Notes |
+|---|---|---|
+| `Signal<T>` (narrow, single value) | `Cell<T>` | Same type, same behavior — renamed. |
+| `MutableSignal<T>` (narrow) | `MutableCell<T>` | Same type, same behavior — renamed. |
+| `createSignal(value)` | `createCell(value)` | |
+| `deriveSignal(input, options?)` | `deriveCell(input, options?)` | |
+| `isSignal(x)` (narrow, single-value only) | `isCell(x)` | `isSignal` itself now means something wider again — see below. |
+| `isMutableSignal(x)` (narrow) | `isMutableCell(x)` | Same caveat. |
+| `createMemo(fn, options?)` | `deriveComputed(fn, options?)` | |
+
+**`isSignal`/`isMutableSignal` flip back — but they never stopped compiling.** In the
+intermediate state, these two guards matched only the single-value shape. They now match the
+umbrella again: any of `Cell`, `List`, or `Store` (and, structurally, `Slot`, which has
+`get()`/`set()` too). The names themselves are not retired and never were — only their match
+widens, back to what they meant in 1.x and mean again in 2.0:
+
+```ts
+isSignal(myList)   // intermediate: false   2.0 (revised): true  — umbrella match restored
+isSignal(myCell)   // intermediate: true    2.0 (revised): true  — still matches
+isSignal(myStore)  // intermediate: false   2.0 (revised): true  — umbrella match restored
+```
+
+If you wrote a call site during the intermediate state that depended on `isSignal` matching
+*only* the single-value shape — for example, an `if (isSignal(x)) { ... } else if (isList(x))
+{ ... }` chain where the `isSignal` branch assumed `x` could not be a `List` — switch that call
+site to `isCell`. The chain still compiles either way (both guards exist), but with `isSignal`
+it now also enters the first branch for a `List` or `Store`, silently changing which branch
+runs — the same silent-behavior-change hazard the section above warns about, on the way back.
+
+**`createTask` and `createSensor` are removed from the public API, with no direct
+replacement — route through `deriveCell`.** Both still exist internally (`deriveCell`
+dispatches to them), but neither is exported. The call shape changes because `deriveCell`
+picks the origin from its argument instead of you picking the factory:
+
+```ts
+// Before (intermediate state): createTask
+const user = createTask(async (_prev, abortSignal) => {
+  const res = await fetch(`/api/users/${userId.get()}`, { signal: abortSignal })
+  return res.json()
+})
+user.isPending() // method on Task
+
+// After (2.0, revised): deriveCell with an async function
+const user = deriveCell(async (_prev, abortSignal) => {
+  const res = await fetch(`/api/users/${userId.get()}`, { signal: abortSignal })
+  return res.json()
+})
+isPending(user) // free function — asynchrony is an origin, not a shape
+```
+
+```ts
+// Before (intermediate state): createSensor
+const mousePos = createSensor<{ x: number; y: number }>({
+  watched: (emit) => {
+    const handler = (e: MouseEvent) => emit({ x: e.clientX, y: e.clientY })
+    window.addEventListener('mousemove', handler)
+    return () => window.removeEventListener('mousemove', handler)
+  },
+  initial: { x: 0, y: 0 },
+})
+
+// After (2.0, revised): deriveCell with a seed and a watched option
+const mousePos = deriveCell({ x: 0, y: 0 }, {
+  watched: (emit) => {
+    const handler = (e: MouseEvent) => emit({ x: e.clientX, y: e.clientY })
+    window.addEventListener('mousemove', handler)
+    return () => window.removeEventListener('mousemove', handler)
+  },
+})
+```
+
+The seed positional argument replaces `createSensor`'s optional `initial` option — in
+`deriveCell`'s external-push form the seed *is* the initial value, so there is no longer a way
+to construct a fully unset external-push cell through the public API.
+
+The codemod (`tools/codemod-v2.ts`) rewrites `createMemo`/`createComputed` to `deriveComputed`,
+`createMutableSignal` to `createCell`, and `deriveSignal` to `deriveCell` automatically. It
+flags `createSignal`, `createTask`, `createSensor`, and the origin guards for manual review —
+each needs the judgment call shown above, not a mechanical rename. It leaves `isSignal` and
+`isMutableSignal` untouched and unflagged, since their meaning is the same in 1.x and in the
+revised 2.0 — only the intermediate state on this branch differed.
+
 ## Running the codemod
 
 ```sh

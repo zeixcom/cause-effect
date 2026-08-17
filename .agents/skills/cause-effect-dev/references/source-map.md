@@ -13,7 +13,7 @@ Where to find things in the @zeix/cause-effect codebase. Read this before locati
 | Public API surface (all exports, types) | `index.ts` |
 | Core graph engine (flags, propagation, flush, ownership) | `src/graph.ts` |
 | Error classes | `src/errors.ts` |
-| Signal base types, façades, and type guards | `src/nodes/signal.ts` |
+| `Cell`/`Signal` base types, façades, and type guards | `src/nodes/cell.ts` |
 | Shared utilities | `src/util.ts` |
 </authoritative_documents>
 
@@ -22,10 +22,11 @@ Each signal type lives in its own file under `src/nodes/`:
 
 | Signal | File | Factory | Type guard |
 |---|---|---|---|
-| State | `src/nodes/state.ts` | `createState()` | `isState()` |
-| Sensor | `src/nodes/sensor.ts` | `createSensor()` | `isSensor()` |
-| Memo | `src/nodes/memo.ts` | `createMemo()` | `isMemo()` |
-| Task | `src/nodes/task.ts` | `createTask()` | `isTask()` |
+| Cell (public single-value shape) | `src/nodes/cell.ts` | `createCell()` / `deriveCell()` | `isCell()` / `isMutableCell()`; umbrella `isSignal()` / `isMutableSignal()` also live here |
+| State (origin) | `src/nodes/state.ts` | `createState()` | — (origin guard `isState` removed in 2.0; narrow guard is `isCell()`) |
+| Sensor (origin) | `src/nodes/sensor.ts` | `createSensor()` — internal-only; reached via `deriveCell(seed, { watched })` | — (origin guard `isSensor` removed in 2.0) |
+| Memo (origin) | `src/nodes/memo.ts` | `deriveComputed()` | — (origin guard `isMemo` removed in 2.0) |
+| Task (origin) | `src/nodes/task.ts` | `createTask()` — internal-only; reached via `deriveCell(asyncFn)` | — (origin guard `isTask` removed in 2.0) |
 | Effect | `src/nodes/effect.ts` | `createEffect()` | — |
 | Slot | `src/nodes/slot.ts` | `createSlot()` | `isSlot()` |
 | Store | `src/nodes/store.ts` | `createStore()` / `deriveStore()` | `isStore()` / `isMutableStore()` |

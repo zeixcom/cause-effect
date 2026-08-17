@@ -33,7 +33,7 @@ All error classes are defined in `src/errors.ts` for library development.
 | `InvalidSignalValueError` | Value fails the `guard` predicate |
 | `InvalidCallbackError` | A required callback argument is not a function |
 | `DuplicateKeyError` | List/DerivedList key collision on insert |
-| `UnsetSignalValueError` | Reading a Sensor or Task before it has produced its first value |
+| `UnsetSignalValueError` | Reading an async derivation (Task) before it has produced its first value, with no `initial` |
 | `ReadonlySignalError` | Attempting to write to a read-only signal |
 | `RequiredOwnerError` | `createEffect` called outside an owner (scope or parent effect) |
 | `CircularDependencyError` | A cycle is detected in the reactive graph |
@@ -68,7 +68,7 @@ age.set(-1) // throws InvalidSignalValueError
 
 <InvalidCallbackError>
 Thrown when a required callback argument — such as the computation function passed to
-`createMemo`, `createTask`, or `createEffect` — is not a function. Catches programming
+`deriveComputed`, `deriveCell`, or `createEffect` — is not a function. Catches programming
 errors like passing `undefined` or a non-function value by mistake.
 </InvalidCallbackError>
 
@@ -81,8 +81,11 @@ inserting a new one with the same key.
 </DuplicateKeyError>
 
 <UnsetSignalValueError>
-Thrown when `.get()` is called on a Sensor or Task before it has emitted its first value.
-Unlike State, Sensor and Task start in an explicitly unset state with no initial value.
+Thrown when `.get()` is called on a Task before it has emitted its first value, and `initial`
+was not passed. Unlike State, an async derivation (`deriveCell(asyncFn)`, internally Task)
+starts in an explicitly unset state with no synthetic initial value by default. An
+external-push cell (`deriveCell(seed, { watched })`, internally Sensor) does not have this
+problem through the public API — the seed argument always doubles as the initial value.
 
 **Fix:** use `match` to handle the unset state (`nil` branch) instead of calling `.get()`
 directly:
@@ -157,31 +160,32 @@ triggered the runaway. Other queued effects still run before it is thrown (it ma
 inside an `AggregateError` when other effects also threw).
 
 **Fix:** make the self-write conditional so it converges, or express the derived value as a
-`createMemo` instead of writing state from an effect.
+`deriveComputed` instead of writing state from an effect.
 </EffectConvergenceError>
 
 <PromiseValueError>
-Thrown when a Memo or Slot callback returns a `Promise`. `createComputed`/`createSignal`
+Thrown when a Memo or Slot callback returns a `Promise`. `deriveCell`/`deriveComputed`
 decide Memo vs. Task by checking whether the callback is declared `async` — a check made
 before the callback ever runs. A callback that forgets `async` but still returns a `Promise`
 (e.g. `() => fetch(url).then(r => r.json())`) is created as a `Memo`. Without this check, the
 `Promise` object itself would be silently cached as the memo's value.
 
 ```typescript
-import { createComputed, PromiseValueError } from '@zeix/cause-effect'
+import { deriveCell, PromiseValueError } from '@zeix/cause-effect'
 
 // Wrong — sync callback, routed to Memo, returns a Promise
-const data = createComputed(() => fetch('/api').then(r => r.json()))
+const data = deriveCell(() => fetch('/api').then(r => r.json()))
 data.get() // throws PromiseValueError
 
 // Correct — async keyword routes to Task
-const data2 = createComputed(async () => {
+const data2 = deriveCell(async () => {
   const r = await fetch('/api')
   return r.json()
 })
 ```
 
-**Fix:** add the `async` keyword to the callback so it routes to `createTask` instead.
+**Fix:** add the `async` keyword to the callback so it routes to Task (internally
+`createTask`, reached through `deriveCell`'s dispatch) instead.
 </PromiseValueError>
 
 </error_details>

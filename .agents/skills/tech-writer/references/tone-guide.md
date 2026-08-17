@@ -25,7 +25,7 @@ These rules apply to every document without exception:
 **Primary audience:** Developers integrating `@zeix/cause-effect` into a project.
 They know TypeScript and have used reactive libraries before.
 
-**Register:** Instructional. Direct address ("use `createTask` when…"). Present tense.
+**Register:** Instructional. Direct address ("use `deriveCell` when…"). Present tense.
 Active voice. Short sentences in prose; examples do the heavy lifting.
 
 **Structure rules:**
@@ -172,7 +172,7 @@ compilable, and idiomatic.
 **What to cut:**
 - Explanatory prose around code patterns — the pattern is self-documenting
 - Options or parameters that are rarely used and not needed for the common case
-- Duplication between sections (e.g. do not describe `createTask` in both "Signal Types"
+- Duplication between sections (e.g. do not describe `deriveCell` in both "Signal Types"
   and again identically in "Common Code Patterns")
 </copilot_instructions>
 

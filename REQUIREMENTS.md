@@ -4,9 +4,13 @@ This document captures the vision, audience, constraints, and boundaries of the 
 
 > **Signal taxonomy is in transition.** v1.x ships nine signal types indexed by shape *and* origin.
 > The target described below is the shape-indexed taxonomy of
-> [ADR-0018](adr/0018-shape-indexed-signal-types.md), accepted for v2.0. Its construction API
-> (`createSignal`, `createComputed`, `createMutableSignal`, `deriveSignal`) already ships in 1.5.0
-> as a bridge; only the removal of the v1.x origin names (`createState`, `isState`, etc.) is
+> [ADR-0018](adr/0018-shape-indexed-signal-types.md), accepted for v2.0 and amended by the
+> ADR-0018 Revision: the narrow single-value shape is named `Cell`/`MutableCell`, while
+> `Signal`/`MutableSignal` return to their v1.x umbrella meaning — matching `Cell`, `List`, or
+> `Store` structurally, not by tag. Construction API for the pre-Revision narrow names
+> (`createSignal`, `createComputed`, `createMutableSignal`, `deriveSignal`) already shipped in
+> 1.5.0 as a bridge; the corrected umbrella `isSignal`/`isMutableSignal` meaning was backported
+> in 1.5.1. Only the removal of the v1.x origin names (`createState`, `isState`, etc.) is
 > deferred to v2.0. Where the two differ, the v1.x API is named explicitly.
 
 ## Vision
@@ -56,12 +60,14 @@ Signal types are indexed by the **shape** of the data and by whether the consume
 
 | Type | Shape | Consumer may write |
 |------|-------|--------------------|
-| **`Signal<T>`** | Single value | No |
-| **`MutableSignal<T>`** | Single value | Yes |
+| **`Cell<T>`** | Single value | No |
+| **`MutableCell<T>`** | Single value | Yes |
 | **`List<T>`** | Keyed sequence — stable identity, per-item reactivity | No |
 | **`MutableList<T>`** | Keyed sequence | Yes |
 | **`Store<T>`** | Keyed record — proxy-based, per-property reactivity | No |
 | **`MutableStore<T>`** | Keyed record | Yes |
+
+`Signal<T>`/`MutableSignal` are the umbrella shape above these six — any value type with `.get()` (or `.get()`/`.set()`), matched structurally rather than by tag.
 
 Two primitives are orthogonal to shape and complete the set:
 
@@ -78,16 +84,16 @@ Four origins apply to all three shapes. Every cell in the matrix is reachable:
 
 | Origin | Single value | Keyed sequence | Keyed record |
 |--------|--------------|----------------|--------------|
-| Mutable source | `createSignal(value)` | `createList(array)` | `createStore(record)` |
-| Sync derivation | `deriveSignal(fn)` | `deriveList(fn)` | `deriveStore(fn)` |
-| Async derivation | `deriveSignal(asyncFn)` | `deriveList(asyncFn, { initial })` | `deriveStore(asyncFn, { initial })` |
-| External push | `deriveSignal(seed, { watched })` | `deriveList(seed, { watched })` | `deriveStore(seed, { watched })` |
+| Mutable source | `createCell(value)` | `createList(array)` | `createStore(record)` |
+| Sync derivation | `deriveCell(fn)` | `deriveList(fn)` | `deriveStore(fn)` |
+| Async derivation | `deriveCell(asyncFn)` | `deriveList(asyncFn, { initial })` | `deriveStore(asyncFn, { initial })` |
+| External push | `deriveCell(seed, { watched })` | `deriveList(seed, { watched })` | `deriveStore(seed, { watched })` |
 
 `create*` yields a mutable type; `derive*` yields a readonly one. A derived signal has no setter, so an imperative write to it is a compile error rather than a convention to remember.
 
 `watched` is an option, never a callback position: a synchronous derivation callback and an external-push callback are indistinguishable at runtime, and neither can be called to find out which it is.
 
-`createState`, `createMemo`, `createTask`, and `createSensor` are retained as narrow, single-origin entry points. They return the same six types. Their purpose is tree-shaking: an import of a synchronous derivation must not pull in `AbortController` or the watched lifecycle. See [ADR-0018](adr/0018-shape-indexed-signal-types.md).
+`createState` and `deriveComputed` are retained as narrow, single-origin entry points for the single-value shape. They return the same `Cell`/`MutableCell` types. Their purpose is tree-shaking: an import of a synchronous derivation must not pull in `AbortController` or the watched lifecycle. `deriveCell` dispatches to them, and to the internal-only `createTask`/`createSensor` for the async and external-push origins. See [ADR-0018](adr/0018-shape-indexed-signal-types.md).
 
 ### Graph Utilities
 
@@ -117,7 +123,7 @@ A small set of utility functions is exported for the benefit of library authors:
 | `isFunction`, `isRecord`, `valueString` | Intentionally stable — used by Le Truc. |
 | `isObjectOfType` | Deprecated. Will be removed in v2.0. (`isSignalOfType` replaces `isObjectOfType` for signal guards.) |
 
-Type guards follow the taxonomy. They are indexed by shape and mutability: `isSignal`, `isList`, `isStore`, `isMutableSignal`, `isMutableList`, `isMutableStore`, and `isSlot`. `isSignalOfType(value, type)` remains the primitive, matching against the shape carried in `Symbol.toStringTag`.
+Type guards follow the taxonomy. They are indexed by shape and mutability: `isCell`, `isList`, `isStore`, `isMutableCell`, `isMutableList`, `isMutableStore`, and `isSlot`. `isSignal`/`isMutableSignal` are the umbrella guards, matching `Cell`, `List`, or `Store` alike, structurally rather than by tag. `isSignalOfType(value, type)` remains the primitive behind the narrow guards, matching against the shape carried in `Symbol.toStringTag`.
 
 The v1.x origin guards `isState`, `isMemo`, `isTask`, `isSensor`, `isCollection`, and `isComputed` have no referent once types are shape-indexed. They are removed in v2.0.
 
@@ -138,7 +144,7 @@ Two figures, doing two different jobs.
 
 | Usage | Role | Minified | Gzipped |
 |-------|------|----------|---------|
-| Core only (`createState`, `createMemo`, `createEffect`) | **Promise** — hard, never relaxed | — | Below 3 kB (3072 B) |
+| Core only (`createState`, `deriveComputed`, `createEffect`) | **Promise** — hard, never relaxed | — | Below 3 kB (3072 B) |
 | Full library (all value types + utilities) | **Diagnostic** — working ceiling, re-baselined per release (~25 % headroom) | Below 29 kB (28672 B) | Below 10 kB (10240 B) |
 
 **The core figure is the promise.** Because the library is tree-shakable, an application pays only for the construction paths it imports. What a typical consumer actually ships is the core figure, not the full-library one, so that is the number that carries the commitment in Success Criterion 6. It is a hard limit and is not relaxed for refactoring. If it regresses, do not raise it — correct the claim in `REQUIREMENTS.md` and `README.md` to the real figure and raise it with the Architect.
@@ -149,7 +155,7 @@ Refactoring may move it in either direction, and a refactor must not be redesign
 
 Re-baselining is a release gate, not a routine edit. Lowering the ceiling toward measured usage at release time is what keeps the diagnostic meaningful; raising it mid-branch to unblock a commit is what makes it meaningless.
 
-The library must remain tree-shakable. An import of one construction path must not pull in the others. This constraint is why the narrow single-value factories are retained alongside `createSignal` and `deriveSignal`, and it is what makes the core figure the one that matters.
+The library must remain tree-shakable. An import of one construction path must not pull in the others. This constraint is why the narrow single-value factories are retained alongside `createCell` and `deriveCell`, and it is what makes the core figure the one that matters.
 
 ### Performance
 

@@ -59,7 +59,7 @@ When asked to release a version:
 <entry_style>
 - **One behavior change per bullet.**
 - **Bold the API name or short summary** at the start, followed by a colon:
-  `- **\`createMemo\` \`watched\` option**: description…`
+  `- **\`deriveComputed\` \`watched\` option**: description…`
 - **Include implementation details** when they explain *why* the behavior changed, *how* the
   fix works, or *what internal invariant* is preserved. This changelog is read by developers
   and AI agents integrating or contributing to the library — precision is expected.

@@ -4,33 +4,33 @@ The shape-indexed value types of @zeix/cause-effect: what each is for, how const
 
 <type_catalog>
 
-<Signal>
-**What it is:** The single-value shape — one reactive value, read with `.get()`.
+<Cell>
+**What it is:** The single-value shape — one reactive value, read with `.get()`. `Signal`/`MutableSignal` are the umbrella shape above it, matching `Cell`, `List`, or `Store` alike, structurally rather than by tag — see `<checking_shapes>` below.
 
 **Construction:**
-- `createSignal(value)` → `MutableSignal` — a value you own and write with `.set()` / `.update()`
-- `deriveSignal(fn)` → sync derivation
-- `deriveSignal(asyncFn, { initial? })` → async derivation with cancellation
-- `deriveSignal(seed, { watched })` → external push with a lazy lifecycle
+- `createCell(value)` → `MutableCell` — a value you own and write with `.set()` / `.update()`
+- `deriveCell(fn)` → sync derivation
+- `deriveCell(asyncFn, { initial? })` → async derivation with cancellation
+- `deriveCell(seed, { watched })` → external push with a lazy lifecycle
 
 **Key facts:**
 - `T extends {}` — no `null` / `undefined`; absence is modelled explicitly
 - A sync derivation is lazy and memoized; `equals` (default `===`) suppresses downstream propagation
 - An async derivation stays unset until the first resolution (`match` handles it) unless `initial` is passed
 - The async callback receives `(prev, abortSignal)` — forward `abortSignal` to `fetch` or any cancellable operation
-- The narrow factories `createState`, `createMemo`, `createTask`, `createSensor` construct the same shape with one origin each (tree-shaking)
+- The narrow factories `createState`, `deriveComputed` construct the same shape with one origin each (tree-shaking); `deriveCell` also dispatches to the internal-only `createTask`/`createSensor` for the async and external-push origins
 
 ```typescript
-const count = createSignal(0)
+const count = createCell(0)
 count.set(count.get() + 1)
 count.update(n => n + 1)
 
-const user = deriveSignal(async (_prev, abortSignal) => {
+const user = deriveCell(async (_prev, abortSignal) => {
   const res = await fetch(`/api/users/${id.get()}`, { signal: abortSignal })
   return res.json()
 }, { initial: fallbackUser })
 
-const pointer = deriveSignal({ x: 0, y: 0 }, {
+const pointer = deriveCell({ x: 0, y: 0 }, {
   watched: emit => {
     const h = (e: PointerEvent) => emit({ x: e.clientX, y: e.clientY })
     window.addEventListener('pointermove', h)
@@ -38,7 +38,7 @@ const pointer = deriveSignal({ x: 0, y: 0 }, {
   },
 })
 ```
-</Signal>
+</Cell>
 
 <List>
 **What it is:** The keyed-sequence shape — an ordered array of items with stable keys and per-item reactivity.
@@ -123,10 +123,10 @@ const dispose = createScope(() => {
 **Key facts:**
 - Has `get`, `set`, `configurable`, and `enumerable` fields — pass directly to `Object.defineProperty`
 - Delegates to a swappable backing signal (any shape); use `replace(nextSignal)` to swap
-- Forwarding layer only — has no `update()` method, and `isMutableSignal()` excludes it
+- Forwarding layer only — has no `update()` method, and `isMutableCell()` excludes it (though it does satisfy the broader, structural `isMutableSignal()`)
 
 ```typescript
-const nameState = createSignal('Alice')
+const nameState = createCell('Alice')
 const nameSlot = createSlot(nameState)
 Object.defineProperty(element, 'name', nameSlot)
 ```
@@ -140,10 +140,10 @@ Two questions route construction: what shape do you want, and who produces the v
 
 | You have | Single value | Keyed sequence | Keyed record |
 |---|---|---|---|
-| A value you own | `createSignal(value)` | `createList(array)` | `createStore(record)` |
-| Other signals, sync | `deriveSignal(fn)` | `deriveList(fn)` | `deriveStore(fn)` |
-| Other signals, async | `deriveSignal(asyncFn)` | `deriveList(asyncFn, { initial })` | `deriveStore(asyncFn, { initial })` |
-| An external source | `deriveSignal(seed, { watched })` | `deriveList(seed, { watched })` | `deriveStore(seed, { watched })` |
+| A value you own | `createCell(value)` | `createList(array)` | `createStore(record)` |
+| Other signals, sync | `deriveCell(fn)` | `deriveList(fn)` | `deriveStore(fn)` |
+| Other signals, async | `deriveCell(asyncFn)` | `deriveList(asyncFn, { initial })` | `deriveStore(asyncFn, { initial })` |
+| An external source | `deriveCell(seed, { watched })` | `deriveList(seed, { watched })` | `deriveStore(seed, { watched })` |
 | A source array + item transform | — | `deriveList(source, itemFn)` | — |
 
 **`watched` signatures** — an option, never a callback position. A seed input takes
@@ -152,7 +152,7 @@ shape-appropriate: `emit(value)`, `emit(changes)`, `emit(patch)`. Passing the wr
 compiles but degrades silently — match the form to the input kind.
 
 **`initial`** — the before-first-computation option on every factory. Required for derived
-lists and stores (never unset); optional for `deriveSignal` (unset-until-resolution is what
+lists and stores (never unset); optional for `deriveCell` (unset-until-resolution is what
 `match`'s `nil` branch consumes).
 
 </construction_matrix>
@@ -162,7 +162,7 @@ lists and stores (never unset); optional for `deriveSignal` (unset-until-resolut
 <choose_by_shape>
 **What kind of data is it?**
 
-- One value → **Signal** (mutable via **MutableSignal**)
+- One value → **Cell** (mutable via **MutableCell**)
 - An ordered array of items with identity → **List** / **MutableList**
 - An object with named properties read and updated independently → **Store** / **MutableStore**
 </choose_by_shape>
@@ -177,17 +177,17 @@ lists and stores (never unset); optional for `deriveSignal` (unset-until-resolut
 
 <direct_comparisons>
 
-**createSignal vs deriveSignal**
-Use `createSignal` when you call `.set()` yourself. Use `deriveSignal` when the value is computed (sync or async) or pushed from an external source through `watched`.
+**createCell vs deriveCell**
+Use `createCell` when you call `.set()` yourself. Use `deriveCell` when the value is computed (sync or async) or pushed from an external source through `watched`.
 
 **Sync vs async derivation**
 Both receive `prev`; the async form also receives `abortSignal` and re-runs with cancellation when dependencies change. Async lists and stores require `initial`; a single value stays unset until first resolution unless `initial` is passed.
 
-**Signal vs Effect**
+**Cell vs Effect**
 A derivation produces a value (lazy, no side effects). An **Effect** runs side effects (imperative, eager, requires owner). Never write a derived value from inside an effect — derive it.
 
-**Signal vs Store**
-Use **Signal** for a single value always replaced wholesale. Use **Store** for an object whose individual properties are read and updated independently.
+**Cell vs Store**
+Use **Cell** for a single value always replaced wholesale. Use **Store** for an object whose individual properties are read and updated independently.
 
 **List vs Store**
 Use **Store** for a fixed set of named properties on one object. Use **List** for a dynamic number of items with uniform shape.
@@ -272,15 +272,15 @@ createEffect(() => {
 </reading_without_subscribing>
 
 <checking_shapes>
-The guards are indexed by shape and mutability. `isSignal` matches the single-value shape only:
+The narrow guards are indexed by shape and mutability. `isCell` matches the single-value shape only:
 
 ```typescript
 if (isList(value)) renderRows(value.get())
 else if (isStore(value)) renderRecord(value.get())
-else if (isSignal(value)) renderValue(value.get())
+else if (isCell(value)) renderValue(value.get())
 ```
 
-For "is this any reactive value at all", use the structural check — `typeof x?.get === 'function'` — not a guard. It accepts every shape plus descriptor-like objects.
+`isSignal`/`isMutableSignal` are the umbrella guards — matching `Cell`, `List`, or `Store` alike, structurally by `.get()` (or `.get()`/`.set()`) rather than by tag. Use them, or the equivalent inline structural check `typeof x?.get === 'function'`, for "is this any reactive value at all" — both accept every shape plus descriptor-like objects a tag check never would.
 </checking_shapes>
 
 </common_patterns>
