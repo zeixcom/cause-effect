@@ -26,7 +26,7 @@
 		"SECURITY.md"
 	],
 	"devDependencies": {
-		"@biomejs/biome": "^2.5.3",
+		"@biomejs/biome": "^2.5.8",
 		"@types/bun": "^1.3.14",
 		"@zeix/cause-effect-stable": "npm:@zeix/cause-effect@1.4.1",
 		"mitata": "^1.0.34",
