@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
 	abort,
+	createCell,
 	createComputed,
 	createEffect,
 	createList,
@@ -12,6 +13,7 @@ import {
 	createState,
 	createStore,
 	createTask,
+	deriveCell,
 	deriveSignal,
 	InvalidCallbackError,
 	InvalidSignalValueError,
@@ -66,10 +68,10 @@ describe('createComputed', () => {
 	})
 })
 
-describe('deriveSignal', () => {
+describe('deriveCell', () => {
 	test('sync function derives a Memo, returned as Signal', () => {
 		const count = createState(2)
-		const doubled = deriveSignal(() => count.get() * 2)
+		const doubled = deriveCell(() => count.get() * 2)
 		expect(isMemo(doubled)).toBe(true)
 		expect(doubled.get()).toBe(4)
 
@@ -79,7 +81,7 @@ describe('deriveSignal', () => {
 
 	test('async function derives a Task, returned as Signal', () => {
 		const cleanup = createScope(() => {
-			const result = deriveSignal(async () => 'hello', { initial: '' })
+			const result = deriveCell(async () => 'hello', { initial: '' })
 			expect(isTask(result)).toBe(true)
 
 			const typedResult: Signal<string> = result
@@ -90,7 +92,7 @@ describe('deriveSignal', () => {
 
 	test('async function initial is optional, unlike deriveList/deriveStore', () => {
 		const cleanup = createScope(() => {
-			const result = deriveSignal(async () => 'hello')
+			const result = deriveCell(async () => 'hello')
 			expect(() => result.get()).toThrow(UnsetSignalValueError)
 		})
 		cleanup()
@@ -99,7 +101,7 @@ describe('deriveSignal', () => {
 	test('seed value with watched derives a Sensor, returned as Signal', () => {
 		const cleanup = createScope(() => {
 			let push: (next: number) => void = () => {}
-			const result = deriveSignal(0, {
+			const result = deriveCell(0, {
 				watched: set => {
 					push = set
 					return () => {}
@@ -121,7 +123,7 @@ describe('deriveSignal', () => {
 	test('throws InvalidCallbackError when the seed form omits watched', () => {
 		expect(() =>
 			// biome-ignore lint/suspicious/noExplicitAny: testing invalid input
-			deriveSignal(0, {} as any),
+			deriveCell(0, {} as any),
 		).toThrow(InvalidCallbackError)
 	})
 
@@ -129,7 +131,7 @@ describe('deriveSignal', () => {
 		const cleanup = createScope(() => {
 			let invalidate: () => void = () => {}
 			let calls = 0
-			const result = deriveSignal(
+			const result = deriveCell(
 				() => {
 					calls++
 					return calls
@@ -153,7 +155,7 @@ describe('deriveSignal', () => {
 
 	test('interoperates with isPending/abort like a Task built with createTask', () => {
 		const cleanup = createScope(() => {
-			const result = deriveSignal(async () => 'hello', { initial: '' })
+			const result = deriveCell(async () => 'hello', { initial: '' })
 			expect(() => abort(result)).not.toThrow()
 		})
 		cleanup()
@@ -307,6 +309,48 @@ describe('createMutableSignal', () => {
 	})
 })
 
+describe('createCell', () => {
+	test('creates a single-value State, like createState', () => {
+		const result = createCell(42)
+		expect(isState(result)).toBe(true)
+		expect(result.get()).toBe(42)
+
+		const typedResult: State<number> = result
+		expect(typedResult).toBeDefined()
+	})
+
+	test('passes options through to createState', () => {
+		const result = createCell(0, {
+			guard: (v): v is number => typeof v === 'number' && v >= 0,
+		})
+		expect(result.get()).toBe(0)
+		expect(() => result.set(-1)).toThrow()
+	})
+
+	test('takes the value verbatim — no shape conversion', () => {
+		// An array is held as an array value, not converted to a List; a record
+		// is held as a record value, not converted to a Store. Unlike createSignal.
+		const array = createCell([1, 2])
+		expect(isState(array)).toBe(true)
+		expect(isList(array)).toBe(false)
+		expect(array.get()).toEqual([1, 2])
+
+		const record = createCell({ a: 1 })
+		expect(isState(record)).toBe(true)
+		expect(isStore(record)).toBe(false)
+		expect(record.get()).toEqual({ a: 1 })
+	})
+})
+
+describe('deprecated single-value names', () => {
+	test('deriveSignal stays a working alias of deriveCell', () => {
+		const count = createState(2)
+		const viaAlias = deriveSignal(() => count.get() * 2)
+		expect(isMemo(viaAlias)).toBe(true)
+		expect(viaAlias.get()).toBe(4)
+	})
+})
+
 describe('isComputed', () => {
 	test('returns true for Memo', () => {
 		expect(isComputed(createMemo(() => 42))).toBe(true)
@@ -378,8 +422,8 @@ describe('Signal compatibility', () => {
 		const cleanup = createScope(() => {
 			const signals: Signal<unknown & {}>[] = [
 				createSignal(42),
-				createSignal({ a: 1 }),
-				createSignal([1, 2, 3]),
+				createCell({ a: 1 }),
+				createCell([1, 2, 3]),
 				createSignal(() => 'hello'),
 			]
 			for (const signal of signals) {

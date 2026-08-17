@@ -108,10 +108,13 @@ export {
 } from './src/nodes/store'
 export { createTask, isTask, type Task } from './src/nodes/task'
 export {
+	createCell,
 	createComputed,
 	createMutableSignal,
 	createSignal,
+	type DeriveCellOptions,
 	type DeriveSignalOptions,
+	deriveCell,
 	deriveSignal,
 	isComputed,
 	isMutableSignal,

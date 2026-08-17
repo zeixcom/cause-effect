@@ -4,22 +4,31 @@ import {
 	type CollectionCallback,
 	type CollectionChanges,
 	type CollectionSource,
+	createCell,
 	createCollection,
 	createEffect,
 	createList,
 	createScope,
+	createSignal,
 	createState,
 	createStore,
+	type DeriveCellOptions,
 	type DeriveCollectionCallback,
 	type DerivedList,
+	type DeriveSignalOptions,
+	deriveCell,
 	deriveList,
+	deriveSignal,
 	deriveStore,
 	isCollection,
 	isDerivedList,
 	isList,
+	isMemo,
 	isMutableList,
 	isMutableStore,
+	isState,
 	isStore,
+	isTask,
 	type List,
 	type ListCallback,
 	type ListChanges,
@@ -27,6 +36,7 @@ import {
 	type MutableList,
 	type MutableStore,
 	type PerItemCallback,
+	type Signal,
 	type Store,
 } from '../index.ts'
 
@@ -178,5 +188,54 @@ describe('MutableStore — the v2 name of the mutable Store type', () => {
 		expect(isStore(createStore({ a: 1 }))).toBe(true)
 		expect(isStore(deriveStore(() => ({ a: 1 })))).toBe(true)
 		expect(isStore(createState(1))).toBe(false)
+	})
+})
+
+describe('createCell/deriveCell — the terminal v2 names of the single-value factories', () => {
+	// ADR-0018's Revision (2026-08-17) renamed the narrow single-value shape from `Signal`
+	// to `Cell`: `Signal` returns to its 1.x structural umbrella meaning. The 1.5.0 bridge
+	// names `createSignal`/`deriveSignal` are deprecated aliases of the terminal names.
+	test('deriveCell returns a Signal for every origin', () => {
+		const cleanup = createScope(() => {
+			const sync: Signal<number> = deriveCell(() => 1)
+			expect(sync.get()).toBe(1)
+			expect(isMemo(sync)).toBe(true)
+
+			const async_: Signal<string> = deriveCell(async () => 'hello', {
+				initial: '',
+			})
+			expect(isTask(async_)).toBe(true)
+		})
+		cleanup()
+	})
+
+	test('createCell is the single-value alias of createState — no shape dispatch', () => {
+		const count = createCell(42)
+		expect(isState(count)).toBe(true)
+		expect(count.get()).toBe(42)
+
+		// The value is taken verbatim: an array is held as an array value, not a List.
+		const array = createCell([1, 2])
+		expect(isState(array)).toBe(true)
+		expect(isList(array)).toBe(false)
+		expect(array.get()).toEqual([1, 2])
+	})
+
+	test('createSignal keeps its shape dispatch — unchanged by the flip', () => {
+		expect(isState(createSignal(42))).toBe(true)
+		expect(isList(createSignal([1, 2]))).toBe(true)
+		expect(isStore(createSignal({ a: 1 }))).toBe(true)
+	})
+
+	test('deriveSignal stays a working alias of deriveCell', () => {
+		const viaAlias: Signal<number> = deriveSignal(() => 2)
+		expect(viaAlias.get()).toBe(2)
+	})
+
+	test('DeriveCellOptions round-trips through the deprecated DeriveSignalOptions alias', () => {
+		const options: DeriveSignalOptions<number> = { initial: 0 }
+		const asCanonical: DeriveCellOptions<number> = options
+		const roundTrip: DeriveSignalOptions<number> = asCanonical
+		expect(roundTrip.initial).toBe(0)
 	})
 })
