@@ -178,4 +178,4 @@ declare function isSignal<T extends {}>(value: unknown): value is Signal<T>;
  * @returns True if value is a State, Store, or List, false otherwise
  */
 declare function isMutableSignal(value: unknown): value is MutableSignal<unknown & {}>;
-export { createCell, createComputed, createMutableSignal, createSignal, type DeriveCellOptions, deriveCell, type DeriveSignalOptions, deriveSignal, isComputed, isMutableSignal, isSignal, type MutableSignal, };
+export { createCell, createComputed, createMutableSignal, createSignal, type DeriveCellOptions, type DeriveSignalOptions, deriveCell, deriveSignal, isComputed, isMutableSignal, isSignal, type MutableSignal, };
