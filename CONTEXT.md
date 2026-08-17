@@ -12,7 +12,15 @@ The _Avoid_ list under each entry names disallowed synonyms, not merely discoura
 The umbrella term for the nine public reactive types. Any value with a `.get()` method that
 participates in the graph. `isSignal()` narrows to this type. Use **Signal** when the
 statement holds for all nine types; name the specific type otherwise.
-_Avoid_: observable, atom, ref, cell, reactive value
+_Avoid_: observable, atom, ref, reactive value
+
+**Cell**:
+The v2 name for the single-value shape — the member of the signal set that holds one value.
+1.x ships no `Cell` type; single-value signals keep their 1.x names (`State`, `Memo`,
+`Task`, `Sensor`). The name arrives through the 1.5.1 bridge factories `createCell` (an
+alias of `createState`) and `deriveCell`, both carried into 2.0 unchanged.
+_Avoid_: atom, box, ref, observable. Do not use *cell* for **Signal** or **Node** as a
+whole — it names the single-value shape only.
 
 **State**:
 A mutable **Source** that holds a value directly. Created with `createState()`. Backed by a
@@ -89,7 +97,7 @@ _Avoid_: writable signal, settable signal, source signal
 The internal record that backs a **Signal**. Composed from field mixins (`SourceFields`,
 `SinkFields`, `OwnerFields`, `AsyncFields`). Not public API — use **Node** in
 `ARCHITECTURE.md`, `AGENTS.md`, and code comments only.
-_Avoid_: cell, atom, vertex, object
+_Avoid_: atom, vertex, object
 
 **Edge**:
 The connection from a **Source** to a **Sink**, stored as a doubly-linked list on both ends.

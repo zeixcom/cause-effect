@@ -5,9 +5,12 @@ This document captures the vision, audience, constraints, and boundaries of the 
 > **Signal taxonomy is in transition.** v1.x ships nine signal types indexed by shape *and* origin.
 > The target described below is the shape-indexed taxonomy of
 > [ADR-0018](adr/0018-shape-indexed-signal-types.md), accepted for v2.0. Its construction API
-> (`createSignal`, `createComputed`, `createMutableSignal`, `deriveSignal`) already ships in 1.5.0
-> as a bridge; only the removal of the v1.x origin names (`createState`, `isState`, etc.) is
-> deferred to v2.0. Where the two differ, the v1.x API is named explicitly.
+> ships as a bridge: `createList`, `createStore`, `deriveList`, and `deriveStore` keep their 1.x
+> names, and the single-value `createCell`/`deriveCell` follow in 1.5.1, deprecating the
+> one-release-old `deriveSignal`. Deferred to v2.0: the origin-indexed names (`State`, `Memo`,
+> `Task`, `Sensor`, `Collection`, their guards, and the `createMemo`/`createTask`/`createSensor`
+> factories) and `createSignal`'s shape dispatch. Where the two differ, the v1.x API is named
+> explicitly.
 
 ## Vision
 
@@ -78,16 +81,16 @@ Four origins apply to all three shapes. Every cell in the matrix is reachable:
 
 | Origin | Single value | Keyed sequence | Keyed record |
 |--------|--------------|----------------|--------------|
-| Mutable source | `createSignal(value)` | `createList(array)` | `createStore(record)` |
-| Sync derivation | `deriveSignal(fn)` | `deriveList(fn)` | `deriveStore(fn)` |
-| Async derivation | `deriveSignal(asyncFn)` | `deriveList(asyncFn, { initial })` | `deriveStore(asyncFn, { initial })` |
-| External push | `deriveSignal(seed, { watched })` | `deriveList(seed, { watched })` | `deriveStore(seed, { watched })` |
+| Mutable source | `createCell(value)` | `createList(array)` | `createStore(record)` |
+| Sync derivation | `deriveCell(fn)` | `deriveList(fn)` | `deriveStore(fn)` |
+| Async derivation | `deriveCell(asyncFn, { initial })` | `deriveList(asyncFn, { initial })` | `deriveStore(asyncFn, { initial })` |
+| External push | `deriveCell(seed, { watched })` | `deriveList(seed, { watched })` | `deriveStore(seed, { watched })` |
 
-`create*` yields a mutable type; `derive*` yields a readonly one. A derived signal has no setter, so an imperative write to it is a compile error rather than a convention to remember.
+`create*` yields a mutable type; `derive*` yields a readonly one. A derived signal has no setter, so an imperative write to it is a compile error rather than a convention to remember. `createCell(value)` takes a single value verbatim, with no shape conversion; the 1.x `createSignal(value)` keeps its wider dispatch (array → `List`, record → `Store`) until 2.0 removes it.
 
 `watched` is an option, never a callback position: a synchronous derivation callback and an external-push callback are indistinguishable at runtime, and neither can be called to find out which it is.
 
-`createState`, `createMemo`, `createTask`, and `createSensor` are retained as narrow, single-origin entry points. They return the same six types. Their purpose is tree-shaking: an import of a synchronous derivation must not pull in `AbortController` or the watched lifecycle. See [ADR-0018](adr/0018-shape-indexed-signal-types.md).
+In 2.0 the narrow entry points cover the single-value shape only: `createCell`, with `createState` as its alias, and `deriveComputed(fn)` for a sync-only derivation. They exist for tree-shaking: a bundle of `createState`, a sync derivation, and `createEffect` must not pull in `AbortController` or the watched lifecycle. `createTask` and `createSensor` have no 2.0 counterpart — async derivation and external push pull their machinery in through `deriveCell` regardless of the factory name. See [ADR-0018](adr/0018-shape-indexed-signal-types.md).
 
 ### Graph Utilities
 
@@ -149,7 +152,7 @@ Refactoring may move it in either direction, and a refactor must not be redesign
 
 Re-baselining is a release gate, not a routine edit. Lowering the ceiling toward measured usage at release time is what keeps the diagnostic meaningful; raising it mid-branch to unblock a commit is what makes it meaningless.
 
-The library must remain tree-shakable. An import of one construction path must not pull in the others. This constraint is why the narrow single-value factories are retained alongside `createSignal` and `deriveSignal`, and it is what makes the core figure the one that matters.
+The library must remain tree-shakable. An import of one construction path must not pull in the others. This constraint is why the narrow single-value factories are retained alongside `createSignal` and `deriveCell`, and it is what makes the core figure the one that matters.
 
 ### Performance
 

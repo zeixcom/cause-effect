@@ -68,28 +68,26 @@ logic and semantics, not line-level diffs — v2's source has diverged through t
   MIGRATION-2.0.md's flip section resolves when CE-030 lands. ADR index unchanged (status stays
   Accepted).
 
-- [ ] CE-030: Sync user-facing docs to the Cell bridge names and the fixes
+- [x] CE-030: Sync user-facing docs to the Cell bridge names and the fixes — done ✓
   **Skill:** tech-writer
-  **Context:** After CE-025–CE-028, update docs that still teach the superseded vocabulary or
-  omit the fixes, keeping CONTEXT.md approved terms and ste100-style. `MIGRATION-2.0.md`: repoint
-  the bridge-table entries `createComputed` → `deriveCell` and `createMutableSignal` →
-  `createCell`/`createList`/`createStore`, and add a short section (the 1.x analogue of v2's
-  "Second flip") explaining that 1.5.0 shipped `deriveSignal` for one release and 1.5.1 renames
-  it to the terminal `deriveCell`; document the codemod's new single-value behavior including the
-  `createSignal` flag. `README.md` and `GUIDE.md`: update `deriveSignal` examples to `deriveCell`
-  (`createSignal` examples stay — its dispatch is unchanged until 2.0).
-  `REQUIREMENTS.md`: the transition banner and the "Construction Covers Every Cell" matrix still
-  name `createSignal(value)`/`deriveSignal(fn)` as the v2 target — update both to the Revision
-  vocabulary (`createCell`/`deriveCell`), noting the matrix's mutable single-value cell is
-  `createCell` (narrow) while 1.x keeps `createSignal`'s wider dispatch until 2.0.
-  `CONTEXT.md`: "cell" is currently in the _Avoid_ lists under **Signal** and **Signal Node** —
-  it now names the v2 single-value shape arriving via the `createCell`/`deriveCell` bridge
-  names, so remove it from both _Avoid_ lists and add the bridge-name terms (Cell factory
-  family) to the vocabulary. Verify ARCHITECTURE.md's
-  Store anchor paragraph and the two backport Key Decisions rows match what shipped. Port the
-  `<watched_activation_is_shape_wide>` entry from v2 commit `c48171b` into
-  `.agents/skills/shared/references/non-obvious-behaviors.md`, adapting vocabulary to 1.x (no
-  `Cell` types in 1.x — single-value signals keep their 1.x names).
+  **Changed:** `MIGRATION-2.0.md` (bridge table repointed to `deriveCell` and the three
+  shape factories; new "Second flip: `deriveSignal` renames to `deriveCell`" section, which
+  the ADR-0018 Status line references; codemod single-value behavior incl. the `createSignal`
+  flag; coercion section reworded; ADR status corrected to Accepted), `README.md` +
+  `GUIDE.md` (Utilities sections: `deriveCell` examples, deprecation pointers, naming notes
+  to Revision vocabulary; `createSignal` examples unchanged), `REQUIREMENTS.md` (transition
+  banner, construction matrix now `createCell(value)`/`deriveCell(...)`, narrow-entry-points
+  paragraph per ADR-0018 §5, tree-shaking note), `CONTEXT.md` (new **Cell** entry; "cell"
+  removed from the _Avoid_ lists under **Signal** and **Node**),
+  `.agents/skills/shared/references/non-obvious-behaviors.md`
+  (`<watched_activation_is_shape_wide>` ported from v2 `c48171b`, 1.x vocabulary:
+  `createSensor`/`createCollection`/`deriveList(seed, { watched })`/`deriveStore`).
+  **How:** ARCHITECTURE.md verified, not edited — the Store anchor paragraph and both
+  backport Key Decisions rows match what shipped. MIGRATION's `createComputed`/
+  `createMutableSignal` "cannot decide" entries rewritten: the codemod now handles both
+  (identifier rename + `value:`→`initial:`; shape-dispatched rewrite) and flags the
+  residual cases (non-literal arguments/options, async callbacks losing `Task` methods).
+  No `deriveSignal` remains outside deliberate deprecation contexts.
 
 - [ ] CE-031: Prepare the 1.5.1 changelog
   **Skill:** changelog-keeper
