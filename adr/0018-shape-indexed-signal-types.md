@@ -3,6 +3,10 @@
 ## Status
 
 ✅ Accepted — 2026-08-15, for v2.0.
+🔄 Amended — 2026-08-17. Decisions 1, 3, and 5 revised before public beta; see Revision
+2026-08-17 below. No external release has shipped under the original wording — branch
+`v2/shape-exploration` is `2.0.0-next.1`, unreleased — so the amendment is made in place
+rather than through a supersession.
 
 Amends [ADR-0001](0001-reactive-task-stale-detection.md) (scope of `isPending`).
 
@@ -51,24 +55,29 @@ vocabulary for the distinction also already exists: `Signal<T>` and `MutableSign
 
 ### 1. Types are indexed by shape and mutability only
 
-Six value types, in three shapes, each with a readonly base and a mutable extension:
+Six value types, in three shapes, each with a readonly base and a mutable extension. `Signal` is
+the umbrella over all three shapes, not a shape of its own — see Revision 2026-08-17:
 
 ```ts
-Signal<T>            get()
-MutableSignal<T>     ⊃ Signal<T>      + set, update
+Signal<T>             get()                                  // umbrella, not a shape
 
-List<T, S>           ⊃ Signal<T[]>    + length, at, byKey, keyAt, indexOfKey, keys, [Symbol.iterator]
-MutableList<T, S>    ⊃ List<T, S>     + set, update, add, remove, replace, sort, splice
+Cell<T>                ⊃ Signal<T>     get()
+MutableCell<T>         ⊃ Cell<T>       + set, update
 
-Store<T>             ⊃ Signal<T>      + keys, byKey, proxy reads
-MutableStore<T>      ⊃ Store<T>       + set, update, add, remove
+List<T, S>             ⊃ Signal<T[]>   + length, at, byKey, keyAt, indexOfKey, keys, [Symbol.iterator]
+MutableList<T, S>      ⊃ List<T, S>    + set, update, add, remove, replace, sort, splice
+
+Store<T>               ⊃ Signal<T>     + keys, byKey, proxy reads
+MutableStore<T>        ⊃ Store<T>      + set, update, add, remove
 ```
 
 `State`, `Memo`, `Task`, `Sensor`, and `Collection` cease to exist as type names. A consumer
 programs against the shape it needs and against whether it may write. How the value came to exist
 is not part of the consumption contract.
 
-`Symbol.toStringTag` carries the shape — `'Signal' | 'List' | 'Store'` — not the origin.
+`Symbol.toStringTag` carries the shape — `'Cell' | 'List' | 'Store'` — not the origin. `Signal`
+carries no tag of its own; membership is structural (`typeof x?.get === 'function'`), by design —
+see Revision 2026-08-17.
 
 `Effect` and `Slot` are unaffected. Both are orthogonal to shape: `Effect` is a terminal sink with
 no value, and `Slot` is an integration-layer abstraction over `{ get, set? }` that ignores all
@@ -94,8 +103,8 @@ accessor moves and its domain widens. Consumers gain the ability to ask an async
 ### 3. Factories are indexed by origin: `create*` and `derive*`
 
 ```
-create{Signal,List,Store}(value, options?)   → Mutable{Signal,List,Store}
-derive{Signal,List,Store}(input, options?)   → {Signal,List,Store}
+create{Cell,List,Store}(value, options?)   → Mutable{Cell,List,Store}
+derive{Cell,List,Store}(input, options?)   → {Cell,List,Store}
 ```
 
 `create*` takes a value and yields a writable signal. `derive*` yields a readonly signal and
@@ -110,6 +119,10 @@ dispatches on `input`:
 
 `derive{List,Store}` additionally accept any `Signal<U[]>` or `Signal<U>` as a source, not only a
 `List` or `Collection`. This is the restriction whose removal closes the async-to-composite gap.
+`Signal<U>` here is genuinely the umbrella use — any get()-shaped source qualifies, `Cell`
+included. See Revision 2026-08-17 for the `create*`/`derive*` naming realignment: `createCell`
+replaces `createSignal` (with `createState` retained as its alias), and `deriveCell` replaces
+`deriveSignal`.
 
 ### 4. `watched` is an option, never a callback position
 
@@ -144,16 +157,16 @@ union-typed option was tried during implementation and rejected — a union of t
 callback shapes breaks contextual typing of inline callbacks (the parameter degrades to
 implicit `any`).
 
-### 5. The core four survive as narrow entry points
+### 5. Two narrow entry points survive, not four — see Revision 2026-08-17
 
 A bundle that uses only `createState`, a synchronous derivation, and `createEffect` must not pull
 in `AbortController`, the task recompute path, or the watched lifecycle. `deriveSignal` handles
 all three origins and therefore pulls all three.
 
-`createState`, `createMemo`, `createTask`, and `createSensor` are retained as narrow,
-single-origin, tree-shakable factories. They return the collapsed types (`MutableSignal<T>`,
-`Signal<T>`) rather than distinct ones. `createSignal` and `deriveSignal` are façades that dispatch
-to them.
+`createState` and `createMemo` were retained as narrow, single-origin, tree-shakable factories,
+alongside `createTask` and `createSensor`. **Revision 2026-08-17 drops the latter two as public
+factories.** They return the collapsed types (`MutableSignal<T>`, `Signal<T>`) rather than
+distinct ones. `createSignal` and `deriveSignal` are façades that dispatch to them.
 
 No equivalent split is made for `List` and `Store`. A composite already pulls `State` for children,
 `Memo` for the structural node, and the structural diff; the marginal cost of the async and
@@ -207,6 +220,107 @@ difference between construction paths, not a type difference.
 The mechanisms in ADR-0010 (`FLAG_RELINK`), ADR-0014 (two-path access), ADR-0015 (structural
 lookup edges — including its asymmetry: `byKey` and proxy reads create no structural edge, or
 per-property granularity is lost), and ADR-0017 (proxy write rejection) apply unchanged.
+
+## Revision 2026-08-17
+
+Two problems surfaced before this ADR shipped in a release, both raised in review of the
+already-merged branch (`652fb3f`), while the decision was still cheap to change (no external
+consumer, no back-compat bridge in flight).
+
+**Problem 1 — the umbrella has no name, and `Signal` cannot hold both jobs.** Original decision 1
+made `Signal<T>` the narrow single-value shape and left the union of all three shapes nameless.
+`CONTEXT.md` had to document this directly: *"There is no umbrella noun for 'anything with a
+`.get()`'"* — and warn that `isSignal`'s prose meaning must never widen back to it. That is a
+documented workaround for a real gap, not a resolved question. Compounding it, the original
+`Signal<T>` type was declared with an *optional, unliteraled* tag —
+`readonly [Symbol.toStringTag]?: string` — so `List` and `Store` were already structurally
+assignable to `Signal<T>` at compile time (they have `get()`, and their tag is *some* string).
+`isSignal()`, meanwhile, checked the tag against exactly `'Signal'` at runtime and rejected them.
+The type system already treated `Signal` as the umbrella; the guard didn't. That mismatch is a
+real hazard, independent of what anything is named: code that accepts `Signal<T>` at a boundary
+could be handed a `List` by the compiler and then take the wrong branch at runtime.
+
+Both problems dissolve together by inverting which name owns which job: **`Signal` becomes the
+umbrella**, exactly as its already-structural type suggested it should. No shape-specific guard
+narrows it — membership is checked structurally
+(`typeof x?.get === 'function'`), which is what `CONTEXT.md` already prescribed for the umbrella
+question; a named convenience guard (e.g. `isValue`) may be added later, but is out of scope here.
+This also has ecosystem support decision 1 didn't have available: the TC39 Signals proposal
+namespaces `Signal.State` and `Signal.Computed` under `Signal` — umbrella usage, not primitive
+usage. No JS reactive library was found that names the *shape*-indexed umbrella we mean (single
+value, keyed sequence, keyed record, uniform `.get()`); Solid's Ryan Carniato refers to the whole
+category only informally, as "reactive primitives." Reclaiming `Signal` for that role is the best
+available option, not a borrowed term with a competing meaning to collide with.
+
+**Problem 2 — no name survives for the narrow single-value shape.** With `Signal` reclaimed,
+the narrow shape needs a new name. Two candidates were evaluated:
+
+- **`Atom`** (Jotai). Rejected after two independent LLM reverse-prompt checks (Claude and
+  Mistral, run cold with no repo access) converged on the same objection: `Atom` evokes Jotai's
+  `atom()`, which is a *definition* consumed via a hook (`useAtom`), not a live, immediately
+  usable cell. `createAtom(value)` returning a ready value directly would read wrong to anyone
+  carrying that prior — precisely the kind of training-set-prior mismatch this ADR's own
+  methodology (§ Context) treats as disqualifying, not merely unfamiliar.
+- **`Cell`** (chosen). Precedent: Starbeam's `Cell`/`Formula`/`Resource` taxonomy maps closely
+  onto this library's shape/origin split, and the term predates the JS ecosystem entirely —
+  reactive programming's original metaphor is the spreadsheet cell, which is thematically apt for
+  a library named `cause-effect`. `Cell`'s risk profile is the opposite of `Atom`'s: unfamiliarity,
+  not a wrong mental model — cheap to fix with one line of docs, not the kind of defect prose
+  cannot correct. Per Le Truc's naming-precedent question about whether `Cell` implies mutability:
+  it does not, by the same convention as `List` and `Store` — the readonly shape is the base name,
+  `MutableCell` is the extension, matching the pattern this ADR already established for the other
+  two shapes.
+
+`Cell<T>` and `MutableCell<T>` replace `Signal<T>` and `MutableSignal<T>` from decision 1 (updated
+above). The tag literal is narrowed from decision 1's original `?: string` to `?: 'Cell'` (and
+correspondingly `'List'`, `'Store'`) so the structural leak in Problem 1 cannot recur for any
+shape: a `List` is no longer structurally assignable to `Cell<T[]>` merely by having `get()` — its
+tag type excludes it.
+
+**Problem 3 — the narrow-factory names never had a coherent naming scheme.** `Memo` came from
+React/Solid, `Task` from FP async convention, `Sensor` was invented for this library. None share a
+naming logic, and none of the three were consistently `derive*`-prefixed under decision 3's own
+`create*` = mutable / `derive*` = readonly rule — `createMemo`, `createTask`, and `createSensor`
+all return read-only types but keep the `create*` prefix, because decision 5 named them before
+decision 3's rule existed to check them against.
+
+Resolution: `createState` → `createCell` (alias retained: `createState` stays as a zero-cost
+alternate name for the same factory, since it is the more common entry point and already familiar
+from decision 3's own table). Sync derivation gets one narrow entry point, `deriveComputed`
+(replacing `createMemo`) — the `Computed` name follows directly from the TC39 `Signal.Computed`
+precedent already cited for the umbrella decision, so the two naming choices reinforce each other
+rather than adding a second, unrelated borrowing.
+
+`createTask` and `createSensor` are **dropped as public factories, not renamed**. The
+tree-shaking rationale in decision 5 does not hold for them the way it holds for
+`createState`/`deriveComputed`: async derivation pulls the recompute/`AbortController` machinery
+regardless of which name constructs it, so a narrow async factory saves no bytes it doesn't
+already have to pay for; and `Sensor`'s external-push use case is rare enough that a dedicated
+name is not worth carrying. Both origins remain fully reachable through the general dispatcher,
+`deriveCell` (replacing `deriveSignal`), which already has to import the machinery for any
+non-sync input. The internal node-construction logic in `task.ts`/`sensor.ts` is unaffected — it
+becomes implementation detail `deriveCell` dispatches to, not a change to the recompute/watched
+mechanisms themselves.
+
+The four narrow single-value factories from decision 5 collapse to two:
+
+```
+createCell(value, options?)      → MutableCell<T>   (alias: createState)
+deriveComputed(fn)               → Cell<T>           (sync derivation only, replaces createMemo)
+deriveCell(input, options?)      → Cell<T>           (sync, async, or external push — replaces deriveSignal, createTask, createSensor)
+```
+
+Guards realign with the type rename: `isCell`/`isMutableCell` replace `isSignal`/`isMutableSignal`
+— same tag-plus-`get()` check, `set()` additionally for the mutable guard, now targeting the
+`'Cell'` tag instead of `'Signal'`. `isList`/`isMutableList`/`isStore`/`isMutableStore` are
+unchanged in behavior, only in what tag literal they compare against.
+
+`errors.ts`'s `NullishSignalValueError`, `UnsetSignalValueError`, `ReadonlySignalError`, and
+`validateSignalValue` keep their `Signal`-scoped names **unchanged** — under the original
+decision 1 wording these names were ambiguous (did "Signal" mean the narrow shape or something
+broader?); under this revision they are correctly umbrella-scoped, since each of these errors can
+fire for any shape, not only `Cell`. This is a case where the revision resolves a latent ambiguity
+without requiring a rename.
 
 ## Alternatives Considered
 
@@ -265,6 +379,12 @@ this ADR's own thesis about why prose cannot correct misuse. The residual cost �
 `isMutableSignal` narrow with no bridge — is contained by explicit migration warnings, codemod
 flagging, and the structural `.get()` recipe for the umbrella question.
 
+**Superseded by Revision 2026-08-17.** `Signal` *is* now the umbrella, but the single-value shape
+is named `Cell`, not `State` — sidestepping counts two and three above: `Cell` carries no
+mutable-origin connotation the way `State` does, and the flagship factories keep `createSignal`
+subsumed by `createCell`/`deriveCell`, so no name recruits the Solid/Preact single-value prior for
+a construct that no longer means single-value only. See Revision 2026-08-17.
+
 ## Consequences
 
 **Positive**
@@ -303,6 +423,12 @@ flagging, and the structural `.get()` recipe for the umbrella question.
   for manual audit. For "is this any reactive value at all", the structural check
   `typeof x?.get === 'function'` is the recipe — it also accepts descriptor-like objects a tag
   check never did.
+  **Superseded by Revision 2026-08-17**: `isSignal`/`isMutableSignal` are retired outright rather
+  than kept narrowed; `isCell`/`isMutableCell` are the new narrow guards, and there is no umbrella
+  guard (the structural recipe above is still the answer to "is this any reactive value").
+  Renaming the guard away, rather than leaving `isSignal` narrowed, removes the exact hazard this
+  paragraph describes — there is no longer a guard whose name says "any signal" but whose
+  behavior says "only the single-value shape."
 - `createSignal` currently sniffs shape (array → `List`, record → `Store`). It becomes
   shape-specific, and the coercion is removed with **no replacement export**. A shape-sniffing
   façade hides the shape decision, which is the v1-ism this ADR deletes everywhere else. Le
@@ -319,6 +445,16 @@ flagging, and the structural `.get()` recipe for the umbrella question.
 
 **Neutral**
 
-- Guards become shape-indexed: `isSignal`, `isList`, `isStore`, `isMutableSignal`, `isMutableList`,
-  `isMutableStore`. The origin guards `isState`, `isMemo`, `isTask`, `isSensor`, and `isCollection`
-  have no referent after the collapse and are removed. `isSignalOfType` remains the primitive.
+- Guards become shape-indexed: ~~`isSignal`~~ `isCell`, `isList`, `isStore`, ~~`isMutableSignal`~~
+  `isMutableCell`, `isMutableList`, `isMutableStore` (renamed by Revision 2026-08-17 — originally
+  `isSignal`/`isMutableSignal`, narrow-shape guards targeting the `'Signal'` tag). The origin
+  guards `isState`, `isMemo`, `isTask`, `isSensor`, and `isCollection` have no referent after the
+  collapse and are removed. `isSignalOfType` remains the primitive, targeting `'Cell'`/`'List'`/
+  `'Store'` tags.
+- Revision 2026-08-17: `createTask` and `createSensor` are dropped as public factories (not
+  renamed — decision 5 above). `createMemo` becomes `deriveComputed`. `createState`/`createSignal`
+  become `createCell`, with `createState` kept as an alias. `deriveSignal` becomes `deriveCell`.
+  `Signal<T>`/`MutableSignal<T>` become `Cell<T>`/`MutableCell<T>` as the narrow shape name;
+  `Signal<T>` is reused for the umbrella (no longer a shape-specific type). The bundle-budget
+  re-measurement noted above must account for this rename too — narrower public surface (two
+  factories instead of four) should offset some of the identifier churn, but is not measured yet.
