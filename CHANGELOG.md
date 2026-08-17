@@ -12,6 +12,11 @@
 
 - **`createTask` and `createSensor` are no longer exported from the package root** (`index.ts`): Both remain reachable through `deriveCell`'s async-function and external-push dispatch — `deriveCell(asyncFn, { initial? })` for what `createTask` did, `deriveCell(seed, { watched })` for what `createSensor` did. Their node-construction logic is unchanged internally; only the public factory names are removed, in favor of a single narrow derive entry point (`deriveCell`) plus `deriveComputed` for the sync case. **Migration:** replace `createTask(fn, options?)` with `deriveCell(fn, options?)` (an async `fn` routes to the same task-node path); replace `createSensor(watched, options?)` with `deriveCell(seed, { watched, ...options })`. See `MIGRATION-2.0.md` for worked examples of both.
 
+### Fixed
+
+- **`deriveStore(seed, { watched })` never started its watched lifecycle when consumed only through property reads, leaving the store frozen at its seed** (`src/nodes/store.ts`): The external-push facade delegated property reads to the backing mutable Store's `byKey`, which deliberately creates no structural edge (ADR-0015) — but nothing else activated the lifecycle either, so a store consumed solely via `store.prop.get()` / `store.byKey(k)` / `'prop' in store` never ran `watched` and never received a pushed value. The facade now owns activation through a dedicated lifecycle anchor node: any observation form starts `watched` exactly once and stops it when the last observer detaches, while per-property reads still create no structural edge, preserving granularity.
+- **`List` mutations now validate duplicate keys and nullish items atomically** (`src/nodes/list.ts`): `splice()` silently accepted the same content-based key twice in one inserted batch, corrupting `length` and iteration; it also validated items mid-mutation, so an invalid item could leave earlier insertions committed with no propagation. Insertions are now staged and validated up front — an invalid `splice` throws (`DuplicateKeyError` / `NullishSignalValueError`) with the list untouched. `createList()` and the external-push form of `deriveList()` now also reject duplicate keys in their initial value/seed instead of silently overwriting the first item's signal. Auto-increment keys (the default) are unaffected.
+
 ## 1.5.0
 
 ### Added

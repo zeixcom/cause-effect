@@ -200,6 +200,8 @@ ADR-0017 carry over unchanged.
 
 **Store** — `byKey()` and the proxy property access (`store.prop`) deliberately do **not** create a structural edge. Store keys are statically known from `T`, and proxy reads are already granular: `store.name` returns the child `State`, whose `.get()` forms a *property-level* edge. Adding a structural edge on top would make every property read also subscribe to "any key added/removed," defeating per-property reactivity (Store's defining feature). The Store `Symbol.iterator` *does* track structure, like `store.keys()` and `store.get()` — it is a whole-store traversal, not a per-property read. See [ADR-0015](adr/0015-composite-lookup-methods-track-structural-changes.md) for the rationale behind this asymmetry.
 
+For a derived external-push Store (`deriveStore(seed, { watched })`), per-property reads create no structural *edge* (unchanged, ADR-0015) but they do activate the `watched` *lifecycle*: the facade links a dedicated anchor node that never propagates, so any observation form — structural or per-property — starts and keeps the lifecycle alive. Activation and tracking are separate concerns.
+
 Return types remain honest: `byKey(k): S | undefined` etc. on List/Collection (a runtime string may not be a present key). `Store.byKey` is non-nullable because Store keys are statically known from `T`.
 
 ## Key Decisions

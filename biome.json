@@ -7,7 +7,7 @@
 	},
 	"files": {
 		"ignoreUnknown": false,
-		"includes": ["**", "!index.js", "!**/*.d.ts", "!.mimosa"]
+		"includes": ["**", "!index.js", "!**/*.d.ts", "!**/.mimosa"]
 	},
 	"formatter": {
 		"enabled": true,

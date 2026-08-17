@@ -281,6 +281,33 @@ createEffect(() => match(task, {
 ```
 </match_sync_handlers_are_tracked>
 
+<watched_activation_is_shape_wide>
+**`watched` activates on any read inside a computation, for every shape.** `Cell`, `List`,
+and `Store` external-push derivations all start their `watched` lifecycle when the first
+effect or memo observes them — through *any* access form. For a Store, property reads
+(`store.name.get()`, `store.byKey('name')`, `'name' in store`) activate the lifecycle
+through a dedicated anchor node that never propagates, so activation does not create a
+structural edge and per-property granularity is unaffected.
+
+Known shape-wide limitation: grabbing a cell *outside* a computation does not activate the
+lifecycle — `const c = store.name; effect(() => c.get())` never starts `watched`, because
+the read happens with no active sink at grab time. The same applies to `list.byKey(k)`
+grabbed outside a computation. Pre-existing behavior, consistent across shapes.
+
+```typescript
+const store = deriveStore({ name: 'Alice' }, {
+  watched: emit => {
+    const socket = connect()
+    socket.onmessage = e => emit(JSON.parse(e.data))
+    return () => socket.close()
+  },
+})
+
+// watched starts here — property-only consumption is enough
+createEffect(() => render(store.name.get()))
+```
+</watched_activation_is_shape_wide>
+
 <store_proxy_rejects_direct_writes>
 **Direct property assignment, deletion, or `Object.defineProperty` on a `Store` proxy throws
 `InvalidStoreMutationError`.** The proxy has no public write path — use the reactive API

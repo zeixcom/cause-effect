@@ -928,6 +928,7 @@ export {
 	type ScopeOptions,
 	type SinkNode,
 	SKIP_EQUALITY,
+	type SourceNode,
 	type StateNode,
 	scheduleEffect,
 	setState,

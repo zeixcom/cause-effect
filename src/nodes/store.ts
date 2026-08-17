@@ -21,6 +21,7 @@ import {
 	propagate,
 	refreshComposite,
 	registerAsyncSource,
+	type SourceNode,
 	TYPE_STORE,
 	untrack,
 } from '../graph'
@@ -521,15 +522,53 @@ function deriveStore<T extends UnknownRecord>(
 		validateSignalValue(TYPE_STORE, input, isRecord)
 		const watched = options?.watched as StoreCallback<T>
 		validateCallback(TYPE_STORE, watched, isSyncFunction)
-		let inner: MutableStore<T>
+		const inner = createStore(input as T)
+
+		// Lifecycle anchor: a source node that never holds or propagates a value.
+		// Its only job is to carry watcher edges, so that ANY observation form —
+		// structural (get/keys/iterator) or per-property (byKey/proxy) — starts and
+		// keeps the watched lifecycle alive, without linking the structural node
+		// (per ADR-0015, a property read must not subscribe to "any key changed").
+		// Nothing ever calls propagate() on it, so its edges never fire, and the
+		// value field is never read — the cast exists only because SourceNode's
+		// value is typed `unknown & {}`.
+		const anchor = {
+			value: undefined,
+			sinks: null,
+			sinksTail: null,
+			stop: undefined,
+		} as unknown as SourceNode
+		let stop: Cleanup | undefined
+		const stopWatched = () => {
+			if (stop) {
+				stop()
+				stop = undefined
+			}
+		}
+		const subscribe = () => {
+			if (!activeSink) return
+			if (!anchor.sinks) {
+				stop = watched(emit)
+				anchor.stop = stopWatched // re-arm: unlink() clears node.stop after calling it
+			}
+			link(anchor, activeSink)
+		}
 		const emit = (patch: Partial<T>): void => {
 			inner.update(prev => ({ ...prev, ...patch }))
 		}
-		inner = createStore(input as T, { watched: () => watched(emit) })
 		return readonlyFacade(
-			() => inner.get(),
-			() => inner.keys(),
-			key => inner.byKey(key) as unknown as Cell<T[keyof T & string] & {}>,
+			() => {
+				subscribe()
+				return inner.get()
+			},
+			() => {
+				subscribe()
+				return inner.keys()
+			},
+			key => {
+				subscribe()
+				return inner.byKey(key) as unknown as Cell<T[keyof T & string] & {}>
+			},
 		) as Store<T>
 	}
 
