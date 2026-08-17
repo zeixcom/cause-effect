@@ -1,7 +1,7 @@
 # ADR Index
 
-**Last updated:** 2026-08-16
-**Total ADRs:** 18
+**Last updated:** 2026-08-17
+**Total ADRs:** 19
 
 | # | ADR | Status | Related Requirements |
 |---|-----|--------|---------------------|
@@ -23,6 +23,7 @@
 | [0016](../../../../adr/0016-path-scoped-cycle-detection-in-deep-equality.md) | Path-Scoped Cycle Detection in Deep Equality | ✅ Accepted | Performance |
 | [0017](../../../../adr/0017-store-proxy-rejects-direct-writes.md) | Store Proxy Rejects Direct Writes | ✅ Accepted | Explicit Reactivity, Minimal Surface |
 | [0018](../../../../adr/0018-shape-indexed-signal-types.md) | Shape-Indexed Signal Types | ✅ Accepted | Minimal Surface, Every Shape Is Derivable, Bundle Size |
+| [0019](../../../../adr/0019-value-shortcut-get-overload-for-list-and-store.md) | Value-Shortcut `get(key)` Overload for List and Store | 🔄 Proposed | Explicit Reactivity, Non-Nullable Types, Minimal Surface, Stability |
 
 ---
 
