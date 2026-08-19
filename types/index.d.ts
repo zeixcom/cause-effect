@@ -1,6 +1,6 @@
 /**
  * @name Cause & Effect
- * @version 1.5.0
+ * @version 1.5.1
  * @author Esther Brunner
  */
 export { CircularDependencyError, DuplicateKeyError, EffectConvergenceError, type Guard, InvalidCallbackError, InvalidSignalValueError, InvalidStoreMutationError, NullishSignalValueError, PromiseValueError, ReadonlySignalError, RequiredOwnerError, UnsetSignalValueError, } from './src/errors';
