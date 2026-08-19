@@ -8,6 +8,7 @@ import {
 	createState,
 	createStore,
 	createTask,
+	type DerivedList,
 	DuplicateKeyError,
 	isList,
 	isMemo,
@@ -138,6 +139,44 @@ describe('List', () => {
 
 			// Key order should match new array order
 			expect([...list.keys()]).toEqual(['c', 'b', 'a'])
+		})
+
+		test('should retire the old key instead of reusing it when content changes at a shared index (string keyConfig)', () => {
+			// Regression: a keyConfig (string or function) signals the caller wants
+			// per-item identity distinct from array position. A shared index whose
+			// content changes must not silently keep the old key under new content.
+			// Bare synthetic keys (no keyConfig) are unaffected — see
+			// 'should diff and update changed items' above, which locks in position-
+			// is-identity for that case.
+			const list = createList([{ id: 1 }, { id: 2 }, { id: 3 }], {
+				keyConfig: 'item-',
+			})
+			const key1 = list.keyAt(1)
+			expect(key1).toBe('item-1')
+			const signal1 = list.byKey(key1 as string)
+
+			list.set([{ id: 1 }, { id: 999 }, { id: 3 }])
+
+			// The old key is retired, not repointed to the unrelated new content.
+			expect(list.byKey(key1 as string)).toBeUndefined()
+			// The new item gets a freshly minted key with a fresh signal.
+			const newKey = list.keyAt(1)
+			expect(newKey).not.toBe(key1)
+			expect(list.byKey(newKey as string)?.get()).toEqual({ id: 999 })
+			expect(list.byKey(newKey as string)).not.toBe(signal1)
+		})
+
+		test('should keep the same key and signal for an unchanged item at a shared index (string keyConfig)', () => {
+			const list = createList([{ id: 1 }, { id: 2 }, { id: 3 }], {
+				keyConfig: 'item-',
+			})
+			const key1 = list.keyAt(1)
+			const signal1 = list.byKey(key1 as string)
+
+			list.set([{ id: 1 }, { id: 2 }, { id: 999 }])
+
+			expect(list.keyAt(1)).toBe(key1)
+			expect(list.byKey(key1 as string)).toBe(signal1)
 		})
 
 		test('should detect duplicates in set() with content-based keyConfig', () => {
@@ -1201,4 +1240,13 @@ test('Type Inference for custom createItem', () => {
 	type _Test = Expect<
 		Equal<typeof byKey, ReturnType<typeof createStore<TodoItem>> | undefined>
 	>
+})
+
+test('MutableList.deriveCollection() single-arg async callback infers the resolved item type, not Promise<T>', () => {
+	const list = createList([1, 2, 3])
+	const doubled = list.deriveCollection(async (v: number) => v * 2)
+	// If the overload order regresses, `doubled` unifies to `DerivedList<Promise<number>>`
+	// and this assignment fails to compile.
+	const typedDoubled: DerivedList<number> = doubled
+	expect(typedDoubled).toBeDefined()
 })

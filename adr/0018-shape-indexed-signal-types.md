@@ -2,18 +2,17 @@
 
 ## Status
 
-✅ Accepted — 2026-08-17 (implementation on branch `v2/shape-exploration`; revision of the same date renamed the narrow shape to `Cell` and restored the umbrella `Signal` — see `MIGRATION-2.0.md` "Second flip"). No release has shipped under this or any prior wording — branch `v2/shape-exploration` is `2.0.0-next.1`, unreleased.
-
-The only *released* narrow-`Signal` vocabulary is the 1.5.0 bridge factory `deriveSignal` and
-its options type, deprecated in 1.5.1 in favor of `deriveCell`/`DeriveCellOptions`.
-`createSignal`'s shape dispatch is unrelated to this flip and keeps its 1.x behavior until
-2.0 removes it.
+✅ Accepted — 2026-08-19 (for v2.0)
 
 Amends [ADR-0001](0001-reactive-task-stale-detection.md) (scope of `isPending`).
 
+This ADR is binding for v2.0. It also regulates the 1.x bridge — vocabulary backported ahead of
+2.0 to teach it only once — but does not itself govern day-to-day 1.x maintenance beyond that
+bridge.
+
 ## Context
 
-The library ships nine signal types, indexed by two axes at once — **shape** (single value, keyed sequence, keyed record) and **origin** (mutable source, sync derivation, async derivation, external push). Nine names cover that matrix only partially, and one cell is restricted:
+The library ships nine signal types in v1.x, indexed by two axes at once — **shape** (single value, keyed sequence, keyed record) and **origin** (mutable source, sync derivation, async derivation, external push). Nine names cover that matrix only partially, and one cell is restricted:
 `deriveCollection` accepts only a `CollectionSource<U>`, so a `Task<U[]>` or `Memo<U[]>` cannot become a keyed sequence. The most common async pipeline — fetch an array, key it, render per item — has no derivation path.
 
 The observed consequence: authors reach for the discouraged pattern of writing an async result into a mutable `Store` by hand in an effect. Documentation cannot fix this; it is the only door.
@@ -125,6 +124,15 @@ Each key of a derived composite gets its own `Cell` that reads the source and se
 **Derived records do not recurse into nested values.** `createStore` nests because a *write* needs a target (`store.address.city.set(…)`); a derived record has no writes, so recursion has no target and would only be an unrequested read optimization. A caller wanting sub-path granularity composes `deriveStore`/`deriveList` on the property directly.
 
 The mechanisms in ADR-0010 (`FLAG_RELINK`), ADR-0014 (two-path access), ADR-0015 (structural lookup edges), and ADR-0017 (proxy write rejection) apply unchanged.
+
+### 8. 1.x bridge: `Cell`/`MutableCell` types and guards
+
+The 1.x bridge backports this ADR's vocabulary ahead of 2.0 so it is taught only once. The factory half of the bridge — `createCell`, `deriveCell`, `DeriveCellOptions` — leaves a gap: `deriveCell` declares its return type as bare `Signal<T>`, wider than necessary, since `deriveCell` can only ever produce a `State`, `Memo`, `Task`, or `Sensor` — never a `List`/`Store`/`Collection` — but nothing in 1.x expresses that narrower guarantee at the type level. The bridge extends to the type-level half to close it:
+
+- `type Cell<T> = State<T> | Memo<T> | Task<T> | Sensor<T>`, exported alongside the other Cell-specific 1.x code. A genuine structural narrowing, not just a rename: each 1.x origin already carries a distinct `Symbol.toStringTag` literal (`'State'|'Memo'|'Task'|'Sensor'`), so the union excludes `List`/`Store`/`Collection` at the type level with no runtime tag change — 1.x does not yet have the single collapsed `'Cell'` tag decision 1 defines for 2.0; this backport achieves the same *exclusion* property through the union instead. A fresh structural interface `{ get(): T }` was considered and rejected for this role: it is identical to `Signal<T>`'s existing definition, so it would not actually exclude `List<T>`/`Store<T>` at the type level.
+- `type MutableCell<T> = State<T>` — an alias, matching decision 5's `createCell(value, options?) → MutableCell<T>` (aliasing `createState`).
+- `deriveCell`'s overloads narrow their return type from `Signal<T>` to `Cell<T>`; `createCell` narrows from `State<T>` to `MutableCell<T>`. Both are widening-safe: every `Cell`/`MutableCell` value already satisfies `Signal`/`MutableSignal` structurally, so no existing caller's code breaks.
+- `isCell(value): value is Cell<T>` and `isMutableCell(value): value is MutableCell<T>` — the single-value-shape guards, checking `Symbol.toStringTag` membership in `{'State','Memo','Task','Sensor'}`. `isSignal`/`isMutableSignal` stay unchanged as the umbrella guards.
 
 ## Alternatives Considered
 

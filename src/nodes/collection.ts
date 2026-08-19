@@ -1,5 +1,6 @@
 import {
 	DuplicateKeyError,
+	UnresolvableKeyError,
 	UnsetSignalValueError,
 	validateCallback,
 	validateSignalValue,
@@ -88,7 +89,12 @@ type KeyedSource<T extends {}> = {
  * @template T - The type of items in the derived sequence
  */
 type DeriveListOptions<T extends {}> = {
-	/** Key generation strategy for an unkeyed source. See `KeyConfig`. Defaults to positional keys. */
+	/**
+	 * Key generation strategy for an unkeyed source. See `KeyConfig`. Defaults to positional
+	 * keys. In the external-push form (`watched`), a function `keyConfig` is required for a
+	 * `change`/`remove` entry to match an item that is not the exact tracked object reference —
+	 * see `ListChanges`.
+	 */
 	keyConfig?: KeyConfig<T>
 	/** Equality function for adapted per-item signals. Defaults to deep equality. */
 	itemEquals?: (a: T, b: T) => boolean
@@ -174,10 +180,10 @@ type DerivedList<T extends {}, S extends Signal<T> = Signal<T>> = {
 	 * forms are removed in v2.0. See `MIGRATION-2.0.md`.
 	 */
 	deriveCollection<R extends {}>(
-		callback: (sourceValue: T) => R,
+		callback: (sourceValue: T, abort: AbortSignal) => Promise<R>,
 	): DerivedList<R>
 	deriveCollection<R extends {}>(
-		callback: (sourceValue: T, abort: AbortSignal) => Promise<R>,
+		callback: (sourceValue: T) => R,
 	): DerivedList<R>
 	readonly length: number
 }
@@ -207,9 +213,17 @@ type Collection<T extends {}, S extends Signal<T> = Signal<T>> = DerivedList<
 type ListChanges<T> = {
 	/** Items to add. Each item is assigned a new key via the configured `keyConfig`. */
 	add?: T[]
-	/** Items whose values have changed. Matched to existing entries by key. */
+	/**
+	 * Items whose values have changed. Matched to existing entries by key. A non-content-based
+	 * `keyConfig` matches only the exact tracked object reference — any other item throws
+	 * `UnresolvableKeyError`.
+	 */
 	change?: T[]
-	/** Items to remove. Matched to existing entries by key. */
+	/**
+	 * Items to remove. Matched to existing entries by key. A non-content-based `keyConfig`
+	 * matches only the exact tracked object reference — any other item throws
+	 * `UnresolvableKeyError`.
+	 */
 	remove?: T[]
 }
 
@@ -236,7 +250,11 @@ type CollectionChanges<T> = ListChanges<T>
 type CollectionOptions<T extends {}, S extends Signal<T> = Signal<T>> = {
 	/** Initial items. Defaults to `[]`. */
 	value?: T[]
-	/** Key generation strategy. See `KeyConfig`. Defaults to auto-increment. */
+	/**
+	 * Key generation strategy. See `KeyConfig`. Defaults to auto-increment. A function
+	 * `keyConfig` is required for a `change`/`remove` entry to match an item that is not the
+	 * exact tracked object reference — see `ListChanges`.
+	 */
 	keyConfig?: KeyConfig<T>
 	/** Factory for per-item signals. Defaults to `createState`. */
 	createItem?: (value: T) => S
@@ -293,7 +311,9 @@ function keyedAdapter<T extends {}>(
 	source: Signal<T[]>,
 	options?: DeriveListOptions<T>,
 ): KeyedSource<T> {
-	const [generateKey, contentBased] = getKeyGenerator(options?.keyConfig)
+	const [generateKey, contentBased, positional] = getKeyGenerator(
+		options?.keyConfig,
+	)
 	const itemEquals = options?.itemEquals ?? DEEP_EQUALITY
 	const signals = new Map<string, Memo<T>>()
 	const indices = new Map<string, number>()
@@ -330,6 +350,7 @@ function keyedAdapter<T extends {}>(
 			generateKey,
 			contentBased,
 			itemEquals,
+			positional,
 		)
 		prev = next
 		if (keysEqual(keys, diff.newKeys)) return
@@ -474,12 +495,12 @@ function collectionFacade<T extends {}, S extends Signal<T>>(
  */
 function deriveCollection<T extends {}, U extends {}>(
 	source: ListSource<U>,
-	callback: (sourceValue: U) => T,
+	callback: (sourceValue: U, abort: AbortSignal) => Promise<T>,
 	options?: DeriveListOptions<U>,
 ): DerivedList<T>
 function deriveCollection<T extends {}, U extends {}>(
 	source: ListSource<U>,
-	callback: (sourceValue: U, abort: AbortSignal) => Promise<T>,
+	callback: (sourceValue: U) => T,
 	options?: DeriveListOptions<U>,
 ): DerivedList<T>
 function deriveCollection<T extends {}, U extends {}>(
@@ -658,6 +679,11 @@ function createCollection<T extends {}, S extends Signal<T> = Signal<T>>(
 
 	const [generateKey, contentBased] = getKeyGenerator(options?.keyConfig)
 
+	// With a content-based keyConfig, generateKey(item) can always compute a key from the
+	// item's content, so this never falls through to undefined. Without one, a change/remove
+	// entry can only be resolved by object identity — a real limitation for externally-sourced
+	// data (e.g. freshly-parsed JSON), which is rarely reference-equal across messages. See
+	// the throw in onChanges() below.
 	const resolveKey = (item: T): string | undefined =>
 		itemToKey.get(item) ?? (contentBased ? generateKey(item) : undefined)
 
@@ -736,11 +762,17 @@ function createCollection<T extends {}, S extends Signal<T> = Signal<T>>(
 				}
 			}
 
-			// Changes — only for State signals
+			// Changes — only for State signals. Keys are resolved for the whole batch
+			// before any mutation, so an unresolvable entry throws before anything commits
+			// — mirrors the add-loop's staging above.
 			if (change) {
+				const resolved: [string, T][] = []
 				for (const item of change) {
 					const key = resolveKey(item)
-					if (!key) continue
+					if (!key) throw new UnresolvableKeyError(TYPE_COLLECTION, item)
+					resolved.push([key, item])
+				}
+				for (const [key, item] of resolved) {
 					const signal = signals.get(key)
 					if (signal && isState(signal)) {
 						// Update reverse map: remove old reference, add new.
@@ -753,11 +785,15 @@ function createCollection<T extends {}, S extends Signal<T> = Signal<T>>(
 				}
 			}
 
-			// Removals
+			// Removals — same staging rationale as changes above.
 			if (remove) {
+				const resolved: [string, T][] = []
 				for (const item of remove) {
 					const key = resolveKey(item)
-					if (!key) continue
+					if (!key) throw new UnresolvableKeyError(TYPE_COLLECTION, item)
+					resolved.push([key, item])
+				}
+				for (const [key, item] of resolved) {
 					itemToKey.delete(item)
 					signals.delete(key)
 					const index = keys.indexOf(key)
@@ -837,12 +873,12 @@ function deriveList<T extends {}>(
 ): DerivedList<T>
 function deriveList<T extends {}, U extends {}>(
 	input: ListSource<U>,
-	itemCallback: (sourceValue: U) => T,
+	itemCallback: (sourceValue: U, abort: AbortSignal) => Promise<T>,
 	options?: DeriveListOptions<U>,
 ): DerivedList<T>
 function deriveList<T extends {}, U extends {}>(
 	input: ListSource<U>,
-	itemCallback: (sourceValue: U, abort: AbortSignal) => Promise<T>,
+	itemCallback: (sourceValue: U) => T,
 	options?: DeriveListOptions<U>,
 ): DerivedList<T>
 function deriveList<T extends {}, U extends {}>(

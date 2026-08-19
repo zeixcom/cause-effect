@@ -1,6 +1,6 @@
 /**
  * @name Cause & Effect
- * @version 1.5.1
+ * @version 1.5.2
  * @author Esther Brunner
  */
 
@@ -16,6 +16,7 @@ export {
 	PromiseValueError,
 	ReadonlySignalError,
 	RequiredOwnerError,
+	UnresolvableKeyError,
 	UnsetSignalValueError,
 } from './src/errors'
 export {
@@ -39,6 +40,19 @@ export {
 	unown,
 	untrack,
 } from './src/graph'
+export {
+	type Cell,
+	createCell,
+	createComputed,
+	type DeriveCellOptions,
+	type DeriveSignalOptions,
+	deriveCell,
+	deriveSignal,
+	isCell,
+	isComputed,
+	isMutableCell,
+	type MutableCell,
+} from './src/nodes/cell'
 export {
 	type Collection,
 	type CollectionCallback,
@@ -108,15 +122,8 @@ export {
 } from './src/nodes/store'
 export { createTask, isTask, type Task } from './src/nodes/task'
 export {
-	createCell,
-	createComputed,
 	createMutableSignal,
 	createSignal,
-	type DeriveCellOptions,
-	type DeriveSignalOptions,
-	deriveCell,
-	deriveSignal,
-	isComputed,
 	isMutableSignal,
 	isSignal,
 	type MutableSignal,

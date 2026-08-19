@@ -84,6 +84,14 @@ type MutableList<
 	[Symbol.iterator](): IterableIterator<S>
 	readonly length: number
 	get(): T[]
+	/**
+	 * Replaces the list's content in one step, diffing against the previous value.
+	 * With a `keyConfig`, an item keeps its key only while its content stays equal to the
+	 * previous item at that position — changed content gets a new key instead of the old one.
+	 * Without a `keyConfig`, array position is the item's identity, so the key at each index
+	 * stays the same regardless of content.
+	 * @param next - The desired content
+	 */
 	set(next: T[]): void
 	update(fn: (prev: T[]) => T[]): void
 	at(index: number): S | undefined
@@ -108,10 +116,10 @@ type MutableList<
 	 * forms are removed in v2.0. See `MIGRATION-2.0.md`.
 	 */
 	deriveCollection<R extends {}>(
-		callback: (sourceValue: T) => R,
+		callback: (sourceValue: T, abort: AbortSignal) => Promise<R>,
 	): DerivedList<R>
 	deriveCollection<R extends {}>(
-		callback: (sourceValue: T, abort: AbortSignal) => Promise<R>,
+		callback: (sourceValue: T) => R,
 	): DerivedList<R>
 }
 
@@ -140,9 +148,15 @@ function keysEqual(a: string[], b: string[]): boolean {
 
 function getKeyGenerator<T extends {}>(
 	keyConfig?: KeyConfig<T>,
-): [(item: T) => string, boolean] {
+): [(item: T) => string, boolean, boolean] {
 	let keyCounter = 0
 	const contentBased = typeof keyConfig === 'function'
+	// No keyConfig at all: array position is the identity contract (a plain
+	// createList([1, 2, 3]) has no notion of per-value identity beyond its
+	// slot). Any keyConfig — string prefix or function — signals the caller
+	// wants persistent per-item identity, so a content mismatch at a shared
+	// index must retire the old key rather than reuse it under new content.
+	const positional = keyConfig === undefined
 	return [
 		typeof keyConfig === 'string'
 			? () => `${keyConfig}${keyCounter++}`
@@ -150,12 +164,18 @@ function getKeyGenerator<T extends {}>(
 				? (item: T) => keyConfig(item) || String(keyCounter++)
 				: () => String(keyCounter++),
 		contentBased,
+		positional,
 	]
 }
 
 /**
  * Fast diff for positional (non-content-based) keys.
  * Avoids Map/Set allocation by iterating both arrays in one pass.
+ *
+ * @param positional - When true (no keyConfig given), a shared index keeps its key across a
+ *   content change — position is identity. When false (string or function keyConfig), a
+ *   content change at a shared index retires the old key and mints a fresh one instead of
+ *   reusing it, since the caller asked for identity distinct from position.
  */
 function diffPositional<T extends {}>(
 	prev: T[],
@@ -163,6 +183,7 @@ function diffPositional<T extends {}>(
 	prevKeys: string[],
 	generateKey: (item: T) => string,
 	itemEquals: (a: T, b: T) => boolean,
+	positional: boolean,
 ): DiffResult & { newKeys: string[] } {
 	const add = {} as UnknownRecord
 	const change = {} as UnknownRecord
@@ -175,12 +196,23 @@ function diffPositional<T extends {}>(
 	for (let i = 0; i < minLen; i++) {
 		// biome-ignore lint/style/noNonNullAssertion: bounded by minLen
 		const key = prevKeys[i]!
-		nextKeys.push(key)
 		// biome-ignore lint/style/noNonNullAssertion: bounded by minLen
-		if (!itemEquals(prev[i]!, next[i]!)) {
-			// biome-ignore lint/style/noNonNullAssertion: bounded by minLen
-			change[key] = next[i]!
-			changed = true
+		const prevItem = prev[i]!
+		// biome-ignore lint/style/noNonNullAssertion: bounded by minLen
+		const nextItem = next[i]!
+		if (itemEquals(prevItem, nextItem)) {
+			nextKeys.push(key)
+			continue
+		}
+		changed = true
+		if (positional) {
+			nextKeys.push(key)
+			change[key] = nextItem
+		} else {
+			remove[key] = null
+			const newKey = generateKey(nextItem)
+			nextKeys.push(newKey)
+			add[newKey] = nextItem
 		}
 	}
 
@@ -213,6 +245,8 @@ function diffPositional<T extends {}>(
  * @param generateKey - Function to generate keys for new items
  * @param contentBased - When true, always use generateKey (content-based keys);
  *   when false, reuse positional keys from currentKeys (synthetic keys)
+ * @param positional - When true (no keyConfig given), a shared index keeps its key across a
+ *   content change. Ignored when contentBased is true. See `diffPositional`.
  * @returns The differences in DiffResult format plus updated keys array
  */
 function diffArrays<T extends {}>(
@@ -222,9 +256,17 @@ function diffArrays<T extends {}>(
 	generateKey: (item: T) => string,
 	contentBased: boolean,
 	itemEquals: (a: T, b: T) => boolean,
+	positional: boolean,
 ): DiffResult & { newKeys: string[] } {
 	if (!contentBased)
-		return diffPositional(prev, next, prevKeys, generateKey, itemEquals)
+		return diffPositional(
+			prev,
+			next,
+			prevKeys,
+			generateKey,
+			itemEquals,
+			positional,
+		)
 
 	const add = {} as UnknownRecord
 	const change = {} as UnknownRecord
@@ -300,7 +342,9 @@ function createList<
 	const signals = new Map<string, S>()
 	let keys: string[] = []
 
-	const [generateKey, contentBased] = getKeyGenerator(options?.keyConfig)
+	const [generateKey, contentBased, positional] = getKeyGenerator(
+		options?.keyConfig,
+	)
 	const itemEquals = options?.itemEquals ?? DEEP_EQUALITY
 	const itemFactory = (options?.createItem ??
 		((item: T) => createState(item, { equals: itemEquals }))) as (value: T) => S
@@ -431,6 +475,7 @@ function createList<
 				generateKey,
 				contentBased,
 				itemEquals,
+				positional,
 			)
 			if (changes.changed) {
 				keys = changes.newKeys
