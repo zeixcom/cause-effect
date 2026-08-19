@@ -152,6 +152,25 @@ class PromiseValueError extends TypeError {
 	}
 }
 
+/**
+ * Error thrown when a `change`/`remove` entry passed to a Collection's `applyChanges` cannot
+ * be matched to an existing key.
+ */
+class UnresolvableKeyError extends Error {
+	/**
+	 * Constructs a new UnresolvableKeyError.
+	 *
+	 * @param where - The location where the error occurred.
+	 * @param value - The value that could not be resolved to a key.
+	 */
+	constructor(where: string, value: unknown) {
+		super(
+			`[${where}] Could not resolve a key for value ${valueString(value)} — a content-based keyConfig (item => key) is required to match change/remove entries against externally-sourced data, whose items are rarely reference-equal to what is already tracked`,
+		)
+		this.name = 'UnresolvableKeyError'
+	}
+}
+
 class DuplicateKeyError extends Error {
 	constructor(where: string, key: string, value?: unknown) {
 		super(
@@ -230,6 +249,7 @@ export {
 	PromiseValueError,
 	ReadonlySignalError,
 	RequiredOwnerError,
+	UnresolvableKeyError,
 	UnsetSignalValueError,
 	validateCallback,
 	validateReadValue,

@@ -243,6 +243,8 @@ const users = createList(
 )
 ```
 
+A `keyConfig` also controls what `.set()` treats as an item's identity. With a `keyConfig`, an item keeps its key only while its content stays equal to the previous item at that position. Changed content gets a new key instead. Without a `keyConfig`, array position is the identity. The key at each index stays the same regardless of content.
+
 To rebuild a list from inside a reactive handler, use `.set()` or `.update()` rather than a remove-then-add loop, which throws `EffectConvergenceError`. See [Rebuilding a List from a reactive handler](RECIPES.md#3-rebuilding-a-list-from-a-reactive-handler).
 
 > **Naming ahead of 2.0:** the mutable list type is also exported as `MutableList` — the name it keeps in 2.0, where `List` becomes the readonly base (today's `Collection`). `isMutableList()` is the matching guard. See [MIGRATION-2.0.md](MIGRATION-2.0.md).
@@ -269,6 +271,8 @@ createEffect(() => console.log('Items:', items.get()))
 ```
 
 The watched callback activates lazily when an effect first reads the collection, and cleans up when no effect watches it. Options are `value` for initial items (default `[]`) and `keyConfig` for key generation.
+
+Use a function `keyConfig` — not a string prefix, not the default — for an externally-driven collection. A `change` or `remove` entry matches an existing item by key. A function `keyConfig` derives that key from the item's content. It therefore matches an item that arrives as a new object, the normal case for parsed JSON. Without a function `keyConfig`, a `change` or `remove` entry matches only the exact object reference already tracked. Any other entry throws `UnresolvableKeyError`.
 
 **Derived collections** transform Lists or other Collections through `.deriveCollection()`:
 
