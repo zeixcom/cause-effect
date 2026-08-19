@@ -148,8 +148,6 @@ Two figures, doing two different jobs.
 
 **The full-library figure is a diagnostic.** It exists to catch an accidental blowup — a dependency pulled in whole, a factory that defeats tree-shaking — not to be optimised against byte by byte. It is a working ceiling with deliberate slack, and it is re-baselined from measurement at each release rather than treated as a constant.
 
-Refactoring may move it in either direction, and a refactor must not be redesigned to defend it. Deduplicating code is the clear case: gzip compresses a second near-identical copy almost for free, so extracting a shared helper reliably reduces minified size while *increasing* gzipped size. The two limits therefore move in opposite directions under exactly the changes that improve the code. Treating the gzipped number as a hard constant would select against consolidation — a premature-optimisation trap, and one this project walked into during CE-013.
-
 Re-baselining is a release gate, not a routine edit. Lowering the ceiling toward measured usage at release time is what keeps the diagnostic meaningful; raising it mid-branch to unblock a commit is what makes it meaningless.
 
 The library must remain tree-shakable. An import of one construction path must not pull in the others. This constraint is why the narrow single-value factories are retained alongside `createSignal` and `deriveCell`, and it is what makes the core figure the one that matters.

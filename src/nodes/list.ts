@@ -108,10 +108,10 @@ type MutableList<
 	 * forms are removed in v2.0. See `MIGRATION-2.0.md`.
 	 */
 	deriveCollection<R extends {}>(
-		callback: (sourceValue: T) => R,
+		callback: (sourceValue: T, abort: AbortSignal) => Promise<R>,
 	): DerivedList<R>
 	deriveCollection<R extends {}>(
-		callback: (sourceValue: T, abort: AbortSignal) => Promise<R>,
+		callback: (sourceValue: T) => R,
 	): DerivedList<R>
 }
 

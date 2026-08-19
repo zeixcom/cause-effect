@@ -583,6 +583,78 @@ function isPending(signal) {
 function abort(signal) {
   getAsyncSource(signal)?.abort();
 }
+// src/nodes/memo.ts
+function createMemo(fn, options) {
+  validateCallback(TYPE_MEMO, fn, isSyncFunction);
+  if (options?.value !== undefined)
+    validateSignalValue(TYPE_MEMO, options.value, options?.guard);
+  const node = {
+    fn,
+    value: options?.value,
+    flags: FLAG_DIRTY,
+    sources: null,
+    sourcesTail: null,
+    sinks: null,
+    sinksTail: null,
+    equals: options?.equals ?? DEFAULT_EQUALITY,
+    error: undefined,
+    stop: undefined
+  };
+  const watched = options?.watched;
+  const subscribe = makeSubscribe(node, watched ? () => watched(() => {
+    propagate(node);
+    if (batchDepth === 0)
+      flush();
+  }) : undefined);
+  return {
+    [Symbol.toStringTag]: TYPE_MEMO,
+    get() {
+      subscribe();
+      refresh(node);
+      if (node.error)
+        throw node.error;
+      validateReadValue(TYPE_MEMO, node.value);
+      return node.value;
+    }
+  };
+}
+function isMemo(value) {
+  return isSignalOfType(value, TYPE_MEMO);
+}
+
+// src/nodes/sensor.ts
+function createSensor(watched, options) {
+  validateCallback(TYPE_SENSOR, watched, isSyncFunction);
+  if (options?.value !== undefined)
+    validateSignalValue(TYPE_SENSOR, options.value, options?.guard);
+  const node = {
+    value: options?.value,
+    sinks: null,
+    sinksTail: null,
+    equals: options?.equals ?? DEFAULT_EQUALITY,
+    guard: options?.guard,
+    stop: undefined
+  };
+  return {
+    [Symbol.toStringTag]: TYPE_SENSOR,
+    get() {
+      if (activeSink) {
+        if (!node.sinks)
+          node.stop = watched((next) => {
+            validateSignalValue(TYPE_SENSOR, next, node.guard);
+            setState(node, next);
+          });
+        link(node, activeSink);
+      }
+      validateReadValue(TYPE_SENSOR, node.value);
+      return node.value;
+    }
+  };
+}
+function isSensor(value) {
+  return isSignalOfType(value, TYPE_SENSOR);
+}
+
 // src/nodes/state.ts
 function createState(value, options) {
   validateSignalValue(TYPE_STATE, value, options?.guard);
@@ -616,6 +688,95 @@ function isState(value) {
   return isSignalOfType(value, TYPE_STATE);
 }
 
+// src/nodes/task.ts
+function createTask(fn, options) {
+  validateCallback(TYPE_TASK, fn, isAsyncFunction);
+  if (options?.value !== undefined)
+    validateSignalValue(TYPE_TASK, options.value, options?.guard);
+  const pendingNode = {
+    value: false,
+    sinks: null,
+    sinksTail: null,
+    equals: DEFAULT_EQUALITY
+  };
+  const node = {
+    fn,
+    value: options?.value,
+    sources: null,
+    sourcesTail: null,
+    sinks: null,
+    sinksTail: null,
+    flags: FLAG_DIRTY,
+    equals: options?.equals ?? DEFAULT_EQUALITY,
+    controller: undefined,
+    error: undefined,
+    stop: undefined,
+    pendingNode
+  };
+  const watched = options?.watched;
+  const subscribe = makeSubscribe(node, watched ? () => watched(() => {
+    propagate(node);
+    if (batchDepth === 0)
+      flush();
+  }) : undefined);
+  const pendingSubscribe = makeSubscribe(pendingNode);
+  return {
+    [Symbol.toStringTag]: TYPE_TASK,
+    get() {
+      subscribe();
+      refresh(node);
+      if (node.error)
+        throw node.error;
+      validateReadValue(TYPE_TASK, node.value);
+      return node.value;
+    },
+    isPending() {
+      pendingSubscribe();
+      return node.pendingNode.value;
+    },
+    abort() {
+      node.controller?.abort();
+      node.controller = undefined;
+      setState(node.pendingNode, false);
+    }
+  };
+}
+function isTask(value) {
+  return isSignalOfType(value, TYPE_TASK);
+}
+
+// src/nodes/cell.ts
+function createComputed(callback, options) {
+  return isAsyncFunction(callback) ? createTask(callback, options) : createMemo(callback, options);
+}
+function deriveCell(input, options) {
+  if (isFunction(input)) {
+    const { initial, watched: watched2, ...rest2 } = options ?? {};
+    const computedOptions = {
+      ...rest2,
+      value: initial,
+      watched: watched2
+    };
+    return isAsyncFunction(input) ? createTask(input, computedOptions) : createMemo(input, computedOptions);
+  }
+  const { watched, ...rest } = options;
+  validateCallback("deriveCell", watched, isSyncFunction);
+  return createSensor(watched, { ...rest, value: input });
+}
+var deriveSignal = deriveCell;
+function createCell(value, options) {
+  return createState(value, options);
+}
+function isComputed(value) {
+  return isMemo(value) || isTask(value);
+}
+var CELL_TYPES = new Set([TYPE_STATE, TYPE_MEMO, TYPE_TASK, TYPE_SENSOR]);
+function isCell(value) {
+  return value != null && CELL_TYPES.has(value[Symbol.toStringTag]);
+}
+function isMutableCell(value) {
+  return isState(value);
+}
 // src/nodes/list.ts
 function keysEqual(a, b) {
   if (a.length !== b.length)
@@ -974,102 +1135,6 @@ function isMutableList(value) {
 }
 function isList(value) {
   return isMutableList(value);
-}
-
-// src/nodes/memo.ts
-function createMemo(fn, options) {
-  validateCallback(TYPE_MEMO, fn, isSyncFunction);
-  if (options?.value !== undefined)
-    validateSignalValue(TYPE_MEMO, options.value, options?.guard);
-  const node = {
-    fn,
-    value: options?.value,
-    flags: FLAG_DIRTY,
-    sources: null,
-    sourcesTail: null,
-    sinks: null,
-    sinksTail: null,
-    equals: options?.equals ?? DEFAULT_EQUALITY,
-    error: undefined,
-    stop: undefined
-  };
-  const watched = options?.watched;
-  const subscribe = makeSubscribe(node, watched ? () => watched(() => {
-    propagate(node);
-    if (batchDepth === 0)
-      flush();
-  }) : undefined);
-  return {
-    [Symbol.toStringTag]: TYPE_MEMO,
-    get() {
-      subscribe();
-      refresh(node);
-      if (node.error)
-        throw node.error;
-      validateReadValue(TYPE_MEMO, node.value);
-      return node.value;
-    }
-  };
-}
-function isMemo(value) {
-  return isSignalOfType(value, TYPE_MEMO);
-}
-
-// src/nodes/task.ts
-function createTask(fn, options) {
-  validateCallback(TYPE_TASK, fn, isAsyncFunction);
-  if (options?.value !== undefined)
-    validateSignalValue(TYPE_TASK, options.value, options?.guard);
-  const pendingNode = {
-    value: false,
-    sinks: null,
-    sinksTail: null,
-    equals: DEFAULT_EQUALITY
-  };
-  const node = {
-    fn,
-    value: options?.value,
-    sources: null,
-    sourcesTail: null,
-    sinks: null,
-    sinksTail: null,
-    flags: FLAG_DIRTY,
-    equals: options?.equals ?? DEFAULT_EQUALITY,
-    controller: undefined,
-    error: undefined,
-    stop: undefined,
-    pendingNode
-  };
-  const watched = options?.watched;
-  const subscribe = makeSubscribe(node, watched ? () => watched(() => {
-    propagate(node);
-    if (batchDepth === 0)
-      flush();
-  }) : undefined);
-  const pendingSubscribe = makeSubscribe(pendingNode);
-  return {
-    [Symbol.toStringTag]: TYPE_TASK,
-    get() {
-      subscribe();
-      refresh(node);
-      if (node.error)
-        throw node.error;
-      validateReadValue(TYPE_TASK, node.value);
-      return node.value;
-    },
-    isPending() {
-      pendingSubscribe();
-      return node.pendingNode.value;
-    },
-    abort() {
-      node.controller?.abort();
-      node.controller = undefined;
-      setState(node.pendingNode, false);
-    }
-  };
-}
-function isTask(value) {
-  return isSignalOfType(value, TYPE_TASK);
 }
 
 // src/nodes/collection.ts
@@ -1470,38 +1535,6 @@ function match(signalOrSignals, handlers) {
     });
   }
 }
-// src/nodes/sensor.ts
-function createSensor(watched, options) {
-  validateCallback(TYPE_SENSOR, watched, isSyncFunction);
-  if (options?.value !== undefined)
-    validateSignalValue(TYPE_SENSOR, options.value, options?.guard);
-  const node = {
-    value: options?.value,
-    sinks: null,
-    sinksTail: null,
-    equals: options?.equals ?? DEFAULT_EQUALITY,
-    guard: options?.guard,
-    stop: undefined
-  };
-  return {
-    [Symbol.toStringTag]: TYPE_SENSOR,
-    get() {
-      if (activeSink) {
-        if (!node.sinks)
-          node.stop = watched((next) => {
-            validateSignalValue(TYPE_SENSOR, next, node.guard);
-            setState(node, next);
-          });
-        link(node, activeSink);
-      }
-      validateReadValue(TYPE_SENSOR, node.value);
-      return node.value;
-    }
-  };
-}
-function isSensor(value) {
-  return isSignalOfType(value, TYPE_SENSOR);
-}
 // src/nodes/store.ts
 var storeProxyHandler = {
   get(target, prop) {
@@ -1864,27 +1897,6 @@ var SIGNAL_TYPES = new Set([
   TYPE_COLLECTION,
   TYPE_STORE
 ]);
-function createComputed(callback, options) {
-  return isAsyncFunction(callback) ? createTask(callback, options) : createMemo(callback, options);
-}
-function deriveCell(input, options) {
-  if (isFunction(input)) {
-    const { initial, watched: watched2, ...rest2 } = options ?? {};
-    const computedOptions = {
-      ...rest2,
-      value: initial,
-      watched: watched2
-    };
-    return isAsyncFunction(input) ? createTask(input, computedOptions) : createMemo(input, computedOptions);
-  }
-  const { watched, ...rest } = options;
-  validateCallback("deriveCell", watched, isSyncFunction);
-  return createSensor(watched, { ...rest, value: input });
-}
-var deriveSignal = deriveCell;
-function createCell(value, options) {
-  return createState(value, options);
-}
 function createSignal(value) {
   if (isSignal(value))
     return value;
@@ -1910,9 +1922,6 @@ function createMutableSignal(value) {
   if (isRecord(value))
     return createStore(value);
   return createState(value);
-}
-function isComputed(value) {
-  return isMemo(value) || isTask(value);
 }
 function isSignal(value) {
   return value != null && SIGNAL_TYPES.has(value[Symbol.toStringTag]);
@@ -2008,6 +2017,7 @@ export {
   isMutableStore,
   isMutableSignal,
   isMutableList,
+  isMutableCell,
   isMemo,
   isList,
   isFunction,
@@ -2015,6 +2025,7 @@ export {
   isDerivedList,
   isComputed,
   isCollection,
+  isCell,
   isAsyncFunction,
   deriveStore,
   deriveSignal,

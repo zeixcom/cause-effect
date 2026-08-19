@@ -31,6 +31,8 @@ accordingly.
 **Status is explicit.** Each ADR must have a clear status: Proposed, Accepted, Rejected, Superseded.
 
 **Concise over comprehensive.** Focus on the decision, context, and consequences. Avoid unnecessary detail.
+
+**No changelog language, no ticket numbers.** An ADR records why a decision was made, not when it shipped or which task tracked it. Never write release/version numbers (e.g. "ships in 1.5.2"), ticket/task IDs (e.g. "CE-033"), or shipped-vs-pending status framing tied to a release inside an ADR's Context/Decision/Alternatives/Consequences — that content is transitory and belongs in `CHANGELOG.md` or `TODO.md`, which track it properly. An ADR's own `Status` field (Proposed/Accepted/Rejected/Superseded) is the only place decision lifecycle belongs, and it describes the *decision's* status, not a release's. If a decision text leans on "not yet shipped" or a ticket ID to make sense, that is a sign the reasoning itself isn't decoupled from the release calendar yet — rewrite it so the decision stands on its own. The only permissible exception is when an ADR governs the decision for a breaking change.
 </essential_principles>
 
 <intake>

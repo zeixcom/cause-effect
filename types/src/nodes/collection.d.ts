@@ -109,8 +109,8 @@ type DerivedList<T extends {}, S extends Signal<T> = Signal<T>> = {
      * `users.deriveCollection(f)` becomes `deriveList(users, f)`. Both `.deriveCollection()`
      * forms are removed in v2.0. See `MIGRATION-2.0.md`.
      */
-    deriveCollection<R extends {}>(callback: (sourceValue: T) => R): DerivedList<R>;
     deriveCollection<R extends {}>(callback: (sourceValue: T, abort: AbortSignal) => Promise<R>): DerivedList<R>;
+    deriveCollection<R extends {}>(callback: (sourceValue: T) => R): DerivedList<R>;
     readonly length: number;
 };
 /**
@@ -205,8 +205,8 @@ type CollectionCallback<T extends {}> = ListCallback<T>;
  * @param options - Key generation and item equality. Applies only to an unkeyed source.
  * @returns A Collection signal
  */
-declare function deriveCollection<T extends {}, U extends {}>(source: ListSource<U>, callback: (sourceValue: U) => T, options?: DeriveListOptions<U>): DerivedList<T>;
 declare function deriveCollection<T extends {}, U extends {}>(source: ListSource<U>, callback: (sourceValue: U, abort: AbortSignal) => Promise<T>, options?: DeriveListOptions<U>): DerivedList<T>;
+declare function deriveCollection<T extends {}, U extends {}>(source: ListSource<U>, callback: (sourceValue: U) => T, options?: DeriveListOptions<U>): DerivedList<T>;
 /**
  * Creates an externally-driven Collection with a watched lifecycle.
  *
@@ -266,8 +266,8 @@ declare function deriveList<T extends {}>(input: (prev: T[], abort: AbortSignal)
 declare function deriveList<T extends {}>(input: T[], options: DeriveListOptions<T> & {
     watched: ListCallback<T>;
 }): DerivedList<T>;
-declare function deriveList<T extends {}, U extends {}>(input: ListSource<U>, itemCallback: (sourceValue: U) => T, options?: DeriveListOptions<U>): DerivedList<T>;
 declare function deriveList<T extends {}, U extends {}>(input: ListSource<U>, itemCallback: (sourceValue: U, abort: AbortSignal) => Promise<T>, options?: DeriveListOptions<U>): DerivedList<T>;
+declare function deriveList<T extends {}, U extends {}>(input: ListSource<U>, itemCallback: (sourceValue: U) => T, options?: DeriveListOptions<U>): DerivedList<T>;
 /**
  * Checks if a value is a read-only derived List signal.
  *

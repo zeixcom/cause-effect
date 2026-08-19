@@ -40,6 +40,19 @@ export {
 	untrack,
 } from './src/graph'
 export {
+	type Cell,
+	createCell,
+	createComputed,
+	type DeriveCellOptions,
+	type DeriveSignalOptions,
+	deriveCell,
+	deriveSignal,
+	isCell,
+	isComputed,
+	isMutableCell,
+	type MutableCell,
+} from './src/nodes/cell'
+export {
 	type Collection,
 	type CollectionCallback,
 	type CollectionChanges,
@@ -108,15 +121,8 @@ export {
 } from './src/nodes/store'
 export { createTask, isTask, type Task } from './src/nodes/task'
 export {
-	createCell,
-	createComputed,
 	createMutableSignal,
 	createSignal,
-	type DeriveCellOptions,
-	type DeriveSignalOptions,
-	deriveCell,
-	deriveSignal,
-	isComputed,
 	isMutableSignal,
 	isSignal,
 	type MutableSignal,

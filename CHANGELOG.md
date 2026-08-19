@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **`Cell<T>` / `MutableCell<T>` types, `isCell(x)` / `isMutableCell(x)` guards**: The 1.x bridge for [ADR-0018](adr/0018-shape-indexed-signal-types.md) §8's shape-indexed `Cell` type. `Cell<T> = State<T> | Memo<T> | Task<T> | Sensor<T>` — a genuine structural narrowing of `Signal<T>`, not just a rename: each origin already carries a distinct `Symbol.toStringTag` literal (`'State' | 'Memo' | 'Task' | 'Sensor'`), so the union excludes `List<T>` / `Store<T>` / `Collection<T>` at the type level with no runtime tag change. `MutableCell<T> = State<T>`, an alias matching `createCell`'s existing return value. `isCell`/`isMutableCell` check `Symbol.toStringTag` membership; `isSignal`/`isMutableSignal` keep their unchanged umbrella meaning. `deriveCell`'s overloads now return `Cell<T>` instead of the wider `Signal<T>`, and `createCell` now returns `MutableCell<T>` instead of `State<T>` — both widening-safe, since every `Cell`/`MutableCell` value already satisfies `Signal`/`MutableSignal` structurally, so no existing caller's code breaks.
+
+### Fixed
+
+- **`deriveCell(input, options?)` mis-inferred a zero/single-arg async callback's return type as `Promise<T>`** (`src/nodes/cell.ts`, formerly `src/signal.ts`): The overloads declared the sync `MemoCallback<T>` form before the async `TaskCallback<T>` form. A zero/single-arg `async () => T` callback is structurally assignable to `MemoCallback<T>` too (fewer parameters is always fine), and TypeScript's overload resolution picks the first structural match — so `T` unified to `Promise<...>` instead of the resolved value type. For example, `deriveCell(async () => new Map<string, number>())` inferred `Signal<Promise<Map<string, number>>>` instead of `Signal<Map<string, number>>`. The deprecated `createComputed` already ordered `TaskCallback` before `MemoCallback` to avoid exactly this; `deriveCell`'s overloads are now reordered to match. Type-inference-only fix — no runtime behavior change.
+- **Four per-item derivation overload pairs had the same sync-before-async ordering bug** (`src/nodes/list.ts`, `src/nodes/collection.ts`): `MutableList.deriveCollection()`, `DerivedList.deriveCollection()`, the deprecated free function `deriveCollection()`, and `deriveList()`'s per-item overloads (the current v2.0-facing API) all declared a single-arg sync callback `(sourceValue: T) => R` before the two-arg async callback `(sourceValue: T, abort: AbortSignal) => Promise<R>`. Since `R` is unconstrained, a single-arg async callback that ignores `abort` — a common shape — structurally matched the sync overload first, unifying `R` to `Promise<X>` instead of `X`. For example, `deriveList(source, async (item) => ({ value: item.id }))` inferred `DerivedList<Promise<{ value: string }>>` instead of `DerivedList<{ value: string }>`. Each pair is now reordered so the async overload comes first, matching the `deriveCell` fix above. `deriveList`'s whole-array overloads and `deriveStore` were not affected — their sync-form return type is a concrete `T[]`/`UnknownRecord` shape, which already blocks the bad unification. Type-inference-only fix — no runtime behavior change.
+
 ## 1.5.1
 
 ### Fixed
