@@ -159,8 +159,8 @@ earlier phase's are done, unless a task says otherwise.
   (bundle ceilings re-baselined to 29309 B / 10045 B, README figure updated to the measured
   8036 B). `bun run check` and `bun run regression` both green. The v2 branch is releasable
   as 2.0.0 in every respect this plan gates; version bump, tagging, and `npm publish` remain
-  the maintainer's mechanics, out of scope per the plan. Phase 2 done — Phase 3 (CE-018,
-  CE-019) may start.
+  the maintainer's mechanics, out of scope per the plan. Phase 2 done — Phase 4 (CE-018,
+  CE-019) may start after Phase 3's forward-ports (CE-030, CE-031) land.
 
 - [x] CE-027: Add the ADR-0018 amendment note to ADR-0001's Status line — done ✓
   **Skill:** adr-keeper
@@ -221,10 +221,61 @@ earlier phase's are done, unless a task says otherwise.
   **CE-017 closed — all three gap tasks (CE-027, CE-028, CE-029) landed.** Step 0 (resolved,
   no back-port needed), Step 1 (changelog audit), Step 2 (ADR status hygiene, CE-027), Step 3
   (MIGRATION-2.0.md, CE-028), Step 4 (this task), Step 5 (REQUIREMENTS.md banner), and Step 6
-  (`bun run check` green) are all satisfied. Phase 2 is done; Phase 3 (CE-018, CE-019) may
-  now start.
+  (`bun run check` green) are all satisfied. Phase 2 is done; Phase 3 (CE-030, CE-031,
+  forward-ported bugfixes) starts next, then Phase 4 (CE-018, CE-019).
 
-## Phase 3 — Agent docs and error surface (after Phase 2)
+## Phase 3 — Forward-port 1.5.x bugfixes (after Phase 2, before docs)
+
+Two fixes landed on `next` (PR #83, PR #84 — now released as 1.5.2) after `v2/shape-exploration`
+diverged. Both bugs reproduce as-is in this branch's `src/nodes/list.ts` — the file was carried
+forward with the pre-fix logic. Land these before CE-018/CE-019 so the agent-docs sync and
+error-surface pass document the corrected behavior, not the bug.
+
+- [x] CE-030: Fix `deriveList` per-item overload order (async must precede sync) — reviewed ✓
+  **Skill:** cause-effect-dev
+  **Changed:** `src/nodes/list.ts` (swapped the two public per-item `deriveList` overloads,
+  async now declared before sync), `test/derive-list.test.ts` (new type-level regression test
+  + `List` import).
+  **Review:** Approved. Verified the swap against the actual TS resolution rule (order matters
+  because the sync overload's parameter type is a supertype-compatible match for an async
+  callback, not the reverse) — the fix is correctly targeted, not cargo-culted from `next`.
+  `derivePerItem` left untouched is the right call: it's module-private, reached only through
+  explicit casts in `deriveList`'s implementation body, so its declaration order never
+  participates in a public call site's overload resolution — swapping it would be pure noise.
+  The compile-time assertion (`List<number>` assignment that fails to compile on regression)
+  is the correct test shape for a type-inference bug; no runtime assertion could exercise this.
+  `tsc --noEmit` and `bun test` (692/692) both clean.
+
+- [x] CE-031: Retire stale keys on content change; reject unresolvable `change`/`remove` entries — reviewed ✓
+  **Skill:** cause-effect-dev
+  **Changed:** `src/nodes/list.ts` (`getKeyGenerator` now returns a third `positional` flag;
+  threaded through `diffArrays`/`diffPositional`; `diffPositional` retires the old key and
+  mints a fresh one on content mismatch at a shared index when `!positional`; `onChanges()`
+  now stages `change`/`remove` key resolution before mutating, throwing `UnresolvableKeyError`
+  for the whole batch if any entry can't resolve), `src/errors.ts` (new `UnresolvableKeyError`
+  class + export, message text matches `next`'s), `index.ts` (export `UnresolvableKeyError`),
+  `test/derive-list.test.ts` (stale-key retirement test + 3 `UnresolvableKeyError` tests under
+  `external push`), `CHANGELOG.md` (`[Unreleased]`: one Added entry for the new error class,
+  three Fixed entries for the overload-order and two key-handling bugs).
+  **Review:** Approved. Confirmed the fix is correctly scoped to the non-content-based
+  (`diffPositional`) path only — the content-based branch of `diffArrays` (hash-map diff)
+  already resolved identity by content and was never in scope; the existing "keeps item
+  identity across recomputes with a content-based keyConfig" test still passes unchanged,
+  confirming no regression there. `positional = keyConfig === undefined` correctly separates
+  "no keyConfig at all → position is identity" from "any keyConfig (string or function) →
+  identity distinct from position," matching the ADR-0018-era `List` contract. The
+  `UnresolvableKeyError` provenance string (`'deriveList'`) matches the existing local
+  convention in `createExternalList` (same string already used for its `DuplicateKeyError`/
+  `validateCallback` calls) rather than `TYPE_LIST` — consistent, not a deviation. Message
+  wording copied from `next` is fine as-is: it's generic library-behavior text with no 1.x
+  vocabulary baked in, needs no v2-specific rewrite. One minor nit, not blocking: the 1.x fix
+  had an explanatory comment above `resolveKey` (~`src/nodes/list.ts:816`) noting that a
+  content-based `keyConfig` never falls through to `undefined`, so the throw path is
+  identity-only-config's concern; that comment didn't get ported. Low value to chase alone —
+  fold it in opportunistically if `resolveKey` is touched again, no standalone task needed.
+  `bun run check` (tsc, biome, 692/692 tests, bundle regression) clean.
+
+## Phase 4 — Agent docs and error surface (after Phase 3)
 
 - [ ] CE-018: Sync agent-facing documentation to the shipped v2 API
   **Skill:** tech-writer
@@ -249,7 +300,7 @@ earlier phase's are done, unless a task says otherwise.
   today's messages; this plan then changes several messages and re-syncs the file itself in
   its own Step 8 — running it first would mean CE-018 immediately goes stale).
 
-## Phase 4 — ADR-0019: `get(key)` value shortcut (new, not covered by the 5 plans)
+## Phase 5 — ADR-0019: `get(key)` value shortcut (new, not covered by the 5 plans)
 
 ADR-0019 is 🔄 Proposed, depends on ADR-0018 (accepted in code as of Phase 1/2, not yet
 flagged Accepted in the ADR file until CE-017 Step 2 runs), and has **not** been implemented —
@@ -341,7 +392,7 @@ code is written.
   first checking `'recompute' in node` — PLAN-error-surface-hardening defect #5 is real.
 - `src/errors.ts` exports exactly 11 error classes — matches both plans' counts.
 - No `get(key)` overload exists anywhere in `list.ts`/`store.ts` today — ADR-0019 is
-  unimplemented, confirming it needs its own tasks (Phase 4 above), since none of the 5 plans
+  unimplemented, confirming it needs its own tasks (Phase 5 above), since none of the 5 plans
   touch it.
 - Bundle figures at time of triage: core 2080B gz (limit 3072B, hard), full library 7975B gz
   / 23225B min (ceilings 10240B / 28672B) — comfortably under, but CE-017 still must re-run
@@ -356,7 +407,7 @@ code is written.
   real open items the ADR itself calls out — CE-020 gates CE-021/CE-022 on resolving the
   first; the second is addressed by CE-021/CE-022's explicit "thin wrapper, not a separate
   lookup" instruction.
-- Sequencing across Phase 4 and Phases 1-2: CE-021/CE-022 touch the same files CE-015/CE-016
+- Sequencing across Phase 5 and Phases 1-2: CE-021/CE-022 touch the same files CE-015/CE-016
   modify. Implementing ADR-0019 before those land would mean rebasing through two
-  independently-designed changes to the same lookup paths — Phase 4 is ordered last for
+  independently-designed changes to the same lookup paths — Phase 5 is ordered last for
   this reason, not because it's lower priority in an absolute sense.

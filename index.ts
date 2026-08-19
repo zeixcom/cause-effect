@@ -16,6 +16,7 @@ export {
 	PromiseValueError,
 	ReadonlySignalError,
 	RequiredOwnerError,
+	UnresolvableKeyError,
 	UnsetSignalValueError,
 } from './src/errors'
 export {

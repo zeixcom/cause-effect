@@ -9,8 +9,11 @@ import {
 	deriveComputed,
 	deriveList,
 	isList,
+	type List,
 	type ListChanges,
+	type MutableCell,
 	type Signal,
+	UnresolvableKeyError,
 } from '../index.ts'
 
 /* === Utility Functions === */
@@ -105,6 +108,38 @@ describe('per-item derivation from an unkeyed source', () => {
 		source.set([{ id: 'a', name: 'Alice' }])
 		expect(names.get()).toEqual(['Alice'])
 		expect(names.byKey('b')).toBeUndefined()
+	})
+
+	test('retires the old key instead of reusing it when content changes at a shared index (string keyConfig)', () => {
+		// Regression: with a keyConfig (string or function), a shared index whose
+		// content changes must not silently keep identifying the old key under new
+		// content — the caller asked for identity distinct from array position.
+		// Without a keyConfig at all, position IS identity and this must not apply.
+		const source = createState([{ id: 1 }, { id: 2 }, { id: 3 }])
+		const passthrough = deriveList(source, (v: { id: number }) => v, {
+			keyConfig: 'item-',
+		})
+		const key1 = passthrough.keyAt(1)
+		expect(key1).toBe('item-1')
+		expect(passthrough.byKey(key1 as string)?.get()).toEqual({ id: 2 })
+
+		source.set([{ id: 1 }, { id: 999 }, { id: 3 }])
+
+		// The old key is retired, not repointed to the unrelated new content.
+		expect(passthrough.byKey(key1 as string)).toBeUndefined()
+		// The new item gets a freshly minted key.
+		const newKey = passthrough.keyAt(1)
+		expect(newKey).not.toBe(key1)
+		expect(passthrough.byKey(newKey as string)?.get()).toEqual({ id: 999 })
+	})
+
+	test('single-arg async item callback infers the resolved item type, not Promise<T>', () => {
+		const list = createList([1, 2, 3])
+		const doubled = deriveList(list, async (v: number) => v * 2)
+		// If the overload order regresses, `doubled` unifies to `List<Promise<number>>`
+		// and this assignment fails to compile.
+		const typedDoubled: List<number> = doubled
+		expect(typedDoubled).toBeDefined()
 	})
 
 	test('reads an unresolved Task source as empty rather than throwing', async () => {
@@ -412,6 +447,87 @@ describe('deriveList', () => {
 					watched: () => () => {},
 				}),
 			).toThrow(DuplicateKeyError)
+		})
+
+		test('change without a content-based keyConfig throws UnresolvableKeyError for a non-identical item', () => {
+			// Without keyConfig, a change entry can only be matched by object identity —
+			// unworkable for externally-sourced data (e.g. freshly-parsed JSON), which is
+			// never reference-equal to what is already tracked. This must fail loudly
+			// rather than silently drop the update.
+			type Item = { id: string; v: number }
+			let push: ((changes: ListChanges<Item>) => void) | undefined
+			const items = deriveList<Item, MutableCell<Item>>([{ id: 'a', v: 1 }], {
+				watched: apply => {
+					push = apply
+					return () => {
+						push = undefined
+					}
+				},
+			})
+			const dispose = createScope(() => {
+				createEffect(() => {
+					items.get()
+				})
+			})
+
+			expect(() => {
+				push?.({ change: [{ id: 'a', v: 2 }] })
+			}).toThrow(UnresolvableKeyError)
+
+			dispose()
+		})
+
+		test('remove without a content-based keyConfig throws UnresolvableKeyError for a non-identical item', () => {
+			type Item = { id: string; v: number }
+			let push: ((changes: ListChanges<Item>) => void) | undefined
+			const items = deriveList<Item, MutableCell<Item>>([{ id: 'a', v: 1 }], {
+				watched: apply => {
+					push = apply
+					return () => {
+						push = undefined
+					}
+				},
+			})
+			const dispose = createScope(() => {
+				createEffect(() => {
+					items.get()
+				})
+			})
+
+			expect(() => {
+				push?.({ remove: [{ id: 'a', v: 1 }] })
+			}).toThrow(UnresolvableKeyError)
+			// Nothing was mutated by the failed remove.
+			expect(items.get()).toEqual([{ id: 'a', v: 1 }])
+
+			dispose()
+		})
+
+		test('change resolves fine without keyConfig when the exact tracked reference is reused', () => {
+			// Reference identity still works when the caller retains and reuses the same
+			// object — this is the one case a non-content-based keyConfig can resolve.
+			type Item = { id: string; v: number }
+			const original = { id: 'a', v: 1 }
+			let push: ((changes: ListChanges<Item>) => void) | undefined
+			const items = deriveList<Item, MutableCell<Item>>([original], {
+				watched: apply => {
+					push = apply
+					return () => {
+						push = undefined
+					}
+				},
+			})
+			const dispose = createScope(() => {
+				createEffect(() => {
+					items.get()
+				})
+			})
+
+			expect(() => {
+				push?.({ change: [original] })
+			}).not.toThrow()
+
+			dispose()
 		})
 	})
 

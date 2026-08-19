@@ -164,6 +164,24 @@ class DuplicateKeyError extends Error {
 }
 
 /**
+ * Error thrown when a `change`/`remove` entry cannot be resolved to a tracked key.
+ */
+class UnresolvableKeyError extends Error {
+	/**
+	 * Constructs a new UnresolvableKeyError.
+	 *
+	 * @param where - The location where the error occurred.
+	 * @param value - The value that could not be resolved to a key.
+	 */
+	constructor(where: string, value: unknown) {
+		super(
+			`[${where}] Could not resolve a key for value ${valueString(value)} — a content-based keyConfig (item => key) is required to match change/remove entries against externally-sourced data, whose items are rarely reference-equal to what is already tracked`,
+		)
+		this.name = 'UnresolvableKeyError'
+	}
+}
+
+/**
  * Error thrown when a Store property is assigned, deleted, or defined directly via the proxy.
  */
 class InvalidStoreMutationError extends TypeError {
@@ -230,6 +248,7 @@ export {
 	PromiseValueError,
 	ReadonlySignalError,
 	RequiredOwnerError,
+	UnresolvableKeyError,
 	UnsetSignalValueError,
 	validateCallback,
 	validateReadValue,
