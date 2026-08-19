@@ -174,10 +174,10 @@ type DerivedList<T extends {}, S extends Signal<T> = Signal<T>> = {
 	 * forms are removed in v2.0. See `MIGRATION-2.0.md`.
 	 */
 	deriveCollection<R extends {}>(
-		callback: (sourceValue: T) => R,
+		callback: (sourceValue: T, abort: AbortSignal) => Promise<R>,
 	): DerivedList<R>
 	deriveCollection<R extends {}>(
-		callback: (sourceValue: T, abort: AbortSignal) => Promise<R>,
+		callback: (sourceValue: T) => R,
 	): DerivedList<R>
 	readonly length: number
 }
@@ -474,12 +474,12 @@ function collectionFacade<T extends {}, S extends Signal<T>>(
  */
 function deriveCollection<T extends {}, U extends {}>(
 	source: ListSource<U>,
-	callback: (sourceValue: U) => T,
+	callback: (sourceValue: U, abort: AbortSignal) => Promise<T>,
 	options?: DeriveListOptions<U>,
 ): DerivedList<T>
 function deriveCollection<T extends {}, U extends {}>(
 	source: ListSource<U>,
-	callback: (sourceValue: U, abort: AbortSignal) => Promise<T>,
+	callback: (sourceValue: U) => T,
 	options?: DeriveListOptions<U>,
 ): DerivedList<T>
 function deriveCollection<T extends {}, U extends {}>(
@@ -837,12 +837,12 @@ function deriveList<T extends {}>(
 ): DerivedList<T>
 function deriveList<T extends {}, U extends {}>(
 	input: ListSource<U>,
-	itemCallback: (sourceValue: U) => T,
+	itemCallback: (sourceValue: U, abort: AbortSignal) => Promise<T>,
 	options?: DeriveListOptions<U>,
 ): DerivedList<T>
 function deriveList<T extends {}, U extends {}>(
 	input: ListSource<U>,
-	itemCallback: (sourceValue: U, abort: AbortSignal) => Promise<T>,
+	itemCallback: (sourceValue: U) => T,
 	options?: DeriveListOptions<U>,
 ): DerivedList<T>
 function deriveList<T extends {}, U extends {}>(

@@ -7,6 +7,7 @@ import {
 	createScope,
 	createState,
 	createTask,
+	type DerivedList,
 	DuplicateKeyError,
 	deriveList,
 	isCollection,
@@ -130,7 +131,7 @@ describe('per-item derivation from an unkeyed source', () => {
 		dispose()
 	})
 
-	describe('cached item signals (CE-012 regression)', () => {
+	describe('cached item signals', () => {
 		// The trigger in every case below is caching the item signal OUTSIDE the
 		// effect, so the effect's only edge is item-Memo -> source and the
 		// collection's own rebuild never runs in the propagation pass.
@@ -436,6 +437,15 @@ describe('deriveList', () => {
 			await wait(30)
 			expect(doubled.get()).toEqual([2, 4])
 			dispose()
+		})
+
+		test('single-arg async item callback infers the resolved item type, not Promise<T>', () => {
+			const list = createList([1, 2, 3])
+			const doubled = deriveList(list, async (v: number) => v * 2)
+			// If the overload order regresses, `doubled` unifies to `DerivedList<Promise<number>>`
+			// and this assignment fails to compile.
+			const typedDoubled: DerivedList<number> = doubled
+			expect(typedDoubled).toBeDefined()
 		})
 	})
 })

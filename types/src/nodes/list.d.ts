@@ -68,8 +68,8 @@ type MutableList<T extends {}, S extends MutableSignal<T> = MutableSignal<T>> = 
      * `users.deriveCollection(f)` becomes `deriveList(users, f)`. Both `.deriveCollection()`
      * forms are removed in v2.0. See `MIGRATION-2.0.md`.
      */
-    deriveCollection<R extends {}>(callback: (sourceValue: T) => R): DerivedList<R>;
     deriveCollection<R extends {}>(callback: (sourceValue: T, abort: AbortSignal) => Promise<R>): DerivedList<R>;
+    deriveCollection<R extends {}>(callback: (sourceValue: T) => R): DerivedList<R>;
 };
 /**
  * The mutable keyed-sequence type, under its v1 name.

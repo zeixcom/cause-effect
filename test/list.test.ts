@@ -8,6 +8,7 @@ import {
 	createState,
 	createStore,
 	createTask,
+	type DerivedList,
 	DuplicateKeyError,
 	isList,
 	isMemo,
@@ -1201,4 +1202,13 @@ test('Type Inference for custom createItem', () => {
 	type _Test = Expect<
 		Equal<typeof byKey, ReturnType<typeof createStore<TodoItem>> | undefined>
 	>
+})
+
+test('MutableList.deriveCollection() single-arg async callback infers the resolved item type, not Promise<T>', () => {
+	const list = createList([1, 2, 3])
+	const doubled = list.deriveCollection(async (v: number) => v * 2)
+	// If the overload order regresses, `doubled` unifies to `DerivedList<Promise<number>>`
+	// and this assignment fails to compile.
+	const typedDoubled: DerivedList<number> = doubled
+	expect(typedDoubled).toBeDefined()
 })

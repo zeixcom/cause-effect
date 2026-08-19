@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
 	abort,
+	type Cell,
 	createCell,
 	createComputed,
 	createEffect,
@@ -17,9 +18,11 @@ import {
 	deriveSignal,
 	InvalidCallbackError,
 	InvalidSignalValueError,
+	isCell,
 	isComputed,
 	isList,
 	isMemo,
+	isMutableCell,
 	isMutableSignal,
 	isSignal,
 	isState,
@@ -27,6 +30,7 @@ import {
 	isTask,
 	type List,
 	type Memo,
+	type MutableCell,
 	PromiseValueError,
 	type Signal,
 	type State,
@@ -115,6 +119,17 @@ describe('deriveCell', () => {
 			expect(seen).toEqual([0, 1])
 
 			const typedResult: Signal<number> = result
+			expect(typedResult).toBeDefined()
+		})
+		cleanup()
+	})
+
+	test('zero-arg async callback infers the resolved value type, not Promise<T>', () => {
+		const cleanup = createScope(() => {
+			const result = deriveCell(async () => new Map<string, number>())
+			// If the overload order regresses, `result` unifies to
+			// `Signal<Promise<Map<string, number>>>` and this assignment fails to compile.
+			const typedResult: Signal<Map<string, number>> = result
 			expect(typedResult).toBeDefined()
 		})
 		cleanup()
@@ -339,6 +354,52 @@ describe('createCell', () => {
 		expect(isState(record)).toBe(true)
 		expect(isStore(record)).toBe(false)
 		expect(record.get()).toEqual({ a: 1 })
+	})
+
+	test('return type narrows to MutableCell<T>, not the wider Signal<T>', () => {
+		const result = createCell(42)
+		const typedResult: MutableCell<number> = result
+		expect(typedResult).toBeDefined()
+	})
+})
+
+describe('isCell', () => {
+	test('returns true for State, Memo, Task, and Sensor', () => {
+		const cleanup = createScope(() => {
+			expect(isCell(createState(1))).toBe(true)
+			expect(isCell(createMemo(() => 1))).toBe(true)
+			expect(isCell(createTask(async () => 1))).toBe(true)
+			expect(isCell(deriveCell(1, { watched: () => () => {} }))).toBe(true)
+		})
+		cleanup()
+	})
+
+	test('returns false for List, Store, and non-signals', () => {
+		expect(isCell(createList([1, 2]))).toBe(false)
+		expect(isCell(createStore({ a: 1 }))).toBe(false)
+		expect(isCell(42)).toBe(false)
+		expect(isCell(null)).toBe(false)
+	})
+
+	test('narrows to Cell<T>', () => {
+		const value: unknown = createState(1)
+		if (isCell<number>(value)) {
+			const typed: Cell<number> = value
+			expect(typed.get()).toBe(1)
+		}
+	})
+})
+
+describe('isMutableCell', () => {
+	test('returns true for State, false for Memo/Task/List/Store', () => {
+		const cleanup = createScope(() => {
+			expect(isMutableCell(createState(1))).toBe(true)
+			expect(isMutableCell(createMemo(() => 1))).toBe(false)
+			expect(isMutableCell(createTask(async () => 1))).toBe(false)
+			expect(isMutableCell(createList([1, 2]))).toBe(false)
+			expect(isMutableCell(createStore({ a: 1 }))).toBe(false)
+		})
+		cleanup()
 	})
 })
 
