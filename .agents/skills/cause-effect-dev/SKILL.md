@@ -1,9 +1,7 @@
 ---
 name: cause-effect-dev
 description: >
-  Expert developer for the @zeix/cause-effect reactive signals library. Use when
-  implementing features, fixing bugs, writing tests, or answering questions about
-  the library's internals, public API, or design decisions.
+  Expert developer for the @zeix/cause-effect reactive signals library. Use when implementing features, fixing bugs, writing tests, or answering questions about the library's internals, public API, or design decisions.
 user_invocable: false
 ---
 
@@ -21,6 +19,9 @@ For consumer projects that use `@zeix/cause-effect` as a dependency, use the `ca
 **`T extends {}`** — all signal generics exclude `null` and `undefined`. Use wrapper types or sentinel values to represent absence.
 
 **Run `bun test`** after every change.
+
+**No ticket numbers in source or tests.** Never write an issue, PR, or ticket number
+(`#123`, `CE-456`) into a source comment or a test description. The branch or ticket closes and the reference goes stale — a future reader can't resolve it. Describe the behavior, constraint, or bug being guarded against directly instead; put ticket references in the commit message, where they belong.
 
 **Composite derivation over effect-driven writes.** `adr/0018-shape-indexed-signal-types.md` documents the anti-pattern the library actively closes: an effect that reads a `Task`/`Memo` and writes the result into a `Store`/`List` with `.set()`. When implementing or reviewing a feature that fills one signal from another, prefer extending `deriveStore`/`deriveList`'s async and per-item derivation paths over adding a write path — a discouraged pattern surviving only because no derivation covers the case is itself a signal the derivation surface has a gap.
 </essential_principles>

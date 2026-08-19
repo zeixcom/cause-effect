@@ -1,8 +1,7 @@
 ---
 name: changelog-keeper
 description: >
-  Maintain CHANGELOG.md for the @zeix/cause-effect library. Use after meaningful code
-  changes, when asked to add release notes, or to prepare a release.
+  Maintain CHANGELOG.md for the @zeix/cause-effect library. Use after meaningful code changes, when asked to add release notes, or to prepare a release.
 user_invocable: true
 ---
 
@@ -67,4 +66,5 @@ When asked to release a version:
 - **Include migration notes** under Changed or Removed when behavior breaks compatibility.
   State clearly what consumers must change and why.
 - Use backticks for all public API names, internal types, flags, and file names.
+- **No ticket numbers.** Never reference an issue, PR, or ticket number (`#123`, `CE-456`). It becomes a dead link once the branch or ticket closes. Describe the change itself — that is what a consumer needs, and it does not go stale.
 </entry_style>

@@ -1,7 +1,5 @@
 <overview>
-Writing tone, register, and conciseness rules for each document maintained by the tech-writer
-skill. Violating the tone is as wrong as a factual error — each document has a distinct
-primary reader and serves a distinct purpose.
+Writing tone, register, and conciseness rules for each document maintained by the tech-writer skill. Violating the tone is as wrong as a factual error — each document has a distinct primary reader and serves a distinct purpose.
 </overview>
 
 <shared_rules>
@@ -15,10 +13,9 @@ These rules apply to every document without exception:
 - **No changelog language in documentation.** Documents state current truth. Never write
   "previously", "as of version X", "we changed", or "now supports". Those belong in
   CHANGELOG.md.
-- **No meta-commentary.** Do not write "This section explains…" or "See below for…".
-  Say the thing directly.
-- **Backtick all code.** Every API name, flag, file name, type name, option key, and
-  shell command is wrapped in backticks, even mid-sentence.
+- **No meta-commentary.** Do not write "This section explains…" or "See below for…". Say the thing directly.
+- **Backtick all code.** Every API name, flag, file name, type name, option key, and shell command is wrapped in backticks, even mid-sentence.
+- **No ticket numbers.** Never reference an issue, PR, or ticket number (`#123`, `CE-456`) in an authoritative document or JSDoc. The branch or ticket closes; the reference goes stale and means nothing to a future reader. State the current behavior or constraint on its own terms — if history matters, it belongs in a commit message or `CHANGELOG.md` entry, not here.
 </shared_rules>
 
 <README>
@@ -225,6 +222,5 @@ acceptable if they read naturally as a tooltip.
 - `@param type` annotations — TypeScript already shows the type
 - JSDoc that restates the TypeScript signature in prose
 - Generic descriptions that would apply to any function ("Creates and returns a…")
-- Multi-paragraph descriptions — if it needs that much explanation, the API design may
-  need review
+- Multi-paragraph descriptions — if it needs that much explanation, the API design may need review
 </jsdoc>
