@@ -1,6 +1,6 @@
 /**
  * @name Cause & Effect
- * @version 1.5.1
+ * @version 1.5.2
  * @author Esther Brunner
  */
 
@@ -16,6 +16,7 @@ export {
 	PromiseValueError,
 	ReadonlySignalError,
 	RequiredOwnerError,
+	UnresolvableKeyError,
 	UnsetSignalValueError,
 } from './src/errors'
 export {

@@ -93,6 +93,30 @@ describe('per-item derivation from an unkeyed source', () => {
 		expect(names.get()).toEqual(['Bob', 'Alice'])
 	})
 
+	test('retires the old key instead of reusing it when content changes at a shared index (string keyConfig)', () => {
+		// Regression: with a keyConfig (string or function), a shared index whose
+		// content changes must not silently keep identifying the old key under new
+		// content — the caller asked for identity distinct from array position.
+		// Without a keyConfig at all, position IS identity and this must not apply
+		// (see 'should diff and update changed items' in list.test.ts).
+		const source = createState([{ id: 1 }, { id: 2 }, { id: 3 }])
+		const passthrough = deriveList(source, (v: { id: number }) => v, {
+			keyConfig: 'item-',
+		})
+		const key1 = passthrough.keyAt(1)
+		expect(key1).toBe('item-1')
+		expect(passthrough.byKey(key1 as string)?.get()).toEqual({ id: 2 })
+
+		source.set([{ id: 1 }, { id: 999 }, { id: 3 }])
+
+		// The old key is retired, not repointed to the unrelated new content.
+		expect(passthrough.byKey(key1 as string)).toBeUndefined()
+		// The new item gets a freshly minted key.
+		const newKey = passthrough.keyAt(1)
+		expect(newKey).not.toBe(key1)
+		expect(passthrough.byKey(newKey as string)?.get()).toEqual({ id: 999 })
+	})
+
 	test('drops item signals for keys removed from the source', () => {
 		const source = createState<User[]>([
 			{ id: 'a', name: 'Alice' },

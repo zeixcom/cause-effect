@@ -196,6 +196,8 @@ createEffect(() => match(task, {
 
 The same rule applies to `Store`: prefer `.set()` over an `.remove()` + `.add()` sequence when a reactive handler owns the rebuild.
 
+`.set()`'s identity guarantee depends on `keyConfig`. With a `keyConfig`, `forecast` keeps an item's key only while its content stays equal at that position. Changed content gets a new key instead of reusing the old one. Without a `keyConfig`, array position is the identity instead. A consumer that keys external resources — DOM nodes, caches — by list key needs a `keyConfig` for that guarantee to hold.
+
 ---
 
 ## 4. Async Side Effects in `match()`

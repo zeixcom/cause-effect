@@ -12,6 +12,7 @@ import {
 	type DerivedList,
 	isCollection,
 	isList,
+	UnresolvableKeyError,
 } from '../index.ts'
 
 /* === Utility Functions === */
@@ -707,6 +708,93 @@ describe('Collection', () => {
 				apply!({ remove: [{ id: 'missing', v: 0 }] })
 			}).not.toThrow()
 			expect(col.get()).toEqual([{ id: 'a', v: 1 }])
+
+			dispose()
+		})
+
+		test('applyChanges change without a content-based keyConfig throws UnresolvableKeyError for a non-identical item', () => {
+			// Without keyConfig, a change entry can only be matched by object identity —
+			// unworkable for externally-sourced data (e.g. freshly-parsed JSON), which is
+			// never reference-equal to what is already tracked. This must fail loudly
+			// rather than silently drop the update.
+			type Item = { id: string; v: number }
+			let apply: ((changes: CollectionChanges<Item>) => void) | undefined
+			const col = createCollection<Item>(
+				applyChanges => {
+					apply = applyChanges
+					return () => {}
+				},
+				{
+					value: [{ id: 'a', v: 1 }],
+				},
+			)
+			const dispose = createScope(() => {
+				createEffect(() => {
+					void col.get()
+				})
+			})
+
+			expect(() => {
+				// biome-ignore lint/style/noNonNullAssertion: test
+				apply!({ change: [{ id: 'a', v: 2 }] })
+			}).toThrow(UnresolvableKeyError)
+
+			dispose()
+		})
+
+		test('applyChanges remove without a content-based keyConfig throws UnresolvableKeyError for a non-identical item', () => {
+			type Item = { id: string; v: number }
+			let apply: ((changes: CollectionChanges<Item>) => void) | undefined
+			const col = createCollection<Item>(
+				applyChanges => {
+					apply = applyChanges
+					return () => {}
+				},
+				{
+					value: [{ id: 'a', v: 1 }],
+				},
+			)
+			const dispose = createScope(() => {
+				createEffect(() => {
+					void col.get()
+				})
+			})
+
+			expect(() => {
+				// biome-ignore lint/style/noNonNullAssertion: test
+				apply!({ remove: [{ id: 'a', v: 1 }] })
+			}).toThrow(UnresolvableKeyError)
+			// Nothing was mutated by the failed remove.
+			expect(col.get()).toEqual([{ id: 'a', v: 1 }])
+
+			dispose()
+		})
+
+		test('applyChanges change resolves fine without keyConfig when the exact tracked reference is reused', () => {
+			// Reference identity still works when the caller retains and reuses the same
+			// object — this is the one case a non-content-based keyConfig can resolve.
+			type Item = { id: string; v: number }
+			const original = { id: 'a', v: 1 }
+			let apply: ((changes: CollectionChanges<Item>) => void) | undefined
+			const col = createCollection<Item>(
+				applyChanges => {
+					apply = applyChanges
+					return () => {}
+				},
+				{
+					value: [original],
+				},
+			)
+			const dispose = createScope(() => {
+				createEffect(() => {
+					void col.get()
+				})
+			})
+
+			expect(() => {
+				// biome-ignore lint/style/noNonNullAssertion: test
+				apply!({ change: [original] })
+			}).not.toThrow()
 
 			dispose()
 		})
