@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.0
+
+### Added
+
+- **`map()` / `forEach()` on `MutableList` and `DerivedList`** (`src/nodes/list.ts`, `src/nodes/collection.ts`): Both visit every item in list order, passing each item's signal and its stable string key — `map<R>(callbackfn: (item: S, key: string) => R): R[]` and `forEach(callbackfn: (item: S, key: string) => void): void`, with the parameter order following `Map.prototype.forEach((value, key) => …)`. Under `createList(…, { createItem: createStore })`, `S` is the item's `MutableStore<T>`. `map` returns a plain array snapshot, not a signal — reactive mapping over values remains `deriveList`'s job. Tracking is identical to `[Symbol.iterator]` ([ADR-0015](adr/0015-composite-lookup-methods-track-structural-changes.md) class): one structural subscription, no internal `signal.get()`, so reads inside the callback track as usual. A `map`/`forEach`-only effect re-runs on add, remove, reorder, and `replace(key, v)`; `byKey(k).set(v)` re-runs it only after `list.get()` has linked the item signal to the list node. The key array is snapshotted before traversal, so a callback that mutates the list does not change the current pass. Both methods are declared on the `MutableList`/`DerivedList` types, so the deprecated `List`/`Collection` aliases inherit them. Motivated by keyed JSX list rendering, where a compiler lowers `.map((item, key) => …)` to a keyed reconcile over item signals. See [ADR-0019](adr/0019-list-map-and-foreach.md).
+
 ## 1.5.2
 
 ### Added

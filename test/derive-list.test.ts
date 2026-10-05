@@ -472,4 +472,108 @@ describe('deriveList', () => {
 			expect(typedDoubled).toBeDefined()
 		})
 	})
+
+	describe('map and forEach', () => {
+		test('map and forEach visit every [signal, key] pair in list order', () => {
+			const source = createState<User[]>([
+				{ id: 'a', name: 'Alice' },
+				{ id: 'b', name: 'Bob' },
+			])
+			const names = deriveList(source, (u: User) => u.name, {
+				keyConfig: (u: User) => u.id,
+			})
+			const pairs = names.map((item, key) => ({ key, item }))
+			expect(pairs.map(p => p.key)).toEqual(['a', 'b'])
+			// identity: the callback receives the item's signal, not its value
+			for (const { key, item } of pairs) {
+				// biome-ignore lint/style/noNonNullAssertion: a visited pair's signal exists
+				expect(item).toBe(names.byKey(key)!)
+			}
+
+			const visited: string[] = []
+			names.forEach((item, key) => {
+				visited.push(`${key}:${item.get()}`)
+			})
+			expect(visited).toEqual(['a:Alice', 'b:Bob'])
+		})
+
+		test('map and forEach are notified exactly when the iterator is', () => {
+			// CE note: parity with the iterator is the contract (ADR-0019 §5) — the
+			// iterator's own re-run behavior on item content changes is under
+			// separate investigation, so only equality of run counts is pinned here.
+			const list = createList(['a', 'b'], { keyConfig: 'item-' })
+			const doubled = deriveList(list, (v: string) => v + v)
+			let iterRuns = 0
+			let mapRuns = 0
+			let forEachRuns = 0
+			const dispose = createScope(() => {
+				createEffect(() => {
+					for (const _signal of doubled) {
+						// iterate only — no item reads
+					}
+					iterRuns++
+				})
+				createEffect(() => {
+					doubled.map(item => item)
+					mapRuns++
+				})
+				createEffect(() => {
+					doubled.forEach(() => {})
+					forEachRuns++
+				})
+			})
+			expect(iterRuns).toBe(1)
+			expect(mapRuns).toBe(1)
+			expect(forEachRuns).toBe(1)
+
+			// Structural change through the source
+			list.add('c')
+			expect(mapRuns).toBe(iterRuns)
+			expect(forEachRuns).toBe(mapRuns)
+
+			// Content change through replace()
+			list.replace('item-0', 'A')
+			expect(mapRuns).toBe(iterRuns)
+			expect(forEachRuns).toBe(mapRuns)
+
+			// Direct item mutation on the source
+			list.byKey('item-0')?.set('Z')
+			expect(mapRuns).toBe(iterRuns)
+			expect(forEachRuns).toBe(mapRuns)
+
+			// Removal
+			list.remove('item-1')
+			expect(mapRuns).toBe(iterRuns)
+			expect(forEachRuns).toBe(mapRuns)
+
+			dispose()
+		})
+
+		test('map and forEach infer S as Signal<T>, key as string, and map returns R[]', () => {
+			const source = createState(['a', 'b'])
+			const upper = deriveList(source, (v: string) => v.toUpperCase())
+
+			type Expect<T extends true> = T
+			type Equal<X, Y> =
+				(<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2
+					? true
+					: false
+
+			const lengths = upper.map((item, key) => {
+				type _Key = Expect<Equal<typeof key, string>>
+				type _Item = Expect<Equal<typeof item, Signal<string>>>
+				return item.get().length
+			})
+			type _Lengths = Expect<Equal<typeof lengths, number[]>>
+			expect(lengths).toEqual([1, 1])
+
+			let count = 0
+			upper.forEach((item, key) => {
+				type _Key = Expect<Equal<typeof key, string>>
+				type _Item = Expect<Equal<typeof item, Signal<string>>>
+				count++
+			})
+			expect(count).toBe(2)
+		})
+	})
 })

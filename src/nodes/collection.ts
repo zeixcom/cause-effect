@@ -175,6 +175,22 @@ type DerivedList<T extends {}, S extends Signal<T> = Signal<T>> = {
 	keyAt(index: number): string | undefined
 	indexOfKey(key: string): number
 	/**
+	 * Calls the callback once per item in list order and collects the results into
+	 * a plain array — a snapshot, not a signal. The callback receives each item's
+	 * signal and its stable key, never the item's value: reads inside the callback
+	 * track as usual. Reactive mapping over values is `deriveList`'s job.
+	 * @param callbackfn - Called with each item's signal and its stable key
+	 * @returns A plain array of the callback's results, not a signal
+	 */
+	map<R>(callbackfn: (item: S, key: string) => R): R[]
+	/**
+	 * Calls the callback once per item in list order, like `map` with the results
+	 * discarded. Tracks the list exactly like the iterator and every other
+	 * structural accessor; reads inside the callback track as usual.
+	 * @param callbackfn - Called with each item's signal and its stable key
+	 */
+	forEach(callbackfn: (item: S, key: string) => void): void
+	/**
 	 * @deprecated Use the top-level `deriveList(source, itemFn)` instead —
 	 * `users.deriveCollection(f)` becomes `deriveList(users, f)`. Both `.deriveCollection()`
 	 * forms are removed in v2.0. See `MIGRATION-2.0.md`.
@@ -464,6 +480,26 @@ function collectionFacade<T extends {}, S extends Signal<T>>(
 		indexOfKey(key: string) {
 			prepare()
 			return getKeys().indexOf(key)
+		},
+
+		map<R>(callbackfn: (item: S, key: string) => R): R[] {
+			prepare()
+			const result: R[] = []
+			// Snapshot the keys: a callback that mutates the list must not change
+			// the current pass. The mutation itself propagates as usual.
+			for (const key of getKeys().slice()) {
+				const signal = signals.get(key)
+				if (signal) result.push(callbackfn(signal, key))
+			}
+			return result
+		},
+
+		forEach(callbackfn: (item: S, key: string) => void): void {
+			prepare()
+			for (const key of getKeys().slice()) {
+				const signal = signals.get(key)
+				if (signal) callbackfn(signal, key)
+			}
 		},
 
 		deriveCollection<R extends {}>(cb: PerItemCallback<R, T>): DerivedList<R> {
