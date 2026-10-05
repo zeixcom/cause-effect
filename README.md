@@ -390,7 +390,7 @@ createEffect(() => {
 })
 ```
 
-**Handler routing precedence: `nil` > `err` > `stale` > `ok`.** `nil` fires when a signal has no value yet. `err` fires when a signal holds an error. `stale` fires when every signal has a value but a Task is re-computing. When `stale` is absent, `ok` runs instead.
+**Handler routing precedence: `nil` > `err` > `stale` > `ok`.** `nil` fires when a signal has no value yet. `err` fires when a signal holds an error. `stale` fires when every signal has a value but an async computation behind one of them is in progress. When `stale` is absent, `ok` runs instead.
 
 **Handler bodies run in the caller's tracking scope.** `match()` calls its handlers synchronously inside the enclosing effect. Any signal read inside a handler becomes a tracked dependency of that effect, including implicit reads by collection methods such as `List.keys()` or `List.at()`. Wrap a handler body in `untrack()` to opt out.
 

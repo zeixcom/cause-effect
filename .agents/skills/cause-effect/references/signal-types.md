@@ -277,7 +277,7 @@ Use `Store` for a fixed set of named properties on a single object. Use `List` o
 <loading_state>
 Sensor and Task start unset. Use `match` to handle all states in one expression.
 
-Routing precedence: `nil` > `err` > `stale` > `ok`. `stale` fires when all signals have a retained value but at least one Task is re-fetching — omitting it falls back to `ok`:
+Routing precedence: `nil` > `err` > `stale` > `ok`. `stale` fires when all signals have a retained value but `isPending()` is true for at least one — a Task, an async-derived List or Store, or a Slot backed by one (Slot forwards, owns no value). Omitting it falls back to `ok`:
 
 ```typescript
 createEffect(() => {
