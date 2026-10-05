@@ -559,6 +559,9 @@ function deriveCollection<T extends {}, U extends {}>(
 	const signals = new Map<string, Memo<T>>()
 	let keys: string[] = []
 
+	// Per-item signals gate propagation to the structural node on deep equality,
+	// like deriveStore's per-property memos and the keyed adapter's item signals:
+	// a callback returning a fresh deep-equal object is not a content change.
 	const addSignal = (key: string): void => {
 		// No callback: the source's own slice is the derived slice, so it is used
 		// directly instead of being wrapped in an identity Memo. Only reachable from
@@ -573,30 +576,36 @@ function deriveCollection<T extends {}, U extends {}>(
 		}
 
 		const signal = isAsync
-			? createTask(async (prev: T | undefined, abort: AbortSignal) => {
-					// Look up the item signal without a structural edge (byKey now
-					// tracks structure), then read its value tracked so the Task
-					// depends on the item's value but not on structural changes.
-					// syncKeys() synchronizes the keys by reading source.keys().
-					const itemSignal = untrack(() => source.byKey(key))
-					if (!itemSignal) return prev as T
-					const sourceValue = itemSignal.get() as U
-					if (sourceValue == null) return prev as T
-					return (
-						callback as (sourceValue: U, abort: AbortSignal) => Promise<T>
-					)(sourceValue, abort)
-				})
-			: createMemo(() => {
-					// Look up the item signal without a structural edge (byKey now
-					// tracks structure), then read its value tracked so the Memo
-					// depends on the item's value but not on structural changes.
-					// syncKeys() synchronizes the keys by reading source.keys().
-					const itemSignal = untrack(() => source.byKey(key))
-					if (!itemSignal) return undefined as unknown as T
-					const sourceValue = itemSignal.get() as U
-					if (sourceValue == null) return undefined as unknown as T
-					return (callback as (sourceValue: U) => T)(sourceValue)
-				})
+			? createTask(
+					async (prev: T | undefined, abort: AbortSignal) => {
+						// Look up the item signal without a structural edge (byKey now
+						// tracks structure), then read its value tracked so the Task
+						// depends on the item's value but not on structural changes.
+						// syncKeys() synchronizes the keys by reading source.keys().
+						const itemSignal = untrack(() => source.byKey(key))
+						if (!itemSignal) return prev as T
+						const sourceValue = itemSignal.get() as U
+						if (sourceValue == null) return prev as T
+						return (
+							callback as (sourceValue: U, abort: AbortSignal) => Promise<T>
+						)(sourceValue, abort)
+					},
+					{ equals: DEEP_EQUALITY },
+				)
+			: createMemo(
+					() => {
+						// Look up the item signal without a structural edge (byKey now
+						// tracks structure), then read its value tracked so the Memo
+						// depends on the item's value but not on structural changes.
+						// syncKeys() synchronizes the keys by reading source.keys().
+						const itemSignal = untrack(() => source.byKey(key))
+						if (!itemSignal) return undefined as unknown as T
+						const sourceValue = itemSignal.get() as U
+						if (sourceValue == null) return undefined as unknown as T
+						return (callback as (sourceValue: U) => T)(sourceValue)
+					},
+					{ equals: DEEP_EQUALITY },
+				)
 
 		signals.set(key, signal as Memo<T>)
 	}

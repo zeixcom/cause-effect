@@ -19,6 +19,7 @@ import {
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
 type User = { id: string; name: string }
+type Person = { id: string; name: string; age: number }
 
 /* === Tests === */
 
@@ -470,6 +471,100 @@ describe('deriveList', () => {
 			// and this assignment fails to compile.
 			const typedDoubled: DerivedList<number> = doubled
 			expect(typedDoubled).toBeDefined()
+		})
+
+		test('does not re-run an iterator-only effect when a rebuilt derived item is deep-equal', () => {
+			const list = createList<Person>([{ id: 'a', name: 'Alice', age: 30 }], {
+				keyConfig: person => person.id,
+			})
+			const names = deriveList(list, (person: Person) => ({
+				name: person.name,
+			}))
+			let runs = 0
+			const dispose = createScope(() => {
+				createEffect(() => {
+					for (const _signal of names) {
+						// iterate only — no item reads
+					}
+					runs++
+				})
+			})
+			expect(runs).toBe(1)
+
+			// The source item changes in a field the projection does not read,
+			// so the rebuilt derived item is deep-equal to the previous one.
+			list.byKey('a')?.set({ id: 'a', name: 'Alice', age: 31 })
+			expect(runs).toBe(1)
+			dispose()
+		})
+
+		test('re-runs an iterator-only effect when a derived item genuinely changes', () => {
+			const list = createList<Person>([{ id: 'a', name: 'Alice', age: 30 }], {
+				keyConfig: person => person.id,
+			})
+			const names = deriveList(list, (person: Person) => ({
+				name: person.name,
+			}))
+			let runs = 0
+			const dispose = createScope(() => {
+				createEffect(() => {
+					for (const _signal of names) {
+						// iterate only — no item reads
+					}
+					runs++
+				})
+			})
+			expect(runs).toBe(1)
+
+			list.byKey('a')?.set({ id: 'a', name: 'Alicia', age: 30 })
+			expect(runs).toBe(2)
+			dispose()
+		})
+
+		test('still updates the derived array when a derived item genuinely changes', () => {
+			const list = createList<Person>([{ id: 'a', name: 'Alice', age: 30 }], {
+				keyConfig: person => person.id,
+			})
+			const names = deriveList(list, (person: Person) => ({
+				name: person.name,
+			}))
+			expect(names.get()).toEqual([{ name: 'Alice' }])
+
+			list.byKey('a')?.set({ id: 'a', name: 'Alicia', age: 30 })
+			expect(names.get()).toEqual([{ name: 'Alicia' }])
+		})
+
+		test('applies the same deep-equality gating to async per-item derivation', async () => {
+			const list = createList<Person>([{ id: 'a', name: 'Alice', age: 30 }], {
+				keyConfig: person => person.id,
+			})
+			const names = deriveList(list, async (person: Person) => ({
+				name: person.name,
+			}))
+			let runs = 0
+			const dispose = createScope(() => {
+				createEffect(() => {
+					for (const _signal of names) {
+						// iterate only — no item reads
+					}
+					runs++
+				})
+			})
+			await wait(20)
+			// The first per-item Task resolution is a genuine content change
+			// (the derived array goes from empty to holding the resolved item).
+			expect(runs).toBe(2)
+
+			// Unrelated field change: the resolved derived item is deep-equal.
+			list.byKey('a')?.set({ id: 'a', name: 'Alice', age: 31 })
+			await wait(20)
+			expect(runs).toBe(2)
+
+			// Projected change: the resolved derived item differs.
+			list.byKey('a')?.set({ id: 'a', name: 'Alicia', age: 31 })
+			await wait(20)
+			expect(runs).toBe(3)
+			dispose()
 		})
 	})
 
