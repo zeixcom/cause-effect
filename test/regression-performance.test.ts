@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from 'bun:test'
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, realpathSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -18,7 +18,9 @@ type Api = typeof currentApi
  * so neither side is allowed to depend on publish-time decisions.
  */
 
-const outdir = mkdtempSync(join(tmpdir(), 'ce-perf-'))
+// Resolve symlinks (macOS /tmp -> /private/tmp): Bun caches a directory listing on the
+// first import through a symlinked path, so the second bundle would not resolve.
+const outdir = realpathSync(mkdtempSync(join(tmpdir(), 'ce-perf-')))
 
 async function bundle(entrypoint: string, name: string): Promise<Api> {
 	const result = await Bun.build({
