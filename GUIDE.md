@@ -419,6 +419,14 @@ todos.replace('t1', { id: 't1', text: 'Learn signals', done: true })
 
 Each item is its own signal. Sorting reorders keys without destroying signals or their downstream dependencies. Adding and removing items is granular — unaffected items and their effects don't re-run.
 
+Frameworks map over arrays to render keyed lists: `todos.map(todo => <Todo key={todo.id} />)` in React. `.map()` on a list gives the same shape, with two differences. The callback receives the item's signal, not its value. And the second argument is the item's stable key, not an index:
+
+```ts
+const rows = todos.map((todo, key) => ({ key, done: todo.get().done }))
+```
+
+The key survives sorting and reordering. `.map()` returns a plain array snapshot, not a signal. Reactive mapping over values is `deriveList()`'s job.
+
 Write through `.replace()` rather than `byKey().set()` — see [List](README.md#list) for why.
 
 > **Naming ahead of 2.0:** the mutable list type is also exported as `MutableList` — the name it keeps in 2.0, where `List` becomes the readonly base (today's `Collection`). `isMutableList()` is the matching guard. See [MIGRATION-2.0.md](MIGRATION-2.0.md).

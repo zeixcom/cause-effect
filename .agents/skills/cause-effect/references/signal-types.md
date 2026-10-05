@@ -155,8 +155,8 @@ user.name = 'Bob'   // only effects reading `user.name` re-run
 - Annotate the type as `MutableList<T>`, not `List<T>` (bridge name for the deprecated `List<T>`; `List` is reused for the readonly base in v2.0 — the old name silently changes meaning rather than erroring)
 - Use `isMutableList()`, not `isList()`, for the type guard (bridge name for the deprecated `isList(x)`)
 - Items are identified by a stable key; keys survive sorting and reordering
-- `byKey()`, `at()`, `keyAt()`, and `indexOfKey()` are direct lookups — they **do not create graph edges**
-- To react to structural changes, read `get()`, `keys()`, or `length` instead
+- `byKey()`, `at()`, `keyAt()`, and `indexOfKey()` subscribe to structural changes like `keys()` and `length` — but never to an item's value
+- `map()` and `forEach()` visit every `[signal, key]` pair in list order; `map` returns a plain array snapshot, not a signal — reactive mapping over values is `deriveList`'s job
 - To update an existing item, use `list.replace(key, value)` — **not** `byKey(key).set(value)`. `replace()` propagates to all subscribers; `byKey().set()` silently misses effects that subscribed via `keys()`, `length`, or the iterator
 
 ```typescript
@@ -171,7 +171,7 @@ todos.remove('t2')
 </List>
 
 <DerivedList>
-**What it is:** A read-only keyed reactive sequence — same lookup surface as List (`at`, `byKey`, `keyAt`, `indexOfKey`, `keys`, `length`, iteration), no mutators. Not a Map — order and stable item identity work exactly like List; the only difference from List is that a DerivedList cannot be written to directly.
+**What it is:** A read-only keyed reactive sequence — same lookup surface as List (`at`, `byKey`, `keyAt`, `indexOfKey`, `keys`, `length`, `map`, `forEach`, iteration), no mutators. Not a Map — order and stable item identity work exactly like List; the only difference from List is that a DerivedList cannot be written to directly.
 
 **Use when:**
 - The set of items is computed from another signal, or pushed in from outside the graph, and callers must not write to it
@@ -182,7 +182,7 @@ todos.remove('t2')
 - `deriveList(seed, { watched })` creates a DerivedList driven by an external source (bridge name for the deprecated `createCollection`)
 - `deriveList(source, itemCallback)` derives a DerivedList from a List, Store, or plain array signal, one item at a time (bridge name for the deprecated `.deriveCollection()` method form)
 - `isDerivedList()` narrows to this type (bridge name for the deprecated `isCollection()`)
-- Same tracking rules as List: `byKey()`, `at()`, `keyAt()`, `indexOfKey()` do not create graph edges; read `get()`, `keys()`, or `length` to subscribe to structural changes
+- Same tracking rules as List: `byKey()`, `at()`, `keyAt()`, and `indexOfKey()` subscribe to structural changes like `keys()` and `length`, but never to an item's value
 
 ```typescript
 const users = createList<User>([], { keyConfig: u => u.id })

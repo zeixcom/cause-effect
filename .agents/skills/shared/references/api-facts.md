@@ -184,6 +184,16 @@ Read all signals eagerly in the signals argument — not inside branches. See
 non-obvious-behaviors.md for details on conditional reads.
 </match_helper>
 
+<list_map_and_foreach>
+**`map()` and `forEach()` on `MutableList` and `DerivedList`**
+- Signatures: `map<R>(callbackfn: (item: S, key: string) => R): R[]` and `forEach(callbackfn: (item: S, key: string) => void): void`
+- The callback receives the item's **signal** first, its stable string **key** second. The order follows `Map.prototype.forEach((value, key) => …)`
+- The return is a **plain array snapshot**, not a signal. Reactive mapping over values is `deriveList`'s job
+- Tracking is identical to `[Symbol.iterator]`: one structural subscription, and no internal `signal.get()`. Reads inside the callback track as usual
+- On a `MutableList`, a `map`/`forEach`-only effect re-runs on add, remove, reorder, and `replace(key, v)`. `byKey(k).set(v)` re-runs it only after `list.get()` has linked the item signal to the list node — the same lazy edge described in `non-obvious-behaviors.md`
+- The key array is copied before traversal. A callback that mutates the list does not change the current pass; the mutation propagates as usual
+</list_map_and_foreach>
+
 <lifecycle_summary>
 | Function | Must be in owner? | Returns | Re-runs on dependency change? |
 |---|---|---|---|
