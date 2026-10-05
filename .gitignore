@@ -142,3 +142,4 @@ test/regression-baseline.json
 .DS_Store
 .vibe/config.toml
 .mimosa/
+.zcodeignore

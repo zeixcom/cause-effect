@@ -869,16 +869,37 @@ function registerAsyncSource(signal: object, source: PendingSource): void {
 	asyncSources.set(signal, source)
 }
 
-/** Resolves the async capabilities of a signal, if it has any. */
+/** Follows a Slot to its current backing signal; returns any other value unchanged. */
+function resolveSlot(signal: object): unknown {
+	let current: unknown = signal
+	let visited: Set<unknown> | undefined
+	while (
+		current != null &&
+		typeof current === 'object' &&
+		(current as { [Symbol.toStringTag]?: unknown })[Symbol.toStringTag] ===
+			TYPE_SLOT
+	) {
+		// Mutually delegating slots (A -> B -> A) have no terminal backing signal.
+		if (!visited) visited = new Set()
+		else if (visited.has(current)) return undefined
+		visited.add(current)
+		current = (current as { current(): unknown }).current()
+	}
+	return current
+}
+
+/** Resolves the async capabilities of a signal, if it has any. Sees through a Slot. */
 function getAsyncSource(signal: unknown): PendingSource | undefined {
 	if (signal == null || typeof signal !== 'object') return undefined
-	const candidate = signal as Partial<PendingSource>
+	const target = resolveSlot(signal)
+	if (target == null || typeof target !== 'object') return undefined
+	const candidate = target as Partial<PendingSource>
 	if (
 		typeof candidate.isPending === 'function' &&
 		typeof candidate.abort === 'function'
 	)
 		return candidate as PendingSource
-	return asyncSources.get(signal)
+	return asyncSources.get(target)
 }
 
 /**
@@ -890,6 +911,10 @@ function getAsyncSource(signal: unknown): PendingSource | undefined {
  *
  * This is a utility rather than a method because asynchrony is an origin, not a shape:
  * a single value, a keyed sequence, and a keyed record can all be derived asynchronously.
+ *
+ * A Slot holds no value of its own, so this function reads the current backing signal of
+ * the Slot. It also follows a chain of slots. Slots that delegate to each other in a cycle
+ * have no asynchronous origin.
  *
  * @since 1.5.0
  * @param signal - Any signal
@@ -911,6 +936,7 @@ function isPending(signal: unknown): boolean {
 /**
  * Cancels the in-flight asynchronous computation behind a signal.
  * No-op for a signal that has no asynchronous origin.
+ * For a Slot, cancels the computation behind the current backing signal.
  *
  * @since 1.5.0
  * @param signal - Any signal

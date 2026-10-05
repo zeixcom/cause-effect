@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.1
+
+### Fixed
+
+- **`match()` ignored the `stale` handler for any signal that was not a literal `Task`** (`src/nodes/effect.ts`, `src/graph.ts`): Previously, `match()` chose `stale` only when `isTask(s) && s.isPending()`. Two cases fell back to `ok` and showed the retained value with no in-flight signal: (1) a `List` or `Store` derived from an async computation, whose asynchrony lives in an internal `Task` registered through the [ADR-0018](adr/0018-shape-indexed-signal-types.md) async-source registry; (2) a `Slot` whose backing signal is a `Task`. Integration layers store writable props as slots, so an async value passed into one lost its `stale` state. Now `match()` uses the free `isPending()` utility, and the async-source resolver follows a slot's `current()` backing (and chains of slots) to the signal that carries the async state. `isPending(slot)` and `abort(slot)` therefore act on the backing signal. Mutually delegating slots resolve to no async source and do not loop. A slot backed by a `SlotDescriptor` has no async source. Effects that use `stale` now run it during a re-fetch in these cases; effects without a `stale` handler are not affected.
+
 ## 1.6.0
 
 ### Added
