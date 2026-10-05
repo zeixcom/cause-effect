@@ -143,14 +143,14 @@ Object.defineProperty(element, 'name', nameSlot)
 </callback_patterns>
 
 <match_helper>
-`match` reads one or more Sensor/Task signals and routes to a handler based on signal state.
+`match` reads one or more signals and routes to a handler based on signal state.
 
 **Routing precedence:** `nil` > `err` > `stale` > `ok`
 
 **Handlers:**
 - `nil` — at least one signal has no value yet (loading)
 - `err` — at least one signal has an error
-- `stale` — all signals have a value but at least one Task is re-fetching (`isPending() === true`). Omitting `stale` falls back to `ok`, showing retained data unchanged. Cleanup returned by `stale` runs before the next handler fires.
+- `stale` — all signals have a value but `isPending()` is true for at least one: a Task, an async-derived List or Store, or a Slot whose current backing signal is one of these (Slot forwards, owns no value). Omitting `stale` falls back to `ok`, showing retained data unchanged. Cleanup returned by `stale` runs before the next handler fires.
 - `ok` — all signals have a settled value
 
 **Single-signal form** — `ok` receives the value directly, `err` a single `Error`:
