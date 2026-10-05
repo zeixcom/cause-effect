@@ -639,6 +639,160 @@ describe('List', () => {
 		})
 	})
 
+	describe('map and forEach', () => {
+		test('map visits every [signal, key] pair in list order', () => {
+			const list = createList(['a', 'b', 'c'])
+			const keys = [...list.keys()]
+			const pairs = list.map((item, key) => ({ key, item }))
+			expect(pairs.map(p => p.key)).toEqual(keys)
+			// identity: the callback receives the item's signal, not its value
+			for (const { key, item } of pairs) {
+				// biome-ignore lint/style/noNonNullAssertion: a visited pair's signal exists
+				expect(item).toBe(list.byKey(key)!)
+			}
+		})
+
+		test('forEach visits every [signal, key] pair in list order', () => {
+			const list = createList(['a', 'b', 'c'])
+			const visited: string[] = []
+			list.forEach((item, key) => {
+				visited.push(item.get() + key)
+			})
+			const expected = [...list.keys()].map(
+				key => (list.byKey(key)?.get() ?? '') + key,
+			)
+			expect(visited).toEqual(expected)
+		})
+
+		test('map follows the current list order after a sort', () => {
+			const list = createList([3, 1, 2])
+			list.sort()
+			expect(list.map(item => item.get())).toEqual([1, 2, 3])
+		})
+
+		test('map composes inside a derivation: it tracks the list and the callback tracks the items it reads', () => {
+			const list = createList([{ label: 'a' }, { label: 'b' }])
+			const labels = createMemo(() => list.map(item => item.get().label))
+			expect(labels.get()).toEqual(['a', 'b'])
+
+			list.add({ label: 'c' })
+			expect(labels.get()).toEqual(['a', 'b', 'c'])
+
+			// biome-ignore lint/style/noNonNullAssertion: index is within bounds
+			list.replace(list.keyAt(0)!, { label: 'A' })
+			expect(labels.get()).toEqual(['A', 'b', 'c'])
+		})
+
+		test('a callback that adds an item does not extend the current pass', () => {
+			const list = createList(['a', 'b', 'c'])
+			let added = false
+			const seen = list.map(item => {
+				const label = item.get()
+				if (!added) {
+					added = true
+					list.add('d') // appended mid-pass — not part of the key snapshot
+				}
+				return label
+			})
+			expect(seen).toEqual(['a', 'b', 'c'])
+			expect(list.length).toBe(4)
+		})
+
+		test('a callback that removes the current item does not abort the pass', () => {
+			const list = createList(['a', 'b', 'c'])
+			const seen: string[] = []
+			list.forEach((item, key) => {
+				seen.push(item.get())
+				list.remove(key)
+			})
+			// every key of the snapshot is visited, including keys removed mid-pass
+			expect(seen).toEqual(['a', 'b', 'c'])
+			expect(list.length).toBe(0)
+		})
+
+		test('an effect that only calls map re-runs on structural changes', () => {
+			const list = createList([1, 2], { keyConfig: 'item-' })
+			let runs = 0
+			createEffect(() => {
+				list.map(item => item) // signals only — no item reads
+				runs++
+			})
+			expect(runs).toBe(1)
+
+			list.add(3)
+			expect(runs).toBe(2)
+			list.remove('item-0')
+			expect(runs).toBe(3)
+			list.sort((a, b) => b - a)
+			expect(runs).toBe(4)
+			list.splice(0, 0, 9)
+			expect(runs).toBe(5)
+		})
+
+		test('an effect that only calls map re-runs on replace(), like the iterator', () => {
+			const list = createList(['x', 'y'])
+			// biome-ignore lint/style/noNonNullAssertion: index is within bounds
+			const key = list.keyAt(0)!
+			let runs = 0
+			createEffect(() => {
+				list.map(item => item)
+				runs++
+			})
+			expect(runs).toBe(1)
+
+			// replace() propagates through the list node by design, so a map-only
+			// effect re-runs even though the keys are unchanged. The contract is
+			// "tracks like the iterator", not "tracks structure only".
+			list.replace(key, 'X')
+			expect(runs).toBe(2)
+		})
+
+		test('byKey().set() re-runs a map-only effect only after get() has linked the item signal to the list node', () => {
+			const list = createList(['a', 'b'])
+			// biome-ignore lint/style/noNonNullAssertion: index is within bounds
+			const key = list.keyAt(0)!
+			let runs = 0
+			createEffect(() => {
+				list.map(item => item)
+				runs++
+			})
+			expect(runs).toBe(1)
+
+			// Before any get(): the lazy itemSignal -> listNode edges do not exist,
+			// so a direct item mutation reaches no list subscriber. This is by
+			// design, not a leak — and it also pins that map never reads item
+			// values itself: a tracked item read here would create a direct edge
+			// and make this effect re-run.
+			list.byKey(key)?.set('A')
+			expect(runs).toBe(1)
+
+			// A get() read (from any subscriber) links the item signals to the
+			// list node, after which a direct item mutation propagates.
+			const dispose = createEffect(() => {
+				list.get()
+			})
+
+			list.byKey(key)?.set('B')
+			expect(runs).toBe(2)
+			dispose()
+		})
+
+		test('forEach tracks like map: structural changes re-run the effect', () => {
+			const list = createList([1, 2])
+			let runs = 0
+			createEffect(() => {
+				list.forEach(() => {})
+				runs++
+			})
+			expect(runs).toBe(1)
+
+			list.add(3)
+			expect(runs).toBe(2)
+			list.remove(0)
+			expect(runs).toBe(3)
+		})
+	})
+
 	describe('Reactivity', () => {
 		test('get() should trigger effects on structural changes', () => {
 			const list = createList([1, 2, 3])
@@ -1240,6 +1394,41 @@ test('Type Inference for custom createItem', () => {
 	type _Test = Expect<
 		Equal<typeof byKey, ReturnType<typeof createStore<TodoItem>> | undefined>
 	>
+})
+
+test('map and forEach infer S from createItem, key as string, and map returns R[]', () => {
+	// This test primarily checks compilation types but also runtime presence
+	type TodoItem = { id: string; text: string; done: boolean }
+	const list = createList([], {
+		keyConfig: 'todo',
+		createItem: createStore<TodoItem>,
+	})
+
+	type Expect<T extends true> = T
+	type Equal<X, Y> =
+		(<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2
+			? true
+			: false
+
+	const labels = list.map((item, key) => {
+		type _Key = Expect<Equal<typeof key, string>>
+		type _Item = Expect<
+			Equal<typeof item, ReturnType<typeof createStore<TodoItem>>>
+		>
+		return item.get().text
+	})
+	type _Labels = Expect<Equal<typeof labels, string[]>>
+	expect(labels).toEqual([])
+
+	let count = 0
+	list.forEach((item, key) => {
+		type _Key = Expect<Equal<typeof key, string>>
+		type _Item = Expect<
+			Equal<typeof item, ReturnType<typeof createStore<TodoItem>>>
+		>
+		count++
+	})
+	expect(count).toBe(0)
 })
 
 test('MutableList.deriveCollection() single-arg async callback infers the resolved item type, not Promise<T>', () => {

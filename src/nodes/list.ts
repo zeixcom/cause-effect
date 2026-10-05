@@ -99,6 +99,22 @@ type MutableList<
 	byKey(key: string): S | undefined
 	keyAt(index: number): string | undefined
 	indexOfKey(key: string): number
+	/**
+	 * Calls the callback once per item in list order and collects the results into
+	 * a plain array — a snapshot, not a signal. The callback receives each item's
+	 * signal and its stable key, never the item's value: reads inside the callback
+	 * track as usual. Reactive mapping over values is `deriveList`'s job.
+	 * @param callbackfn - Called with each item's signal and its stable key
+	 * @returns A plain array of the callback's results, not a signal
+	 */
+	map<R>(callbackfn: (item: S, key: string) => R): R[]
+	/**
+	 * Calls the callback once per item in list order, like `map` with the results
+	 * discarded. Tracks the list exactly like the iterator and every other
+	 * structural accessor; reads inside the callback track as usual.
+	 * @param callbackfn - Called with each item's signal and its stable key
+	 */
+	forEach(callbackfn: (item: S, key: string) => void): void
 	add(value: T): string
 	remove(keyOrIndex: string | number): void
 	/**
@@ -514,6 +530,26 @@ function createList<
 		indexOfKey(key: string) {
 			subscribe()
 			return keys.indexOf(key)
+		},
+
+		map<R>(callbackfn: (item: S, key: string) => R): R[] {
+			subscribe()
+			const result: R[] = []
+			// Snapshot the keys: a callback that mutates the list must not change
+			// the current pass. The mutation itself propagates as usual.
+			for (const key of keys.slice()) {
+				const signal = signals.get(key)
+				if (signal) result.push(callbackfn(signal, key))
+			}
+			return result
+		},
+
+		forEach(callbackfn: (item: S, key: string) => void): void {
+			subscribe()
+			for (const key of keys.slice()) {
+				const signal = signals.get(key)
+				if (signal) callbackfn(signal, key)
+			}
 		},
 
 		add(value: T) {

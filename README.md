@@ -228,6 +228,14 @@ items.sort()
 
 Access items with `.byKey()` or `.at()`. `.indexOfKey()` returns an item's current index, and `.keyAt()` returns the key at a position. Lists also provide `.keys()`, `.add()`, `.remove()`, `.replace()`, `.sort()`, `.splice()`, and a reactive `.length`. Unlike Store, deeply nested properties inside items do not become individual signals.
 
+`.map()` and `.forEach()` visit every item in list order. The callback receives the item's signal and its stable key — never the value. Reads inside the callback track as usual:
+
+```js
+const rows = items.map((item, key) => `${key}: ${item.get()}`)
+```
+
+`.map()` returns a plain array snapshot, not a signal. For reactive mapping over values, use `deriveList`.
+
 **Use `.replace(key, value)` to update an existing item.** `.byKey()` returns the item's own signal, and calling `.set()` on it is not guaranteed to reach sinks that read the list structurally through `.keys()`, `.length`, or the iterator. `.replace()` propagates to every sink regardless of how it reads the list.
 
 Keys stay stable across reordering. Control key generation with `keyConfig`:
@@ -301,6 +309,8 @@ const processed = users
   .deriveCollection(user => ({ ...user, active: user.lastLogin > threshold }))
   .deriveCollection(user => user.active ? `Active: ${user.name}` : `Inactive: ${user.name}`)
 ```
+
+A derived collection exposes the same read accessors as a List, including `.map()` and `.forEach()` over item signals. See [List](#list).
 
 > **Naming ahead of 2.0:** the `Collection` type is deprecated as of 1.5.0 — use `DerivedList`, the type `deriveList()` returns, and the `isDerivedList()` guard. `createCollection(watched, options)` is deprecated in favor of `deriveList(seed, { watched, … })`. In 2.0, the readonly base is named `List`. See [MIGRATION-2.0.md](MIGRATION-2.0.md).
 
